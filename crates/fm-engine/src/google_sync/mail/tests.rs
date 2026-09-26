@@ -21,6 +21,8 @@ struct FixtureState {
     history: String,
     recent: Vec<String>,
     inventory: Vec<String>,
+    /// What Gmail lists for `in:trash`.
+    trash: Vec<String>,
     recent_query: Option<String>,
     list_page_size: usize,
     raw: BTreeMap<String, Value>,
@@ -38,6 +40,7 @@ impl FixtureHttp {
             history: "100".into(),
             recent: ids.iter().take(recent_count).cloned().collect(),
             inventory: ids.clone(),
+            trash: Vec::new(),
             recent_query: None,
             list_page_size: usize::MAX,
             raw: ids
@@ -57,7 +60,7 @@ impl FixtureHttp {
             .unwrap()
             .requests
             .iter()
-            .filter(|url| url.contains(&format!("/messages/{id}?")))
+            .filter(|url| url.contains(&format!("/messages/{id}?format=raw")))
             .count()
     }
 }
@@ -89,6 +92,20 @@ impl HttpTransport for FixtureHttp {
                     (
                         200,
                         json!({"emailAddress":"reader@example.test","messagesTotal":999999,"threadsTotal":999999,"historyId":state.history}),
+                        None,
+                        false,
+                    )
+                } else if suffix.starts_with("labels/TRASH?") {
+                    (
+                        200,
+                        json!({"id":"TRASH","messagesTotal":state.trash.len(),"threadsTotal":state.trash.len()}),
+                        None,
+                        false,
+                    )
+                } else if suffix.starts_with("messages?") && suffix.contains("q=in%3Atrash") {
+                    (
+                        200,
+                        json!({"messages":state.trash.iter().map(|id|json!({"id":id,"threadId":format!("thread-{id}")})).collect::<Vec<_>>(),"resultSizeEstimate":state.trash.len()}),
                         None,
                         false,
                     )
@@ -136,6 +153,19 @@ impl HttpTransport for FixtureHttp {
                         .pop_front()
                         .unwrap_or_else(|| (200, json!({"historyId":state.history,"history":[]})));
                     (status, value, None, false)
+                } else if let Some(id) = suffix.strip_prefix("messages/").and_then(|path| {
+                    path.strip_suffix("?format=full&fields=id%2CthreadId%2ClabelIds%2ChistoryId")
+                }) {
+                    // Label state only, for a message whose source is kept.
+                    match state.raw.get(id) {
+                        Some(value) => (
+                            200,
+                            json!({"id":value["id"],"threadId":value["threadId"],"labelIds":value["labelIds"],"historyId":value["historyId"]}),
+                            None,
+                            false,
+                        ),
+                        None => (404, json!({}), None, false),
+                    }
                 } else if let Some(raw_path) = suffix.strip_prefix("messages/") {
                     let id = raw_path.strip_suffix("?format=raw").unwrap();
                     if state.fail_once.as_deref() == Some(id) {
@@ -201,6 +231,16 @@ struct Harness {
 }
 impl Harness {
     fn new(count: usize, recent: usize, body_size: usize) -> Self {
+        Self::with_scope(
+            count,
+            recent,
+            body_size,
+            "https://www.googleapis.com/auth/gmail.modify",
+        )
+    }
+    /// A harness whose account granted `scope` for mail.
+    fn with_scope(count: usize, recent: usize, body_size: usize, scope: &str) -> Self {
+        let scope = scope.to_owned();
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("profile");
         let (send, mut receive) = mpsc::channel(8);
@@ -211,7 +251,7 @@ impl Harness {
                 .bind_google_account(
                     "synthetic-worker-subject",
                     "reader@example.test",
-                    &BTreeSet::from(["https://www.googleapis.com/auth/gmail.modify".into()]),
+                    &BTreeSet::from([scope]),
                     None,
                 )
                 .unwrap();
@@ -585,17 +625,213 @@ async fn expired_history_preserves_source_until_explicit_missing_reconciliation(
         2,
         "provider removal must retain original message/source rows"
     );
-    assert_eq!(
-        h.http.raw_count("m000"),
-        3,
-        "recent, initial inventory, then explicit missing recheck"
-    );
+    // The inventory relisting and the missing recheck read label state only:
+    // Gmail never changes a kept message's source.
+    assert_eq!(h.http.raw_count("m000"), 1, "downloaded once, by recent");
     let retained = h
         .core
         .call(move |store| store.verified_blob(&old_source.0, old_source.1))
         .await
         .unwrap();
     assert!(retained.is_file());
+    h.close();
+}
+
+// A label change on a kept message reads Gmail's label state, never the
+// source again: Gmail never changes a message's source.
+#[tokio::test]
+async fn label_changes_read_label_state_without_downloading_again() {
+    let h = Harness::new(1, 1, 0);
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    let reads = h.http.raw_count("m000");
+    {
+        let mut state = h.http.0.lock().unwrap();
+        let message = state.raw.get_mut("m000").unwrap();
+        message["labelIds"] = json!(["INBOX"]);
+        message["historyId"] = json!("201");
+        state.history_replies.push_back((200, json!({"historyId":"201","history":[{"id":"201","labelsRemoved":[{"message":{"id":"m000","threadId":"thread-m000"},"labelIds":["UNREAD"]}]}]})));
+    }
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    assert_eq!(h.http.raw_count("m000"), reads, "no second download");
+    assert!(h
+        .http
+        .0
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .any(|url| url.contains("/messages/m000?format=full")));
+    assert_eq!(
+        h.sql_count("SELECT count(*) FROM google_message_state WHERE account=?1 AND provider_labels_json NOT LIKE '%UNREAD%'"),
+        1
+    );
+    h.close();
+}
+
+// Once a history check has started it runs to the end, so new mail never
+// waits behind the download of older mail.
+#[tokio::test]
+async fn a_started_history_check_finishes_before_listing_resumes() {
+    let h = Harness::new(60, 60, 0);
+    let added: Vec<_> = (40..60)
+        .map(|n| json!({"message":{"id":format!("m{n:03}"),"threadId":format!("thread-m{n:03}")}}))
+        .collect();
+    h.http.0.lock().unwrap().history_replies.push_back((
+        200,
+        json!({"historyId":"101","history":[{"id":"101","messagesAdded":added}]}),
+    ));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let record = seen.clone();
+    let mut worker = MailWorker::new(h.account.clone());
+    worker.observe_lanes(move |backfill| record.lock().unwrap().push(backfill));
+    for _ in 0..8 {
+        worker.step(&h.ctx, 0).await.unwrap();
+    }
+    // Four recent parts, the history check's two parts back to back, then
+    // the listing again.
+    assert_eq!(
+        *seen.lock().unwrap(),
+        [true, true, true, true, false, false, true]
+    );
+    h.close();
+}
+
+// A history scan held up by a bulk change made elsewhere must not hold back
+// new mail: once the next check is due, or on a refresh, the newest mail is
+// listed and downloaded before the scan continues.
+#[tokio::test]
+async fn new_mail_arrives_while_a_history_scan_is_behind() {
+    let h = Harness::new(1, 1, 0);
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    let arrived = |id: &str| {
+        let mut state = h.http.0.lock().unwrap();
+        state.inventory.insert(0, id.to_owned());
+        state.raw.insert(id.to_owned(), raw(id, "300", 0));
+    };
+    arrived("new1");
+    {
+        let mut state = h.http.0.lock().unwrap();
+        state.history = "300".into();
+        state.history_replies.push_back((200, json!({"historyId":"300","nextPageToken":"more","history":[{"id":"201","labelsRemoved":[{"message":{"id":"m000","threadId":"thread-m000"},"labelIds":["UNREAD"]}]}]})));
+        state.history_replies.push_back((200, json!({"historyId":"300","history":[{"id":"300","messagesAdded":[{"message":{"id":"new1","threadId":"thread-new1"}},{"message":{"id":"new2","threadId":"thread-new2"}}]}]})));
+    }
+    let earlier = h
+        .http
+        .0
+        .lock()
+        .unwrap()
+        .requests
+        .iter()
+        .filter(|url| url.contains("/history?"))
+        .count();
+    let history_pages = || {
+        h.http
+            .0
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|url| url.contains("/history?"))
+            .count()
+            - earlier
+    };
+    let stored = |id: &str| {
+        h.sql_count(&format!(
+            "SELECT count(*) FROM messages WHERE account=?1 AND remote_id='{id}'"
+        ))
+    };
+    let synced = || h.sql_count("SELECT count(*) FROM meta WHERE key='last_mail_sync:'||?1");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let record = seen.clone();
+    let mut worker = MailWorker::new(h.account.clone());
+    worker.observe_lanes(move |backfill| record.lock().unwrap().push(backfill));
+    let interval = h
+        .core
+        .call(|store| store.google_sync_interval_ms())
+        .await
+        .unwrap();
+    let before = synced();
+    worker.step(&h.ctx, 0).await.unwrap(); // Start a scan.
+    worker.step(&h.ctx, 0).await.unwrap(); // Its first history page.
+    assert_eq!((history_pages(), stored("new1")), (1, 0));
+
+    // The next check falls due with the scan still running.
+    worker.step(&h.ctx, interval).await.unwrap();
+    assert_eq!((history_pages(), stored("new1")), (1, 1));
+    assert_eq!(synced(), before.max(1));
+
+    // The Sync button does the same at once.
+    arrived("new2");
+    worker.request_refresh();
+    worker.step(&h.ctx, interval).await.unwrap();
+    assert_eq!((history_pages(), stored("new2")), (1, 1));
+
+    // The scan then finishes in the background, reading label state only for
+    // the mail it already has.
+    h.idle(&mut worker).await;
+    assert_eq!(history_pages(), 2);
+    assert_eq!((h.http.raw_count("new1"), h.http.raw_count("new2")), (1, 1));
+    // Only the new-mail work shows as syncing once the scan is behind.
+    assert_eq!(
+        seen.lock().unwrap()[..5],
+        [false, false, false, false, true]
+    );
+    h.close();
+}
+
+// Mail deleted in Gmail while its history was still being replayed stays
+// in local Trash; emptying Trash removes those copies once Gmail's own Trash
+// is empty, and sync never asks Gmail about them again.
+#[tokio::test]
+async fn emptying_trash_forgets_copies_of_mail_gmail_already_deleted() {
+    let h = Harness::with_scope(3, 3, 0, "https://mail.google.com/");
+    {
+        let mut state = h.http.0.lock().unwrap();
+        for id in ["m001", "m002"] {
+            state.raw.get_mut(id).unwrap()["labelIds"] = json!(["TRASH"]);
+        }
+    }
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    let trashed = || h.sql_count("SELECT count(*) FROM messages WHERE account=?1 AND trashed=1");
+    assert_eq!(trashed(), 2);
+    // In Gmail, m002 was deleted for good and m001 moved out of Trash; sync
+    // has not caught up with either.
+    {
+        let mut state = h.http.0.lock().unwrap();
+        state.inventory.retain(|id| id != "m002");
+        state.raw.remove("m002");
+    }
+    let counts = crate::google_sync::bin::counts(&h.ctx, json!({"folder":"trash"}))
+        .await
+        .unwrap();
+    assert_eq!(
+        (counts["messages"].as_u64(), counts["stored"].as_u64()),
+        (Some(0), Some(2))
+    );
+
+    let result = crate::google_sync::bin::empty(&h.ctx, json!({"folder":"trash"}))
+        .await
+        .unwrap();
+    assert_eq!(result["deleted"], 1);
+    let stored = |id: &str| {
+        h.sql_count(&format!(
+            "SELECT count(*) FROM messages WHERE account=?1 AND remote_id='{id}'"
+        ))
+    };
+    assert_eq!((stored("m001"), stored("m002")), (1, 0));
+    assert_eq!(h.sql_count("SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND remote_id='m002' AND deleted=1"), 1);
+    assert_eq!(
+        h.coverage().await.observed,
+        h.sql_count("SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0")
+    );
+
+    // History then names it again; no request goes to Gmail for it.
+    let before = h.http.0.lock().unwrap().requests.len();
+    h.http.0.lock().unwrap().history_replies.push_back((200, json!({"historyId":"201","history":[{"id":"201","labelsAdded":[{"message":{"id":"m002","threadId":"thread-m002"},"labelIds":["TRASH"]}]}]})));
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    assert!(h.http.0.lock().unwrap().requests[before..]
+        .iter()
+        .all(|url| !url.contains("/messages/m002")));
     h.close();
 }
 

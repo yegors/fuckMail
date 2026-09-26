@@ -324,7 +324,7 @@ fn empty_live_profile_reopens_without_seed_or_simulated_operations() {
         assert_eq!(status["capabilities"][key], true, "{key}");
     }
     assert_eq!(status["capabilities"]["send"], true);
-    for key in ["phase1", "capture_history", "calendar_write_local"] {
+    for key in ["capture_history", "calendar_write_local"] {
         assert_eq!(status["capabilities"][key], false, "{key}");
     }
     let calendar = store

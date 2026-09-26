@@ -98,10 +98,7 @@ impl SyncBatch {
             || self.staged.len() + items.len() > 10000
             || self.seen_pages.len() > 100
         {
-            return Err(error(
-                "limit_exceeded",
-                "Synthetic sync batch limit exceeded",
-            ));
+            return Err(error("limit_exceeded", "Sync batch limit exceeded"));
         }
         let mut incoming = Vec::new();
         for item in items {

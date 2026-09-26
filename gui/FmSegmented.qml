@@ -47,7 +47,7 @@ Control {
                 selected: control.currentIndex === index
                 focusPolicy: Qt.NoFocus
                 onClicked: { control.forceActiveFocus(); control.selectIndex(index) }
-                background: Rectangle { radius: 4; color: segment.selected ? Theme.hover : control.hoverHighlight && segment.hovered ? Theme.selected : "transparent" }
+                background: Rectangle { radius: 4; color: segment.selected ? Theme.brighten(Theme.hover, segment.lift) : control.hoverHighlight && segment.hovered ? Theme.selected : "transparent" }
             }
         }
     }

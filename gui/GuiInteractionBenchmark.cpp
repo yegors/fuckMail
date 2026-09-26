@@ -1,5 +1,5 @@
 // Developer benchmark for `--benchmark-navigation-output <report.json> --profile <dir>`
-// (used by scripts/verify_google_navigation.py): times mailbox and conversation
+// (used by scripts/verify_interaction.py): times mailbox and conversation
 // navigation from input to the frame showing the correct content. Not run by CTest.
 #include "GuiInteractionBenchmark.h"
 #include "GuiBenchmarkSupport.h"

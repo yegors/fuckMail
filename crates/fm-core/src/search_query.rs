@@ -313,9 +313,8 @@ fn fold_each(text: &str, mut push: impl FnMut(char, usize)) {
 /// word. The phrase may end inside a word, so its last word can be partial.
 pub(crate) fn contains_phrase(text: &str, phrase: &str) -> bool {
     let word_start = phrase.starts_with(char::is_alphanumeric);
-    text.match_indices(phrase).any(|(at, _)| {
-        !word_start || !text[..at].ends_with(char::is_alphanumeric)
-    })
+    text.match_indices(phrase)
+        .any(|(at, _)| !word_start || !text[..at].ends_with(char::is_alphanumeric))
 }
 
 /// Whether a folded phrase needs [`contains_phrase`] after the index match.
@@ -448,7 +447,10 @@ mod tests {
         assert_eq!(read("Bill C-22").phrases, ["Bill C-22"]);
         assert_eq!(read("\"open  letter\"").phrases, ["open letter"]);
         assert_eq!(read("c-22 from:josh").phrases, ["c-22"]);
-        assert_eq!(read("invoice maya@windscribe.com march").phrases, ["invoice", "march"]);
+        assert_eq!(
+            read("invoice maya@windscribe.com march").phrases,
+            ["invoice", "march"]
+        );
         assert_eq!(read("label:work bill c-22").phrases, ["bill c-22"]);
         assert_eq!(read("bill label:work c-22").phrases, ["bill", "c-22"]);
         assert!(read("\"\"").phrases.is_empty());
@@ -473,10 +475,16 @@ mod tests {
             assert_eq!(contains_phrase(&text, &fold(phrase)), found, "{phrase}");
         }
         assert!(!contains_phrase(&fold("Sep 22 call"), &fold("c-22")));
-        assert_eq!(find_phrase("Cover  Élan, the Bill\nC-22 note", &fold("bill c-22")), Some(17));
+        assert_eq!(
+            find_phrase("Cover  Élan, the Bill\nC-22 note", &fold("bill c-22")),
+            Some(17)
+        );
         assert_eq!(find_phrase("Cover note", &fold("c-22")), None);
         let terms = read("Bill C-22 subject:weekly body:\"open letter\"").terms(None);
-        assert_eq!(terms["phrases"], json!([{"text":"Bill C-22","field":"any"},{"text":"weekly","field":"subject"},{"text":"open letter","field":"body"}]));
+        assert_eq!(
+            terms["phrases"],
+            json!([{"text":"Bill C-22","field":"any"},{"text":"weekly","field":"subject"},{"text":"open letter","field":"body"}])
+        );
         assert!(!phrase_needs_check(&fold("Invoice")));
         assert!(phrase_needs_check(&fold("c-22")) && phrase_needs_check(&fold("open letter")));
     }

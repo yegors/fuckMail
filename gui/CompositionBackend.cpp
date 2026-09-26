@@ -56,7 +56,7 @@ void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
     m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     remember("selectedDraft", m_activeDraft); remember("selected", m_selected);
     if (!restoreView) { remember("readerY", 0); remember("replyOpen", true); }
-    emit conversationChanged(); emit draftChanged(); emit draftSourcesChanged();
+    emit conversationChanged(); emit draftChanged();
     if (!restoreView) emit presentationChanged();
     if (!m_selected.isEmpty()) loadConversation(false);
     else emit ready();
@@ -160,7 +160,6 @@ void MailBackend::loadActiveDraft() {
 }
 
 void MailBackend::loadDraftRows(bool append, bool preserveLoaded) {
-    loadGoogleDraftInventory();
     const auto account = m_account;
     const int generation = ++m_listGeneration, offset = append ? m_nextOffset : 0;
     if (offset < 0) return;

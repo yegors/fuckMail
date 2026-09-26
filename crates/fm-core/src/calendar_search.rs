@@ -56,7 +56,8 @@ impl CalendarQuery {
                 Some("title") => query.title.push(unquote(value).trim().to_owned()),
                 Some(key) => {
                     // with: and date: take one word, or a quoted name; the rest are bare words.
-                    let (word, rest) = match value.strip_prefix('"').and_then(|v| v.split_once('"')) {
+                    let (word, rest) = match value.strip_prefix('"').and_then(|v| v.split_once('"'))
+                    {
                         Some((quoted, rest)) if key == "with" => (quoted.trim(), rest),
                         _ => value.split_once(char::is_whitespace).unwrap_or((value, "")),
                     };

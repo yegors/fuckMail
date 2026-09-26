@@ -11,8 +11,8 @@ use zeroize::Zeroizing;
 ///
 /// A native refusal is shared by every worker until an explicit user retry.
 /// The lock remains inside the blocking operation, including caller cancellation.
-/// After any failed call for an account, its loads fail with
-/// `StoreUnavailable` without reaching the inner vault, until
+/// After a failed load or remove, or a store the OS refused, the account's
+/// loads fail with `StoreUnavailable` without reaching the inner vault, until
 /// [`CredentialVault::retry_access`] or a successful `store` or `remove`.
 /// All calls, for every account, are serialized through one lock.
 pub struct SessionCredentialVault<V: ?Sized> {
@@ -57,10 +57,16 @@ impl<V: CredentialVault + ?Sized> CredentialVault for SessionCredentialVault<V> 
         // A verified reconnect may replace the credential even after denial.
         // Refresh always loads first, so it cannot bypass the blocked load.
         let result = self.inner.store(account, token);
-        if result.is_err() {
-            denied.insert(account.clone());
-        } else {
-            denied.remove(account);
+        match &result {
+            Ok(()) => {
+                denied.remove(account);
+            }
+            // Only a refusal by the OS store blocks later loads. A token the
+            // inner vault rejected as invalid never reached the store.
+            Err(GoogleError::StoreUnavailable) => {
+                denied.insert(account.clone());
+            }
+            Err(_) => {}
         }
         result
     }
@@ -389,8 +395,10 @@ mod denial_tests {
                 Ok(None)
             }
         }
-        fn store(&self, _: &AccountId, _: StoredToken) -> Result<(), GoogleError> {
-            if self.denied.load(Ordering::SeqCst) {
+        fn store(&self, _: &AccountId, token: StoredToken) -> Result<(), GoogleError> {
+            if token.refresh_token.is_empty() {
+                Err(GoogleError::InvalidResponse("invalid secret"))
+            } else if self.denied.load(Ordering::SeqCst) {
                 Err(GoogleError::StoreUnavailable)
             } else {
                 Ok(())
@@ -446,5 +454,22 @@ mod denial_tests {
         inner.denied.store(false, Ordering::SeqCst);
         vault.store(&account, token()).unwrap();
         assert!(vault.load(&account).unwrap().is_none());
+    }
+    #[test]
+    fn rejected_token_does_not_block_later_loads() {
+        let inner = Arc::new(Vault::default());
+        let vault = SessionCredentialVault::new(inner.clone());
+        let account = AccountId::new("account").unwrap();
+        let empty = StoredToken {
+            access_token: "synthetic".into(),
+            refresh_token: String::new(),
+            expires_at_secs: 123,
+        };
+        assert!(matches!(
+            vault.store(&account, empty),
+            Err(GoogleError::InvalidResponse(_))
+        ));
+        assert!(vault.load(&account).unwrap().is_none());
+        assert_eq!(inner.loads.load(Ordering::SeqCst), 1);
     }
 }

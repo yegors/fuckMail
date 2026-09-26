@@ -11,7 +11,6 @@ use fm_google::{
     transport::{CancellationToken, HttpFuture, HttpRequest, HttpTransport},
     AccountId, GoogleError,
 };
-#[cfg(not(feature = "verification-google"))]
 use fm_google::{
     transport::{ReqwestTransport, TransportLimits},
     vault::NativeCredentialVault,
@@ -117,26 +116,12 @@ struct State {
 }
 struct Inner {
     app_client: AppClient,
-    #[cfg(feature = "verification-google")]
-    verification: bool,
-    #[cfg(feature = "verification-google")]
-    verification_login: Option<Arc<dyn VerificationLogin>>,
     core: CoreBridge,
     http: Arc<SharedHttp>,
     vault: Arc<SharedVault>,
     coordinator: TokenCoordinator,
     cancel: CancellationToken,
     state: Mutex<State>,
-}
-/// Plays the browser's part in the verification build: it receives each
-/// authorization URL and drives the loopback callback.
-#[cfg(feature = "verification-google")]
-pub(crate) trait VerificationLogin: Send + Sync {
-    fn callback<'a>(
-        &'a self,
-        authorization_url: String,
-        cancel: CancellationToken,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>;
 }
 /// Google sign-in and credentials: browser sign-in attempts, account
 /// disconnect and removal, and vault-backed access-token refresh for sync.
@@ -170,7 +155,6 @@ impl Runtime {
     /// Creates the runtime with the pooled HTTPS transport, the OS credential
     /// vault under `namespace`, and the client registration installed with
     /// the app. `cancel` is the engine's shutdown token.
-    #[cfg(not(feature = "verification-google"))]
     pub(crate) fn new(
         core: CoreBridge,
         namespace: String,
@@ -203,33 +187,6 @@ impl Runtime {
     ) -> Arc<Self> {
         Arc::new(Self::with_services(core, http, vault, cancel))
     }
-    #[cfg(feature = "verification-google")]
-    pub(crate) fn for_verification(
-        core: CoreBridge,
-        http: Arc<dyn HttpTransport>,
-        vault: Arc<dyn CredentialVault>,
-        cancel: CancellationToken,
-    ) -> Arc<Self> {
-        let mut runtime = Self::with_services(core, http, vault, cancel);
-        Arc::get_mut(&mut runtime.inner).unwrap().verification = true;
-        Arc::new(runtime)
-    }
-    #[cfg(feature = "verification-google")]
-    pub(crate) fn for_verification_accounts(
-        core: CoreBridge,
-        http: Arc<dyn HttpTransport>,
-        vault: Arc<dyn CredentialVault>,
-        cancel: CancellationToken,
-        observer: Arc<dyn VerificationLogin>,
-        client_path: std::path::PathBuf,
-    ) -> Arc<Self> {
-        let mut runtime = Self::with_services(core, http, vault, cancel);
-        let inner = Arc::get_mut(&mut runtime.inner).unwrap();
-        inner.verification = true;
-        inner.verification_login = Some(observer);
-        inner.app_client = AppClient::configured(client_path);
-        Arc::new(runtime)
-    }
     fn with_services(
         core: CoreBridge,
         http: Arc<dyn HttpTransport>,
@@ -239,10 +196,6 @@ impl Runtime {
         Self {
             inner: Arc::new(Inner {
                 app_client: AppClient::default(),
-                #[cfg(feature = "verification-google")]
-                verification: false,
-                #[cfg(feature = "verification-google")]
-                verification_login: None,
                 core,
                 http: Arc::new(SharedHttp(http)),
                 vault: Arc::new(SharedVault(vault)),
@@ -263,7 +216,7 @@ impl Runtime {
                 | "google_auth_cancel"
                 | "google_disconnect"
                 | "account_remove"
-        ) || (cfg!(feature = "verification-google") && method == "verification_google_auth_fixture")
+        )
     }
     /// Mail and Calendar reuse the engine's bounded pooled HTTPS transport.
     pub(crate) fn http_transport(&self) -> Arc<dyn HttpTransport> {
@@ -279,16 +232,6 @@ impl Runtime {
         account: Option<&str>,
         params: Value,
     ) -> Result<Value> {
-        #[cfg(feature = "verification-google")]
-        if self.inner.verification
-            && self.inner.verification_login.is_none()
-            && matches!(method, "google_auth_begin" | "google_auth_restore_begin")
-        {
-            return Err(error(
-                "verification_refused",
-                "OAuth is unavailable in the isolated provider fixture",
-            ));
-        }
         if owner.is_empty()
             || owner.len() > 256
             || owner_cancel.is_cancelled()
@@ -309,17 +252,6 @@ impl Runtime {
                         json!({"available":false,"error":{"code":failure.code,"message":failure.message}}),
                     ),
                 }
-            }
-            #[cfg(feature = "verification-google")]
-            "verification_google_auth_fixture" => {
-                fields(&params, &[])?;
-                if account.is_some() || self.inner.verification_login.is_none() {
-                    return Err(error(
-                        "verification_refused",
-                        "Account verification is unavailable in this profile",
-                    ));
-                }
-                Ok(json!({"mode":"accounts-v1","browser_stub_allowed":true}))
             }
             // Sign-in: validate the options here; the attempt then runs in the
             // background and the client polls `google_auth_status`.
@@ -614,8 +546,6 @@ impl Runtime {
         let runtime = self.clone();
         let task_id = id.clone();
         let task_cancel = cancel.clone();
-        #[cfg(feature = "verification-google")]
-        let fixture_url = url.clone();
         // The rest runs in the background. If the requesting session ends, the
         // attempt is cancelled but still awaited, so it finishes cleanly.
         let mut state = self.inner.state.lock().await;
@@ -623,7 +553,7 @@ impl Runtime {
             return Err(cancelled());
         }
         let task = tokio::spawn(async move {
-            let login = runtime.complete_login(
+            let operation = runtime.complete_login(
                 &task_id,
                 login,
                 client,
@@ -631,17 +561,6 @@ impl Runtime {
                 restore_revision,
                 &task_cancel,
             );
-            #[cfg(not(feature = "verification-google"))]
-            let operation = login;
-            #[cfg(feature = "verification-google")]
-            let operation = async {
-                if let Some(observer) = runtime.inner.verification_login.clone() {
-                    let (result, ()) =
-                        tokio::join!(login, observer.callback(fixture_url, task_cancel.clone()));
-                    return result;
-                }
-                login.await
-            };
             tokio::pin!(operation);
             let result = tokio::select! {
                 result = &mut operation => result,

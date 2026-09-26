@@ -1,6 +1,6 @@
-// Part of MailBackend: event reminders and new-mail notifications, the clock,
-// calendar navigation and sources, preferences and account settings, mail
-// filters, sender cards, draft field edits and demo-profile send captures.
+// MailBackend's event reminders and new-mail notifications, the clock, calendar
+// navigation and sources, preferences and account settings, mail filters, sender
+// cards, search highlighting, draft field edits and demo-profile send captures.
 #include "MailBackend.h"
 #include "CalendarLayout.h"
 #include "SearchMatch.h"
@@ -554,7 +554,9 @@ bool MailBackend::validFilterSender(const QString &sender) const {
 void MailBackend::applyFilters(const QVariantMap &filters) {
     if (filters == m_filters) return;
     m_queryActivity.start();
-    m_filters = filters; m_pinnedRow.clear(); m_pinnedIndex = -1; remember("filters", filters); ++m_listGeneration; emit queryChanged(); loadConversations();
+    const auto previous = m_filters;
+    m_filters = filters; m_pinnedRow.clear(); m_pinnedIndex = -1; remember("filters", filters); ++m_listGeneration; emit queryChanged();
+    rescope(previous, m_category);
 }
 void MailBackend::openConversation(const QString &id) { selectConversationInternal(id, true); }
 void MailBackend::clearSenderCard() {

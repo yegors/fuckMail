@@ -400,6 +400,7 @@ impl Contexts {
         config.max_reads_per_account = 2;
         let quota = quota::QuotaGate::new(config).unwrap();
         let preparation = Arc::new(Semaphore::new(1));
+        let delta_preparation = Arc::new(Semaphore::new(1));
         let calendar_preparation = Arc::new(Semaphore::new(2));
         let http = Arc::new(RawHttp::default());
         let (send, receive) = tokio::sync::mpsc::channel(2);
@@ -413,6 +414,7 @@ impl Contexts {
             tokens: TokenSource::Fixture("synthetic-access".into()),
             quota: quota.clone(),
             preparation: preparation.clone(),
+            delta_preparation: delta_preparation.clone(),
             calendar_preparation: calendar_preparation.clone(),
             calendar_reads: calendar::ReadGrants {
                 catalog: true,
@@ -434,6 +436,7 @@ impl Contexts {
             tokens: TokenSource::Fixture("synthetic-access".into()),
             quota,
             preparation,
+            delta_preparation,
             calendar_preparation,
             calendar_reads: calendar::ReadGrants {
                 catalog: true,
@@ -636,7 +639,7 @@ async fn raw_response_keeps_memory_lease_until_preparation_releases_it() {
         .unwrap();
     let mut second = pin!(h
         .second
-        .gmail_prepared(raw_call(&h.second, WorkClass::DeltaRead)));
+        .gmail_prepared(raw_call(&h.second, WorkClass::BackfillRead)));
     assert!(matches!(
         poll_fn(|cx| Poll::Ready(second.as_mut().poll(cx))).await,
         Poll::Pending
@@ -646,14 +649,26 @@ async fn raw_response_keeps_memory_lease_until_preparation_releases_it() {
         1,
         "a completed HTTP call still owns downloaded RAW memory"
     );
+    // A new-mail check has its own slot and never waits behind a download.
+    let (_, delta_memory) = tokio::time::timeout(
+        Duration::from_secs(2),
+        h.second
+            .gmail_prepared(raw_call(&h.second, WorkClass::DeltaRead)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(h.http.0.load(Ordering::SeqCst), 2);
+    drop(delta_memory);
     drop(first_memory);
     let (_, second_memory) = tokio::time::timeout(Duration::from_secs(2), second)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(h.http.0.load(Ordering::SeqCst), 2);
+    assert_eq!(h.http.0.load(Ordering::SeqCst), 3);
     drop(second_memory);
     assert_eq!(h.first.preparation.available_permits(), 1);
+    assert_eq!(h.first.delta_preparation.available_permits(), 1);
 }
 
 #[tokio::test]

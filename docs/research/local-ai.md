@@ -15,7 +15,7 @@ Official documentation checked September 14: Ollama supplies a [model-list endpo
 
 The [Ollama FAQ](https://docs.ollama.com/faq) documents cloud disabling through `OLLAMA_NO_CLOUD=1` or `disable_ollama_cloud`, and explains model residency. Localhost alone cannot prove local processing. Qualify actual selected weights/routing and cloud-disabled execution before mail inference, without silently changing the shared service. Cancellation of this app's request must be checked against server-side work; an idle loaded model or a disconnected client alone proves neither success nor failure. These gates remain untested.
 
-**Classifier intent clarified by D009 (2026-09-11):** tag human correspondence versus bots/lists/user-defined noise and the configured account/category/scope. Only the user chooses Done/Delayed. A classifier tag never marks mail reviewed or changes read/star state, and a personal spam/noise category does not authorize Gmail system Spam/Trash routing. Gmail labels are the first integration; IMAP filing experiments wait for the post-dogfood phase.
+**Classifier intent clarified by D009 (2026-09-11):** tag human correspondence versus bots/lists/user-defined noise and the configured account/category/scope. Only the user chooses Done/Delayed. A classifier tag never marks mail reviewed or changes read/star state, and a personal spam/noise category does not authorize Gmail system Spam/Trash routing. Gmail labels are the only integration; IMAP filing is out of scope.
 
 Sources checked 2026-09-11; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
 
@@ -41,7 +41,7 @@ Engineering implications: inference is optional, bounded and separate from index
 
 ## Phase 0 staging
 
-The [Phase 0 plan](../plans/phase-0.md) separates fake-runner boundary tests from live runner and quality evidence. First exercise Off, unavailable/invalid/abstaining/late output, mapping changes and newer manual corrections with synthetic received mail. Core must reject stale or disallowed results before any provider operation; summaries retain source IDs/coverage and cannot touch unpublished drafts.
+The Phase 0 plan separated fake-runner boundary tests from live runner and quality evidence. First exercise Off, unavailable/invalid/abstaining/late output, mapping changes and newer manual corrections with synthetic received mail. Core must reject stale or disallowed results before any provider operation; summaries retain source IDs/coverage and cannot touch unpublished drafts.
 
 When a supported same-machine setup is available, record the runner/model/version, local-only configuration, weights availability and one bounded classification/summary result. Structured-output support does not prove accuracy or local execution. Current primary docs continue to describe schema output for Ollama and vLLM; validate our HTTP adapter against the actual configuration. [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs), [vLLM structured outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/).
 

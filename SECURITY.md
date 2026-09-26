@@ -9,14 +9,16 @@ releases yet, so fixes land on `main`.
 
 ## What fuckMail stores and where
 
-- **Google credentials.** Refresh tokens live in the operating system's credential store:
-  Windows Credential Manager, the macOS Keychain, or the Secret Service on Linux, not in the
-  profile folder.
+- **Credentials.** Google access and refresh tokens, and the optional image-proxy password,
+  live in the operating system's credential store (Windows Credential Manager, the macOS
+  Keychain, or the Secret Service on Linux), not in the profile folder.
 - **Mail and calendar data.** Messages, original MIME sources, attachments and calendar
   events are stored in an SQLite database and files in the profile folder:
-  - `%LOCALAPPDATA%\fuckMail\` on Windows;
-  - `~/Library/Application Support/fuckMail/` on macOS;
-  - `$XDG_DATA_HOME/fuckMail/` (usually `~/.local/share/fuckMail/`) on Linux.
+  - `%LOCALAPPDATA%\fuckMail\default\` on Windows;
+  - `~/Library/Application Support/fuckMail/default/` on macOS;
+  - `$XDG_DATA_HOME/fuckMail/default/` (usually `~/.local/share/fuckMail/default/`) on Linux.
+
+  The demo profile lives beside it in `demo-v1/`.
 
   **The app does not encrypt this data.** It refuses profile folders owned by or shared with
   other users, but beyond that it relies on your OS account and full-disk encryption (BitLocker,
@@ -32,10 +34,14 @@ fuckMail has no servers of its own and sends no telemetry. The engine connects t
 - Google's OAuth, Gmail and Calendar APIs, for the accounts you connect;
 - remote images in a message, over HTTPS only, and only after you choose to load them.
   They can go through an HTTPS proxy you configure;
-- sender pictures (on by default; turn off in Settings):
+- sender pictures (on by default; turn off in Settings → Mail):
   - Google's public site-icon service, with the root domain of automated senders;
   - Gravatar, with a SHA-256 hash of a person's address, for their public profile photo;
-- a local model server such as Ollama, only if you enable local AI and point it there.
+- a mailing list's one-click unsubscribe URL, only when you choose Unsubscribe (mailto
+  unsubscribes are sent through Gmail);
+- `www.gstatic.com/generate_204`, only when you test an image proxy you configured;
+- a local model server such as Ollama, only if you enable local AI. It must be on this
+  machine (`localhost` with an explicit port).
 
 ## Local attack surface
 

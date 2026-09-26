@@ -1,3 +1,5 @@
+//! Request-level tests against the seeded demo profile: list paging, counts,
+//! filters and search grammar, preferences, and draft signatures.
 use crate::*;
 use rusqlite::params;
 

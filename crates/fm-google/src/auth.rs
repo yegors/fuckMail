@@ -298,15 +298,10 @@ pub struct DesktopAuthorization {
 }
 
 impl DesktopAuthorization {
-    /// Port must come from a successfully bound ephemeral IPv4 loopback listener.
-    /// Binding, callback timeout and the actual token exchange remain adapter work.
+    /// Port must come from a successfully bound ephemeral IPv4 loopback listener;
+    /// `desktop_auth` owns the listener, the callback and the token exchange.
     pub fn new(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
         Self::with_login_hint(client_id, loopback_port, false, None)
-    }
-
-    /// Explicit recovery after a missing/revoked refresh token; never a refresh retry.
-    pub fn new_reauthorization(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
-        Self::with_login_hint(client_id, loopback_port, true, None)
     }
 
     /// The hint chooses a Google sign-in screen; verified `sub` still owns identity.

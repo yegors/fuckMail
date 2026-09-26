@@ -1,6 +1,6 @@
 # CLI and the shared local engine
 
-**Delivery update under D009 (2026-09-11):** implement a small real CLI and GUI together, using both for IPC access, account scope, concurrency and recovery experiments. Expand command coverage with each Google workflow. A full CLI catalogue is not a prerequisite for GUI work; both clients must be usable and dogfooded on Google before legacy adapters start.
+**Delivery update under D009 (2026-09-11):** implement a small real CLI and GUI together, using both for IPC access, account scope, concurrency and recovery experiments. Expand command coverage with each Google workflow. A full CLI catalogue is not a prerequisite for GUI work. Google is the only provider; IMAP/SMTP adapters are out of scope.
 
 Research date: 2026-09-11. CLI scope is accepted; process/transport choices here are recommendations, with no prototype or benchmark. Build boundary: [CLI contract](../contracts/cli.md) and [Core](../contracts/core-storage.md).
 
@@ -41,7 +41,7 @@ The C++ presentation adapter owns an incrementally loaded QAbstractItemModel. Fe
 
 ## P0-10: smallest shared-engine investigation
 
-Execution is future work under the [Phase 0 plan](../plans/phase-0.md). Prerequisites: an authorized implementation start, agreed initial synthetic identity/revision fixtures, a provisioned Rust/Qt build environment on an available first target. Windows/macOS/Linux test systems are needed for their respective platform claims; unavailable hosts stay unverified without blocking independent first-target experiments. Detailed final visuals and live accounts are unnecessary.
+Phase 0 executed this investigation; the resulting engine/client boundary is described in [local protocol](../local-protocol.md) and the [CLI contract](../contracts/cli.md). The table below is the original plan.
 
 | Step | Future work | Exit evidence |
 | --- | --- | --- |

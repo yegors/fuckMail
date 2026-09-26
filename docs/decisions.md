@@ -1561,3 +1561,103 @@ The founder hovered a person Cc'd on the open thread and the card said "0 conver
 - The card's link reads "All N with …" and searches the bare address, which matches the same roles.
 
 Core and Mail UI98 updated in place; schema37 (no change), fixtures0/3 and protocol1 unchanged.
+
+## D141 — downloading older mail is not "Syncing" (2026-09-26T11:30:00Z)
+
+After the founder widened retention, the header's sync button read "Syncing" for the whole download. The engine already checks for new mail between download pages, and Sync already forces a check, but the label hid both. Decided:
+- The mail worker reports each step's lane as `progress.mail_backfill`: true for the recent and inventory listings, false for a history check. A refresh sets it false at once.
+- The button shows "Syncing" for history checks, a requested refresh and the first sync; during a download it shows the last successful check's time. Download progress stays in Accounts.
+
+Mail UI98 updated in place; schema37, fixtures0/3 and protocol1 unchanged.
+
+## D142 — Inbox months hide and show at once; list reads stop rescanning during sync (2026-09-26T13:00:00Z)
+
+The founder found collapsing and expanding Done months slow. Measured on the live engine during a two-year download: an Inbox list read took 20 ms warm but 170–540 ms, sometimes 1 s, right after a sync write, because Core rebuilt every conversation's state; the GUI then reset the whole list, since the collapsed sections were part of the model's identity, and an expand always waited for Core. Decided:
+- **Core.** The conversation-state change log from the perf branch (TEMP triggers on `messages` and `message_sender_kinds`, applied per changed conversation, one scan above 512) replaces the rescans. No schema change: the covering index stays on the perf branch. `mmap_size` 1 GiB and a 16 MiB page cache.
+- **GUI.** Collapsing removes that section's rows at once and keeps them; expanding puts kept rows back at once. A collapsed section's rows are read on hover of its header, so its first click is instant too. The refresh that follows reconciles with Core. The list model's scope no longer includes collapsed sections, so both diff rows instead of rebuilding.
+- **GUI.** MailView reads the list through one `rows` property, one JS copy per change instead of one per read.
+- **Reader.** A single-message thread's delivery status sits in its message header, so read-on-open status never moves the text; hiding the thread line had let it move the reader 32 px.
+
+Core, Mail UI98 updated in place; schema37, fixtures0/3 and protocol1 unchanged.
+
+## D143 — new mail comes before the download of old mail (2026-09-26T13:30:00Z)
+
+During the two-year download one account's header read "2 h": its new-mail checks started every minute but never finished. The founder's log shows each check part at about 10 s for 10 messages, then four download parts before the next. Three causes: every Gmail label change, including the local model's, re-downloaded the whole message; one engine-wide slot served every download, so a check waited behind other accounts' backfill; and a started check yielded to the download after each part. Decided:
+- A message already kept here that Gmail reports changed reads only its label state (`messages.get` with `id,threadId,labelIds,historyId`) and is prepared from the retained source. Gmail never changes a message's source. One Gmail no longer has is recorded missing without a download. This also applies to listings that name kept messages.
+- New-mail checks have their own preparation slot, so they never wait behind a backfill download.
+- A check that has started (a partly published page, or more history pages) runs to the end before any listing continues. When it starts is unchanged: every sync interval, or at once on Sync.
+
+Gmail and Core updated in place; schema37, fixtures0/3 and protocol1 unchanged.
+
+## D144 — design export 7: calendar search, list and header polish (2026-09-26T14:00:00Z)
+
+The founder asked to implement export 7 of the Flight Progress v2 design and its 16 notes. Decided:
+- **Mail list:**
+  - Every other row in a group gets a 2.8% ink shade, restarting in each group. This applies to Inbox, Sent, Drafts, Spam and Trash. Selection and hover take priority.
+  - A read row kept in To review folds away where it is once another conversation opens (170 ms, faded out by 70% of the way), then takes its new place. Opening another meanwhile sends the first one on at once. Inbox only.
+- **Thread:** a folded message gets a 3.5% ink wash under the pointer, over 150 ms.
+- **Buttons** lift on hover the way CSS `brightness()` does: main actions by 1.12, every other button by 1.3, including the selected option of a segmented control. Dropdowns, checkboxes, month cells and the video seek bar are unchanged.
+- **Top bar:**
+  - Settings moves out of the Mail/Calendar switch to just after the search box: a 30 px outlined icon button, radius 6, solid ink while Settings is open.
+  - The export's 2 px account-colour strip along the top is left out: the founder had asked earlier that day for it to be removed.
+- **Composer:** "Mentions an attachment — none added" in gold when the writer's own words say attached, attachment or enclosed and nothing is attached. It is advisory only. Forwarded and quoted lines don't count.
+- **Event editor:** a gold row under the times, "Overlaps Title (14:00), Title (14:15) +N".
+  - It counts timed events that day overlapping the chosen times. Declined and all-day events and the event being edited don't count.
+  - It is advisory and never blocks saving.
+  - It reads the Calendar window already loaded, so a day that isn't loaded shows no row.
+- **Settings → Mail:** "Show drafts in the corner" (Show/Hide, on by default) replaces "Group Sent and Drafts by date". Sent and Drafts are now always grouped by date, and the old preference is dropped when read.
+- **Calendar search** ("Search events") has its own query and its own Recent list: at most six, kept in preferences.
+  - `date:` takes YYYY-MM-DD, MM-DD, today, tomorrow, yesterday or ±N days. It offers "Go to Fri 2 Oct"; Enter opens that day in Day view and keeps the rest of the search as the filter. A date that can't be read shows how to write one.
+  - `with:` takes a name or an address and matches guests and the organizer; a bare address counts as `with:`. On its own, Enter shows this month with the filter on.
+  - `title:` matches titles only. Other words, typed together, match titles and notes as one phrase, by mail search's rules.
+  - The dropdown lists up to 7 events: the next time of each matching event within a year, then its latest time in the past 60 days, dimmed. A click opens Day view with the event's card. With nothing found it says "No events match".
+  - Text in the box filters Day, Week, Month and Agenda as you type; × clears it.
+  - Core reads the query: `calendar_search` returns its reading as `terms` and gains an `around` mode. The CLI gains `calendar search --around`.
+- **Verified only:** the console's full height (done in D135) and `to:`, now described as "Recipient name or address", e.g. `to:finance@example.com`.
+- **Not done:** account drag-reordering. It appears in the export but not in its notes.
+
+Calendar38, Mail UI99, Core73 and CLI56; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D145 — new mail skips a history backlog (2026-09-26T17:45:00Z)
+
+After a restart with D143 in place, one account still showed no new mail and a stuck "Syncing". Its last sync was at 2:05 AM. Its history scan was replaying a bulk change made outside the app: Dec 2024 mail moved to Trash. Every history page named about 115 changed messages, each needing a label read, so the scan would take hours. New messages sit on the last history pages, and the sync time is recorded only when a scan finishes. Decided:
+- A scan still running when the next check falls due, or when Sync is pressed, is behind. The engine then lists Gmail's newest mail directly and downloads what it doesn't hold. That counts as a successful mail sync, and the scan carries on in the background.
+- Label changes to mail already held still wait for the scan.
+
+Gmail35 and Core74; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D146 — no status text on Done/Delay, no flicker in search or month toggles (2026-09-26T18:15:00Z)
+
+The founder reported three problems:
+- The Calendar search dropdown hid and reappeared while typing, unlike Mail's.
+- Done and Delay showed "Saved locally · waiting for Google" and similar lines that moved the reader.
+- Inbox month headers had a "Collapse" tooltip, and toggling a month briefly showed "Searching…".
+
+Decided:
+- **Calendar search** keeps its last finished answer on screen while the next search runs. With words typed, its count row always shows, blank until the first answer, so the dropdown never empties between keys.
+- **Mail delivery.** Changes waiting for Google or being checked show nothing. A change Google refused shows under Reply, Forward and Delay/Done, in a line always kept for it, so it moves nothing. The read-only, cached-copy and server-only notes use the same line. Nothing shows at the top of the reader.
+- **Inbox months:**
+  - Section headers have no tooltip.
+  - "Searching…" and "Loading…" show only on the first read of an account's folder, never on refreshes. "Inbox clear" stays up while the list refreshes.
+  - Collapsing the only loaded month while older mail isn't loaded keeps every header, down to the first open month with mail, instead of an empty list.
+
+Mail UI100 and Calendar39; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D147 — Empty trash removes copies of mail Gmail already deleted (2026-09-26T18:45:00Z)
+
+The founder moved about 110,000 messages to Trash in Gmail and emptied it there. That bulk change is the history backlog behind D145. Locally, 16,446 Trash messages (12,930 conversations) stayed, because sync had not yet replayed the deletions. Empty trash read "0 messages will be deleted for good" (Gmail's own total) and removed nothing. Decided:
+- Once Gmail's Trash is empty, Empty trash also removes the Trash copies here of mail Gmail no longer lists. Copies Gmail still lists elsewhere stay for sync to move. The confirm counts what is here.
+- A message deleted in Gmail, or deleted here, is remembered as deleted, so the history backlog skips it with no request.
+- The mail list row tooltip is removed at the founder's request.
+
+Gmail36, Core75 and Mail UI101; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D148 — People/Automated for every account, and filters that feel instant (2026-09-26T19:45:00Z)
+
+The founder found the Windscribe account summarized and labelled but showing "?" for every sender. Its People and Automated filters matched nothing. It had 80 classification results and no People/Automated answers: editing a label's instructions deleted them all, while the results stayed "done". The founder also asked that "?" not show at all. Only mail the model hasn't read should lack a kind. Separately, People/Automated toggles weren't instant and the list visibly rebuilt. The founder asked for every way of filtering or bulk showing/hiding mail to be fast and free of jank. Decided:
+- Label edits keep People/Automated answers. Store open restores any answer a saved result has.
+- No mark for an unknown kind.
+- Filters, labels, day chips and folders update the list in place and show at once where rows in memory allow. That means a recent visit, a hover prefetch, or narrowing the rows on screen. Otherwise a quick fade shows the wait.
+- Measured: a first page with or without People takes about 125 ms through the CLI, process start included. The visible cost was the list rebuild, not the query.
+
+Local assistance27 and Mail UI102; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.

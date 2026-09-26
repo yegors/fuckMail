@@ -1,24 +1,81 @@
-# Build, run and move between machines
+# Build and run from source
 
-## Installers for testers (D130)
+fuckMail is a Rust engine (`fm-engine`) and CLI (`fm`), a C++20 Qt Quick app (`fuckmail-gui`) and a SQLite store. Python runs only the developer scripts; the packaged app needs no Python or Node.js.
 
-`scripts/dev.ps1 package --preset release` on Windows, or `scripts/dev.sh package --preset release` on macOS, builds in its own `build/release-package` tree, so it works while an app from `build/release` is open. It stages the app, runs the relocated package checks, then writes one file to `dist/`:
+All developer commands go through [scripts/dev.py](../scripts/dev.py), via `scripts/dev.sh` (macOS, Linux) or `scripts/dev.ps1` (Windows PowerShell). Both take the same commands and options.
 
-- **Windows:** `fuckMail-<version>-<commit>-windows-amd64-setup.exe`, built with Inno Setup from [the installer script](../scripts/windows-installer.iss). It installs for the current user in `%LOCALAPPDATA%\Programs\fuckMail` with no admin prompt, adds a Start menu entry (desktop icon optional) and an uninstaller under Settings → Apps. An upgrade replaces the previous program files. Install and uninstall never touch mail data in `%LOCALAPPDATA%\fuckMail`. The MSVC runtime DLLs ship beside the executables, because a per-user install cannot run `vc_redist`.
-- **macOS:** `fuckMail-<version>-<commit>-macos-arm64.dmg`, containing `fuckMail.app` and an Applications shortcut, made with the built-in `hdiutil`. The script mounts the finished image and checks the app's ad-hoc signature.
-- **Linux:** a `.tar.gz` of the staged folder, as before.
+## Requirements
 
-The app, window, Dock and installer icon comes from `gui/app-icon/app-icon.png`. When it changes, run `python scripts/make_app_icons.py` to regenerate the committed `.ico` and `.icns`; this one script needs Pillow, which the build does not. The source is 128 px, so the largest sizes are upscaled; a 1024 px source would make them sharp. The `.dmg` file keeps the standard disk-image icon.
+Every platform needs Git, Python 3.9 or newer, and internet access for the first bootstrap. Bootstrap supplies Rust, Qt, CMake and Ninja.
 
-Inno Setup 7.1.0 is the only added tool. Bootstrap, or the first Windows package, downloads it, checks the SHA-256 pinned in `scripts/toolchain.json` and installs it in its portable mode under `.tools/innosetup-7.1.0`, registering nothing on the host. Its license is permissive; commercial users are asked to buy a license.
+- **Windows (x64):** Visual Studio 2022 C++ Build Tools with the Windows SDK. `dev.ps1` loads the VS 2022 compiler environment per command without changing your PATH. If Visual Studio or Python is missing, `bootstrap` installs the Build Tools (C++ workload) or Python 3.11 through `winget`. An existing Visual Studio without the C++ workload needs it added by hand. ARM64 and WSL are not supported.
+- **macOS:** Apple's Command Line Tools (`xcode-select --install`). The app targets macOS 13 or later, built for the host's architecture.
+- **Ubuntu 24.04 (x64):** the packages CI installs (from [the native workflow](../.github/workflows/native.yml)), plus `python3-venv`:
 
-Both installers are unsigned for now. Windows testers see SmartScreen (**More info → Run anyway**). macOS testers must choose **Open Anyway** in System Settings → Privacy & Security, and macOS asks again for Keychain access after each update. When signing is added: macOS needs Developer ID signing and notarization, and `google-oauth-client.json` must first move out of `Contents/MacOS`, which should hold only code. Windows can sign through ISCC's `--signtool` option.
+```sh
+sudo apt-get install -y build-essential python3-venv libgl1-mesa-dev libegl1 libopengl0 \
+  libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
+  libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0
+```
 
-## Fresh SQLite profile switch (D093)
+Other Linux distributions, including Arch, are untested.
 
-The current Windows staged tree is `dist/windows-amd64/bin/fuckmail-gui.exe`, with `fm.exe` and `fm-engine.exe` beside it. It creates schema32 directly and refuses older profile versions. Close every GUI and CLI/engine instance, then move the **whole** `%LOCALAPPDATA%\fuckMail\default` directory out of that location before launching the new GUI. The directory contains `store.sqlite3`, external `blobs/` and other profile state; if `store.sqlite3-wal` or `store.sqlite3-shm` appears, keep it with the database. Moving only the `.sqlite3` file would separate it from retained source bytes and possibly uncheckpointed writes. `%LOCALAPPDATA%\fuckMail\demo-v1` is a separate synthetic profile and need not be moved for an ordinary live start. A new GUI start creates an empty default profile; connect each account again and explicitly start sync. On macOS the same directory is `~/Library/Application Support/fuckMail/default`. If an older profile is still in place, the GUI's splash names the refusal and offers Show profile folder, and the CLI prints the same message. Neither retries for 30 seconds any more. No old-profile migration or real-profile operation was part of D093 verification.
+## First setup
 
-The staged tree passes relocated GUI smoke and empty-live CLI/GUI checks. The broad GUI self-test passes its corrected D092 Account Editor path but times out later in native search scroll restoration; the package script therefore has not produced a verified archive. [Current execution limits](research/search-storage.md#2026-09-23-shared-tree-integration).
+```sh
+scripts/dev.sh bootstrap              # once per checkout
+scripts/dev.sh doctor                 # check tool versions
+scripts/dev.sh run --preset release
+```
+
+On Windows, use `./scripts/dev.ps1` with the same arguments from PowerShell in the checkout.
+
+Bootstrap installs into the ignored `.tools/` directory and leaves system installs alone:
+
+| Tool | Pinned version | Location |
+| --- | --- | --- |
+| CMake, Ninja, aqtinstall | 3.31.6, 1.11.1.4, 3.3.0 | Python venv in `.tools/bootstrap` |
+| Qt | 6.11.2: qtbase, qtdeclarative, qttools, qtsvg, qttranslations, Qt Multimedia (Linux adds ICU) | `.tools/Qt/6.11.2/<kit>` |
+| Rust | 1.88.0 with rustfmt and clippy | A matching `rustc` on PATH, else a local rustup in `.tools/rustup` and `.tools/cargo` |
+| Inno Setup (Windows) | 7.1.0, SHA-256 checked | `.tools/innosetup-7.1.0` |
+
+Pins live in [scripts/toolchain.json](../scripts/toolchain.json), [rust-toolchain.toml](../rust-toolchain.toml) and `scripts/bootstrap-requirements.txt`. Qt comes from the official archives through aqtinstall (no Qt account needed); [scripts/bootstrap_qt.py](../scripts/bootstrap_qt.py) works around [aqtinstall#1007](https://github.com/miurahr/aqtinstall/issues/1007) for Qt 6.11.2 on Windows, so revisit it when either pin changes. To use your own Qt 6.11.2 kit with Qt Multimedia, set `FM_QT_ROOT`.
+
+## Everyday commands
+
+| Command | What it does |
+| --- | --- |
+| `doctor` | Prints tool versions and paths; fails if one is missing or wrong (default for `dev.ps1`) |
+| `build` | Configures and builds incrementally |
+| `test` | Builds, then runs the whole CTest suite |
+| `run` | Builds, then starts the GUI |
+| `cli` | Runs the already-built `fm` |
+| `package` | Builds and checks a relocatable app, then writes an installer to `dist/` |
+
+`--preset dev` (the default) is a Debug build of the C++ and Rust code in `build/dev` and `target/debug`, and runs several times slower. `--preset release` builds optimized code in `build/release` and `target/release`; use it daily, for judging performance and for packages. Both come from [CMakePresets.json](../CMakePresets.json).
+
+Arguments after `--` go to the GUI (`run`) or CLI (`cli`):
+
+```sh
+scripts/dev.sh run --preset release -- --demo-profile
+scripts/dev.sh cli --preset release -- --demo-profile --account windscribe mail list --limit 5
+```
+
+Builds copy `fm` and `fm-engine` next to the GUI executable, as packages do. The CLI needs no Qt or display. `fm --help` and `fuckmail-gui --help` list every option; `--fixture-clock` pins the GUI to the demo data's date, 11 September 2026.
+
+For quick UI compiles, configure a separate build directory with `-DFM_GUI_ONLY=ON`. It builds only the Qt client, so the result can't run on its own.
+
+## Profiles
+
+A profile is one directory: the SQLite store (`store.sqlite3`, with `-wal`/`-shm` files while open), retained message bytes in `blobs/` and other local state. Profiles live outside the program and build folders; building, installing, upgrading and uninstalling never touch them.
+
+The default **live** profile is `fuckMail/default` under `%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, and `$XDG_DATA_HOME` (else `~/.local/share`) on Linux. It starts empty and holds the Google accounts you connect. `--demo-profile` opens `fuckMail/demo-v1` in the same place: the synthetic accounts described in [fixtures/README.md](../fixtures/README.md), which never connect to Google.
+
+- `--profile DIR` picks another directory (absolute for `fm`). It opens whatever profile is there, or creates an empty live one; add `--demo-profile` to create demo data instead.
+- GUI and CLI share one engine per profile, which exits after the last client disconnects.
+- To back up or move a profile, close every client and copy the whole directory, never `store.sqlite3` alone.
+- A profile made by an older, incompatible build is refused with a message; there is no migration. Move its folder aside, start again and reconnect your accounts.
+- Don't point tests or development commands at a profile with real mail. Tests use temporary profiles.
 
 ## Google sign-in setup
 
@@ -52,172 +109,48 @@ fm --profile /absolute/private/profile google connect --email you@gmail.com
 
 Use `--account ID google connect --email ADDRESS --reauthorize` for explicit reconnect; restore also requires the current archive revision. `--client-config` remains a developer override. The email is a Google hint; verified subject and granted permissions determine the connected account. Existing profiles retain their client binding. The app registration must match after a move/reinstall; another project's registration cannot refresh old grants.
 
+## Running tests
 
+`scripts/dev.sh test --preset release` builds and runs every CTest test, as CI does:
 
-This is the shared native developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 is complete on available hosts; [Phase 2 execution](research/phase-2-execution.md) owns current integration results. The historical host checks below retain their original source and limits.
+- `rust-test-build` compiles the Rust test binaries; `rust-workspace` runs `cargo test --workspace --locked`.
+- `gui-smoke`, `gui-live-empty`, `gui-integration`, `gui-attachments` and `gui-startup-recovery` run the built app with the real engine on disposable profiles.
+- The other `gui-*` tests are Qt unit and UI tests in [gui/CMakeLists.txt](../gui/CMakeLists.txt).
 
-## Phase 2 feedback launch
+GUI tests need no display: CTest runs them with `QT_QPA_PLATFORM=offscreen` and Qt Quick's software backend. Linux still needs the libraries listed above.
 
-For the current Mac build, launch `dist/darwin-arm64/fuckMail.app` (or install the `.dmg`) after following the one-time app setup above. Ordinary startup creates an empty live profile. Use **Settings → Accounts → Connect Google account**, enter the Gmail or Workspace email and continue in the browser. Complete protected-profile/backup admission before choosing **Start sync** for each account. Account removal archives local data and removes credentials without deleting anything at Google. The [status](status.md) and [execution record](research/phase-2-execution.md) distinguish current verification from remaining real-account gates.
+`test` doesn't forward arguments to CTest. For one test, run the CTest from `.tools/bootstrap` in the checkout with the Qt kit's `bin` on PATH (Windows GUI tests need it to load Qt), for example `ctest --preset release -R gui-smoke`.
 
-### Historical Windows Package02
+Known timing issues: `gui-startup-recovery` can time out when cargo rebuilds inside its 90-second limit (it passes alone), the link-hover check in `gui-html-view` fails intermittently, and some GUI timing checks run near their limits in Debug builds, so judge the suite on release.
 
-The earlier unsigned Windows feedback ZIP is Package02 from clean `61a212a`, using D039/schema 20. Relocated GUI/CLI and empty-live startup checks pass on that source; its separate large-navigation correctness failure led to the handoff correction. See [current status](status.md) and the [execution record](research/phase-2-execution.md) before attributing a historical test to this package.
+[CONTRIBUTING.md](../CONTRIBUTING.md) lists the checks to run before sending a change.
 
-Ordinary GUI and CLI startup now use a separate, empty live profile (`fuckMail/default` under the local user-data directory). Existing `demo-v1` data is preserved. Extract the Windows ZIP and launch `windows-amd64/bin/fuckmail-gui.exe`. Open **Settings → Accounts → Connect Google account**, choose the existing OAuth desktop-client JSON and sign in through the browser. Keep that JSON at the selected path; subsequent access reads it again. Sign-in alone does not import. Choose **Start sync** for each account; the app uses published Google API limits automatically. Real data needs the agreed encrypted local disk and protected profile; keep it outside Git and cloud-sync folders. Removing an account archives its local data and removes credentials without deleting anything at Google.
+## Packaging
 
-The September 14 prototype is the current visual reference. Native loading follows actual startup readiness, mail revisits use bounded caches, and reminder/notification preferences apply while the GUI is running. Run `fm --help` for the matching CLI workflows. This unsigned feedback build requires the current execution checks and user-driven Google account trial; the historical Phase 1 walkthrough below retains its synthetic scope.
+`scripts/dev.sh package --preset release` builds in its own tree, `build/<preset>-package`, so it works while an app from `build/release` is running. It stages the app in `dist/<os>-<arch>` with install notes, this guide as `BUILD-AND-LICENSE-NOTES.md` and a `build-manifest.json` (source commit, toolchain). It then tests a relocated copy with a system-only PATH and writes one file to `dist/`:
 
-For the first feedback session, connect personal Gmail and Workspace separately, start their sync, then compare Inbox/Sent/Drafts and selected Calendar details with Google. Check a cached mail switch, a reply with an attachment, and a disposable Calendar event before testing invitations or recurring edits with other people. Calendar search is local to the displayed date range and selected calendars; its coverage label distinguishes partial results. Closing the GUI ends its sync and reminders, while an explicitly running CLI keeps its own session. Reopen the app to confirm account access, draft persistence and cached navigation. An incomplete inventory is not a backup and must not be described as fully downloaded.
+- **Windows:** `fuckMail-<version>-<commit>-windows-amd64-setup.exe`, built with Inno Setup from [scripts/windows-installer.iss](../scripts/windows-installer.iss). It installs for the current user in `%LOCALAPPDATA%\Programs\fuckMail` without an admin prompt, with a Start menu entry, an optional desktop icon and an uninstaller under Settings → Apps. Upgrades replace the program files. The MSVC runtime DLLs ship beside the executables, because a per-user install can't run `vc_redist`.
+- **macOS:** `fuckMail-<version>-<commit>-macos-<arch>.dmg` with `fuckMail.app` and an Applications shortcut, made with `hdiutil`. The script mounts the image and verifies the app's code signature. `fm` and `fm-engine` are in `fuckMail.app/Contents/MacOS`.
+- **Linux:** `fuckMail-<version>-<commit>-linux-<arch>.tar.gz` of the staged folder; start `bin/fuckmail-gui`.
 
-## First setup
+The version comes from `project(fuckMail VERSION ...)` in [CMakeLists.txt](../CMakeLists.txt). On Windows and Linux the executables are in `bin/`. Nothing puts `fm` on PATH; call it by its full path.
 
-macOS, from the checkout:
+**Unsigned builds.** Installers are not signed yet. On Windows, SmartScreen warns: choose **More info → Run anyway**. On macOS, open System Settings → Privacy & Security and choose **Open Anyway** (on macOS 14 and earlier, Control-click the app and choose Open). After each update macOS may ask whether `fm-engine` can use your keychain; choose **Always Allow**. Before adding Developer ID signing and notarization, move `google-oauth-client.json` out of `Contents/MacOS`, which should hold only code.
 
-```sh
-scripts/dev.sh bootstrap
-scripts/dev.sh doctor
-scripts/dev.sh test
-scripts/dev.sh run
-```
+**App icon.** The app, window, Dock and installer icon comes from `gui/app-icon/app-icon.png`. When it changes, run `python scripts/make_app_icons.py` to regenerate the committed `.ico` and `.icns`; this one script needs Pillow, which the build does not. The source is 128 px, so the largest sizes are upscaled; a 1024 px source would make them sharp. The `.dmg` keeps the standard disk-image icon.
 
-Windows, from PowerShell in the checkout:
+**Licenses.** fuckMail is MIT-licensed ([LICENSE](../LICENSE)). [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) lists every redistributed component with its license. Packages install those texts, plus `THIRD-PARTY-RUST.txt` generated from `Cargo.lock` by `scripts/third_party_notices.py`, into their `licenses` folder. Add new bundled components to that file. [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt source archives](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/).
 
-```powershell
-./scripts/dev.ps1 bootstrap
-./scripts/dev.ps1 doctor
-./scripts/dev.ps1 test
-./scripts/dev.ps1 run
-```
+## Continuous integration
 
-Bootstrap detects existing tools, creates `.tools/bootstrap`, installs locked Python developer dependencies, and downloads the selected Qt desktop kit into `.tools/Qt`. Existing Homebrew Rust is reused when it matches the project version. Otherwise a project-local rustup installation is used without rewriting shell profiles or replacing existing installations.
+[The native workflow](../.github/workflows/native.yml) runs `bootstrap`, `test --preset release` and `package --preset release` on `macos-15`, `windows-2022` and `ubuntu-24.04` for every push and pull request, plus the hygiene check, `cargo fmt` and strict `cargo clippy`.
 
-macOS requires Apple Command Line Tools (`xcode-select --install` if absent). On Windows the wrapper imports an existing VS 2022 C++ environment. During bootstrap it can use `winget` to install missing Visual Studio 2022 C++ Build Tools/Windows SDK and Python 3.11; system installation may show an OS elevation prompt. Existing VS installations without the C++ workload need that workload added. Normal developer commands do not install tools. Initial Windows coverage is x64, not ARM64 or a WSL build.
+## Windows renderer workaround
 
-Windows subprocess launches resolve bare tool names against the selected project environment before spawning. This allows package-manifest commands to find project-local Rust even when the terminal has no global `rustc` or `cargo`; no global PATH change is required.
+On Windows, [gui/main.cpp](../gui/main.cpp) sets `QT_D3D_NO_VBLANK_THREAD=1` before Qt starts unless it is already set. Qt 6.11.2's DXGI VBlank notifier can stop repaints on some machines; this uses Qt's timer fallback instead, with D3D11 and vsync still on. Recheck it when Qt changes.
 
-Ubuntu 24.04 uses the same `scripts/dev.sh` commands after installing a C++ compiler, Python with venv support and the native graphics libraries listed in [the native workflow](../.github/workflows/native.yml). Linux SDK acquisition is included; Arch/Omarchy desktops and other release floors still need their own execution evidence.
+## Moving between machines and repository hygiene
 
-## Everyday commands
+Commit and push source, lockfiles and fixtures. On the other machine, pull, run `bootstrap` once, then `doctor` and `test`. Run `scripts/configure_google.py` again there, because the client file lives in the ignored `.tools/`.
 
-| Purpose | Mac/Linux | Windows |
-| --- | --- | --- |
-| Environment versions and paths | `scripts/dev.sh doctor` | `./scripts/dev.ps1 doctor` |
-| Incremental build | `scripts/dev.sh build` | `./scripts/dev.ps1 build` |
-| Build and run fixture tests | `scripts/dev.sh test` | `./scripts/dev.ps1 test` |
-| Build and open GUI | `scripts/dev.sh run` | `./scripts/dev.ps1 run` |
-| CLI help | `scripts/dev.sh cli -- --help` | `./scripts/dev.ps1 cli -- --help` |
-| Optimized development package | `scripts/dev.sh package --preset release` | `./scripts/dev.ps1 package --preset release` |
-
-GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile --demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. Synthetic data requires explicit `--demo-profile` or a test/fixture option. Do not point test commands at a real mailbox profile.
-
-`--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The developer launcher reads CMake’s generated executable path, including the different Windows build-directory layout. The CLI itself does not load Qt or need a display.
-
-An advanced Qt-only compilation is available with CMake `-DFM_GUI_ONLY=ON` in a separate build directory while editing UI. It deliberately excludes engine integration, tests and installation; it is not a working app or an acceptance result. Standard dev/release presets always build the complete slice.
-
-## Phase 1 local walkthrough
-
-Use a new disposable profile path for the three-account fixture. Existing profiles are upgraded in place and retain their original accounts, drafts and fixture revision; they are not reseeded. For example, on Windows:
-
-```powershell
-./scripts/dev.ps1 run -- --profile C:/path/to/fuckMail/.tools/phase1-walkthrough --fixture-clock
-```
-
-On Mac/Linux use `scripts/dev.sh run -- --profile /absolute/local/phase1-walkthrough --fixture-clock`. The optional fixture clock fixes the view at 11 September 2026; ordinary launches use the current clock. Use a genuinely new path to repeat the initial state. All content and submission outcomes in this walkthrough are synthetic/local.
-
-1. In Mail, select Windscribe and open an unread conversation. The deliberate open marks its loaded members read; Delay holds it without a due date, and Done clears both unread and stars. Inbox, Sent and Drafts stay within the selected account. Collapse and expand the counted To review, Delayed and Done headings. Group counts cover the current query; category badges and account totals cover the account, beyond the loaded page.
-2. Toggle People or Automated in the category rail; click the selected kind again to clear it. Open a sender's card from the reader to see that sender's account-wide count and latest three conversations. Open a listed conversation, filter to the exact sender, or choose **Write** to create a draft addressed to that sender in the same account.
-3. Search for `Maya` or `Frankfurt`, open the search popup's Filters, and combine sender/status/attachment/date conditions. Search matches source text, and a matching earlier message can be revealed in the reader. Clear the query and active filters to restore the normal account view.
-4. Open **Q3 infra review: v4 attached**, choose Reply, write your own text, select words and use B/I/U. Add a retained attachment from the attachment menu and edit the reply's signature if desired. New message, Reply all and Forward create independent drafts; edit To/Cc/Bcc and subject, then find each saved item in Drafts. Switch accounts/workspaces and return. The save status must confirm persistence. **Capture locally** records a MIME copy; Sent's local capture history shows its operation and outcome. It does not deliver an email.
-5. In Settings → General, try Graphite, Paper and Harbour, then Small, Default and Large text. Set **Open on** to Mail, Calendar or Where I left off. Sync and Notifications remain visibly unavailable. Accounts and Mail contain display names, signatures and row density; existing drafts retain their signature snapshot.
-6. In Settings → Calendar, choose visible calendars independently of the mailbox, week start, timeline hours, and **Footer** or **Header** placement for the Mail timeline. Set **New events last** to 30 min, 45 min or 1 h. Browse the timeline, then open Calendar: its day/week/month/agenda views combine permitted details, its grid covers all 24 hours, and its date remains independent of the timeline. Use **New event** to check the chosen default duration and create a nonrecurring event in a writable calendar. Open details to edit or respond for yourself; Local activity records operations without sending invitations.
-7. Wait for saved status, close the GUI and reopen the same profile. Check appearance, startup workspace, calendar preferences and authored drafts. Reopening preserves this work; only a genuinely new profile starts from the original fixture.
-
-The CLI takes the same profile. With the executable directory containing `fm` and `fm-engine`, these are read-only checks:
-
-```text
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --json accounts
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft list
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
-fm --demo-profile --profile /absolute/local/phase1-walkthrough --json preferences show
-```
-
-Use a native Windows path in place of the illustrative absolute path. `mail read ID` is a query and does not mark the conversation reviewed; `mail review`, `mail done` and `mail delay` are explicit actions. Run `fm --help` and the command's `--help` for mutation parameters. The [fixture API](../fixtures/README.md) defines exact fields and limits. [Phase 1 execution evidence](research/phase-1-execution.md) distinguishes executed checks from remaining acceptance work.
-
-The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [historical execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
-
-```powershell
-./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/path/to/fuckMail/.tools/phase1-update2-walkthrough --fixture-clock
-```
-
-Use `dist/windows-amd64/bin/fm.exe` with that same profile for the paired CLI. Historical schema4/schema5 packages are preserved under `dist/baselines`; [the c34b82e record](research/phase-1-execution.md#final-windows-development-package--c34b82e) retains their earlier runtime scope. Use separate disposable profiles with old packages; an old engine must refuse a profile already upgraded to a newer incompatible schema. Final-source CI and physical-input limits remain explicit.
-
-## Selected tooling and provenance
-
-| Input | Selected version / route |
-| --- | --- |
-| Rust | 1.88.0, exact `rust-toolchain.toml`; Cargo workspace with locked dependencies |
-| Qt | 6.11.2 official binary archives, dynamically linked |
-| macOS Qt kit | `clang_64`, installed as `macos`, universal Qt libraries; app built for the current host |
-| Windows Qt kit | `win64_msvc2022_64`, VS 2022 x64 compiler/SDK |
-| Linux Qt kit | `linux_gcc_64`, Ubuntu 24.04 CI baseline |
-| CMake | 3.31.6 Python distribution |
-| Ninja | 1.11.1.4 Python distribution (executable reports 1.11.1 with a Kitware suffix) |
-| Qt acquisition | aqtinstall 3.3.0 with locked dependencies; no Qt account required |
-
-Qt 6.11.2 was released August 18, 2026. The five shared archives are `qtbase`, `qtdeclarative`, `qttools`, `qtsvg` and `qttranslations`; the Linux kit also needs its official `icu` archive. WebEngine is excluded. The current upstream platform matrix lists macOS 13+, Windows with MSVC 2022 and Linux configurations. Our own app coverage is limited to recorded execution evidence, not the whole upstream list. [Qt release](https://www.qt.io/blog/qt-6.11.2-released), [Qt platform matrix](https://doc.qt.io/qt-6/supported-platforms.html).
-
-Qt 6.11 changed Windows repository directories. The pinned aqt release still computes the old path. [The checked-in adapter](../scripts/bootstrap_qt.py) corrects the repository suffix only for Qt 6.11.2 Windows desktop MSVC x64, leaving checksum verification, download, extraction and relocation to aqt. It refuses an unreviewed aqt version and never edits installed dependency files. Revisit it when either pin changes. [Upstream issue 1007](https://github.com/miurahr/aqtinstall/issues/1007).
-
-## CI, packages and handoff
-
-The native workflow runs on `macos-15`, `windows-2022` and `ubuntu-24.04`, using these same scripts. It caches SDKs and incremental Rust output, runs fixture tests and GUI smoke, and uploads the Windows installer, macOS disk image or Linux archive plus native logs. Packaging compiles the GUI once more in its own build tree. Cached state is an optimization; a cold bootstrap must work. Explicit restore/save steps keep successfully acquired SDKs and compiled Rust output even when a later runtime test fails; failure status is preserved and all tests still run. SDKs are saved only after successful bootstrap. See the [cache action documentation](https://github.com/actions/cache/tree/v4#using-a-combination-of-restore-and-save-actions). CTest prepares Rust test binaries in a separate `rust-test-build` setup fixture (900-second compile limit), then runs the expanded workspace under a 1,800-second aggregate execution watchdog (D048). Each hosted job has a 60-minute allowance for cold compilation, tests and package checks. This keeps a cold optimized test build from consuming the runtime limit; application latency targets are unchanged. GUI checks set `QT_FORCE_STDERR_LOGGING=1` so native Windows failures are retained in CTest output. [Qt logging environment](https://doc.qt.io/qtcreator/creator-how-set-project-environment.html). A CI build is not verification of the founder's actual PC, compositor, clipboard, IME or keyring.
-
-Packages land in `dist/`. macOS contains `fuckMail.app` (renamed from the build's `fuckmail-gui.app`) with `fm` and `fm-engine` in `Contents/MacOS`; Windows/Linux place the three executables in `bin`. Qt's deployment step stages required libraries/plugins/QML resources. Package smoke clears developer Qt/engine overrides, uses a disposable profile and checks the installed executable. A build manifest records source commit, dirty state, tools and host. The staged folder is then wrapped as a Windows installer, a macOS disk image or a Linux archive (see [Installers for testers](#installers-for-testers-d130)). They are unsigned; signing/notarization, PATH integration and full clean-machine qualification remain separate gates.
-
-For a fresh terminal, invoke the bundled CLI by its absolute path or add its containing directory to that terminal's PATH. No global CLI launcher is installed automatically. The staged `dist/` folder can still be moved/copied as a portable build and removed to uninstall. Profiles remain outside installation/build output. This is not a final upgrade or migration system.
-
-The historical Phase 1 `scripts/verify_upgrade.py` checks preserved schema-4/schema-5 packages against its fixed schema-7 target; it is not the schema-20 upgrade runner. Pass each directory containing the three executables, plus a report path; on macOS that directory is the `.app`'s `Contents/MacOS`, on Windows/Linux it is `bin`:
-
-```sh
-python3 scripts/verify_upgrade.py --old-bin /absolute/old/package/bin --new-bin /absolute/new/package/bin --report build/verification/package-upgrade.json
-```
-
-On Windows use `python` and native absolute paths. The default baseline is schema 4/fixture 1; add `--expected-old-schema 5` for the preserved schema 5/fixture 2 package. Both historical baselines upgrade to schema 7 while preserving the original fixture revision and accounts. Current Phase 2 schema upgrades use their separate source-bound checks recorded in [Phase 2 execution](research/phase-2-execution.md). Choose a new report filename for each run; existing reports are refused. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
-
-Before changing machines, commit and push source, lockfiles, fixtures and accurate status. On the other host, pull the same branch/revision, run bootstrap once, then doctor/test. Never transfer `.tools`, `target`, `build`, `dist`, tokens or live SQLite profiles through Git or a cloud folder. Generate synthetic data locally. Keep any real mail, draft or credential handoff separate from source control.
-
-fuckMail is MIT-licensed ([LICENSE](../LICENSE)). [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) lists every redistributed component with its license. Packages install those texts, plus `THIRD-PARTY-RUST.txt` generated from `Cargo.lock` by `scripts/third_party_notices.py`, into their `licenses` folder. Add new bundled components to that file. [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt source archives](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/).
-
-## Observed setup evidence
-
-2026-09-12, home Windows PC: Phase 1 runtime `1132c44` passed all nine release CTests in 156.16 seconds, relocated SDK-free GUI/CLI checks, full native selftest with actual GUI restart, and the two-package schema 4→5 upgrade/refusal in 92.422 seconds. Reviewed native captures cover 1440×900, 1920×1080 and 1160×700 logical sizes at the host's 125% scaling. [Phase 1 evidence](research/phase-1-execution.md) records hashes, measurements and remaining final-source CI/physical checks.
-
-The Windows GUI sets `QT_D3D_NO_VBLANK_THREAD=1` before Qt starts unless the caller already supplied that variable. This pinned Qt 6.11.2 workaround uses Qt's normal timer update fallback after the native D3D11 renderer stalled on this host; D3D11, threaded rendering and presentation vsync remain enabled. It needs rechecking when Qt changes. See the [renderer diagnosis](research/phase-1-execution.md#expanded-acceptance-and-windows-renderer-correction); no system-wide environment change is needed.
-
-2026-09-11, Windows 11 Pro build 26200 x64 development PC: existing Python 3.11.9, VS Build Tools 2022 17.14/MSVC 19.44 and Windows SDK 10.0.26100.0 were reused. Bootstrap installed the pinned project-local tools; doctor, dev/release builds and all eight CTests in each preset passed. Packaging exposed and drove the project-local executable-lookup correction above. The corrected release package passes relocated SDK-free GUI/CLI checks and native Windows/D3D11 rendering with system-only PATH. A schema-4 archive is retained under `dist/baselines/`; exact provenance, hashes, logs and limits are in [Windows handoff evidence](research/phase-0-execution.md#home-windows-handoff-before-phase-1). Phase 1 implementation has not started.
-
-Final Phase 0 runtime source `204fa62` passed all eight CTests and relocated packaged GUI/CLI checks on native macOS 15 ARM64, Windows Server 2022 x64 and Ubuntu 24.04 x64 CI. The native Mac desktop walkthrough and actual packaged schema 2→4 upgrade/refusal checks also pass. See [complete execution evidence](research/phase-0-execution.md). This does not qualify the physical home Windows PC, Linux desktops or OS keyrings.
-
-2026-09-11, this Mac: macOS 15.7.7, arm64, Apple Clang 17.0.0, SDK 26.2, Rust/Cargo 1.88.0. `scripts/dev.sh bootstrap` and `doctor` passed; CMake detected the native compiler and Qt 6.11.2. The five Mac archives installed in 12.3 seconds; the SDK occupied approximately 1.4 GB. These are acquisition observations, not app import or runtime performance.
-
-The same adapter downloaded, verified and extracted the five Windows MSVC x64 archives on this Mac in 14.3 seconds. That validates archive selection/acquisition only; it does not run Windows code. Linux metadata confirmed `linux_gcc_64`. An Ubuntu CI bootstrap then exposed that the five-archive selection omitted Qt’s separate ICU runtime: `qtpaths` could not load `libicui18n.so.73`. The Linux target now acquires the official `icu` archive and bootstrap repairs a managed SDK missing its three ICU 73 libraries, even when `qtpaths` is already installed. It does not substitute Ubuntu’s different ICU ABI or create compatibility symlinks. An Ubuntu 24.04 x64 container on this arm64 Mac reproduced the exact missing-library error with Qt Core but without that archive; adding the official ICU archive let `qtpaths --qt-version` return `6.11.2`, and `ldd` resolved all three ICU 73 libraries from the Qt kit. This container check used emulation and Ubuntu’s normal GLib runtime; it is loader evidence, not native Linux GUI qualification. Native build, runtime and CI results belong in the current [status](status.md) and Phase 0 evidence, with unavailable desktop checks kept explicit.
-
-
-## Ollama feedback build (D052)
-
-**Current D053/D054 combined delivery:** `dist/ollama-ui-darwin-arm64/fuckmail-gui.app`, archive `dist/fuckmail-ollama-ui-darwin-arm64.tar.gz`. This includes the updated Summary card and Sync/Keychain repair. It uses the existing schema 21; the original packages below remain preserved.
-
-The configured Mac candidate is `dist/ollama-darwin-arm64/fuckmail-gui.app`, with archive `dist/fuckmail-ollama-darwin-arm64.tar.gz`. The earlier UI/mail schema-20 package remains in `dist/darwin-arm64`. Close the earlier app before opening the candidate. Opening the candidate upgrades its chosen profile to schema 21; the earlier engine refuses that newer database. Going back requires the preserved pre-upgrade profile backup, not just the old executable. This task did not open or migrate the real default mailbox.
-
-1. Open **Settings → Local model**. The app detects Ollama at `http://127.0.0.1:11434` and lists installed local candidates. Refresh or edit the loopback port if needed.
-2. Choose models independently for **Summaries** and **Classification**. The inspected Mac has a working `gemma3n:e4b`; other installed entries may report model-specific errors. Cloud entries cannot be selected.
-3. Edit either prompt and optional descriptions for the selected account’s existing labels. **Test with sample** uses synthetic mail with those definitions. Save persists the choices; Cancel edits and Restore default manage the prompt buffers.
-4. Enable on-demand summaries and/or incoming classification for each account. Classification covers eligible newly arriving mail during the running session; use **Classify** in the reader for existing selected conversations.
-5. In D053, use **Summarize thread** beneath the thread header or **Summarize message** beside an expanded email; these work with classification off. A summary’s **⋯** menu offers **Re-summarize** and **Sources and details**. Source buttons open the exact retained message. The received-message sender-kind menu holds correction/classification actions. Label suggestions require **Apply**; Human/Automated/Unknown can be corrected manually. Model output does not mark mail read, Done or Delayed.
-
-The sibling `fm` CLI exposes `assist discover`, `assist settings`, `assist configure`, `assist test`, `assist analyze`, `assist results`, `assist correct`, `assist accept`, `assist progress`, `assist backlog`, `assist catch-up`, `assist pause`/`resume` and explicit-lifetime `assist run`; use `fm assist --help` for arguments. `python3 scripts/verify_ollama.py --engine target/debug/fm-engine` checks the whole pipeline end to end against a fake local model server. GUI and CLI share settings/results. Quitting the owning client cancels its work; the shared Ollama service stays running.
-
-This is an unsigned development build. [The execution report](research/local-assistance-execution.md#d052--p2-llm-mac-implementation-2026-09-14) records passing relocation/native checks, seven-case quality with two extra-label mistakes, and the outstanding founder on-screen/other-host qualification.
+Never commit or sync through Git or a cloud folder: `.tools/`, `target/`, `build/`, `dist/`, profiles, SQLite files, OAuth client files or tokens. `.gitignore` covers them. Before committing, run `python3 scripts/check_repo_hygiene.py` (`python` on Windows); it flags tracked generated output, oversized files and raw logs or archives under `docs/`. CI runs it too.

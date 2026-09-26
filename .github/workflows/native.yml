@@ -14,16 +14,39 @@ concurrency:
 
 jobs:
   rust-lint:
-    name: Rust format and clippy
-    # Clippy covers the Windows-only code paths (named pipes, Credential Manager).
-    runs-on: windows-2022
+    name: Rust lint (${{ matrix.os }})
+    # Each OS compiles its own platform code: named pipes and Credential Manager
+    # on Windows, Keychain on macOS, Secret Service on Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Formatting
+        if: runner.os == 'Linux'
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  checks:
+    name: Advisories and script tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Known vulnerabilities in dependencies
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Google setup script tests
+        working-directory: scripts
+        run: python -m unittest test_configure_google -v
 
   native:
     name: ${{ matrix.os }}

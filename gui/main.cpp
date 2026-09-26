@@ -8,8 +8,6 @@
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
 #include "GuiCompositionSelfTest.h"
-#include "GuiGoogleCalendarSelfTest.h"
-#include "GuiAccountLifecycleSelfTest.h"
 #include "GuiSearchBenchmark.h"
 #include "GuiInteractionBenchmark.h"
 #include "GuiResizeBenchmark.h"
@@ -93,32 +91,12 @@ int main(int argc, char **argv) {
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-calendar-output", "Measure native Calendar view and date input to correct grid paint on a disposable fixture profile.", "file"});
-    parser.addOption({"google-calendar-self-test", "Verify ordinary Calendar guest edits/create/delete on an isolated provider fixture.", "report"});
-    parser.addOption({"google-calendar-expectation", "Independent exact Calendar action expectation.", "file"});
-    parser.addOption({"account-lifecycle-self-test", "Verify native account addition, archive removal and restoration on an isolated fixture.", "report"});
-    parser.addOption({"account-lifecycle-expectation", "Independent generated account lifecycle expectation.", "file"});
     parser.process(app);
-    const bool lifecycleTest = parser.isSet("account-lifecycle-self-test");
-    const bool calendarTest = parser.isSet("google-calendar-self-test");
-    if (lifecycleTest != parser.isSet("account-lifecycle-expectation")
-        || (lifecycleTest && (calendarTest || !parser.isSet("profile") || !parser.isSet("engine")
-            || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
-            || parser.isSet("screenshot") || parser.isSet("fixture-clock") || parser.isSet("self-test-startup-workspace")
-            || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart")
-            || parser.isSet("benchmark-search-output") || parser.isSet("benchmark-navigation-output")
-            || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
-    if (calendarTest != parser.isSet("google-calendar-expectation")
-        || (calendarTest && (!parser.isSet("profile") || !parser.isSet("engine")
-            || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
-            || parser.isSet("screenshot") || parser.isSet("fixture-clock") || parser.isSet("self-test-startup-workspace")
-            || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart")
-            || parser.isSet("benchmark-search-output") || parser.isSet("benchmark-navigation-output")
-            || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
     if (parser.isSet("self-test-attachments") && (!parser.isSet("self-test") || parser.isSet("profile")
         || parser.isSet("smoke") || parser.isSet("screenshot") || parser.isSet("live-profile")
         || parser.isSet("self-test-live-empty") || parser.isSet("benchmark-search-output")
         || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output"))) parser.showHelp(1);
-    if (parser.isSet("demo-profile") && (parser.isSet("live-profile") || parser.isSet("self-test-live-empty") || lifecycleTest || calendarTest)) parser.showHelp(1);
+    if (parser.isSet("demo-profile") && (parser.isSet("live-profile") || parser.isSet("self-test-live-empty"))) parser.showHelp(1);
     if (parser.isSet("live-profile") && (!parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("fixture-clock"))) parser.showHelp(1);
     if (parser.isSet("self-test-live-empty") && (parser.isSet("self-test") || parser.isSet("fixture-clock") || parser.isSet("smoke") || parser.isSet("screenshot"))) parser.showHelp(1);
     if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
@@ -166,7 +144,7 @@ int main(int argc, char **argv) {
 #endif
     );
     const bool requireLive = parser.isSet("live-profile") || parser.isSet("self-test-live-empty")
-        || calendarTest || lifecycleTest || (!selectedProfile && !demoProfile);
+        || (!selectedProfile && !demoProfile);
     MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), requireLive);
     debugConsole.attach(&backend);
     debugConsole.setLogDirectory(profile);
@@ -368,7 +346,7 @@ int main(int argc, char **argv) {
         QObject::connect(window, &QQuickWindow::colorChanged, window, [window] { matchTitleBar(window); });
         matchTitleBar(window);
     }
-    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount || calendarTest || lifecycleTest) && !engine.rootObjects().isEmpty())
+    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount) && !engine.rootObjects().isEmpty())
         engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
     if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {
         auto root = engine.rootObjects().first();
@@ -384,8 +362,6 @@ int main(int argc, char **argv) {
         if (auto settings = root->findChild<QObject *>("settingsView")) settings->setProperty("page", parser.value("screenshot-settings-page"));
     }
     std::unique_ptr<GuiSelfTest> selfTest;
-    std::unique_ptr<GuiGoogleCalendarSelfTest> calendarSelfTest;
-    std::unique_ptr<GuiAccountLifecycleSelfTest> lifecycleSelfTest;
     QVariantMap attachmentExpected;
     if (parser.isSet("benchmark-search-output") && !engine.rootObjects().isEmpty()) {
         auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -417,16 +393,6 @@ int main(int argc, char **argv) {
             },&app,true);
         } else selfTest = std::make_unique<GuiSelfTest>(backend, engine.rootObjects().first(), profile, program, &app);
         QTimer::singleShot(parser.isSet("self-test-attachments")?80000:120000, &app, [] { QCoreApplication::exit(6); });
-    }
-    if (calendarTest && !engine.rootObjects().isEmpty()) {
-        calendarSelfTest = std::make_unique<GuiGoogleCalendarSelfTest>(backend,
-            qobject_cast<QQuickWindow *>(engine.rootObjects().first()),
-            parser.value("google-calendar-expectation"), parser.value("google-calendar-self-test"), &app);
-    }
-    if (lifecycleTest && !engine.rootObjects().isEmpty()) {
-        lifecycleSelfTest = std::make_unique<GuiAccountLifecycleSelfTest>(backend,
-            qobject_cast<QQuickWindow *>(engine.rootObjects().first()),
-            parser.value("account-lifecycle-expectation"), parser.value("account-lifecycle-self-test"), &app);
     }
     QTimer::singleShot(0, &backend, &MailBackend::start);
     const auto result = app.exec();
@@ -460,8 +426,6 @@ int main(int argc, char **argv) {
         return 5;
     }
     if (!restartVerified) return 5;
-    if (result == 0 && calendarTest && (!calendarSelfTest || !calendarSelfTest->passed())) return 5;
-    if (result == 0 && lifecycleTest && (!lifecycleSelfTest || !lifecycleSelfTest->passed())) return 5;
     if (result == 0 && searchBenchmark && !searchBenchmark->passed()) return 9;
     if (result == 0 && interactionBenchmark && !interactionBenchmark->passed()) return 9;
     if (result == 0 && resizeBenchmark && !resizeBenchmark->passed()) return 9;

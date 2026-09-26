@@ -3,7 +3,7 @@
 //! Deleting for good needs full mail access (`https://mail.google.com/`);
 //! accounts connected with less are asked to reconnect. Spam is never
 //! stored; a Trash conversation's local copies are removed once Gmail has
-//! deleted them.
+//! deleted them, including copies of mail already deleted in Gmail itself.
 use super::remote::{invalid, object, provider, provider_id, require_mail_write, require_scope};
 use super::spam::require_mail_read;
 use super::{failure, SyncContext};
@@ -17,6 +17,11 @@ const DELETE_BATCH: usize = 1000;
 const LIST_PAGE: u16 = 500;
 /// An empty stops after this many messages; the person can empty again.
 const MAX_EMPTY: usize = 10_000;
+/// Local copies forgotten per store call, so other store work interleaves.
+const FORGET_BATCH: usize = 500;
+/// How far before the oldest local leftover the Gmail listing starts, so a
+/// day boundary in Gmail's date search cannot drop one.
+const LISTING_MARGIN_SECS: i64 = 2 * 24 * 60 * 60;
 
 fn folder(fields: &serde_json::Map<String, Value>) -> Result<&'static str> {
     match fields.get("folder").and_then(Value::as_str) {
@@ -44,7 +49,9 @@ async fn require_mail_full(ctx: &SyncContext) -> Result<()> {
     .await
 }
 
-/// `{folder}`: Gmail's message and conversation totals for Spam or Trash.
+/// `{folder}`: Gmail's message and conversation totals for Spam or Trash,
+/// and for Trash how many of its messages are stored here (`stored`), which
+/// can outnumber Gmail's while sync catches up on mail deleted in Gmail.
 pub(crate) async fn counts(ctx: &SyncContext, params: Value) -> Result<Value> {
     let fields = object(&params, &["folder"])?;
     let folder = folder(fields)?;
@@ -53,11 +60,19 @@ pub(crate) async fn counts(ctx: &SyncContext, params: Value) -> Result<Value> {
     let GmailReply::LabelCounts(counts) = ctx.gmail(call).await.map_err(provider)? else {
         return Err(invalid());
     };
-    Ok(json!({
+    let mut result = json!({
         "folder": folder,
         "messages": counts.messages_total,
         "conversations": counts.threads_total,
-    }))
+    });
+    if folder == "trash" {
+        let account = ctx.account.as_str().to_owned();
+        result["stored"] = json!(
+            ctx.core_call(move |store| store.google_trash_stored(&account))
+                .await?
+        );
+    }
+    Ok(result)
 }
 
 /// The ids of a Gmail thread's messages carrying `label`.
@@ -111,10 +126,63 @@ async fn delete(ctx: &SyncContext, ids: Vec<String>) -> Result<()> {
             _ => return Err(invalid()),
         }
     }
-    let account = ctx.account.as_str().to_owned();
-    ctx.core_call(move |store| store.google_forget_deleted(&account, &ids))
-        .await?;
+    forget(ctx, ids).await?;
     Ok(())
+}
+
+/// Forgets the local copies of messages Gmail has deleted for good, a batch
+/// per store call. Returns how many were stored here.
+async fn forget(ctx: &SyncContext, ids: Vec<String>) -> Result<usize> {
+    let mut forgotten = 0;
+    for chunk in ids.chunks(FORGET_BATCH) {
+        let (account, chunk) = (ctx.account.as_str().to_owned(), chunk.to_vec());
+        forgotten += ctx
+            .core_call(move |store| store.google_forget_deleted(&account, &chunk))
+            .await?;
+    }
+    Ok(forgotten)
+}
+
+/// With Gmail's Trash empty, forgets the Trash copies here of mail Gmail no
+/// longer has: deleted in Gmail while sync has not caught up yet. A copy
+/// whose message Gmail still lists elsewhere is kept; sync moves it. Returns
+/// how many were forgotten.
+async fn forget_trash_leftovers(ctx: &SyncContext) -> Result<usize> {
+    let account = ctx.account.as_str().to_owned();
+    let (leftovers, oldest) = ctx
+        .core_call(move |store| store.google_trash_leftovers(&account))
+        .await?;
+    if leftovers.is_empty() {
+        return Ok(0);
+    }
+    // Every message Gmail has from the oldest leftover on, Spam and Trash
+    // included.
+    let query = oldest.map(|at| format!("after:{}", (at - LISTING_MARGIN_SECS).max(0)));
+    let mut present = std::collections::HashSet::new();
+    let mut token: Option<String> = None;
+    loop {
+        let call = GmailCall::list_messages(
+            &ctx.account,
+            token.as_deref(),
+            query.as_deref(),
+            true,
+            LIST_PAGE,
+        )
+        .map_err(provider)?;
+        let GmailReply::Messages(page) = ctx.gmail(call).await.map_err(provider)? else {
+            return Err(invalid());
+        };
+        present.extend(page.messages.into_iter().map(|m| m.id));
+        token = page.next_page_token;
+        if token.is_none() {
+            break;
+        }
+    }
+    let gone: Vec<String> = leftovers
+        .into_iter()
+        .filter(|id| !present.contains(id))
+        .collect();
+    forget(ctx, gone).await
 }
 
 /// `{folder:"spam", thread_id}` or `{folder:"trash", conversation_id}`:
@@ -172,9 +240,12 @@ pub(crate) async fn empty(ctx: &SyncContext, params: Value) -> Result<Value> {
             break true;
         }
     };
-    let count = ids.len();
+    let mut count = ids.len();
     if count > 0 {
         delete(ctx, ids).await?;
+    }
+    if folder == "trash" && !more {
+        count += forget_trash_leftovers(ctx).await?;
     }
     Ok(json!({"folder": folder, "deleted": count, "more": more}))
 }

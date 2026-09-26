@@ -618,8 +618,9 @@ impl Client {
     /// Sends one request and waits up to [`IO_TIMEOUT`] for its reply.
     ///
     /// Returns the whole response frame, including `ok: false` errors; only
-    /// transport, timeout and framing failures are `Err`. A reply with another
-    /// version or ID is `InvalidData`.
+    /// transport, timeout and framing failures are `Err`. Late replies to
+    /// earlier calls that timed out are skipped; any other version or ID is
+    /// `InvalidData`.
     pub async fn call(
         &mut self,
         method: &str,
@@ -632,8 +633,8 @@ impl Client {
     /// `call` for work with its own longer engine limit, such as image fetches.
     ///
     /// `timeout` bounds the wait for the reply; the write still uses
-    /// [`IO_TIMEOUT`]. After a timeout the late reply may still arrive on
-    /// this connection and fail the next call, so drop the client instead.
+    /// [`IO_TIMEOUT`]. If a call times out, its reply may still arrive later;
+    /// the next call on this connection skips it.
     pub async fn call_within(
         &mut self,
         method: &str,
@@ -645,10 +646,26 @@ impl Client {
         let id = self.next_id.to_string();
         let req = json!({"version":PROTOCOL_VERSION,"id":id,"method":method,"account":account,"params":params});
         tokio::time::timeout(IO_TIMEOUT, write_frame(self.stream.get_mut(), &req)).await??;
-        let bytes = tokio::time::timeout(timeout, read_frame(&mut self.stream))
-            .await??
-            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "engine disconnected"))?;
-        let response: Value = serde_json::from_slice(&bytes)?;
+        let current = self.next_id;
+        let stream = &mut self.stream;
+        let response = tokio::time::timeout(timeout, async {
+            loop {
+                let bytes = read_frame(stream).await?.ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::UnexpectedEof, "engine disconnected")
+                })?;
+                let response: Value = serde_json::from_slice(&bytes)?;
+                // IDs only grow, so a smaller one is the late reply of a call
+                // that already timed out. Drop it and keep waiting for ours.
+                let earlier = response["id"]
+                    .as_str()
+                    .and_then(|id| id.parse::<u64>().ok())
+                    .is_some_and(|id| id < current);
+                if !(earlier && response["version"] == PROTOCOL_VERSION) {
+                    return Ok::<_, io::Error>(response);
+                }
+            }
+        })
+        .await??;
         if response["version"] != PROTOCOL_VERSION || response["id"] != id {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -726,6 +743,51 @@ mod tests {
             client.call("status", None, json!({})).await.unwrap()["result"]["recovered"],
             true
         );
+        server.await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn late_reply_to_a_timed_out_call_does_not_fail_the_next_call() {
+        let (_temp, profile, listener) = fake_engine();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut stream = BufReader::new(stream);
+            let hello: Value =
+                serde_json::from_slice(&read_frame(&mut stream).await.unwrap().unwrap()).unwrap();
+            write_frame(
+                stream.get_mut(),
+                &response(hello["id"].as_str().unwrap(), json!({"protocol":1})),
+            )
+            .await
+            .unwrap();
+            // Answer the slow call only after the client has given up on it,
+            // immediately followed by the reply to the next call.
+            let slow: Value =
+                serde_json::from_slice(&read_frame(&mut stream).await.unwrap().unwrap()).unwrap();
+            let next: Value =
+                serde_json::from_slice(&read_frame(&mut stream).await.unwrap().unwrap()).unwrap();
+            for (request, value) in [(&slow, "late"), (&next, "current")] {
+                write_frame(
+                    stream.get_mut(),
+                    &response(request["id"].as_str().unwrap(), json!({"reply":value})),
+                )
+                .await
+                .unwrap();
+            }
+        });
+        let mut client =
+            tokio::time::timeout(Duration::from_secs(3), Client::connect(&profile, None))
+                .await
+                .unwrap()
+                .unwrap();
+        let timed_out = client
+            .call_within("slow", None, json!({}), Duration::from_millis(50))
+            .await
+            .unwrap_err();
+        assert_eq!(timed_out.kind(), io::ErrorKind::TimedOut);
+        let reply = client.call("status", None, json!({})).await.unwrap();
+        assert_eq!(reply["result"]["reply"], "current");
         server.await.unwrap();
     }
 

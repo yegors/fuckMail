@@ -2,7 +2,7 @@
 
 Current native target: [September 14 second export](#september-14-second-export--d049--p2-ui), under D049/D050. Earlier inventories below retain their historical scope.
 
-Updated 2026-09-12. The founder supplied a second same-day update and requested close native implementation, replacing invented elements. [D018](../decisions.md) records Update 2 and P1-09; [D016/D017](../decisions.md) retain the earlier same-day design/composition authorization. [D014](../decisions.md) preserves confirmed read/Done/untimed Delay and combined calendar behavior. Earlier inventories below remain historical analysis; execution evidence belongs in [Phase 1 execution](phase-1-execution.md).
+Updated 2026-09-12. The founder supplied a second same-day update and requested close native implementation, replacing invented elements. [D018](../decisions.md) records Update 2 and P1-09; [D016/D017](../decisions.md) retain the earlier same-day design/composition authorization. [D014](../decisions.md) preserves confirmed read/Done/untimed Delay and combined calendar behavior. Earlier inventories below remain historical analysis.
 
 ## Active September 12 Update 2 reference
 
@@ -138,7 +138,7 @@ This export supersedes the earlier PNG trio for Phase 1 visuals. Retain the [ear
 - Calendar combines full details from connected accounts, subject to actual source permissions. Mail stays strictly account-separated.
 - The bottom timeline is browsable across days and appears only in Mail. Calendar and Settings use the freed space.
 
-The owning [Mail UI](../contracts/mail-ui.md), [Triage](../contracts/triage.md) and [Calendar](../contracts/calendar.md) contracts define the implementation boundary. The [Phase 1 plan](../plans/phase-1.md) defines delivery order and evidence.
+The owning [Mail UI](../contracts/mail-ui.md), [Triage](../contracts/triage.md) and [Calendar](../contracts/calendar.md) contracts define the implementation boundary.
 
 ## Screen and interaction inventory
 

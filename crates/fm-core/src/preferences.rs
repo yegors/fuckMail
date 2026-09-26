@@ -1114,7 +1114,13 @@ mod appearance_tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path()).unwrap();
         // A profile saved while Sent and Drafts could be ungrouped reads without it.
-        store.db.execute("INSERT INTO preferences VALUES(1,1,?1)", [r#"{"mail_date_grouping":"plain"}"#]).unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO preferences VALUES(1,1,?1)",
+                [r#"{"mail_date_grouping":"plain"}"#],
+            )
+            .unwrap();
         let before = store.preferences().unwrap();
         assert!(before["preferences"].get("mail_date_grouping").is_none());
         assert_eq!(before["preferences"]["show_draft_chips"], true);
@@ -1126,10 +1132,19 @@ mod appearance_tests {
         let mut reopened = Store::open(dir.path()).unwrap();
         let saved = reopened.preferences().unwrap();
         assert_eq!(saved["preferences"]["show_draft_chips"], false);
-        assert_eq!(saved["preferences"]["calendar_recent_searches"], json!(["with:maya@example.test","title:standup"]));
+        assert_eq!(
+            saved["preferences"]["calendar_recent_searches"],
+            json!(["with:maya@example.test", "title:standup"])
+        );
         assert!(saved["preferences"].get("mail_date_grouping").is_none());
-        let stored: String = reopened.db.query_row("SELECT json FROM preferences", [], |r| r.get(0)).unwrap();
-        assert!(!stored.contains("mail_date_grouping"), "the next save drops the retired key");
+        let stored: String = reopened
+            .db
+            .query_row("SELECT json FROM preferences", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            !stored.contains("mail_date_grouping"),
+            "the next save drops the retired key"
+        );
         for (index, patch) in [
             json!({"show_draft_chips":"yes"}),
             json!({"mail_date_grouping":"plain"}),
@@ -1141,7 +1156,10 @@ lines"]}),
             json!({"calendar_recent_searches":[" "]}),
             json!({"calendar_recent_searches":["x".repeat(513)]}),
             json!({"calendar_recent_searches":[7]}),
-        ].into_iter().enumerate() {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             assert!(reopened.handle("preferences_save", None, json!({"request_id":format!("bad-{index}"),"expected_revision":saved["revision"],"preferences":patch})).is_err(), "{patch}");
         }
     }

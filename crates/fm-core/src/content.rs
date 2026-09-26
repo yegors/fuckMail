@@ -1,4 +1,13 @@
 //! Immutable retained content, published before any SQLite reference to it.
+//!
+//! Message sources, attachments and draft parts live under `<profile>/blobs`,
+//! each named by the lowercase hex SHA-256 of its bytes. A blob is written to
+//! a `.stage-*` file, flushed, then renamed into place, so a name is only ever
+//! visible with complete bytes; SQL rows that reference it commit afterwards.
+//! Every read re-verifies size and hash and refuses symlinks, Windows reparse
+//! points and anything that is not a regular file. Files handed to other
+//! applications are verified copies under `<profile>/exports`, never the
+//! retained original.
 use crate::{err, id, Result, Store};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
@@ -9,21 +18,31 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+/// Largest single blob, in bytes (64 MiB). Larger content fails with
+/// `content_too_large` before anything is written.
 pub const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+// Serializes only the final rename, across every store in the process.
 static BLOB_PUBLICATION: Mutex<()> = Mutex::new(());
 
-/// A private profile's content handle. No SQLite connection or credentials.
+/// A handle to a profile's blob directory, with no SQLite connection or
+/// credentials.
+///
+/// It is cheap to clone and safe to use off the writer, so work such as
+/// building a draft's MIME or reading a frozen upload can stage and verify
+/// content while the [`Store`] keeps serving requests.
 #[derive(Clone)]
 pub struct BlobStore {
     pub(crate) profile: PathBuf,
 }
 
 impl BlobStore {
+    /// Same as [`Store::stage_blob`].
     pub fn stage_blob(&self, bytes: &[u8]) -> Result<String> {
         stage_blob(&self.profile, bytes)
     }
 
+    /// Same as [`Store::verified_blob`].
     pub fn verified_blob(&self, hash: &str, size: u64) -> Result<PathBuf> {
         verified_blob(&self.profile, hash, size)
     }
@@ -33,6 +52,8 @@ impl BlobStore {
     }
 }
 
+/// Deletes the blob `hash` if present. The caller must already have removed
+/// every SQL reference to it; a missing file is not an error.
 pub(crate) fn remove_unused_blob(profile: &Path, hash: &str) -> Result<()> {
     validate_hash(hash)?;
     let directory = blob_directory(profile, false)?;
@@ -50,6 +71,8 @@ pub(crate) fn remove_unused_blob(profile: &Path, hash: &str) -> Result<()> {
 }
 
 impl Store {
+    /// Returns a [`BlobStore`] for this profile that can be moved to another
+    /// thread.
     pub fn google_blob_store(&self) -> BlobStore {
         BlobStore {
             profile: self.profile.clone(),
@@ -68,13 +91,24 @@ impl Store {
         })
     }
 
-    /// Publish verified bytes before the caller starts the referencing SQL transaction.
-    /// Interrupted writes may leave `.stage-*` orphans; they never count as available.
+    /// Writes and flushes `bytes`, publishes them as a blob and returns its
+    /// SHA-256 hex name.
+    ///
+    /// Call it before the SQL transaction that references the hash. It is
+    /// idempotent: existing content with the same hash is verified and reused,
+    /// and fails with `content_unavailable` if that file is corrupt. Content
+    /// over `MAX_BLOB_BYTES` fails with `content_too_large`. An interrupted
+    /// write can leave a `.stage-*` orphan, which never counts as available.
     pub fn stage_blob(&self, bytes: &[u8]) -> Result<String> {
         stage_blob(&self.profile, bytes)
     }
 
-    /// Resolve content only by a validated hash, never by an untrusted filename.
+    /// Returns the path of blob `hash` after checking it is a regular file of
+    /// exactly `expected_size` bytes whose SHA-256 matches.
+    ///
+    /// Content is resolved only by a validated hash, never by a caller-supplied
+    /// filename. Missing, altered or mismatched content fails with
+    /// `content_unavailable`. The file is read in full on every call.
     pub fn verified_blob(&self, hash: &str, expected_size: u64) -> Result<PathBuf> {
         verified_blob(&self.profile, hash, expected_size)
     }
@@ -183,6 +217,12 @@ fn export_verified_attachment(
     Ok(destination)
 }
 impl Store {
+    /// Describes one attachment of `account`. When its content is `available`,
+    /// the reply adds `path`, a verified copy under `exports/` named after the
+    /// attachment, and `sha256`.
+    ///
+    /// Fails with `not_found` for an unknown account or attachment and with
+    /// `content_unavailable` when the retained bytes no longer verify.
     pub(crate) fn attachment(&self, account: &str, attachment_id: &str) -> Result<Value> {
         id(account)?;
         id(attachment_id)?;
@@ -227,6 +267,9 @@ fn blob_directory(profile: &Path, create: bool) -> Result<PathBuf> {
     private_directory(profile, "blobs", create)
 }
 
+/// Returns the canonical path of `parent/child`, optionally creating it with
+/// owner-only permissions on Unix. Fails if either is a symlink, reparse point
+/// or not a directory.
 pub(crate) fn private_directory(parent: &Path, child: &str, create: bool) -> Result<PathBuf> {
     reject_non_directory(&fs::symlink_metadata(parent)?)?;
     let directory = parent.join(child);
@@ -346,6 +389,8 @@ fn is_reparse_point(_: &fs::Metadata) -> bool {
     false
 }
 
+/// Opens `path` for reading only if it is a regular file, checking both before
+/// and after the open so a file swapped for a link in between is refused.
 pub(crate) fn open_regular(path: &Path) -> Result<File> {
     reject_non_regular(&fs::symlink_metadata(path)?)?;
     let mut options = OpenOptions::new();
@@ -365,6 +410,8 @@ pub(crate) fn open_regular(path: &Path) -> Result<File> {
     Ok(file)
 }
 
+/// Creates a new, uniquely named `.stage-*` file in `directory` for writing.
+/// The name combines process ID, clock and a counter; it never overwrites.
 pub(crate) fn create_stage(directory: &Path) -> Result<(PathBuf, File)> {
     let epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -398,6 +445,7 @@ pub(crate) fn create_stage(directory: &Path) -> Result<(PathBuf, File)> {
     ))
 }
 
+/// Flushes a directory entry change, such as a rename, to disk.
 #[cfg(unix)]
 pub(crate) fn sync_directory(directory: &Path) -> Result<()> {
     File::open(directory)?.sync_all()?;
@@ -406,7 +454,8 @@ pub(crate) fn sync_directory(directory: &Path) -> Result<()> {
 #[cfg(not(unix))]
 pub(crate) fn sync_directory(_: &Path) -> Result<()> {
     // std exposes atomic same-volume rename and file flushing on Windows, but no
-    // portable directory fsync. Native power-loss testing remains a separate gate.
+    // portable directory fsync, so the rename's durability rests on the
+    // filesystem's own metadata journaling.
     Ok(())
 }
 
@@ -419,6 +468,7 @@ mod tests {
         fs::create_dir_all(profile).unwrap();
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(include_str!("fresh-schema.sql")).unwrap();
+        db.execute_batch(crate::queries::STATE_LOG_SQL).unwrap();
         Store {
             mail_changes: crate::queries::MailChanges::install(&db),
             db,
@@ -428,6 +478,7 @@ mod tests {
             coverage_cache: Default::default(),
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
+            state_scans: Default::default(),
         }
     }
 

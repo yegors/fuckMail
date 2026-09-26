@@ -206,43 +206,6 @@ fn restore_requires_account_revision_and_configuration_before_storage() {
 }
 
 #[test]
-fn synthetic_browser_flag_cannot_silently_apply_to_ordinary_commands() {
-    let root = tempfile::tempdir().unwrap();
-    let profile = root.path().join("not-created");
-    for tail in [vec!["status"], vec!["account", "remove-preview"]] {
-        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
-            .args([
-                "--profile",
-                profile.to_str().unwrap(),
-                "--verification-google-auth",
-            ])
-            .args(&tail)
-            .output()
-            .unwrap();
-        assert!(!output.status.success());
-        assert!(!profile.exists());
-    }
-    // Even the opt-in build needs explicit engine selection before a sign-in
-    // attempt can reach the fixture handshake. Ordinary builds reject the flag.
-    let config = root.path().join("synthetic-client.json");
-    std::fs::write(&config, b"{}").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
-        .args([
-            "--profile",
-            profile.to_str().unwrap(),
-            "--verification-google-auth",
-            "google",
-            "connect",
-            "--client-config",
-            config.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(!profile.exists());
-}
-
-#[test]
 fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

@@ -330,7 +330,13 @@ fn calendar_search_around_lists_each_event_once_upcoming_then_recent_past() {
     let rows = value["events"].as_array().unwrap();
     let seen: Vec<_> = rows
         .iter()
-        .map(|row| (row["title"].as_str().unwrap(), row["past"].as_bool().unwrap(), row["start"].as_str().unwrap()))
+        .map(|row| {
+            (
+                row["title"].as_str().unwrap(),
+                row["past"].as_bool().unwrap(),
+                row["start"].as_str().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(
         seen,

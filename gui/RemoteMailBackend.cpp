@@ -211,6 +211,7 @@ void MailBackend::refreshBinCounts() {
         if (!ok || account != m_account || folder != m_folder) return;
         m_binCounts = {{"account", account}, {"folder", folder}, {"messages", result["messages"].toVariant()},
             {"conversations", result["conversations"].toVariant()}};
+        if (result.contains("stored")) m_binCounts["stored"] = result["stored"].toVariant();
         emit binCountsChanged();
     });
 }

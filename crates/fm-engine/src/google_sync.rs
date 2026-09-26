@@ -81,6 +81,9 @@ pub(crate) struct SyncContext {
     quota: Arc<quota::QuotaGate>,
     /// Engine-wide slot bounding decoded Gmail payloads held in memory.
     preparation: Arc<Semaphore>,
+    /// A second engine-wide slot for new-mail checks, so they never wait
+    /// behind another account's backfill download.
+    delta_preparation: Arc<Semaphore>,
     /// Engine-wide slots bounding decoded Calendar pages held in memory.
     calendar_preparation: Arc<Semaphore>,
     calendar_reads: calendar::ReadGrants,
@@ -125,6 +128,16 @@ impl SyncContext {
         tokio::select! {
             _=self.cancel.cancelled()=>Err(failure("cancelled","Google work stopped")),
             permit=self.preparation.clone().acquire_owned()=>permit.map_err(|_|failure("cancelled","Google work stopped")),
+        }
+    }
+    /// The preparation slot for a mail lane: new-mail checks have their own.
+    pub(crate) async fn lane_prepare_permit(&self, delta: bool) -> Result<OwnedSemaphorePermit> {
+        if !delta {
+            return self.prepare_permit().await;
+        }
+        tokio::select! {
+            _=self.cancel.cancelled()=>Err(failure("cancelled","Google work stopped")),
+            permit=self.delta_preparation.clone().acquire_owned()=>permit.map_err(|_|failure("cancelled","Google work stopped")),
         }
     }
     /// Runs a Gmail read for this account, acquiring quota at dispatch.
@@ -195,7 +208,7 @@ impl SyncContext {
             .await
             .map_err(|_| GoogleError::TransportInterrupted)?;
         let memory = self
-            .prepare_permit()
+            .lane_prepare_permit(work.class == fm_google::scheduler::WorkClass::DeltaRead)
             .await
             .map_err(|_| GoogleError::TransportInterrupted)?;
         let mut http = self.transport(work);
@@ -410,6 +423,7 @@ impl SyncContext {
             cancel,
             quota: quota::QuotaGate::new(SchedulerConfig::new(budget, budget)).unwrap(),
             preparation: Arc::new(Semaphore::new(1)),
+            delta_preparation: Arc::new(Semaphore::new(1)),
             calendar_preparation: Arc::new(Semaphore::new(2)),
             calendar_reads: calendar::ReadGrants {
                 catalog: true,
@@ -667,6 +681,7 @@ pub(crate) struct Runtime {
     auth: Arc<google_auth::Runtime>,
     cancel: CancellationToken,
     preparation: Arc<Semaphore>,
+    delta_preparation: Arc<Semaphore>,
     calendar_preparation: Arc<Semaphore>,
     state: tokio::sync::Mutex<RuntimeState>,
 }
@@ -702,6 +717,7 @@ impl Runtime {
             auth,
             cancel,
             preparation: Arc::new(Semaphore::new(1)),
+            delta_preparation: Arc::new(Semaphore::new(1)),
             calendar_preparation: Arc::new(Semaphore::new(2)),
             state: tokio::sync::Mutex::new(RuntimeState {
                 quota: None,
@@ -1466,6 +1482,7 @@ impl Runtime {
             tokens: TokenSource::Native(self.auth.clone()),
             quota,
             preparation: self.preparation.clone(),
+            delta_preparation: self.delta_preparation.clone(),
             calendar_preparation: self.calendar_preparation.clone(),
             calendar_reads,
             remote_drafts_wake: Arc::new(Notify::new()),

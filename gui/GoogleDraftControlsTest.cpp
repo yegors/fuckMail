@@ -5,6 +5,7 @@
 #include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
+#include <QColor>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJSValue>
@@ -148,6 +149,28 @@ ApplicationWindow { width: 900; height: 1000; visible: true
         auto historical = status("synced", 99, 6); historical["operation_is_current"] = false;
         historical["operation"] = QJsonObject{{"request_id", "old"}, {"state", "synced"}};
         require(backend.mergedDraftProjection(projection(9, historical))["google"] == backend.m_draft["google"], "ordinary projection merge refuses historical Google receipts");
+        // Words that mention an attachment, with none added, get an advisory hint.
+        {
+            const auto drafts = fixture.customRequest;
+            // Editing the body refreshes the list; this test has none.
+            fixture.customRequest = [&, drafts](QLocalSocket *peer, const QJsonObject &request) {
+                if (drafts(peer, request)) return true;
+                if (request["method"] != "conversations") return false;
+                peer->write(reply(request["id"].toString(), {{"conversations", QJsonArray{}}, {"revision", 1}, {"next_offset", QJsonValue::Null}}));
+                return true;
+            };
+            const auto missing = QStringLiteral(u"Mentions an attachment \u2014 none added");
+            setStatus(status("synced", 16, 6));
+            backend.m_draft["to_recipients"] = QVariantList{QVariantMap{{"email", "reader@example.test"}}}; emit backend.draftChanged();
+            localEdit("Please see the attached plan");
+            await([&] { return hint() == missing; }, "a mentioned attachment that is not added is pointed out");
+            require(named(root, "composerHint")->property("color").value<QColor>() == QColor("#C9A36B"), "the hint is Graphite's gold");
+            localEdit("Nothing else to send");
+            await([&] { return hint() != missing; }, "the hint goes with the mention");
+            backend.editFormattedDraft("See below\n> the attachment you sent", "<p>See below</p><p>&gt; the attachment you sent</p>"); backend.m_draftTimer.stop();
+            await([&] { return qobject_cast<ReplyDocument *>(named(root, "replyDocument"))->plainText().contains("attachment you sent"); }, "quoted text reaches the editor");
+            require(hint() != missing, "quoted text does not count as a mention");
+        }
         require(!qmlError, "native draft controls generated no QML errors");
         backend.m_draftTimer.stop(); backend.m_pollTimer.stop();
         qInfo() << "Native Google draft controls passed: silent sync, plain problem hints, no manual recovery controls, private held IPC, projection revision floors, authored-text/account isolation and historical receipt isolation. Synthetic IPC only; no provider or performance claim.";

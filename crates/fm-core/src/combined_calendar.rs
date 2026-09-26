@@ -395,7 +395,7 @@ impl Store {
                 if !event.recurrence.is_empty() || event.series_id.is_some() {
                     return Err(err(
                         "unsupported_operation",
-                        "Recurring event changes are not available in the local phase",
+                        "Recurring events cannot be changed in the demo profile",
                     ));
                 }
                 if event.private && !matches!(access, Access::Owner | Access::Writer) {

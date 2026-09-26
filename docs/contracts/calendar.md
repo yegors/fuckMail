@@ -2,6 +2,47 @@
 
 
 
+## D146 — search dropdown holds its answer (Calendar39)
+
+- `CalendarSearchPopup` shows the last finished `calendar_search` answer while the next one runs: its matches, "7+", "No events match" and its status. A status the backend sets while busy (opening a match) shows at once.
+- The count row shows whenever the text has words to match, meaning anything besides `date:` and an operator with no value. It is blank until the first answer. So the dropdown never collapses between keys.
+
+Consumers: none outside the GUI.
+
+## D144 — Calendar search and the overlap row (Calendar38)
+
+- **`calendar_search` query.** The operators `title:`, `with:` and `date:` start at the beginning of the text or after a space; an operator's value runs to the next operator.
+  - `title:` is one phrase matched in the title.
+  - `with:` takes one word, or a quoted name. It matches the organizer's address and name and each guest's address and name. A bare address among the words counts as `with:`.
+  - `date:` takes one word. It is returned in `terms.date` and never filters.
+  - Other words typed together form one phrase, matched in the title or the description. Search 10's rules apply: case, Latin accents and runs of spaces are folded, a phrase starts at a word, and its last word may be partial.
+  - Every part must match. A query with only `date:` (or empty operators) matches nothing and is not an error. The 1–32 words and 512-byte limits are unchanged.
+- **Response.** It adds `terms: {text, words, title, with, date}`, Core's reading of the query.
+- **`around` mode.** `around` (YYYY-MM-DD) replaces `from`/`to`; giving both is `invalid_request`.
+  - It lists the next occurrence of each matching event (account, calendar, event ID) from `around` to 366 days on, then the latest in the 60 days before, with `past: true`.
+  - It reads in 42-day windows and stops once `limit` + 1 events are found.
+  - `from`/`to` in the reply span the whole search, and `coverage` combines the windows read.
+- **GUI search** (`CalendarSearchPopup`, "Search events"):
+  - It sends `around` = today, `limit` 7, and the selected calendars (only this account's while Show/Hide is on "this account").
+  - With text in the box, `filterCalendarEvents(rows, terms)` filters Day, Week, Month and Agenda by the same reading (busy rows drop) and lays out what remains again. The search keeps running while Calendar shows and the box has text, so the filter stays current; the Mail timeline is never filtered.
+  - The dropdown:
+    - empty: Recent (removable), then "Narrow it down" with `date:`, `with:`, `title:` and examples;
+    - a partial operator: completions;
+    - a readable `date:`: "Go to <day>", with Today, Tomorrow or Yesterday;
+    - an unreadable one: "Use YYYY-MM-DD, MM-DD, today, tomorrow or +7";
+    - matches: "N events" or "7+ events", with "↵ keeps the filter on", or "↵ shows this month with them" for `with:` alone; each row shows the account letter, the title, and the day and time; past rows are at 55%;
+    - otherwise "No events match".
+  - Enter keeps the text, adds it to Recent and closes the dropdown:
+    - a readable `date:` opens Day view on that day and keeps the rest of the search (or clears it);
+    - `with:` alone opens this month in Month view.
+  - A picked match is remembered in Recent and opens as before, by re-reading its day. × clears the search and the filter.
+- **Overlap row in the event editor.**
+  - `calendarDayEvents(date)` gives the day's visible events from a whole loaded window for the current selection and zone, or none.
+  - Timed events whose span crosses the chosen start and end show as "Overlaps A (09:30), B (09:00) +N" in gold. Declined, all-day, busy-only and the edited occurrence don't count.
+  - The row hides for all-day events and never blocks saving.
+
+Consumers: Core73, CLI56, Mail UI99.
+
 ## D127 — guest answers, meeting URL, answers from the email (Calendar37)
 
 - **`AttendeeList`**, shared by the event editor and the full event view:
@@ -142,9 +183,9 @@ Revision 11 applies D018/P1-09's second September 12 reference. The shared `time
 
 Revision 10 applies D016's September 12 full-day Calendar layout: day/week grids cover 00:00–24:00 and initially show midnight, while Mail timeline hours remain configurable. Retain legacy `calendar_start_hour`/`calendar_end_hour` values through the shared store and CLI for compatibility; they do not change the native Calendar span and have no native settings controls. Week start and selected-calendar visibility remain functional local preferences. Consumers: Core, Mail UI, CLI, Platform and native acceptance tooling. This wording and its implementation do not establish new runtime or visual acceptance.
 
-Revision 9 implements the P1-00/P1-04/P1-06 local boundary in schema 5, protocol 1 and fresh fixture 2. Combined permission-filtered queries, calendar catalog, bounded create/edit/self-RSVP and durable fake acknowledgments share the existing calendar store and journal. Native day/week/month/agenda, details/editor and the independent mail timeline consume that boundary; their integrated runtime and visual acceptance remain separate from the passing domain tests. Consumers: Core, Mail UI, CLI, Platform and Quality. [Phase 1 execution](../research/phase-1-execution.md#calendar-domain-and-native-surfaces--p1-04p1-06) records the measured scope; existing fixture-1 profiles are preserved without reseeding or permission elevation.
+Revision 9 implements the P1-00/P1-04/P1-06 local boundary in schema 5, protocol 1 and fresh fixture 2. Combined permission-filtered queries, calendar catalog, bounded create/edit/self-RSVP and durable fake acknowledgments share the existing calendar store and journal. Native day/week/month/agenda, details/editor and the independent mail timeline consume that boundary; their integrated runtime and visual acceptance remain separate from the passing domain tests. Consumers: Core, Mail UI, CLI, Platform and Quality. Phase 1 execution evidence, kept in Git history, records the measured scope; existing fixture-1 profiles are preserved without reseeding or permission elevation.
 
-Revision 8 applies D014 and the [Phase 1 plan](../plans/phase-1.md): a combined calendar with full permitted details, day/week/month/agenda and event details, a browsable timeline only in Mail, and bounded nonrecurring create/edit plus self-RSVP through both clients. Consumers: Core, Mail UI, CLI, Platform and Quality. Current runtime remains schema 4, protocol 1 and fixture 1; the existing public calendar API is still read-only and account-scoped.
+Revision 8 applies D014 and the Phase 1 plan: a combined calendar with full permitted details, day/week/month/agenda and event details, a browsable timeline only in Mail, and bounded nonrecurring create/edit plus self-RSVP through both clients. Consumers: Core, Mail UI, CLI, Platform and Quality. Current runtime remains schema 4, protocol 1 and fixture 1; the existing public calendar API is still read-only and account-scoped.
 
 Revision 7 records the integrated Phase 0 experiment. Completed fake Google batches, retained cancellations and ETag-scoped edit/RSVP acknowledgements now commit through Core. Account/calendar permissions and time zones reach the same GUI/footer/CLI projection, and ACL changes advance the polling revision atomically. Consumers: Core, Gmail, Mail UI, CLI and Platform. Live sending and full interactive event editors remain later gates.
 
@@ -163,7 +204,7 @@ Owner: F — Calendar. Accepted scope and proposed behavior are separated below;
 | Produces | Bounded combined occurrence/search views and browsable mail timeline with account/calendar identities, date/time-zone context and coverage; permission-aware actions, conference/location fields and occurrence reminder intents |
 | Independent start | Calendar/ICS fixtures and mocked local API, including recurrence exceptions, time zones and simultaneous events |
 
-Related: [core](core-storage.md), [Gmail](gmail.md), [IMAP/SMTP](imap-smtp.md), [platform](platform.md), [calendar research](../research/calendar.md).
+Related: [core](core-storage.md), [Gmail](gmail.md), [platform](platform.md), [calendar research](../research/calendar.md).
 
 Revision 3 records the closer nonfinal week/strip direction and its handoff gaps. Affected consumers/partners: Mail UI (footer placement and shared shell), Core (bounded permission-aware occurrence views), Platform (time/focus/lifecycle) and CLI (same permitted calendar fields and operations). No default overlay selection, final layout or new API is accepted.
 

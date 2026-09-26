@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting and FAQ
+    url: https://github.com/yegors/fuckMail/blob/main/docs/troubleshooting.md
+    about: Google sign-in errors, profile refusals, logs and resetting.
+  - name: Report a security vulnerability
+    url: https://github.com/yegors/fuckMail/security/advisories/new
+    about: Please report security problems privately.

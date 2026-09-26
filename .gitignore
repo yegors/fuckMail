@@ -6,14 +6,11 @@
 /CMakeUserPresets.json
 /.cache/
 /.venv/
-/.artifacts/
 **/__pycache__/
 *.pyc
 .DS_Store
 
-# Local disposable and real profiles, credentials and SQLite sidecars
-/.profiles/
-/profiles/
+# Local databases, credentials and SQLite sidecars
 *.sqlite
 *.sqlite3
 *.sqlite-wal
@@ -22,11 +19,12 @@
 *.db-shm
 .env
 .env.*
-!.env.example
+
+# Host- and account-specific agent notes (never commit)
+/AGENTS.local.md
 
 # aqt installer diagnostic output
 /aqtinstall.log
 
 # Generated evidence lives in local/CI artifact storage, never documentation.
 /docs/research/assets/phase-*/
-/docs/search/assets/

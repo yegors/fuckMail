@@ -16,6 +16,8 @@
 #include <QAccessible>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QColor>
+#include <algorithm>
 
 using namespace GoogleOperationFixture;
 namespace {
@@ -144,10 +146,25 @@ class CalendarSearchTest {
             QJsonObject result{{"from", params["from"]}, {"to", params["to"]}, {"time_zone", "UTC"}, {"revision", 9},
                 {"events", events}, {"coverage", QJsonObject{{"complete", false}, {"state", "partial"}, {"selected_calendars", 2}}}};
             if (request["method"] == "calendar_search") {
-                result["query"] = params["query"]; result["limit"] = 100; result["total"] = events.size();
+                result.remove("from"); result.remove("to"); result["around"] = params["around"];
+                result["query"] = params["query"]; result["limit"] = 7; result["total"] = events.size();
                 result["has_more"] = false; result["continuation"] = QJsonValue::Null;
+                result["terms"] = terms(params["query"].toString());
             }
             return result;
+        }
+        // Core's reading of the simple queries this test types.
+        static QJsonObject terms(const QString &query) {
+            QJsonObject out{{"text", query}, {"words", QJsonArray{}}, {"title", QJsonArray{}}, {"with", QJsonArray{}}, {"date", QJsonValue::Null}};
+            QStringList words; QJsonArray people;
+            for (const auto &part : query.split(' ', Qt::SkipEmptyParts)) {
+                if (part.startsWith("date:")) out["date"] = part.mid(5);
+                else if (part.startsWith("with:")) people.append(part.mid(5));
+                else words << part;
+            }
+            if (!words.isEmpty()) out["words"] = QJsonArray{words.join(' ')};
+            out["with"] = people;
+            return out;
         }
         Held take(const QString &method) {
             await([&] { return !requests.isEmpty(); }, "cached search request arrives");
@@ -158,6 +175,10 @@ class CalendarSearchTest {
         void complete(const Held &held, const QJsonObject &result) {
             const auto id = held.request["id"].toString(); held.peer->write(reply(id, result));
             await([&] { return !backend.m_pending.contains(id); }, "held cached reply completes");
+        }
+        // Answers every held search; the box keeps searching while it has text.
+        void drainSearches() {
+            while (!requests.isEmpty()) { auto held = requests.takeFirst(); held.peer->write(reply(held.request["id"].toString(), response(held.request, {}))); }
         }
         Held search(const QString &query = "project") {
             backend.setCalendarSearchContext(true, true); backend.setCalendarSearchQuery(query);
@@ -304,11 +325,11 @@ class CalendarSearchTest {
             if (kind == 1) { h.backend.setCalendarSearchContext(false, true); h.backend.setCalendarSearchContext(true, true); }
             if (kind == 2) { h.backend.m_account = "workspace"; emit h.backend.accountChanged(); h.backend.m_account = "personal"; emit h.backend.accountChanged(); }
             if (kind == 3) { auto row = h.backend.m_allAccounts[0].toMap(); row["lifecycle"] = QVariantMap{{"state", "active"}, {"revision", 3}}; h.backend.m_allAccounts[0] = row; emit h.backend.accountsChanged(); }
-            if (kind == 4) { h.backend.m_calendarDate = "2026-09-21"; emit h.backend.eventsChanged(); }
+            if (kind == 4) { h.backend.m_preferences["calendar_display_time_zone"] = "America/Toronto"; emit h.backend.preferencesChanged(); }
             if (kind == 5) { h.backend.m_preferences["selected_calendars"] = QVariantList{}; emit h.backend.preferencesChanged(); }
             if (kind == 6) { auto source = h.backend.m_calendarSources[0].toMap(); source["revision"] = 2; h.backend.m_calendarSources[0] = source; emit h.backend.calendarSourcesChanged(); }
             h.complete(old, Harness::response(old.request, {event("personal", "Obsolete response")}));
-            require(h.backend.calendarSearch().value("events").toList().isEmpty(), "old query, popup epoch, account, lifecycle, date, visibility and catalog replies are refused");
+            require(h.backend.calendarSearch().value("events").toList().isEmpty(), "old query, popup epoch, account, lifecycle, zone, visibility and catalog replies are refused");
             auto fresh = h.take("calendar_search");
             h.complete(fresh, Harness::response(fresh.request, {}));
             require(!h.backend.calendarSearch().value("busy").toBool(), "replacement search completes");
@@ -355,9 +376,6 @@ class CalendarSearchTest {
     }
     static void controls() {
         Harness h; QTemporaryDir copy;
-        // Main also instantiates Settings. Its unrelated cached-label read is
-        // already in progress, as during normal startup; search never owns it.
-        h.backend.m_googleLabelsAccount = "personal"; h.backend.m_googleLabelsLoading = true;
         const auto modulePath = copy.filePath("SearchTest"); require(QDir().mkpath(modulePath), "temporary QML module");
         QByteArray module("module SearchTest\nsingleton Theme 1.0 Theme.qml\n");
         for (const auto &name : QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"}, QDir::Files)) {
@@ -597,20 +615,18 @@ class CalendarSearchTest {
             const auto bounds = button->mapRectToItem(content, button->boundingRect());
             require(bounds.left() >= -.5 && bounds.right() <= content->width() + .5 && bounds.bottom() <= content->height() + .5,
                 "narrow default/large result button stays inside popup");
-            require(named(window, "calendarSearchRange")->property("text").toString().contains("2026-09-14 – 2026-09-20"), "civil inclusive date caption matches half-open week");
             require(!warnings, "all actual Main/search QML bindings are valid");
             if (!captures.isEmpty()) {
                 const auto path = QDir(captures).filePath(QString("calendar-search-%1-%2.png").arg(theme, size));
                 require(!QFile::exists(path) && frame.save(path), "retain unique themed popup image");
             }
         }
-        QVariant lastDate; require(QMetaObject::invokeMethod(popup, "lastDate", Q_RETURN_ARG(QVariant, lastDate), Q_ARG(QVariant, "2026-03-09")), "civil date caption function");
-        require(lastDate == "2026-03-08", "DST weekend caption uses civil subtraction");
         // Visible Calendar prefetches its neighbouring months while idle; let that settle first.
         await([&] { return !h.backend.m_calendarPrefetchTimer.isActive() && h.backend.m_pending.isEmpty(); }, "idle Calendar prefetch settles");
         h.holdWindow = true; auto *button = named(window, "calendarSearchResult_0");
         require(QMetaObject::invokeMethod(button, "clicked"), "actual saved result click");
         auto fresh = h.take("calendar_combined"); h.complete(fresh, Harness::response(fresh.request, {event("personal", "Current permitted title"), event("workspace")}));
+        require(h.backend.calendarRecentSearches() == QStringList{"project"}, "picking a match remembers the search");
         await([&] { return !popup->property("opened").toBool(); }, "fresh selection closes only the search popup");
         auto *details = named(window, "eventDetails");
         require(details, "actual details popup exists");
@@ -643,7 +659,7 @@ class CalendarSearchTest {
         h.holdWindow = false;
         h.current={dayEvent("2026-09-13","Previous day"),dayEvent("2026-09-14","Selected day"),dayEvent("2026-09-15","Next day")};
         h.backend.loadCalendar();
-        await([&]{return h.backend.m_pending.isEmpty() && h.backend.timelineReady();},"populate adjacent days through production backend");
+        await([&]{h.drainSearches(); return h.backend.m_pending.isEmpty() && h.backend.timelineReady();},"populate adjacent days through production backend");
         auto *strip=qobject_cast<QQuickItem *>(named(window,"mailTimeline")); require(strip,"native Mail timeline");
         auto *nextPanel=named(window,"timelinePanelNext");
         require(nextPanel && !nextPanel->property("enabled").toBool(),"offscreen neighbor cannot receive input");
@@ -676,6 +692,85 @@ class CalendarSearchTest {
         press("calendarAllDay-all-day");
         await([&] { return details->property("opened").toBool(); }, "accessible press opens the all-day event");
         require(QMetaObject::invokeMethod(details, "close"), "close all-day details");
+        // The Settings button sits after the search box. The top bar has no
+        // account-colour strip: the founder asked for it removed.
+        {
+            auto *settingsButton = qobject_cast<QQuickItem *>(named(window, "settingsButton"));
+            auto *box = qobject_cast<QQuickItem *>(named(window, "searchBox"));
+            require(settingsButton, "the Settings button exists"); require(box, "the search box exists");
+            require(settingsButton->mapToScene({}).x() > box->mapToScene({}).x() + box->width() && settingsButton->width() == 30 && settingsButton->height() == 30,
+                "a 30 px Settings button follows the search box");
+            require(!named(window, "accountEdge"), "no account-colour strip along the top");
+        }
+        // Calendar search's reading, dates and filter.
+        {
+            const auto today = QDate::fromString(h.backend.todayDate(), Qt::ISODate);
+            require(h.backend.calendarQueryDate("today") == today.toString(Qt::ISODate) && h.backend.calendarQueryDate("Tomorrow") == today.addDays(1).toString(Qt::ISODate)
+                && h.backend.calendarQueryDate("+7") == today.addDays(7).toString(Qt::ISODate) && h.backend.calendarQueryDate("-1d") == today.addDays(-1).toString(Qt::ISODate)
+                && h.backend.calendarQueryDate("2026-10-02") == "2026-10-02" && h.backend.calendarQueryDate("10-02") == QDate(today.year(), 10, 2).toString(Qt::ISODate),
+                "date: takes days, offsets, YYYY-MM-DD and MM-DD");
+            require(h.backend.calendarQueryDate("2026-02-30").isEmpty() && h.backend.calendarQueryDate("13-40").isEmpty() && h.backend.calendarQueryDate("someday").isEmpty(), "impossible days are refused");
+            QVariantMap guest{{"email", "maya@example.test"}, {"displayName", "Maya Chen"}};
+            const QVariantList rows{QVariantMap{{"id", "a"}, {"title", "Project review"}, {"description", "Budget notes"}, {"attendees", QVariantList{guest}}},
+                QVariantMap{{"id", "b"}, {"title", "Lunch"}, {"description", "About the project"}, {"organizer", "sam@example.test"}},
+                QVariantMap{{"id", "c"}, {"title", "Busy"}, {"busy_only", true}}};
+            const auto kept = [&](const QVariantMap &terms) { QStringList out; for (const auto &row : h.backend.filterCalendarEvents(rows, terms)) out << row.toMap()["id"].toString(); return out; };
+            require(kept({}) == QStringList{"a", "b", "c"}, "no reading, no filter");
+            require(kept({{"words", QStringList{"proj"}}}) == QStringList{"a", "b"}, "words match titles and notes from a word start");
+            require(kept({{"words", QStringList{"roject"}}}).isEmpty(), "not from inside a word");
+            require(kept({{"title", QStringList{"project"}}}) == QStringList{"a"}, "title: matches titles only");
+            require(kept({{"with", QStringList{"chen"}}}) == QStringList{"a"} && kept({{"with", QStringList{"sam@"}}}) == QStringList{"b"}, "with: matches guests and the organizer");
+        }
+        require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "calendar")), "Calendar for the search dropdown");
+        // Answers every search still held, so only the newest one counts.
+        auto type = [&](const QString &text) {
+            field->setProperty("text", text); require(QMetaObject::invokeMethod(field, "textEdited"), "type into the search box");
+            await([&] { h.drainSearches(); return h.backend.calendarSearchTerms().value("text") == text; }, "Core's reading of the typed text arrives");
+        };
+        auto enter = [&] {
+            qobject_cast<QQuickItem *>(field)->forceActiveFocus(Qt::OtherFocusReason);
+            QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier); QCoreApplication::sendEvent(window, &press);
+            QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier); QCoreApplication::sendEvent(window, &release);
+        };
+        require(field->property("placeholderText").toString() == "Search events", "the box reads Search events in Calendar");
+        field->setProperty("text", ""); h.backend.setCalendarSearchQuery("");
+        qobject_cast<QQuickItem *>(field)->forceActiveFocus(Qt::TabFocusReason);
+        await([&] { return popup->property("opened").toBool() && shown("calendarSearchOperator_date") && shown("calendarSearchOperator_with") && shown("calendarSearchOperator_title"); }, "empty search offers date:, with: and title:");
+        require(shown("calendarRecentSearch_0") && accessibleName("calendarRecentSearch_0") == "Search project", "Recent lists the picked search");
+        // The dropdown never empties while a search runs: the first key keeps
+        // its count row, and a later key keeps the last answer.
+        const auto keep = [&](const QString &text) {
+            field->setProperty("text", text); require(QMetaObject::invokeMethod(field, "textEdited"), "type without an answer");
+            QElapsedTimer t; t.start(); while (t.elapsed() < 60) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            require(h.backend.calendarSearch()["busy"].toBool(), "the next search is still running");
+        };
+        keep("p");
+        require(popup->property("opened").toBool() && shown("calendarSearchEnterNote") && popup->property("height").toReal() > 30, "the first key keeps the dropdown open with its count row");
+        type("project ti");
+        await([&] { return shown("calendarSearchComplete_title") && !shown("calendarSearchComplete_date"); }, "a partial operator offers completion");
+        type("project");
+        await([&] { return shown("calendarSearchNone"); }, "a search with nothing coming shows No events match");
+        const auto answered = popup->property("height").toReal();
+        keep("projects");
+        require(shown("calendarSearchNone") && qAbs(popup->property("height").toReal() - answered) < .5, "No events match stays while the next search runs");
+        type("projects");
+        type("date:tomorrow");
+        await([&] { return shown("calendarSearchGoTo") && accessibleName("calendarSearchGoTo").endsWith("Tomorrow"); }, "date: offers the day to go to");
+        enter();
+        const auto tomorrow = QDate::fromString(h.backend.todayDate(), Qt::ISODate).addDays(1).toString(Qt::ISODate);
+        await([&] { return h.backend.calendarView() == "day" && h.backend.calendarDate() == tomorrow && h.backend.calendarSearchQuery().isEmpty() && !popup->property("opened").toBool(); },
+            "Enter on date: opens that day in Day view and clears the search");
+        require(h.backend.calendarRecentSearches().first() == "date:tomorrow", "Enter adds the search to Recent");
+        qobject_cast<QQuickItem *>(field)->forceActiveFocus(Qt::TabFocusReason);
+        type("date:someday");
+        await([&] { return shown("calendarSearchDateHint") && !shown("calendarSearchGoTo"); }, "an impossible date explains the forms");
+        type("with:maya");
+        enter();
+        await([&] { return h.backend.calendarView() == "month" && h.backend.calendarDate() == h.backend.todayDate() && h.backend.calendarSearchQuery() == "with:maya"; },
+            "Enter on with: alone shows this month with the filter on");
+        require(h.backend.calendarSearchTerms()["with"].toStringList() == QStringList{"maya"}, "the filter stays on after Enter");
+        h.backend.setCalendarSearchQuery("");
+        require(h.backend.calendarSearchTerms().isEmpty(), "clearing the box clears the filter");
         require(!warnings && h.engine.operations == 0, "native search uses no provider operation and has no QML warnings");
     }
 public:

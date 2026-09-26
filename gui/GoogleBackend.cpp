@@ -135,7 +135,6 @@ void MailBackend::cancelGoogleProviderOperations(const QString &account) {
 }
 
 void MailBackend::pollGoogleSync() {
-    if (m_folder == "drafts") loadGoogleDraftInventory();
     if (m_syntheticProfile || !m_connected || m_shutdown || m_googleSyncPolling) return;
     m_googleSyncPolling = true;
     QScopedValueRollback<bool> automatic(m_automaticReadScope, true);

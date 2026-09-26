@@ -20,7 +20,7 @@ Coverage is an asynchronous job with at most 32 metadata rows per Core visit. Ba
 
 Only missing enabled projections are generated. A current summary is retained byte-for-byte when classification alone is missing; current partial summaries remain processed and labeled partial. Source/manual/category/provider guards apply again at commit. Read/unread/star state is not changed by analysis. At most one batch per account and 16 admitted assistance jobs are allowed. Failures are counted, successful messages remain saved, and explicit reruns visit only remaining missing results. An unavailable runner stops the batch instead of spending a timeout on every remaining message.
 
-Stop, settings changes, account lifecycle changes and owner disconnect cancel unfinished work. Independent clients retain their own jobs. No batch resumes after restart. CLI `fm --account ID assist backlog` and `assist batch --range week|month|year|all` use the same jobs; Ctrl-C cancels its owner. Protocol details are in [local-protocol.md](../local-protocol.md#d086--explicit-historical-local-analysis).
+Stop, settings changes, account lifecycle changes and owner disconnect cancel unfinished work. Independent clients retain their own jobs. No batch resumes after restart. CLI `fm --account ID assist backlog` and `assist batch --range week|month|year|all` use the same jobs; Ctrl-C cancels its owner. Protocol details are in [local-protocol.md](../local-protocol.md#local-ai).
 
 ## Verification
 

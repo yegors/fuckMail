@@ -569,3 +569,39 @@ Another session's GUI test runs (a separate `fm-perf` checkout and `build/dc`) w
 Not verified:
 - a real Gmail count;
 - the time left on a real 2-year download.
+
+## D144 — design export 7 (2026-09-26)
+
+The founder asked to implement export 7 of the Flight Progress v2 design and its 16 notes. The decision is in D144.
+
+Verification on Windows, Release build in `build/p9`:
+- **fm-core:**
+  - `calendar_search_reads_title_with_date_and_bare_addresses`: `title:`, `with:` (quoted names, bare addresses), plain phrases, and `date:`, which is returned but never filters.
+  - `calendar_search_around_lists_each_event_once_upcoming_then_recent_past`: one row per series, upcoming then past, with `past: true`.
+  - The malformed-params test refuses `around` combined with `from`/`to`.
+  - `draft_chips_and_calendar_recent_are_shared_durable_and_validated`: defaults, the six-item limit, and dropping `mail_date_grouping`.
+- **fm-cli:** `calendar search --around` builds the around request and conflicts with `--from`/`--to`.
+- **`gui-calendar-search`** (real Main.qml):
+  - Settings sits after the search box at 30×30, and there is no account-colour strip along the top;
+  - `calendarQueryDate` and `filterCalendarEvents` cases;
+  - the dropdown's operators, Recent, completions, "No events match" and "Go to Tomorrow";
+  - Enter on `date:` opens Day view with the rest kept; `with:` alone opens Month; the date hint.
+- **`gui-calendar-controls`:** the editor's overlap row for clashing, declined and all-day events.
+- **`gui-google-draft-controls`:** the attachment hint, ignoring forwarded and quoted text.
+- **`gui-mail-selection`:**
+  - the kept row is marked leaving in place when the next opens, and no row is left leaving after the refresh;
+  - a second opening mid-fold drops the first at once, and the list settles with every row;
+  - every-other-row shading per group; the drafts Show/Hide;
+  - Sent keeps its date groups under a stored plain-list choice.
+- `cargo test --workspace` (820), clippy, `cargo fmt --check` and all 33 CTest checks pass.
+
+Found while testing:
+- The first version of the leaving row crashed `gui-mail-selection`. It was added to the list after the backend had taken an iterator into it; it is now added first.
+- "QQmlVMEMetaObject: Internal error - attempted to evaluate a function in an invalid context" appears once in `gui-mail-selection` when the reader swaps in a multi-message thread. It also appears with the committed MailView and with the other committed QML files, so it predates this work. The test still passes.
+- In one extra `cargo test --workspace` run, one `fm-engine` test failed while other sessions were building. Its name wasn't captured. The next full run and two `fm-engine` runs passed. This work changes only one comment in `fm-engine`.
+
+Not verified:
+- `around` search speed on a real calendar;
+- the overlap row for a day outside the loaded window (it shows nothing);
+- hover brightening outside `FmButton`, `FmSegmented` and the console's new-lines pill;
+- account drag-reordering, which the export shows without a note (not built).

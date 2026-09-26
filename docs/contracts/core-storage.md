@@ -2,6 +2,33 @@
 
 
 
+## D147 — deleted-message markers (Core75)
+
+- `google_forget_deleted` now leaves a coverage row with `deleted = 1` for each given ID no longer stored here, including IDs never stored. It then recounts the account's coverage totals, `unavailable` included. A message kept for an open draft keeps its coverage.
+- `google_live_pending` items gain `deleted`: a fetch whose coverage says deleted, which the engine records missing without a request.
+- `google_trash_stored(account) → u64` and `google_trash_leftovers(account) → (ids, oldest Unix seconds)`. The leftovers are the Trash messages stored here that no pending, in-flight or reconciling mail change uses.
+- No schema change.
+
+Consumers: Gmail36.
+
+## D145 — new-mail pages (Core74)
+
+- `google_live_new_mail_page(account, listed) → Option<PagePlan>` plans a fetch-only page on the finished recent lane. It covers the listed IDs (at most 5,000) that have no `google_mail_coverage` row. The plan keeps the lane complete and its phase unchanged. It returns `None` when every ID is known, and fails with `stale_google_work` while the recent lane is unfinished.
+- Page validation accepts such a page on the recent lane, as it does the inventory's reconciliation pages.
+- `google_live_record_sync(account)` sets `last_mail_sync:<account>` to now and advances the store revision. It runs once the newest mail is held, even while a history scan is still applying older changes.
+- No schema change.
+
+Consumers: Gmail35.
+
+## D144 — two preferences, one retired (Core73)
+
+- `show_draft_chips` (boolean, default true): whether Mail shows the account's draft chips bottom-right.
+- `calendar_recent_searches` (default `[]`): Calendar search's Recent, newest first. At most six distinct strings, each non-blank, one line, at most 512 bytes, with no control characters.
+- `mail_date_grouping` is retired. A stored value is dropped when preferences are read, so the next save removes it, and a save naming it is `invalid_request`.
+- `calendar_search` reads its query as Calendar38 describes. No schema change.
+
+Consumers: Mail UI99, Calendar38, CLI56.
+
 ## D137 — the inventory's count (Core72)
 
 - `google_mail_count(account) → Option<(counted, complete)>` and `google_mail_count_record(account, generation, counted, complete) → bool`. They use three `meta` keys: `mail_count_generation:`, `mail_count_messages:` and `mail_count_complete:` plus the account ID. There is no schema change.
@@ -380,25 +407,25 @@ Extend the tested atomic page/checkpoint/FTS boundary with streaming and durable
 
 Revision 13 defines D018/P1-09: schema 7 adds `message_sender_kinds(account,message_id,source_hash,kind,provenance)`, with an account/member foreign key, people/automated kinds and explicit fixture provenance. A missing annotation or retained-source hash mismatch projects unknown. Conversation kind follows the newest incoming member by actual timestamp and stable member ID, falling back to the newest member when all are outgoing. Querying never changes review state. Source changes and annotation changes invalidate projections/cursors; bounded message appends update the existing conversation cache. Fresh fixture 3 carries explicit known annotations; migrated fixture 1/2 profiles retain their revision, accounts, sources, drafts and exact receipts without reseeding or inferred classifications. Consumers: Mail UI 12, Search 5, Triage 6, CLI 7, Platform and Quality.
 
-The additive protocol-1 boundary supplies `kind` and `exact_sender` conversation filters, exact whole-filter `filtered_group_counts`, and bounded account-scoped `sender_summary` history. The [fixture API](../../fixtures/README.md#p1-09-sender-kinds-and-presentation-preferences--core-13-cli-7-search-5-triage-6) owns exact fields. Local preferences also add theme graphite/paper/harbour, text size small/default/large, startup view mail/calendar/last, last workspace mail/calendar, timeline position footer/header, and default event duration 30/45/60 minutes. Defaults are graphite/default/mail/mail/footer/60; old saved JSON and receipts remain unchanged and getters merge new defaults.
+The additive protocol-1 boundary supplies `kind` and `exact_sender` conversation filters, exact whole-filter `filtered_group_counts`, and bounded account-scoped `sender_summary` history. The [fixture API](../../fixtures/README.md) owns exact fields. Local preferences also add theme graphite/paper/harbour, text size small/default/large, startup view mail/calendar/last, last workspace mail/calendar, timeline position footer/header, and default event duration 30/45/60 minutes. Defaults are graphite/default/mail/mail/footer/60; old saved JSON and receipts remain unchanged and getters merge new defaults.
 
 Presentation-only `collapsed_groups` removes review/held/done groups from paging while preserving full filtered totals, adding `expanded_conversation_count`. Cursor scope includes that presentation choice. `status.calendar_generation` starts at zero after each Store startup and advances on actual calendar-table writes; mail/draft/appearance changes do not advance it. Clients can retain their calendar model through appearance-only changes; a new engine starts a fresh generation scope. Account unread/starred message totals reuse the same source-derived append projection and remain independently verified against stored message sums/counts.
 
 Windows P1-09 verification passed the full release workspace's 161 executed tests before the last collapsed-group/calendar-generation additions. The final six focused sender-kind/query/generation/migration tests pass in 6.02 seconds, including parser-supported Unicode sender identity and structured draft recipients. Strict workspace/all-target release Clippy passes, and production engine/CLI relink succeeds. Logs are retained at `build/verification/p1-09-rust-workspace-01.log`, `p1-09-core-final-additions-01.log`, `p1-09-rust-clippy-02.log` and `p1-09-production-build-02.log`. Final-source integrated/native/performance/package evidence remains separate; the preceding full run does not claim to include those last two tests.
 
-Revision 12 defines the explicitly authorized P1-08 local New/Reply-all/Forward/Drafts boundary. Schema 6 generalizes the existing drafts table with durable account/draft identity, an optional source conversation/member and frozen routing. Protocol 1 and fixture 2 remain additive/unchanged. Existing reply selectors, authored columns, operation receipts, captured bytes and fixture revisions survive migration. A migrated historical draft freezes its currently retained source: routing that the old schema never stored cannot be reconstructed historically. Consumers: Mail UI 11, CLI 6, MIME, Platform and Quality. Exact fields are in the [P1-08 fixture API](../../fixtures/README.md#p1-08-local-composition--core-12-cli-6-mail-ui-11). Current execution evidence remains separate from the specification.
+Revision 12 defines the explicitly authorized P1-08 local New/Reply-all/Forward/Drafts boundary. Schema 6 generalizes the existing drafts table with durable account/draft identity, an optional source conversation/member and frozen routing. Protocol 1 and fixture 2 remain additive/unchanged. Existing reply selectors, authored columns, operation receipts, captured bytes and fixture revisions survive migration. A migrated historical draft freezes its currently retained source: routing that the old schema never stored cannot be reconstructed historically. Consumers: Mail UI 11, CLI 6, MIME, Platform and Quality. Exact fields are in the [P1-08 fixture API](../../fixtures/README.md). Current execution evidence remains separate from the specification.
 
 New drafts never manufacture received conversations or provider-sent records. New, reply, reply-all and forward share the existing account identity/signature snapshot, revision journal, authored text/HTML, retained-attachment selection, discard and immutable local capture path. Recipients and subject are persisted and editable; source member/hash, RFC reply context and account identity are fixed. The first legacy save may bind the source member returned by `draft_get`, so an arrival before autosave does not retarget the reply. Later saves reject a different source. Reply-all excludes the current identity case-insensitively, deduplicates visible source recipients and starts with empty Bcc. Forward starts with an editable quote of retained source text and no implicit attachment selection. Its MIME is not a reply to the original Message-ID.
 
 Draft browsing is a bounded account projection with plain-word subject/body/recipient search, exact filtered totals, stable update-time/identity order and a byte-bounded page. Draft content never enters received-source FTS or mail counts. Explicitly created/saved empty drafts remain visible until discarded; merely querying a nonexistent legacy reply does not create a draft. Source I/O, recipient validation, stale revisions and acceptance-unknown recovery remain meaningful failure states. Real transmission, account connection/removal, aliases, models and new-file import are outside this local extension.
 
-The scoped Windows run `cargo test -p fm-core -p fm-cli -p fm-engine -p fm-mail --locked` passed 108 executed tests: Core 71 unit and 14 integration, engine 5 unit and 6 integration, CLI 3, MIME 9. The opt-in 100k experiment and native-GUI startup case retain their separate runners. Six new composition tests cover independent draft identity, frozen source across actual provider-row ingestion, Reply-all recipient privacy, Forward without implicit retained attachments, bounded/account-scoped Drafts, stale/invalid edits, schema-5 authored-column and exact journal preservation, and capture replay with a maximum escaped subject. Scoped all-target clippy passes with warnings denied. The [21-call actual CLI report](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-1/p1-08-cli-composition.json) records preserved schema-5 first-save replay through the updated CLI, exact stored fingerprint/receipt preservation, new first-save replay and local capture recovery after later edits/restart, including binary hashes. Build/test logs are retained under `build/verification/p1-08-*`; whole-phase execution belongs in the [execution record](../research/phase-1-execution.md).
+The scoped Windows run `cargo test -p fm-core -p fm-cli -p fm-engine -p fm-mail --locked` passed 108 executed tests: Core 71 unit and 14 integration, engine 5 unit and 6 integration, CLI 3, MIME 9. The opt-in 100k experiment and native-GUI startup case retain their separate runners. Six new composition tests cover independent draft identity, frozen source across actual provider-row ingestion, Reply-all recipient privacy, Forward without implicit retained attachments, bounded/account-scoped Drafts, stale/invalid edits, schema-5 authored-column and exact journal preservation, and capture replay with a maximum escaped subject. Scoped all-target clippy passes with warnings denied. The [21-call actual CLI report](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-1/p1-08-cli-composition.json) records preserved schema-5 first-save replay through the updated CLI, exact stored fingerprint/receipt preservation, new first-save replay and local capture recovery after later edits/restart, including binary hashes. Build/test logs are retained under `build/verification/p1-08-*`; whole-phase execution belongs in the execution record.
 
 Revision 11 refines Search 4 cursor invalidation to search-table changes and writer restart, so unrelated view/preferences/draft/calendar writes preserve paging. Response revisions remain store-wide. Bounded message/FTS append projections independently verify inventory and fall back on mutation, overflow or transaction rollback. Consumers: Search, Mail UI, CLI 5, Platform and Quality; schema 5/protocol 1 remain unchanged.
 
 Revision 10 records the implemented P1-00/P1-01/P1-05 boundary: schema 5, protocol 1 and fresh fixture 2; typed local preferences, metadata/signature snapshots, grouped typed search/counts/cursors, snapshot action recipes, durable discard and capture history. Consumers: Mail UI, Triage, Search, Calendar, CLI, Platform and Quality. [Fixture API](../../fixtures/README.md) owns exact wire fields; [local protocol](../local-protocol.md) owns envelopes and CLI grammar. Existing fixture-1 profiles retain their revision/accounts/data under migration. Windows Core/CLI tests and the 19-call live CLI smoke pass; native whole-phase, other-host, large-corpus and product gates remain separate.
 
-Revision 9 applies D014 and the [Phase 1 plan](../plans/phase-1.md): read-on-open and snapshot Done/untimed Delay, bounded typed preferences, grouped conversation queries and combined permission-aware calendar views. Consumers: Mail UI, Triage, Search, Calendar, CLI and Platform. Current runtime remains schema 4, protocol 1 and fixture 1; implementation determines the next required revisions.
+Revision 9 applies D014 and the Phase 1 plan: read-on-open and snapshot Done/untimed Delay, bounded typed preferences, grouped conversation queries and combined permission-aware calendar views. Consumers: Mail UI, Triage, Search, Calendar, CLI and Platform. Current runtime remains schema 4, protocol 1 and fixture 1; implementation determines the next required revisions.
 
 Revision 8 records the integrated Phase 0 experiment. Schema 4 adds completed calendar-batch checkpoints/visibility/write receipts and validated fake-assistance policies/results/intents to the existing store. Calendar permissions filter the shared projection; assistance rechecks retained source/provider/manual/policy stamps inside its apply transaction. Consumers: Calendar, Local assistance, Gmail, Qt UI, CLI and Platform.
 
@@ -421,7 +448,7 @@ Owner: A — Core/storage. These are living specifications of accepted requireme
 
 Related: [triage](triage.md), [search](search.md), [platform](platform.md), [storage research](../research/search-storage.md).
 
-Revision 4 links the initial shared-boundary handoff to [Phase 0](../plans/phase-0.md). Affected consumers: Gmail, IMAP/SMTP, Search, Mail UI, Calendar, Platform, Local assistance and CLI. The area remains Draft; no wire types or schema have been implemented.
+Revision 4 links the initial shared-boundary handoff to Phase 0. Affected consumers: Gmail, IMAP/SMTP, Search, Mail UI, Calendar, Platform, Local assistance and CLI. The area remains Draft; no wire types or schema have been implemented.
 
 ## Phase 1 boundary — implemented local slice
 
@@ -432,7 +459,7 @@ The existing store and journal now implement schema 7. Protocol 1 stays additive
 - **Calendar scope:** a combined view names its participating account/calendar identities, date range, display time zone, coverage and scope revision. Reuse Calendar's permission-filtered occurrences and preserve the owning account on every event. Bind continuation/cursor state, where needed, to that complete scope; changes in visibility/permissions invalidate stale results. Enforce an aggregate response bound across calendars and never truncate silently. Full permitted details may appear across connected accounts; free/busy and private-field restrictions still apply before serialization. Mail queries remain account-scoped.
 - **Reply and calendar writes:** plain/formatted replies, signatures, retained attachments, explicit discard and local MIME capture share the durable path. First save snapshots signature/From display identity; body edits preserve the snapshot, and explicit per-draft `signature_text` edits participate in its revision. Account preference changes never rewrite an existing draft. Explicit discard clears authored fields but preserves a revision tombstone; composing anew snapshots current metadata. Capture appends the saved signature once. `capture_history` returns bounded journal-derived outcomes linked to the original conversation, with distinct accepted/failed/unknown states and explicit `provider_delivered:false`. Captures are not provider-sent messages. New mail, forwarding and local-file attachment import follow later. Expose nonrecurring create/edit and self-RSVP through the journal and deterministic fake acknowledgment. Create needs a new stable identity/prepared-intent/acknowledgment path because current edit/RSVP assumes an existing stored event/ETag. Recurrence-series editing remains later work.
 
-Acceptance includes GUI-to-CLI readback, restart/replay, concurrent new mail and stale revisions, permission changes during combined calendar queries, and migration preserving existing drafts/actions/views. The [Phase 1 plan](../plans/phase-1.md) owns packet evidence. Real provider/model execution remains outside this phase.
+Acceptance includes GUI-to-CLI readback, restart/replay, concurrent new mail and stale revisions, permission changes during combined calendar queries, and migration preserving existing drafts/actions/views. The Phase 1 plan owns packet evidence. Real provider/model execution remains outside this phase.
 
 ## First shared-boundary handoff
 
@@ -544,7 +571,7 @@ Choose storage/schema and language after evidence; finalize shared IDs, revision
 
 ## D052 / P2-LLM consumer boundary
 
-Revision 29 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
+Revision 29 consumes [Local assistance 6](local-ai.md): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
 
 ## D061 label command details
 

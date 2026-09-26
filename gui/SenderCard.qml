@@ -187,6 +187,7 @@ Popup {
                     objectName: "senderCardFilter"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; leftPadding: 0; rightPadding: 0
                     text: (card.total > 3 ? "All " + card.total + " with " : "Filter to ") + card.displayName.split(" ")[0] + " →"
                     font.pointSize: Theme.fontPoints(12); foreground: Theme.accent
+                    onHoveredChanged: if (hovered) backend.prefetchSearch("all", card.email)
                     onClicked: card.filterSender()
                 }
             }

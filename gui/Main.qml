@@ -194,7 +194,8 @@ ApplicationWindow {
     readonly property bool calendarSearchLive: workspace === "calendar" && !settingsOpen
         && (calendarSearchPopup.opened || backend.calendarSearchQuery.trim().length > 0)
     function syncCalendarSearch() { backend.setCalendarSearchContext(calendarSearchLive, calendarView.combinedAccounts) }
-    onCalendarSearchLiveChanged: syncCalendarSearch()
+    // Deferred: the backend's reply to a context change notifies this binding again.
+    onCalendarSearchLiveChanged: Qt.callLater(syncCalendarSearch)
     CalendarSearchPopup {
         id: calendarSearchPopup
         parent: Overlay.overlay
@@ -202,8 +203,8 @@ ApplicationWindow {
         combined: calendarView.combinedAccounts
         // Closing fences an event still opening from the dropdown; the
         // search itself starts again if the box keeps its text.
-        onOpenedChanged: { if (!opened) backend.setCalendarSearchContext(false, combined); window.syncCalendarSearch() }
-        onCombinedChanged: window.syncCalendarSearch()
+        onOpenedChanged: { if (!opened) backend.setCalendarSearchContext(false, combined); Qt.callLater(window.syncCalendarSearch) }
+        onCombinedChanged: Qt.callLater(window.syncCalendarSearch)
         onEventRequested: function(event) { backend.openCalendarSearchResult(event) }
     }
     Connections {
@@ -218,8 +219,6 @@ ApplicationWindow {
         height: Theme.headerHeight
         color: Theme.canvas
         Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
-        // The current account's colour along the top edge.
-        Rectangle { objectName: "accountEdge"; width: parent.width; height: 2; color: Theme.accountTint(backend.account, .7) }
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 24
             RowLayout {

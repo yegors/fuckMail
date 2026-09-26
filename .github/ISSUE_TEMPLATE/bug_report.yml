@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in fuckMail doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        fuckMail takes bug reports and fixes. For new features or other mail providers, please fork.
+        Security problems go through private reporting instead; see SECURITY.md.
+        Never paste real mail, tokens or your OAuth client file here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: With the demo profile (`--demo-profile`) if you can.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or build
+      description: The commit you built from (`git rev-parse --short HEAD`) or the installer file name.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From `diagnostics/engine.log` or `gui.log` in your profile folder (see docs/troubleshooting.md). They hold metadata, not message content, but check before pasting.
+      render: text

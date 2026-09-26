@@ -248,10 +248,11 @@ void MailBackend::previewArchiveDeletion(const QString &account) {
     if (life.value("cleanup").toMap().value("state") != "complete") return;
     // Reuse a pending confirmation, and its request id, while it still matches
     // this account and revision; otherwise mint a new one.
-    if (m_archiveDeletionConfirmation["account"] != account || m_archiveDeletionConfirmation["expected_revision"].toInteger() != life.value("revision").toLongLong())
-    m_archiveDeletionConfirmation = {{"account", account}, {"email", row.value("email").toString()},
-        {"expected_revision", life.value("revision").toLongLong()},
-        {"request_id", "gui-purge-" + QUuid::createUuid().toString(QUuid::WithoutBraces)}};
+    if (m_archiveDeletionConfirmation["account"] != account || m_archiveDeletionConfirmation["expected_revision"].toInteger() != life.value("revision").toLongLong()) {
+        m_archiveDeletionConfirmation = {{"account", account}, {"email", row.value("email").toString()},
+            {"expected_revision", life.value("revision").toLongLong()},
+            {"request_id", "gui-purge-" + QUuid::createUuid().toString(QUuid::WithoutBraces)}};
+    }
     emit archiveDeletionReady(m_archiveDeletionConfirmation.toVariantMap());
 }
 void MailBackend::confirmArchiveDeletion(const QVariantMap &context) {

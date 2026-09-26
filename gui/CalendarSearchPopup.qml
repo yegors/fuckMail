@@ -23,9 +23,20 @@ Popup {
     readonly property var terms: backend.calendarSearchTerms
     readonly property bool filtering: typing && ((terms.words || []).length + (terms.title || []).length + (terms["with"] || []).length) > 0
     readonly property bool onlyPeople: filtering && !(terms.words || []).length && !(terms.title || []).length
-    // Rows stay on screen while the next search runs, so they do not blink per key.
-    property var rows: []
-    Binding on rows { value: popup.result.events || []; when: !popup.result.busy; restoreMode: Binding.RestoreNone }
+    // The last finished search stays on screen while the next one runs, so the
+    // dropdown never empties between keys. Only a real search carries a query.
+    // A handler, not a Binding with `when`: both change on one signal, and the
+    // Binding could take the busy result before `when` turns false.
+    property var settled: ({})
+    onResultChanged: if (!result.busy) settled = result
+    Component.onCompleted: if (!result.busy) settled = result
+    readonly property var rows: settled.events || []
+    readonly property bool answered: settled.query !== undefined
+    // A status while busy (opening a match) shows at once; others are held too.
+    readonly property string statusText: result.status || settled.status || ""
+    // Words to match, read from the text itself so it never trails a key:
+    // everything but date: and an operator with nothing after it.
+    readonly property bool wordsTyped: typing && query.replace(/(^|\s)(date:\S*|with:|title:)(?=\s|$)/gi, " ").trim().length > 0
     readonly property string dateValue: typing && terms.date ? terms.date : ""
     readonly property string goDate: dateValue ? backend.calendarQueryDate(dateValue) : ""
     readonly property var operators: [
@@ -159,11 +170,11 @@ Popup {
             }
             // The next matching events.
             RowLayout {
-                visible: popup.filtering && popup.rows.length > 0
+                visible: popup.wordsTyped && !popup.statusText.length && (popup.rows.length > 0 || !popup.answered)
                 Layout.fillWidth: true; Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 10; Layout.bottomMargin: 6
                 Text {
                     objectName: "calendarSearchCount"
-                    text: popup.result.has_more ? "7+ events" : popup.rows.length + (popup.rows.length === 1 ? " event" : " events")
+                    text: !popup.rows.length ? "" : popup.settled.has_more ? "7+ events" : popup.rows.length + (popup.rows.length === 1 ? " event" : " events")
                     color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
                     font.letterSpacing: Theme.fontSize(11) * .05; font.capitalization: Font.AllUppercase
                 }
@@ -175,7 +186,7 @@ Popup {
                 }
             }
             Repeater {
-                model: popup.filtering ? popup.rows : []
+                model: popup.wordsTyped ? popup.rows : []
                 SearchRow {
                     id: resultRow
                     required property var modelData
@@ -208,16 +219,16 @@ Popup {
             }
             Text {
                 objectName: "calendarSearchNone"
-                visible: popup.filtering && !popup.result.busy && popup.result.events !== undefined && !popup.rows.length && !(popup.result.status || "").length
+                visible: popup.wordsTyped && popup.answered && !popup.rows.length && !popup.statusText.length
                 Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 12; bottomPadding: 12
                 text: "No events match"
                 color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
             }
             Text {
                 objectName: "calendarSearchStatus"
-                visible: popup.typing && (popup.result.status || "").length > 0
+                visible: popup.typing && popup.statusText.length > 0
                 Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 10; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                text: popup.result.status || ""
+                text: popup.statusText
                 color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
             }
             // Empty query: recent searches, then the operators.

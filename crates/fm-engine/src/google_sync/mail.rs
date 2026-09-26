@@ -3,13 +3,14 @@
 use super::SyncContext;
 use fm_core::{
     google_live_mail::{
-        prepare_google_item_since, verify_staged_google_item, GoogleItemAction, GooglePageIdentity,
-        MailLane, MailLaneState, PreparedGoogleItem, MAX_PART_BYTES, MAX_PART_ITEMS,
+        prepare_google_item_retained, prepare_google_item_since, verify_staged_google_item,
+        GoogleItemAction, GooglePageIdentity, MailLane, MailLaneState, PreparedGoogleItem,
+        MAX_PART_BYTES, MAX_PART_ITEMS,
     },
     CoreError, Result,
 };
 use fm_google::{
-    gmail_api::{GmailCall, GmailReply, RawOutcome},
+    gmail_api::{GmailCall, GmailMessageState, GmailReply, RawOutcome},
     scheduler::WorkClass,
     sync::{prepare_full_page, prepare_history_page, Checkpoint, PagePlan, Phase},
     AccountId, GoogleError,
@@ -31,6 +32,9 @@ const HISTORY_PAGE_SIZE: u16 = 100;
 // minute however slowly the mail itself downloads.
 const COUNT_PAGE_SIZE: u16 = 500;
 const COUNT_STEP_BUDGET: Duration = Duration::from_secs(2);
+/// How many of Gmail's newest messages a new-mail check lists at most, while
+/// every one it lists is new here.
+const NEW_MAIL_LIMIT: usize = 500;
 
 /// What a worker step did, which sets how soon the loop steps again.
 #[derive(Debug, PartialEq, Eq)]
@@ -51,6 +55,11 @@ pub(crate) struct MailWorker {
     non_delta_parts: u8,
     /// When the next history check is due, on the caller's monotonic clock (ms).
     next_delta_ms: u64,
+    /// A history page is partly published; it finishes before any listing.
+    delta_open: bool,
+    /// The running history scan outlasted a poll interval, so new mail is
+    /// listed directly and the scan counts as background work.
+    delta_behind: bool,
     count: Option<InventoryCount>,
     /// Told, as each step picks its lane, whether it downloads older mail
     /// (true) or checks for new mail (false).
@@ -73,20 +82,22 @@ impl MailWorker {
             account,
             non_delta_parts: 0,
             next_delta_ms: 0,
+            delta_open: false,
+            delta_behind: false,
             count: None,
             lane_observer: None,
         }
     }
 
-    /// Reports each step's lane before its requests start: `true` for the
-    /// recent and inventory listings, which download older mail in the
-    /// background, `false` for a history check for new mail.
+    /// Reports each step's lane before its requests start: `true` for
+    /// background work, the recent and inventory listings of older mail and a
+    /// history scan that fell behind, `false` for a check for new mail.
     pub(crate) fn observe_lanes(&mut self, observer: impl Fn(bool) + Send + Sync + 'static) {
         self.lane_observer = Some(Box::new(observer));
     }
 
-    /// Makes the next step check Gmail history, even while a listing lane
-    /// still has parts to publish.
+    /// Makes the next step check for new mail, even while a listing lane
+    /// still has parts to publish or a history scan is behind.
     pub(crate) fn request_refresh(&mut self) {
         self.next_delta_ms = 0;
         self.non_delta_parts = PARTS_BEFORE_DELTA;
@@ -127,14 +138,23 @@ impl MailWorker {
         let recent = lane(&lanes, MailLane::Recent)?;
         let inventory = lane(&lanes, MailLane::Inventory)?;
         let delta = lane(&lanes, MailLane::Delta)?;
+        if recent.complete {
+            if let Some(step) = self.new_mail(ctx, delta, now_ms).await? {
+                return Ok(step);
+            }
+        }
         // Recent mail first, then the inventory. While a listing runs, a due
         // history check gets a turn after every PARTS_BEFORE_DELTA listing
-        // parts; once the inventory is complete it runs whenever due. An
-        // unfinished history scan is always due.
+        // parts; once the inventory is complete it runs whenever due. A
+        // history check that has started runs to the end before any listing
+        // continues, so new mail never waits behind the download of old mail.
+        let delta_running = self.delta_running(delta);
         let delta_due = !delta.complete
             || delta.checkpoint.phase != Phase::Idle
             || now_ms >= self.next_delta_ms;
-        let selected = if !recent.complete {
+        let selected = if delta_running {
+            delta
+        } else if !recent.complete {
             if delta_due && self.non_delta_parts >= PARTS_BEFORE_DELTA {
                 delta
             } else {
@@ -145,9 +165,7 @@ impl MailWorker {
         } else {
             inventory
         };
-        if let Some(observe) = &self.lane_observer {
-            observe(selected.lane != MailLane::Delta);
-        }
+        self.observe(selected.lane != MailLane::Delta || self.delta_behind);
 
         // While the inventory downloads, each of its steps also counts it,
         // page after page for up to COUNT_STEP_BUDGET. Counting is best
@@ -219,6 +237,8 @@ impl MailWorker {
                     );
                     self.non_delta_parts = 0;
                     self.next_delta_ms = 0;
+                    self.delta_open = false;
+                    self.delta_behind = false;
                     return Ok(Step::Progress);
                 }
             }
@@ -227,12 +247,15 @@ impl MailWorker {
         let completed = self.publish_part(ctx, &page).await?;
         if page.lane == MailLane::Delta {
             self.non_delta_parts = 0;
-            // The poll interval starts only once a scan has fully caught up.
-            if completed.is_some_and(|checkpoint| checkpoint.phase == Phase::Idle) {
-                let interval = ctx
-                    .core_call(|store| store.google_sync_interval_ms())
-                    .await?;
-                self.next_delta_ms = now_ms.saturating_add(interval);
+            self.delta_open = completed.is_none();
+            // The next check is due one interval after a scan starts or
+            // catches up; a scan still running then is behind.
+            let caught_up = completed.is_some_and(|checkpoint| checkpoint.phase == Phase::Idle);
+            if caught_up || selected.checkpoint.phase == Phase::Idle {
+                self.next_delta_ms = now_ms.saturating_add(self.interval(ctx).await?);
+            }
+            if caught_up {
+                self.delta_behind = false;
             }
         } else {
             self.non_delta_parts = self.non_delta_parts.saturating_add(1);
@@ -240,6 +263,132 @@ impl MailWorker {
         Ok(Step::Progress)
     }
 
+    /// Lists Gmail's newest mail and downloads what is not here yet, when a
+    /// history scan is due again while the last one is still running, so new
+    /// mail never waits for a scan held up by a bulk change made elsewhere.
+    /// A started new-mail page finishes, one part per step, before anything
+    /// else. Returns `None` when no new-mail work is due.
+    async fn new_mail(
+        &mut self,
+        ctx: &SyncContext,
+        delta: &MailLaneState,
+        now_ms: u64,
+    ) -> Result<Option<Step>> {
+        let account = self.account.as_str().to_owned();
+        let saved = ctx
+            .core_call(move |store| store.google_live_resume_page(&account, MailLane::Recent))
+            .await?;
+        if saved.is_none() && !(self.delta_running(delta) && now_ms >= self.next_delta_ms) {
+            return Ok(None);
+        }
+        self.observe(false);
+        let page = match saved {
+            Some(page) => Some(page),
+            None => match self.new_mail_plan(ctx).await? {
+                Some(plan) => {
+                    let history = full_baseline(&plan.expected)?.to_owned();
+                    Some(
+                        self.begin_page(ctx, MailLane::Recent, plan, history)
+                            .await?,
+                    )
+                }
+                None => None,
+            },
+        };
+        if let Some(page) = page {
+            if self.publish_part(ctx, &page).await?.is_none() {
+                return Ok(Some(Step::Progress));
+            }
+        }
+        let account = self.account.as_str().to_owned();
+        ctx.core_call(move |store| store.google_live_record_sync(&account))
+            .await?;
+        self.delta_behind = true;
+        self.next_delta_ms = now_ms.saturating_add(self.interval(ctx).await?);
+        crate::diagnostics::event(
+            "Sync",
+            "mail_new_checked",
+            json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),"connection_generation":ctx.connection_generation}),
+        );
+        Ok(Some(Step::Progress))
+    }
+
+    /// Lists Gmail's newest messages, page after page while every one is new
+    /// here, and plans the download of those not held yet.
+    async fn new_mail_plan(&self, ctx: &SyncContext) -> Result<Option<PagePlan>> {
+        let mut listed = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            // The same scope as the listings: Trash is kept, Spam is not.
+            let call = GmailCall::list_messages(
+                &self.account,
+                token.as_deref(),
+                Some("-in:spam"),
+                true,
+                LIST_PAGE_SIZE,
+            )
+            .and_then(|call| call.with_read_class(WorkClass::DeltaRead))
+            .map_err(provider_error)?;
+            let GmailReply::Messages(page) = ctx.gmail(call).await.map_err(provider_error)? else {
+                return Err(unexpected());
+            };
+            listed.extend(page.messages.into_iter().map(|message| message.id));
+            let (account, ids) = (self.account.as_str().to_owned(), listed.clone());
+            let plan = ctx
+                .core_call(move |store| store.google_live_new_mail_page(&account, &ids))
+                .await?;
+            let all_new = plan
+                .as_ref()
+                .is_some_and(|plan| plan.fetch_message_ids.len() == listed.len());
+            token = page.next_page_token;
+            if !all_new || token.is_none() || listed.len() >= NEW_MAIL_LIMIT {
+                return Ok(plan);
+            }
+        }
+    }
+
+    /// Whether a history scan has started and not yet caught up.
+    fn delta_running(&self, delta: &MailLaneState) -> bool {
+        self.delta_open
+            || matches!(
+                delta.checkpoint.phase,
+                Phase::Delta {
+                    page_token: Some(_),
+                    ..
+                } | Phase::CatchUp {
+                    page_token: Some(_),
+                    ..
+                }
+            )
+    }
+
+    fn observe(&self, background: bool) {
+        if let Some(observe) = &self.lane_observer {
+            observe(background);
+        }
+    }
+
+    /// The account's mail poll interval in milliseconds.
+    async fn interval(&self, ctx: &SyncContext) -> Result<u64> {
+        ctx.core_call(|store| store.google_sync_interval_ms()).await
+    }
+
+    /// Gmail's current labels and history ID for `id`, or `None` when Gmail no
+    /// longer has it; the download then records that.
+    async fn current_state(
+        &self,
+        ctx: &SyncContext,
+        lane: MailLane,
+        id: &str,
+    ) -> Result<Option<GmailMessageState>> {
+        let call = GmailCall::message_state(&self.account, id)
+            .and_then(|call| call.with_read_class(read_class(lane)))
+            .map_err(provider_error)?;
+        match ctx.gmail(call).await.map_err(provider_error)? {
+            GmailReply::MessageState(state) => Ok(state),
+            _ => Err(unexpected()),
+        }
+    }
     /// Reads the mailbox's current `historyId` from the Gmail profile.
     async fn baseline(&self, ctx: &SyncContext) -> Result<String> {
         let call = GmailCall::profile(&self.account).map_err(provider_error)?;
@@ -443,8 +592,65 @@ impl MailWorker {
             // which then spans RAW download, decoding, publication and parsing.
             // Throttled backfill cannot occupy the only slot needed by recent
             // mail, and no queue retains several large downloaded bodies.
+            let delta = page.lane == MailLane::Delta;
+            // Gmail never changes a message's source, only its labels. A
+            // message already kept here reads its labels, not its source, and
+            // one Gmail no longer has, or already reported deleted, is
+            // recorded missing without a download.
+            let mut gone = item.deleted;
+            if let (GoogleItemAction::Fetch, Some(retained), None, false) =
+                (item.action, &item.retained, &item.staged, gone)
+            {
+                let current = self.current_state(ctx, page.lane, &item.remote_id).await?;
+                gone = current.is_none();
+                if let Some(state) = current {
+                    let permit = ctx.lane_prepare_permit(delta).await?;
+                    let (blobs, owned_page, cancel) =
+                        (blobs.clone(), page.clone(), ctx.cancel.clone());
+                    let (remote_id, retained) = (item.remote_id.clone(), retained.clone());
+                    let reused = tokio::task::spawn_blocking(move || {
+                        let _permit = permit;
+                        prepare_google_item_retained(
+                            &blobs,
+                            &owned_page,
+                            &remote_id,
+                            &retained,
+                            state,
+                            &cancel,
+                            since,
+                        )
+                    })
+                    .await
+                    .map_err(|_| {
+                        failure(
+                            "google_preparation_failed",
+                            "Google content preparation failed",
+                        )
+                    })??;
+                    if let Some(item) = reused {
+                        let owned_page = page.clone();
+                        let item = ctx
+                            .core_call(move |store| {
+                                store.google_live_stage_prepared(&owned_page, &item)?;
+                                Ok(item)
+                            })
+                            .await?;
+                        if bytes + item.normalized_bytes() > MAX_PART_BYTES {
+                            break;
+                        }
+                        bytes += item.normalized_bytes();
+                        prepared.push(item);
+                        continue;
+                    }
+                }
+            }
             let (permit, outcome) = if item.staged.is_some() {
-                (ctx.prepare_permit().await?, None)
+                (ctx.lane_prepare_permit(delta).await?, None)
+            } else if gone {
+                (
+                    ctx.lane_prepare_permit(delta).await?,
+                    Some(RawOutcome::Missing),
+                )
             } else {
                 match item.action {
                     GoogleItemAction::Fetch => {
@@ -458,10 +664,11 @@ impl MailWorker {
                         };
                         (permit, Some(outcome))
                     }
-                    GoogleItemAction::Delete => {
-                        (ctx.prepare_permit().await?, Some(RawOutcome::Missing))
-                    }
-                    GoogleItemAction::Observe => (ctx.prepare_permit().await?, None),
+                    GoogleItemAction::Delete => (
+                        ctx.lane_prepare_permit(delta).await?,
+                        Some(RawOutcome::Missing),
+                    ),
+                    GoogleItemAction::Observe => (ctx.lane_prepare_permit(delta).await?, None),
                 }
             };
             let blobs = blobs.clone();
@@ -509,13 +716,7 @@ impl MailWorker {
         let completed = ctx
             .core_call(move |store| {
                 if !prepared.is_empty() {
-                    #[cfg(feature = "verification-google")]
-                    let started = crate::verification_google::unix_ms();
-                    let receipt = store.google_live_commit_part(&owned_page, &prepared)?;
-                    #[cfg(feature = "verification-google")]
-                    crate::verification_google::record_publication(&owned_page, &receipt, started);
-                    #[cfg(not(feature = "verification-google"))]
-                    let _ = receipt;
+                    store.google_live_commit_part(&owned_page, &prepared)?;
                 }
                 if store.google_live_pending(&owned_page, 1)?.is_empty() {
                     store.google_live_finish_page(&owned_page).map(Some)

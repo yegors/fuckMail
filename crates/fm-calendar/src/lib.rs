@@ -28,15 +28,11 @@ pub use chrono_tz::Tz;
 pub use edits::*;
 pub use sync::*;
 
-/// Calendar fixture revision, reported as `fixture_revision` by [`capabilities`].
-pub const FIXTURE_REVISION: u32 = 1;
 /// Most occurrences one expansion or projection returns, and most exceptions
 /// one series may bring. Exceeding it is an error, never a truncated result.
 pub const MAX_OCCURRENCES: u16 = 1000;
 /// Longest projection window in displayed days: a six-week month grid.
 pub const MAX_WINDOW_DAYS: i64 = 42;
-/// Version of the IANA time zone database bundled by `chrono-tz`.
-pub const TZDB_VERSION: &str = chrono_tz::IANA_TZDB_VERSION;
 
 /// A failure from normalization, projection or write planning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -860,14 +856,6 @@ fn append_exception(
         }
     }
     Ok(())
-}
-
-/// This crate's fixed limits and bundled time-zone database version, as JSON.
-///
-/// The `live_google` and `external_feeds` flags are constant `false`;
-/// `live_google` does not reflect the Calendar API support in [`google_api`].
-pub fn capabilities() -> Value {
-    json!({"fixture_revision":FIXTURE_REVISION,"tzdb":TZDB_VERSION,"max_window_days":MAX_WINDOW_DAYS,"max_occurrences":MAX_OCCURRENCES,"live_google":false,"external_feeds":false})
 }
 
 /// Normalize a Core-owned cached Google event collection, then produce the single

@@ -44,7 +44,5 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The `verification-google` feature of `fm-engine` and `fm-cli` adds an
-in-memory Google fixture for developer verification; normal builds leave it
-out. See [docs/build-development.md](../docs/build-development.md) for the
-full toolchain and GUI build.
+See [docs/build-development.md](../docs/build-development.md) for the full
+toolchain and GUI build.

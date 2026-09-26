@@ -96,11 +96,6 @@ impl GoogleDraftImportPlan {
     pub fn provider_draft_id(&self) -> &str {
         &self.item.draft_id
     }
-    /// Message ID the draft had when it was listed. The fetched draft may
-    /// already contain a newer message.
-    pub fn listed_message_id(&self) -> &str {
-        &self.item.message_id
-    }
 }
 /// Result of fetching one listed Gmail draft.
 pub enum GoogleDraftImportOutcome {

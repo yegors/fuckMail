@@ -29,7 +29,7 @@ Popup {
         {op: "subject:", description: "Only in subjects", example: "subject:board deck"},
         {op: "body:", description: "Only in message text", example: "body:invoice attached"},
         {op: "from:", description: "Only the sender", example: "from:maya@example.com"},
-        {op: "to:", description: "Only recipients (To or Cc)", example: "to:maya@example.com"}
+        {op: "to:", description: "Recipient name or address", example: "to:finance@example.com"}
     ]
     readonly property string lastToken: { const match = query.match(/(\S*)$/); return match ? match[1].toLowerCase() : "" }
     readonly property var completions: lastToken.length >= 2 && lastToken.indexOf(":") < 0 ? operators.filter(o => o.op.startsWith(lastToken)) : []

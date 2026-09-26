@@ -352,12 +352,12 @@ Item {
                             Divider {}
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                                PreferenceLabel { label: "Group Sent and Drafts by date"; detail: "Today, yesterday, weekdays, then months. Plain list shows one list." }
+                                PreferenceLabel { label: "Show drafts in the corner"; detail: "Unsent drafts for this account sit bottom-right, one click from where you left off." }
                                 FmSegmented {
-                                    objectName: "mailDateGroupingPreference"; model: ["Grouped","Plain list"]
-                                    currentIndex: backend.preferences.mail_date_grouping === "plain" ? 1 : 0
-                                    onActivated: function(index) { backend.setPreferences({mail_date_grouping:index === 1 ? "plain" : "grouped"}); currentIndex = Qt.binding(function() { return backend.preferences.mail_date_grouping === "plain" ? 1 : 0 }) }
-                                    Accessible.name: "Sent and Drafts date grouping"
+                                    objectName: "draftChipsPreference"; model: ["Show","Hide"]
+                                    currentIndex: backend.preferences.show_draft_chips === false ? 1 : 0
+                                    onActivated: function(index) { backend.setPreferences({show_draft_chips:index === 0}); currentIndex = Qt.binding(function() { return backend.preferences.show_draft_chips === false ? 1 : 0 }) }
+                                    Accessible.name: "Show drafts in the corner"
                                 }
                             }
                             Divider {}

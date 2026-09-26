@@ -1,4 +1,25 @@
-//! One SQLite writer and durable synthetic profile shared by every client.
+//! The profile store: SQLite storage and the request logic behind every
+//! engine method.
+//!
+//! A profile is a directory holding `store.sqlite3`, a content-addressed
+//! `blobs/` directory and a `store.lock` file. [`Store`] is its only writer:
+//! opening one takes an exclusive lock on `store.lock`, so a second writer
+//! fails with `store_in_use`. Only `fm-engine` opens a store; the GUI and the
+//! `fm` CLI reach it through the engine's local protocol, and
+//! [`Store::handle`] is the shared JSON dispatcher for those requests.
+//!
+//! A profile is one of two kinds, fixed when it is created:
+//!
+//! - *synthetic*: a demo profile seeded with fixture accounts, mail and
+//!   calendars. It never contacts Google; local calendar writes are
+//!   acknowledged in-process.
+//! - *live*: starts empty and holds Google accounts. Mail, drafts, labels and
+//!   Calendar are synchronized through the `google_*` and `live_calendar*`
+//!   modules; the engine performs the network I/O and hands results back here.
+//!
+//! The crate owns the schema, conversation and calendar projections, search,
+//! drafts and their Google upload and send journals, labels, preferences,
+//! account lifecycle and retained message content.
 use fs2::FileExt;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -21,10 +42,13 @@ mod calendar_search;
 pub mod calendar_store;
 mod cancellation;
 mod capture;
+mod combined_calendar;
 mod composition;
 #[cfg(test)]
 mod composition_tests;
 mod content;
+#[cfg(test)]
+mod demo_profile_tests;
 mod draft_discard;
 pub mod draft_transfer;
 mod fixture;
@@ -54,9 +78,6 @@ pub mod local_content;
 pub mod message_invite;
 pub mod message_source;
 mod mutations;
-mod phase1_calendar;
-#[cfg(test)]
-mod phase1_tests;
 mod preferences;
 mod queries;
 pub mod remote_mail;
@@ -67,18 +88,39 @@ mod search_senders;
 mod sender_kind_tests;
 pub mod unsubscribe;
 pub mod view_cache;
-// D118 reset: every profile before this baseline is refused and started fresh.
+// `fresh-schema.sql` creates this version directly. Profiles made before it
+// are refused rather than migrated; the user moves them aside and starts fresh.
 const RESET_BASELINE_VERSION: u32 = 37;
 // Append one SQL step per version after the fresh baseline. Each step commits
 // with its own user_version update before normal recovery begins.
 const POST_RESET_MIGRATIONS: &[&str] = &[];
+/// The SQLite `user_version` this build creates and opens.
+///
+/// A profile with a newer version is refused as `schema_mismatch`; one older
+/// than the fresh-schema baseline is refused too, without being modified.
 pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
+/// The revision of the seeded demo data, reported as `fixture_revision`.
+///
+/// Live profiles report 0.
 pub const FIXTURE_REVISION: u32 = 3;
+/// The fixed date (`YYYY-MM-DD`) the demo mail and calendars are written
+/// around. Replies include it as `fixture_today` only for synthetic profiles.
 pub const FIXTURE_TODAY: &str = "2026-09-11";
+/// An error returned to clients as `{code, message, details}`.
+///
+/// `code` is a stable machine-readable identifier such as `invalid_request`,
+/// `not_found`, `stale_cursor` or `storage_error`; `message` is a short
+/// sentence suitable for display. SQLite and I/O failures become
+/// `storage_error` (I/O errors report only their kind), and malformed JSON
+/// becomes `invalid_request`.
 #[derive(Debug)]
 pub struct CoreError {
+    /// Stable snake_case identifier that clients branch on.
     pub code: String,
+    /// Human-readable explanation; not meant to be parsed.
     pub message: String,
+    /// Structured context for a few errors, such as the expected and current
+    /// revision on a conflict; `null` otherwise.
     pub details: Value,
 }
 impl std::fmt::Display for CoreError {
@@ -87,6 +129,7 @@ impl std::fmt::Display for CoreError {
     }
 }
 impl std::error::Error for CoreError {}
+/// The crate's result type, failing with a [`CoreError`].
 pub type Result<T> = std::result::Result<T, CoreError>;
 pub(crate) fn err(code: &str, message: &str) -> CoreError {
     CoreError {
@@ -110,6 +153,13 @@ impl From<serde_json::Error> for CoreError {
         err("invalid_request", "Invalid JSON data")
     }
 }
+/// An open profile: its single SQLite writer connection plus in-memory
+/// projections derived from it.
+///
+/// The value holds the profile's exclusive `store.lock` for its lifetime.
+/// It is `Send` but not `Sync` (the connection and caches use interior
+/// mutability), so callers serialize access. Dropping it runs `PRAGMA optimize`
+/// and releases the lock.
 pub struct Store {
     pub(crate) db: Connection,
     pub(crate) profile: PathBuf,
@@ -119,19 +169,40 @@ pub struct Store {
     pub(crate) coverage_cache: queries::CoverageCache,
     pub(crate) mail_changes: queries::MailChanges,
     pub(crate) planner_refreshed_at: std::cell::Cell<Option<std::time::Instant>>,
+    /// Full conversation-state scans since open (diagnostics and tests).
+    pub(crate) state_scans: std::cell::Cell<u64>,
 }
 impl Store {
+    /// Opens the profile directory `profile`, creating it if needed.
+    ///
+    /// An existing store opens as whichever kind it is. A new one becomes a
+    /// synthetic demo profile seeded with fixture data, unless an interrupted
+    /// live creation left its marker, in which case it becomes an empty live
+    /// profile. Fails with `store_in_use` when another writer holds the lock
+    /// and `schema_mismatch` for a store this build cannot open.
+    ///
+    /// Opening also recovers work a killed process left in flight: account
+    /// cleanup, content captures, Google draft uploads and deletions, sends
+    /// and Calendar writes. An in-flight send becomes `acceptance_unknown`;
+    /// it is never retried here.
     pub fn open(profile: &Path) -> Result<Self> {
         Self::open_profile(profile, None)
     }
 
-    /// Explicit live creation never seeds demo content, including after a crash.
-    /// Existing profiles must already be live; this never converts a demo store.
+    /// Opens or creates a live profile.
+    ///
+    /// Creation writes a `live-profile` marker before the first SQLite
+    /// transaction, so a crash during creation can never leave a store that a
+    /// later open seeds with demo data. An existing demo profile fails with
+    /// `profile_kind_mismatch` and is never converted.
     pub fn open_live(profile: &Path) -> Result<Self> {
         Self::open_profile(profile, Some(live_profile::ProfileKind::Live))
     }
 
-    /// Explicit demo creation never opens or converts an existing live store.
+    /// Opens or creates a synthetic demo profile.
+    ///
+    /// An existing live profile, including one whose creation was interrupted,
+    /// fails with `profile_kind_mismatch` and is never converted.
     pub fn open_synthetic(profile: &Path) -> Result<Self> {
         Self::open_profile(profile, Some(live_profile::ProfileKind::Synthetic))
     }
@@ -145,6 +216,7 @@ impl Store {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
+        // One writer per profile: the OS file lock lives as long as the Store.
         let lock = options.open(profile.join("store.lock"))?;
         lock.try_lock_exclusive()
             .map_err(|_| err("store_in_use", "This profile already has a writer"))?;
@@ -169,6 +241,11 @@ impl Store {
         let db = Connection::open(profile.join("store.sqlite3"))?;
         db.busy_timeout(std::time::Duration::from_secs(2))?;
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF;")?;
+        // Read pages straight from the mapped file instead of copying each 4 KiB
+        // page through a small private cache; mapped pages stay reclaimable.
+        db.execute_batch("PRAGMA mmap_size=1073741824; PRAGMA cache_size=-16384;")?;
+        // Refuse schemas this build cannot read before writing anything, then
+        // apply any steps added after the fresh baseline.
         let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version > SCHEMA_VERSION {
             return Err(err("schema_mismatch", "This profile needs a newer engine"));
@@ -218,6 +295,7 @@ impl Store {
                 include_str!("fresh-schema.sql")
             ))?;
         }
+        db.execute_batch(queries::STATE_LOG_SQL)?;
         let mut store = Self {
             mail_changes: queries::MailChanges::install(&db),
             db,
@@ -227,7 +305,11 @@ impl Store {
             coverage_cache: Default::default(),
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
+            state_scans: Default::default(),
         };
+        // Seeding writes the `fixture_revision` sentinel in the same transaction
+        // as the demo data, and live creation writes 0, so a missing sentinel
+        // means a demo store that still needs its data.
         let seeded: Option<i64> = store
             .db
             .query_row(
@@ -250,7 +332,9 @@ impl Store {
             }
             store.seed()?;
         }
+        // Settle work a killed process left in flight before serving requests.
         store.forget_stored_spam()?;
+        store.recover_model_sender_kinds()?;
         store.cleanup_deleted_archive_blobs()?;
         store.validate_profile_identity()?;
         store.recover_google_category_projections()?;
@@ -264,6 +348,15 @@ impl Store {
         store.db.execute_batch("PRAGMA optimize=0x10002;")?;
         Ok(store)
     }
+    /// Runs one client request and returns its JSON result.
+    ///
+    /// `params` must be an object, and each method rejects fields it does not
+    /// know. Profile-wide methods such as `status`, `accounts` and the
+    /// preferences do not need `account`; per-account methods need it to name
+    /// an existing account and fail with `account_required` or `not_found`.
+    /// Unknown methods fail with `unsupported_method`. Methods that need the
+    /// network, such as sending and Google sync, are not dispatched here; the
+    /// engine implements them on top of other `Store` methods.
     pub fn handle(&mut self, method: &str, account: Option<&str>, params: Value) -> Result<Value> {
         if !params.is_object() {
             return Err(err("invalid_request", "Parameters must be an object"));
@@ -322,11 +415,33 @@ impl Store {
         if method == "status" {
             fields(&params, &[])?;
             let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
-            // These describe callable local interfaces. Account grants and
-            // connectivity independently gate provider delivery and writes.
-            return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"mail_generation":self.mail_generation(),"preferences_revision":self.preferences_revision()?,"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":true,"google_auth":!synthetic,"google_sync":!synthetic}}),
-            );
+            // Clients poll the generations and revisions to decide what to
+            // reload. Capabilities describe callable local interfaces; account
+            // grants and connectivity separately limit provider delivery and writes.
+            return Ok(json!({
+                "schema_version": SCHEMA_VERSION,
+                "fixture_revision": self.fixture_revision()?,
+                "revision": self.revision()?,
+                "calendar_generation": self.mail_changes.calendar_generation(),
+                "mail_generation": self.mail_generation(),
+                "preferences_revision": self.preferences_revision()?,
+                "synthetic": synthetic,
+                "profile_kind": if synthetic { "synthetic" } else { "live" },
+                "fixture_today": if synthetic { Some(FIXTURE_TODAY) } else { None },
+                "capabilities": {
+                    "mail": true,
+                    "drafts": true,
+                    "calendar_read": true,
+                    "typed_filters": true,
+                    "preferences": true,
+                    "capture_history": synthetic,
+                    "calendar_write_local": synthetic,
+                    "send": !synthetic,
+                    "models": true,
+                    "google_auth": !synthetic,
+                    "google_sync": !synthetic
+                }
+            }));
         }
         match method {
             "preferences_get" => {
@@ -398,10 +513,7 @@ impl Store {
         ]
         .contains(&method)
         {
-            return Err(err(
-                "unsupported_method",
-                "Method is not available in this phase",
-            ));
+            return Err(err("unsupported_method", "Unknown or unsupported method"));
         }
         let account = account.ok_or_else(|| err("account_required", "Choose an account"))?;
         id(account)?;
@@ -507,6 +619,8 @@ impl Store {
             |r| r.get(0),
         )?)
     }
+    /// The store-wide revision counter in `meta`. Most durable writes advance
+    /// it in the same transaction; replies echo it as `revision`.
     pub(crate) fn revision(&self) -> Result<i64> {
         Ok(self
             .db
@@ -541,6 +655,8 @@ impl Drop for Store {
     }
 }
 
+/// Fails with `invalid_request` unless `value` is an object whose keys are all
+/// in `allowed`. Missing keys are fine; each caller checks required ones.
 pub(crate) fn fields(value: &Value, allowed: &[&str]) -> Result<()> {
     if value
         .as_object()
@@ -550,12 +666,14 @@ pub(crate) fn fields(value: &Value, allowed: &[&str]) -> Result<()> {
     }
     Ok(())
 }
+/// Accepts an identifier of 1 to 256 bytes with no control characters.
 pub(crate) fn id(value: &str) -> Result<&str> {
     if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
         return Err(err("invalid_request", "Invalid identifier"));
     }
     Ok(value)
 }
+/// Reads the required string parameter `key`, validated like `id`.
 pub(crate) fn string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
     id(value[key]
         .as_str()

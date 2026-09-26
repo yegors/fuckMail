@@ -106,13 +106,6 @@ impl CalendarRole {
             Self::Owner => Access::Owner,
         }
     }
-    /// Whether this role can read event details, not just busy times.
-    pub fn has_event_details(self) -> bool {
-        matches!(
-            self,
-            Self::Reader | Self::WriterWithoutPrivateAccess | Self::Writer | Self::Owner
-        )
-    }
 }
 
 /// One calendar-list entry.

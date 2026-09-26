@@ -1,12 +1,21 @@
 # Local mail analysis
 
+## D148 — People/Automated answers survive label edits (Local assistance27)
+
+- Editing or removing a label's instructions no longer deletes the model's People/Automated answers. The answer doesn't depend on labels. Earlier builds deleted the answers but kept the classification results, so the queue treated that mail as done and never asked again.
+- On store open, every saved classification whose message has no answer gets it back from the result's `sender_kind`, with the result's provider as provenance.
+- Resetting a manual correction restores the model's saved answer at once, where there is one.
+- No schema change.
+
+Consumers: Mail UI102, CLI (`assist`), Core.
+
 ## D123 — Spam labels (Local assistance26)
 
 Settings → Accounts' label table renames "Auto-read" to "Read" and adds "Spam". With Spam on, a label the model applies sends the message to Gmail Spam (Core68): once per message, never sent or manually labelled mail, and Spam wins over Read. The intro reads "Labels for {Account} only. Descriptions help the local model sort mail." Everything in Local assistance25 is otherwise unchanged.
 
 ## D111 — one queue, one email, system/user prompts (Local assistance25)
 
-Supersedes the watcher (D097), the Backlog job (D086), the request template and variables ("Visible dynamic prompt", D060's request mapping, D080's correction retry, D112's placeholder rules) and the combined result fields below. Label authority, manual precedence, Auto-read (D090/D096), sent-mail exclusion, previews (D107) and diagnostics (D103) are unchanged. [Plan](../plans/local-model-pipeline.md).
+Supersedes the watcher (D097), the Backlog job (D086), the request template and variables ("Visible dynamic prompt", D060's request mapping, D080's correction retry, D112's placeholder rules) and the combined result fields below. Label authority, manual precedence, Auto-read (D090/D096), sent-mail exclusion, previews (D107) and diagnostics (D103) are unchanged. Plan.
 
 - **Input.** One received email per request: `{from, to, subject, date, text, shortened}`. `text` is the stored body, which Gmail sync already stores with reply history removed (`fm_mail::reply_contribution`: `>` lines, attributions in English, French, German, Spanish, Italian, Portuguese, Dutch, Nordic, Polish, Czech, Russian, Chinese, Japanese and Korean, localized Outlook header blocks, "Original Message"; forwards are kept). The first 24,000 characters are sent; longer text is marked `shortened` and the result `partial`. Sync keeps the first 256 KiB of an over-long reading copy instead of refusing the message; the source MIME stays whole. Whole-conversation requests are removed.
 - **Settings.** `{provider?, endpoint, model, system, user, accounts}`. `system` (1–16,384 bytes) holds the behaviour rules and reply shape. `user` (≤8,192 bytes) must contain `{{messages}}` once and may contain `{{labels}}` once; no other variables. Missing `system`/`user` read as the built-in text. Schema36 archives the previous settings in `local_model_settings_history` and removes the old `prompt` request template; model and account choices are kept. Variables are replaced in one pass with pretty JSON; text inside email or label data is never expanded.
@@ -114,7 +123,7 @@ Schema-21 settings upgrade atomically to schema 22. Prefer the saved classificat
 
 ## Visible dynamic prompt
 
-The [shipped request template](../../crates/fm-assist/src/message-request.json) is the editable default. Storage and CLI retain the complete JSON request. Under D057 the GUI displays only its decoded system/user message contents, with no JSON escapes. It preserves the undisplayed request fields when saving content edits. Keep these variables exactly once in the stored request:
+The shipped request template (`crates/fm-assist/src/message-request.json`, removed under D111 in favor of [system](../../crates/fm-assist/src/system-prompt.txt) and [user](../../crates/fm-assist/src/user-prompt.txt) prompts) is the editable default. Storage and CLI retain the complete JSON request. Under D057 the GUI displays only its decoded system/user message contents, with no JSON escapes. It preserves the undisplayed request fields when saving content edits. Keep these variables exactly once in the stored request:
 
 | Variable | Engine-supplied value |
 | --- | --- |

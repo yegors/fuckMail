@@ -37,8 +37,8 @@ use std::collections::BTreeSet;
 #[path = "google_live_mail/preparation.rs"]
 mod preparation;
 pub use preparation::{
-    prepare_google_item, prepare_google_item_since, verify_staged_google_item, ItemIssue,
-    PreparedGoogleItem, StoredGoogleItem,
+    prepare_google_item, prepare_google_item_retained, prepare_google_item_since,
+    verify_staged_google_item, ItemIssue, PreparedGoogleItem, StoredGoogleItem,
 };
 #[cfg(test)]
 #[path = "google_live_mail/tests.rs"]
@@ -142,6 +142,20 @@ pub struct PendingGoogleItem {
     /// It is untrusted until [`verify_staged_google_item`] re-hashes its
     /// blobs, after which the message need not be downloaded again.
     pub staged: Option<StoredGoogleItem>,
+    /// For a fetch, the message's source already kept on this machine.
+    pub retained: Option<RetainedGoogleSource>,
+    /// Gmail already reported this message deleted for good. It never comes
+    /// back, so it is recorded missing without asking Gmail again.
+    pub deleted: bool,
+}
+/// A Gmail message's retained source. Gmail never changes a message's source,
+/// only its labels, so a changed message can be prepared from this and its
+/// current label state instead of downloading it again.
+#[derive(Clone, Debug)]
+pub struct RetainedGoogleSource {
+    pub source_hash: String,
+    /// Gmail's internal date, which the import stored as `sent_at`.
+    pub internal_date_ms: i64,
 }
 /// Proof that one publication part committed. Replaying the same part returns
 /// an equal receipt.
@@ -515,6 +529,30 @@ impl Store {
             .map(Some)
     }
 
+    /// The retained source of `remote_id` in `account`, when its blob is here.
+    fn retained_google_source(
+        &self,
+        account: &str,
+        remote_id: &str,
+    ) -> Result<Option<RetainedGoogleSource>> {
+        let row: Option<(String, String)> = self
+            .db
+            .prepare_cached(
+                "SELECT source_hash,sent_at FROM messages WHERE account=?1 AND remote_id=?2",
+            )?
+            .query_row(params![account, remote_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        Ok(row.and_then(|(source_hash, sent_at)| {
+            let internal_date_ms = chrono::DateTime::parse_from_rfc3339(&sent_at)
+                .ok()?
+                .timestamp_millis();
+            self.blob_present(&source_hash)
+                .then_some(RetainedGoogleSource {
+                    source_hash,
+                    internal_date_ms,
+                })
+        }))
+    }
     /// Bounded work read; manifests contain no source bytes. Network failures stay
     /// pending. Permanent item outcomes advance only through committed receipts.
     ///
@@ -555,10 +593,24 @@ impl Store {
             if row.as_ref().is_some_and(|(_, applied)| applied.is_some()) {
                 continue;
             }
+            let action = action(&record.plan, &remote)?;
+            let staged = row.and_then(|(json, _)| json).map(StoredGoogleItem);
+            let (retained, deleted) = if action == GoogleItemAction::Fetch && staged.is_none() {
+                (
+                    self.retained_google_source(&page.account, &remote)?,
+                    self.db
+                        .prepare_cached("SELECT EXISTS(SELECT 1 FROM google_mail_coverage WHERE account=?1 AND remote_id=?2 AND deleted=1)")?
+                        .query_row(params![page.account, remote], |r| r.get(0))?,
+                )
+            } else {
+                (None, false)
+            };
             result.push(PendingGoogleItem {
-                action: action(&record.plan, &remote)?,
+                action,
                 remote_id: remote,
-                staged: row.and_then(|(json, _)| json).map(StoredGoogleItem),
+                staged,
+                retained,
+                deleted,
             });
             if result.len() == limit {
                 break;
@@ -912,6 +964,69 @@ impl Store {
             caught_up: false,
         })
     }
+
+    /// A page that downloads the messages among `listed` this store has never
+    /// seen, so mail Gmail lists as newest arrives while a long history scan
+    /// is still behind. Returns `None` when every listed message is known.
+    ///
+    /// `listed` holds Gmail message IDs, at most [`MAX_PAGE_ITEMS`]. The plan
+    /// is begun on the finished recent lane, which then takes no other page
+    /// until it finishes; the history scan still replays these messages
+    /// later. Fails with `stale_google_work` while the recent lane is
+    /// unfinished.
+    pub fn google_live_new_mail_page(
+        &self,
+        account: &str,
+        listed: &[String],
+    ) -> Result<Option<PagePlan>> {
+        let lane = self
+            .google_live_lanes(account)?
+            .into_iter()
+            .find(|l| l.lane == MailLane::Recent && l.complete)
+            .ok_or_else(stale)?;
+        if listed.len() > MAX_PAGE_ITEMS {
+            return Err(err("google_part_limit", "Too many Google messages listed"));
+        }
+        let mut known = self.db.prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM google_mail_coverage WHERE account=?1 AND remote_id=?2)",
+        )?;
+        let mut ids = BTreeSet::new();
+        for id in listed {
+            crate::id(id)?;
+            if !known.query_row(params![account, id], |r| r.get::<_, bool>(0))? {
+                ids.insert(id.clone());
+            }
+        }
+        if ids.is_empty() {
+            return Ok(None);
+        }
+        let expected = lane.checkpoint;
+        let next = Checkpoint {
+            revision: expected.revision.checked_add(1).ok_or_else(stale)?,
+            ..expected.clone()
+        };
+        Ok(Some(PagePlan {
+            expected,
+            next,
+            observed_message_ids: BTreeSet::new(),
+            fetch_message_ids: ids,
+            explicitly_deleted_ids: BTreeSet::new(),
+            inventory_finished: true,
+            caught_up: false,
+        }))
+    }
+
+    /// Records now as the account's last mail sync once every message Gmail
+    /// lists as newest is held here, although a history scan may still be
+    /// applying older label changes. Bumps the store revision.
+    pub fn google_live_record_sync(&mut self, account: &str) -> Result<()> {
+        active_account(&self.db, account)?;
+        let tx = self.db.unchecked_transaction()?;
+        tx.execute("INSERT INTO meta(key,value) VALUES(?1,unixepoch()) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [format!("last_mail_sync:{account}")])?;
+        tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 /// Creates the three lanes for `generation`, all from `baseline`. The listing
@@ -1002,7 +1117,8 @@ fn validate_plan(lane: MailLane, plan: &PagePlan, history: &str) -> Result<()> {
     }
     // A plan advances exactly one revision within one generation. Only the
     // delta lane replays history; the listing lanes plan listing pages, plus
-    // the reconciliation and retry pages of a finished inventory.
+    // the reconciliation and retry pages of a finished inventory and the
+    // new-mail pages of a finished recent lane.
     let ids = planned_ids(plan);
     if plan.expected.account != plan.next.account
         || plan.expected.generation != plan.next.generation
@@ -1015,7 +1131,7 @@ fn validate_plan(lane: MailLane, plan: &PagePlan, history: &str) -> Result<()> {
         || (lane == MailLane::Delta && plan.inventory_finished)
         || (lane != MailLane::Delta
             && (!(matches!(plan.expected.phase, Phase::Full { .. })
-                || (lane == MailLane::Inventory
+                || (matches!(lane, MailLane::Inventory | MailLane::Recent)
                     && matches!(plan.expected.phase, Phase::CatchUp { .. })
                     && plan.inventory_finished))
                 || plan.caught_up))
@@ -1195,6 +1311,13 @@ fn publish_item_inner(
         "unavailable"
     };
     db.execute("INSERT INTO google_mail_coverage(account,remote_id,last_inventory_generation,remote_thread_id,history_id,source_state,index_state,attachment_state,source_hash,source_size,issue,internal_date_ms,deleted,observed_generation) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(account,remote_id) DO UPDATE SET last_inventory_generation=coalesce(excluded.last_inventory_generation,google_mail_coverage.last_inventory_generation),remote_thread_id=coalesce(excluded.remote_thread_id,google_mail_coverage.remote_thread_id),history_id=coalesce(excluded.history_id,google_mail_coverage.history_id),source_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.source_state ELSE excluded.source_state END,index_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.index_state ELSE excluded.index_state END,attachment_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.attachment_state ELSE excluded.attachment_state END,source_hash=coalesce(excluded.source_hash,google_mail_coverage.source_hash),source_size=coalesce(excluded.source_size,google_mail_coverage.source_size),issue=excluded.issue,internal_date_ms=coalesce(excluded.internal_date_ms,google_mail_coverage.internal_date_ms),deleted=excluded.deleted,observed_generation=excluded.observed_generation",params![page.account,remote,inventory,item.remote_thread_id,stored_history,source_state,if ready {"indexed"} else {"unindexed"},if ready {"complete"} else {"incomplete"},item.source.as_ref().map(|s|&s.hash),item.source.as_ref().map(|s|s.size),item.issue.map(|i|i.key()),item.internal_date_ms,deleted,page.generation])?;
+    Ok(())
+}
+
+/// Recounts the account's coverage totals from its coverage rows, after a
+/// change that bypassed the per-item counts.
+pub(crate) fn recount_coverage(db: &Connection, account: &str) -> Result<()> {
+    db.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete'),unavailable=(SELECT count(*) FROM google_mail_coverage c WHERE c.account=?1 AND c.deleted=0 AND (c.source_state!='retained' OR c.index_state!='indexed' OR c.attachment_state!='complete' OR c.observed_generation!=(SELECT mail_generation FROM google_accounts WHERE account=?1))) WHERE account=?1",[account])?;
     Ok(())
 }
 

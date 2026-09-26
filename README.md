@@ -1,24 +1,59 @@
 # fuckMail
 
-A fast, focused desktop mail and calendar client for Gmail and Google Workspace. It runs natively on Windows, macOS and Linux, keeps your mail on your own machine, and comes with a command-line client that shares the same data.
+A native desktop mail and calendar client for Gmail and Google Workspace, with a local LLM doing the sorting. Rust engine, C++/Qt Quick GUI, SQLite store, and a CLI on the same engine. Windows, macOS and Linux.
 
-It is built around one daily habit: read what's new, finish what needs doing, and end the day with nothing unread and nothing starred.
+> **Status:** early, under active development, no release yet; build from source. The [changelog](CHANGELOG.md) lists what has shipped.
 
-> **Status:** early and under active development. There is no public release yet; you build it from source, and `package` makes an unsigned test installer. The [development log](docs/status.md) records what changed recently and what has been verified.
+![Mail: the conversation list for one account, an open thread, and the day's timeline underneath](docs/images/mail.png)
 
-## Features
+<details>
+<summary>Calendar</summary>
 
-- **Separate accounts.** Personal Gmail and Workspace accounts stay apart. There is no unified inbox, and mail is always shown as conversations.
-- **Simple triage.** Unread means "not reviewed yet" and a star means "action pending". **Done** clears both; **Delay** holds a conversation for later.
-- **Offline mail and search.** Messages, original sources and attachments are stored locally. You can search by sender, subject or body text without a connection.
-- **Writing.** New message, reply, reply all and forward, with attachments. Drafts sync with Gmail, and recent mail actions can be undone.
-- **Safe HTML mail.** Messages show as they were designed, cleaned of scripts and trackers first. Remote images stay hidden until you load them, only ever over https and through your own HTTPS proxy if you set one. Hovering a link shows where it goes and lets you block its domain. HTML or plain text is one choice for every message.
-- **Gmail labels.** Organize mail with your existing labels.
-- **Calendar.** Day, week and month views across your accounts. Create and edit events, including recurring ones, answer invitations and get reminders. A timeline on the mail screen keeps your day in view.
-- **Optional local AI.** Point it at [Ollama](https://ollama.com) or another local model server. It can summarize messages, tell people from automated mail and suggest labels. It never writes or sends email, and it is off by default.
-- **Command line.** `fm` works with the same accounts and data as the app, so scripts and external tools can use it.
-- **Themes and shortcuts.** Four built-in themes and editable keyboard shortcuts.
-- **Debug console.** Press `~` outside text fields for a filterable log console. It can also run `fm` commands against the app's own engine.
+![Calendar day view combining three accounts, with the day's mail activity on the right](docs/images/calendar.png)
+
+</details>
+
+Screenshots use the built-in demo profile (`fuckmail-gui --demo-profile`); every name and message in them is synthetic.
+
+## What it does
+
+**Mirrors your mailbox locally.** Every message, its raw MIME source and its attachments are stored in SQLite on your machine. Sync pulls the last 30 days first, then walks the full mailbox in the background, with Gmail history checks for new mail slotted in between. Reads, account switches and search never touch the network.
+
+**Sorts mail with a local model.** Every received message goes to a model on your own model server: [Ollama](https://ollama.com) or anything OpenAI-compatible. It returns a one-line summary, human or bot, and at most one of your Gmail labels, picked using descriptions you write for each label. Output is constrained to a JSON schema and validated. Per label, you choose whether an applied label also marks the mail read or sends it to Spam. Newsletters and notifications then file themselves, and Unread is mostly people.
+- New mail is processed first. Older mail is processed on request, from the last week back to all of it.
+- The system and user prompts are editable.
+- Results are cached with the name of the model that wrote them, and redone only when the message or your labels change.
+- Your own labels and corrections always win over the model's.
+
+**Keeps triage to two flags.** Unread is "not reviewed". Starred is "still needs action". Done clears both, and Delay keeps the star. The aim is zero of each at the end of the day.
+
+**Keeps accounts separate.** Each account has its own mailbox, picked at the top, and remembers its own view. There's no unified inbox. Mail is always grouped into conversations.
+
+**Searches locally.** SQLite FTS5 over subject, body and people, with `from:`, `to:`, `subject:`, `body:`, `label:`, `has:attachment` and `is:` operators ([syntax](docs/user-guide.md#search)). Works offline across the whole mirror.
+
+**Composes plain text first.** New message, reply, reply all and forward, with attachments. Drafts round-trip through the Gmail drafts API, sending uses the Gmail API, and recent actions can be undone. The model doesn't write or send mail.
+
+**Renders HTML mail safely.** HTML is sanitized, and scripts and trackers are stripped. Remote images stay blocked until you allow them, load over https only, and can go through your own proxy. Link hosts can be blocked.
+
+**Calendar.** Google Calendar API across all your accounts, in day, week and month views. Handles recurring events, invitations and RSVP, and reminders with a Join button. A timeline strip under the mail view shows your day.
+
+**Has a full CLI.** `fm` sends the same engine requests the GUI does and returns JSON, so scripts and external agents can search, read, draft, run model work and manage the calendar without the GUI.
+
+## Architecture
+
+```text
+fuckmail-gui (C++20, Qt 6 Quick) ─┐
+                                  ├─ JSON over a local socket / named pipe ─ fm-engine (Rust) ─ SQLite (WAL, FTS5) + blob store
+fm (Rust CLI) ────────────────────┘                                              │
+                                                                                 ├─ Gmail API, Google Calendar API
+                                                                                 └─ your model server
+```
+
+- **`fm-engine`** is the only process that writes the store. It runs Gmail and Calendar sync, sending, remote-content fetches and the model queue. Clients find it through the profile's `engine.json`, or start it on demand. It exits shortly after the last client disconnects; there's no resident service.
+- **`fuckmail-gui`** is the desktop client. It never opens the database; it keeps recent views and threads in memory and asks the engine for changes.
+- **`fm`** doesn't link the store at all. Every command is an engine request.
+
+OAuth refresh tokens are stored in the OS keychain. There are no servers of ours and no telemetry. Besides Google and your model server, the app only contacts hosts for things you control: remote images you load, sender pictures (on by default) and unsubscribe links. [PRIVACY.md](PRIVACY.md) lists every destination. There's no web runtime and no Node.js. [crates/README.md](crates/README.md) and [gui/README.md](gui/README.md) map the source.
 
 ## Build and run
 
@@ -28,73 +63,45 @@ You need:
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
 - **Linux (Ubuntu 24.04):** a C++ compiler, Python with venv, and the graphics libraries listed in [the CI workflow](.github/workflows/native.yml).
 
-Bootstrap downloads the pinned Rust, Qt and build tools into `.tools/` inside the checkout, leaving system installs alone.
-
-On macOS or Linux, run this once:
+Bootstrap downloads the pinned Rust, Qt and build tools into `.tools/` inside the checkout and leaves system installs alone.
 
 ```sh
-scripts/dev.sh bootstrap
+scripts/dev.sh bootstrap              # once; ./scripts/dev.ps1 on Windows
+scripts/dev.sh run --preset release
 ```
 
-Then build and open the app:
+Without `--preset release` you get a debug build, several times slower. Add `-- --demo-profile` to run against sample data. Other commands:
+- `test` runs the tests.
+- `cli -- --help` shows the CLI.
+- `package --preset release` builds an unsigned installer in `dist/`: `.exe` on Windows, `.dmg` on macOS, `.tar.gz` on Linux.
 
-```sh
-scripts/dev.sh run
-```
+The [build guide](docs/build-development.md) has the details.
 
-On Windows, in PowerShell, run this once:
+## Google account setup
 
-```powershell
-./scripts/dev.ps1 bootstrap
-```
-
-Then build and open the app:
-
-```powershell
-./scripts/dev.ps1 run
-```
-
-`run` builds a debug build for development. For everyday use, add `--preset release` (for example `./scripts/dev.ps1 run --preset release`); it is several times faster.
-
-To try the app with sample data instead of a real account, pass `--demo-profile`. It uses a separate demo profile:
-
-```sh
-scripts/dev.sh run -- --demo-profile
-```
-
-Other commands: `test` runs the test suite, `cli -- --help` shows the CLI, and `package --preset release` builds an unsigned installer in `dist/` (a setup `.exe` on Windows, a `.dmg` on macOS, a `.tar.gz` on Linux). The [build guide](docs/build-development.md) covers these in detail.
-
-## Connecting a Google account
-
-Google sign-in needs your own Google Cloud project with the Gmail and Calendar APIs enabled, plus an OAuth client of type **Desktop app**. The [setup guide](docs/build-development.md#google-sign-in-setup) walks through it. Once you have the client's JSON file, register it once per checkout (use `python` on Windows):
+You need your own Google Cloud project with the Gmail and Calendar APIs enabled, and an OAuth client of type **Desktop app**. See the [setup guide](docs/build-development.md#google-sign-in-setup). Register the client JSON once per checkout (`python` on Windows):
 
 ```sh
 python3 scripts/configure_google.py /path/to/desktop-client.json
 ```
 
-The file is copied into the ignored `.tools/` folder, so it never goes into Git. Rebuild, then open **Settings → Accounts → Connect Google account**. Signing in imports nothing until you start sync for that account. Refresh tokens are kept in your operating system's credential store, not in the app's files.
+It's copied into the ignored `.tools/` folder, so it stays out of Git. Rebuild, then go to **Settings → Accounts → Connect Google account**. Nothing downloads until you start sync for that account.
 
-## How it fits together
+## Local model setup
 
-- **`fm-engine`** is a local background process. It owns the SQLite store, syncs with Google, and serves the GUI and CLI over a private local pipe or socket. It exits when its last client does. There is no always-on service.
-- **`fuckmail-gui`** is the desktop app: a Qt Quick (QML) front end on a C++ backend. It never opens the database directly.
-- **`fm`** is the command-line client. It uses the same engine and commands as the app.
-
-Rust is used for the engine and CLI, C++20 with Qt 6 Quick for the desktop app, and SQLite with FTS5 for storage and search. No Node.js or web runtime is involved. [crates/README.md](crates/README.md) and [gui/README.md](gui/README.md) map the source tree.
+Run Ollama, or any OpenAI-compatible server, and pull a model. Then set the endpoint and model under **Settings → Local LLM**, and turn it on for the accounts you want. Label descriptions, and the Read and Spam choices, are in each account's label settings.
 
 ## More
 
-- [Development log](docs/status.md): recent changes and what has been verified
-- [Product scope](docs/product-scope.md) and [north star](docs/north-star.md): what the product is and is not
-- [Documentation index](docs/README.md): design, contracts, decisions and research
-- [Security policy](SECURITY.md)
+- [User guide](docs/user-guide.md): triage, shortcuts, search, calendar, settings, your data
+- [CLI reference](docs/cli.md) and [troubleshooting](docs/troubleshooting.md)
+- [Architecture](docs/architecture.md) and the [documentation index](docs/README.md)
+- [Changelog](CHANGELOG.md), [privacy](PRIVACY.md) and [security policy](SECURITY.md)
 
 ## Contributing
 
-fuckMail is for Gmail and Google Workspace, through Google's APIs, and it will stay that
-way. Bug fixes are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). If you want other
-providers or features beyond that, fork it.
+fuckMail targets Gmail and Google Workspace through Google's APIs only. Bug fixes are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). For other providers or a different feature set, fork it.
 
 ## License
 
-fuckMail is released under the [MIT License](LICENSE). It bundles third-party components under their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Bundled third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

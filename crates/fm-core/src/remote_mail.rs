@@ -45,8 +45,41 @@ impl Store {
         Ok(ids)
     }
 
+    /// How many of the account's messages stored here are in Trash.
+    pub fn google_trash_stored(&self, account: &str) -> Result<u64> {
+        Ok(self.db.query_row(
+            "SELECT count(*) FROM messages WHERE account=?1 AND trashed=1",
+            [id(account)?],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The Gmail ids of the Trash messages stored here that no pending mail
+    /// change still uses, with the oldest one's Gmail date in Unix seconds.
+    /// Once Gmail's own Trash is empty, these are what emptying still removes.
+    pub fn google_trash_leftovers(&self, account: &str) -> Result<(Vec<String>, Option<i64>)> {
+        let account = id(account)?;
+        let mut stmt = self.db.prepare_cached(
+            "SELECT m.remote_id,COALESCE(c.internal_date_ms/1000,unixepoch(m.sent_at)) FROM messages m LEFT JOIN google_mail_coverage c ON c.account=m.account AND c.remote_id=m.remote_id WHERE m.account=?1 AND m.trashed=1 AND NOT EXISTS(SELECT 1 FROM google_mail_mutations w WHERE w.account=m.account AND w.message_id=m.id AND w.state IN ('pending','in_flight','reconcile'))",
+        )?;
+        let mut ids = Vec::new();
+        let mut oldest: Option<i64> = None;
+        for row in stmt.query_map([account], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?))
+        })? {
+            let (remote, at) = row?;
+            ids.push(remote);
+            oldest = match (oldest, at) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+        }
+        Ok((ids, oldest))
+    }
+
     /// Removes the local copies of messages Gmail has deleted for good, with
-    /// everything derived from them, as retention pruning does. Returns how
+    /// everything derived from them, as retention pruning does, and records
+    /// each as deleted so sync never asks Gmail for it again. Returns how
     /// many were stored here.
     pub fn google_forget_deleted(&self, account: &str, remote_ids: &[String]) -> Result<usize> {
         let account = id(account)?;
@@ -65,6 +98,18 @@ impl Store {
             tx.query_row("SELECT count(*) FROM retention_messages", [], |r| r.get(0))?;
         if forgotten > 0 {
             crate::account_retention::purge_messages(&tx, account)?;
+        }
+        // Gmail never reuses a message id, so a deleted one stays deleted. A
+        // message still kept here for a draft keeps its coverage.
+        let mut marked = 0;
+        {
+            let mut mark = tx.prepare_cached("INSERT INTO google_mail_coverage(account,remote_id,observed_generation,source_state,index_state,attachment_state,deleted) SELECT account,?2,mail_generation,'unavailable','unindexed','incomplete',1 FROM google_accounts WHERE account=?1 AND NOT EXISTS(SELECT 1 FROM messages WHERE account=?1 AND remote_id=?2) ON CONFLICT(account,remote_id) DO UPDATE SET deleted=1 WHERE deleted=0")?;
+            for remote in remote_ids {
+                marked += mark.execute(params![account, remote])?;
+            }
+        }
+        if forgotten > 0 || marked > 0 {
+            crate::google_live_mail::recount_coverage(&tx, account)?;
             tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         }
         tx.execute_batch("DROP TABLE retention_messages")?;

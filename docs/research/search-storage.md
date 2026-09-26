@@ -54,11 +54,11 @@ A minimum durable slice and correct FTS queries can unblock Phase 1 after a reco
 
 **Decision output:** the shared schema/fixture revision, ownership/transaction policy, index-maintenance approach, blob recovery rules, known query semantics and benchmark report. Compare Tantivy only if FTS5 misses agreed retrieval or performance needs after inspection. A separate index requires durable replay, deletion propagation and a visible watermark even in a Rust engine. No storage experiment or benchmark has run.
 
-Related acceptance: [Core](../contracts/core-storage.md), [Search](../contracts/search.md), [quality](../contracts/quality.md) and the [Phase 0 plan](../plans/phase-0.md).
+Related acceptance: [Core](../contracts/core-storage.md), [Search](../contracts/search.md) and [quality](../contracts/quality.md).
 
 ## 2026-09-23: schema-29 storage review
 
-This is a read-only review of schema-29 source on `main` at `31688003d8c0` with concurrent uncommitted work, aggregate metadata from the local `default` profile, and `EXPLAIN QUERY PLAN` on that profile. No message text, identifiers, credentials or raw profile files were copied into the repository. The profile was active during inspection, so row counts are a point-in-time sample. The external `blobs/` total supplied in a separate review was not independently verified. [The proposed work packet](../plans/sqlite-storage-reset.md) is awaiting review; none of its schema or cleanup changes is implemented.
+This is a read-only review of schema-29 source on `main` at `31688003d8c0` with concurrent uncommitted work, aggregate metadata from the local `default` profile, and `EXPLAIN QUERY PLAN` on that profile. No message text, identifiers, credentials or raw profile files were copied into the repository. The profile was active during inspection, so row counts are a point-in-time sample. The external `blobs/` total supplied in a separate review was not independently verified. The proposed work packet is awaiting review; none of its schema or cleanup changes is implemented.
 
 | Observation | Read-only evidence and limit |
 | --- | --- |
@@ -81,7 +81,7 @@ The following audit notes were supplied by another AI after the initial review. 
 
 ### Corrections to the earlier separate review
 
-- **Journal disposal:** withdrawn as "delete once complete/published". `google_live_coverage` reads the previous completed delta page as a freshness proof ([google_live_mail.rs:532](../../crates/fm-core/src/google_live_mail.rs:532)). Calendar readiness reads the run named by a source generation ([phase1_calendar.rs:48](../../crates/fm-core/src/phase1_calendar.rs:48)). Compaction by proof, as packet B requires, stands.
+- **Journal disposal:** withdrawn as "delete once complete/published". `google_live_coverage` reads the previous completed delta page as a freshness proof ([google_live_mail.rs:532](../../crates/fm-core/src/google_live_mail.rs#L532)). Calendar readiness reads the run named by a source generation ([combined_calendar.rs](../../crates/fm-core/src/combined_calendar.rs)). Compaction by proof, as packet B requires, stands.
 - **Calendar observations:** equal in this sample, but that is not a safe single-copy rule. Withdrawn in favour of packet C's reversible override.
 - **Local-model snapshots:** these are not copies of message content. Withdrawn; see gap 5 for what they do repeat.
 - **Retention and auto-vacuum:** withdrawn. `mail_since` is read only by acquisition, so retention creates no deletion workload.
@@ -102,22 +102,22 @@ The following audit notes were supplied by another AI after the initial review. 
 
 - **Planner statistics fix it.** On the in-memory copy, `PRAGMA optimize=0x10002` and a full `ANALYZE` each switched the ordinary query to FTS-first: meeting 43.47→0.03 ms, the 46.84→0.64 ms, no match 27.91→0.01 ms. The bundled SQLite is 3.46.0 (`libsqlite3-sys` 0.30.1), which supports this `optimize` form.
 - **Two secondary plans confirmed.** Other-account recipient suggestions use `messages_order (account=?)` and then a temporary sort. Calendar mail counts use `google_mail_reconcile (account=? AND deleted=?)` with no provider-date range.
-- **Old-engine refusal confirmed.** A version-29 engine opening a version-1 profile runs `migration-002.sql` ([lib.rs:189](../../crates/fm-core/src/lib.rs:189)). Decision 1's version-30-or-higher rule is required.
+- **Old-engine refusal confirmed.** A version-29 engine opening a version-1 profile runs `migration-002.sql` ([lib.rs:189](../../crates/fm-core/src/lib.rs#L189)). Decision 1's version-30-or-higher rule is required.
 
 ### Gaps in this proposal
 
 1. **Ship the planner fix first.** One statement at open, plus periodic or at-close `PRAGMA optimize`, fixes the measured plan. Make it a standalone packet with a plan-assertion test and the existing search tests, not gated on packet A's corpus work. Re-verify on a large generated profile afterwards.
 2. **Split journal compaction into payloads and headers.** Payload rows are the bulk: about 36.3 MB in `google_live_page_items` and 8.3 MB in Calendar items and pages. Headers are about 3.0 MB of Gmail pages and 1.2 MB of Calendar runs.
-   - Every payload read found is on active work. Listing pending items returns nothing once a page is complete ([google_live_mail.rs:324](../../crates/fm-core/src/google_live_mail.rs:324)). Re-beginning an existing page compares only the header fingerprint ([google_live_mail.rs:272](../../crates/fm-core/src/google_live_mail.rs:272)). Calendar item and page reads are scoped to a run lease.
-   - One exception must stay: a published run whose sources still await consolidation can receive a lease again ([live_calendar.rs:95](../../crates/fm-core/src/live_calendar.rs:95)). Keep its rows until consolidation finishes.
+   - Every payload read found is on active work. Listing pending items returns nothing once a page is complete ([google_live_mail.rs:324](../../crates/fm-core/src/google_live_mail.rs#L324)). Re-beginning an existing page compares only the header fingerprint ([google_live_mail.rs:272](../../crates/fm-core/src/google_live_mail.rs#L272)). Calendar item and page reads are scoped to a run lease.
+   - One exception must stay: a published run whose sources still await consolidation can receive a lease again ([live_calendar.rs:95](../../crates/fm-core/src/live_calendar.rs#L95)). Keep its rows until consolidation finishes.
    - Deleting completed or published payloads is therefore the larger saving with the simpler proof, and header retention can stay conservative. Packet B's crash/replay tests still apply.
 3. **Consider the FTS index shape.** The index is ordinary FTS5 with `prefix='2 3 4'` and `detail=full`.
-   - Search emits only AND-ed single-token prefix phrases, optionally column-filtered ([queries.rs:850](../../crates/fm-core/src/queries.rs:850), [queries.rs:1418](../../crates/fm-core/src/queries.rs:1418)). It uses no FTS auxiliary functions; snippets are built in Rust.
+   - Search emits only AND-ed single-token prefix phrases, optionally column-filtered ([queries.rs:850](../../crates/fm-core/src/queries.rs#L850), [queries.rs:1418](../../crates/fm-core/src/queries.rs#L1418)). It uses no FTS auxiliary functions; snippets are built in Rust.
    - A synthetic `detail=column` table accepted every one of those query shapes. It rejected only a multi-token phrase: "phrase queries are not supported (detail!=full)". [SQLite's FTS5 documentation](https://sqlite.org/fts5.html) reports one index at 743 MiB with `detail=full` and 340 MiB with `detail=column`.
    - Measure `detail=column` and fewer prefix lengths on the generated corpus. Also confirm that Rust's `is_alphanumeric` splitting never produces a term that `unicode61` splits into several tokens; such a term would become an unsupported phrase.
 4. **Give receipt and work tables a retention rule.** `operations`, `google_mail_mutations`, `capture_operations`, `calendar_write_operations` and `preference_operations` are deleted only by account removal. They are small now (508 operations; 68 confirmed and 14 superseded mutations), but every flag change adds rows. Keep unresolved or uncertain rows and anything replay needs. Then either age out terminal rows after a bounded window, or record that permanent growth is accepted.
 5. **Deduplicate local-model settings through a new table.** The `settings` object is 6.0 MB of the 7.3 MB of `snapshot_json`: about 4.5 KB per row, most of it a roughly 4 KB prompt. The 1,323 rows hold only 13 distinct settings values. `local_model_settings_history` cannot be the reference target, because only migrations write it (3 rows). Use a content-addressed settings table referenced by hash, and keep the stale-result comparison exact.
-6. **Retire the Rust projection caches with the summary.** If packet C adds a persisted conversation summary, remove the `update_hook` change tracking and the conversation, projection and coverage caches ([queries.rs:86](../../crates/fm-core/src/queries.rs:86), [queries.rs:136](../../crates/fm-core/src/queries.rs:136)). Maintaining both leaves two sources that can disagree.
+6. **Retire the Rust projection caches with the summary.** If packet C adds a persisted conversation summary, remove the `update_hook` change tracking and the conversation, projection and coverage caches ([queries.rs:86](../../crates/fm-core/src/queries.rs#L86), [queries.rs:136](../../crates/fm-core/src/queries.rs#L136)). Maintaining both leaves two sources that can disagree.
 7. **Sequence.** D038 asks to avoid over-engineering, and the founder is willing to start fresh. Run gaps 1 and 2, plus packet B's two index additions, first with focused correctness and crash tests, then decide packet C from a smaller baseline. Packet A's full tier list remains the acceptance gate for scale claims, not a prerequisite for these fixes.
 
 ### Assessment for the review plan

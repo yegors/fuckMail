@@ -2,6 +2,13 @@
 
 
 
+## D144 — calendar search around a day (CLI56)
+
+- `fm calendar search QUERY --around YYYY-MM-DD [--limit N]` lists the next time of each matching event within a year of that day, then its latest time in the 60 days before (Calendar38). `--from`/`--to` remain the range form, and `--around` cannot be combined with them.
+- The query takes `title:`, `with:` and plain words as the GUI does; `date:` is read but never filters.
+
+Consumers: Calendar38.
+
 ## D133 — run from the developer console (CLI55)
 
 The GUI's developer console runs `fm` as a child process with this profile, engine and (for account commands) the selected account filled in (Mail UI97). The CLI itself is unchanged: its arguments, output, exit codes and connection to the running engine are the same as in a terminal. No stdin is attached, so commands that wait for input see end of file.
@@ -184,19 +191,19 @@ Every mutating operation has explicit account/calendar/draft scope and a stable 
 
 Revision 7 adds `mail list --kind all|people|automated|unknown --exact-sender ADDRESS` and `mail sender ADDRESS`. The latter queries at most three recent conversations and the exact conversation total in the selected account; it never marks mail reviewed. Exact address filtering and sender history share trimming/case-insensitive identity semantics, while existing `--sender` remains a display-name/address substring filter. JSON list results add conversation kind and full filtered review/held/done group counts; member read results add kind. Consumers: Core 13, Search 5, Triage 6 and Mail UI 12; additive protocol 1, schema 7, fresh fixture 3. Migrated fixtures and command receipts retain their original revisions/data.
 
-Revision 6 adds account-scoped `draft list` and `draft create --mode new|reply|reply_all|forward`, independent `--draft-id` selectors for show/save/discard/capture/history, and editable subject/recipient files. Legacy positional conversation selectors retain their meaning; supplying both selectors fails. `draft save --recipients-file` reads a bounded JSON object with optional `to_recipients`, `cc_recipients` and `bcc_recipients` arrays of `{name?,email}`. Omitted arrays preserve saved recipients and empty arrays clear them. First-save legacy CLI requests bind the member returned by `draft_get`. Existing explicit request IDs, optimistic revisions, exact capture replay and no-network semantics remain. Consumers: Core 12, Mail UI 11, MIME and Platform; schema 6/protocol 1/fixture 2. See the [P1-08 fixture API](../../fixtures/README.md#p1-08-local-composition--core-12-cli-6-mail-ui-11) for exact bounds and fields.
+Revision 6 adds account-scoped `draft list` and `draft create --mode new|reply|reply_all|forward`, independent `--draft-id` selectors for show/save/discard/capture/history, and editable subject/recipient files. Legacy positional conversation selectors retain their meaning; supplying both selectors fails. `draft save --recipients-file` reads a bounded JSON object with optional `to_recipients`, `cc_recipients` and `bcc_recipients` arrays of `{name?,email}`. Omitted arrays preserve saved recipients and empty arrays clear them. First-save legacy CLI requests bind the member returned by `draft_get`. Existing explicit request IDs, optimistic revisions, exact capture replay and no-network semantics remain. Consumers: Core 12, Mail UI 11, MIME and Platform; schema 6/protocol 1/fixture 2. See [P1-08 local composition](../local-protocol.md#drafts) for the draft methods and fields.
 
 Windows verification passed all three CLI argument tests and the [21-call real CLI composition check](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-1/p1-08-cli-composition.json) in 18.534 seconds. The latter starts with the preserved schema-5 CLI, creates a first-save receipt, migrates through the schema-6 engine, and repeats that same command with the updated CLI. Its result and stored fingerprint/JSON remain exact. New first-save replay, independent draft creation/save/list/search/discard, Reply-all/Forward source routing, immutable unknown capture replay after later edits and an engine restart, and unchanged source-mail rows/counts also pass. The report binds both old and new binaries by SHA-256; final relocated-package and cross-platform checks remain separate.
 
 Revision 5 records the implemented local CLI boundary: grouped/typed mail query, explicit review/Done/Delay/undelay, signature/formatted/retained-attachment reply save, discard/capture history, local preferences/account metadata, combined calendar and deterministic local fake create/edit/self-RSVP commands. Consumers: Core 10, Mail UI, Triage, Search 3, Calendar and Platform. Exact grammar is `fm --help` and [local protocol](../local-protocol.md); protocol 1 remains additive, schema 5/fresh fixture 2 preserve old fixture profiles. Live provider/credential/model execution remains later work.
 
-Revision 4 applies D014 and the [Phase 1 plan](../plans/phase-1.md): query/action, reply/capture and combined-calendar parity grows alongside the updated GUI. Consumers: Core, Mail UI, Triage, Search, Calendar and Platform. Current runtime remains schema 4, protocol 1 and fixture 1; this revision does not invent executable command names or mark planned commands implemented.
+Revision 4 applies D014 and the Phase 1 plan: query/action, reply/capture and combined-calendar parity grows alongside the updated GUI. Consumers: Core, Mail UI, Triage, Search, Calendar and Platform. Current runtime remains schema 4, protocol 1 and fixture 1; this revision does not invent executable command names or mark planned commands implemented.
 
 Revision 3 records the next Phase 0 integration checkpoint. The draft response adds authored HTML and retained attachment IDs; structured draft_save can preserve or explicitly clear them. Existing plain-text commands clear stale HTML when changing the body. Lost-response replay survives an actual test-engine kill. Consumers: Core, Qt UI and MIME; protocol/fixture revisions remain 1.
 
 Revision 2 records D012’s implemented experimental slice. The implemented partial `fm` CLI is documented in [local protocol](../local-protocol.md); `fm --help` is the current command reference. It shares the engine with Qt and has no Qt dependency. Consumers: Core, Mail UI and Platform. Future command descriptions below retain their proposed status.
 
-Revision 1 applies D009: a small real CLI ships in the first usable GUI slice; coverage grows with Google workflows. Legacy transport/feed commands are deferred until founder dogfooding. Affected consumers: Core, Mail UI, Gmail, Calendar, Local assistance and Platform.
+Revision 1 applies D009: a small real CLI ships in the first usable GUI slice; coverage grows with Google workflows. Legacy transport/feed commands were deferred then; they are now out of scope. Affected consumers: Core, Mail UI, Gmail, Calendar, Local assistance and Platform.
 
 Owner: I — CLI. A full, feature-rich CLI is required alongside the desktop UI on Windows, macOS and Linux. Third-party agents use it for external workflows. Exact command names and schemas below are proposals; this is not a runnable command reference.
 
@@ -213,7 +220,7 @@ The GUI and CLI are peer clients of the same local core. Providers, search, cale
 
 ## Phase 1 boundary — implemented local slice
 
-CLI coverage lands with each shared GUI workflow. P1-00 records the supported request/output shapes, capabilities, bounds and command grammar in `fm --help`, [local protocol](../local-protocol.md) and [fixture API](../../fixtures/README.md). A Windows 19-call live CLI-to-engine smoke exercised synthetic account/filter/actions/preferences, formatted attachment reply/capture replay/discard/history and local calendar creation replay. This is bounded local evidence; native UI parity and other-host delivery remain integrated gates.
+CLI coverage lands with each shared GUI workflow. P1-00 records the supported request/output shapes, capabilities, bounds and command grammar in `fm --help` and [local protocol](../local-protocol.md); the synthetic demo data is described in [fixtures/README.md](../../fixtures/README.md). A Windows 19-call live CLI-to-engine smoke exercised synthetic account/filter/actions/preferences, formatted attachment reply/capture replay/discard/history and local calendar creation replay. This is bounded local evidence; native UI parity and other-host delivery remain integrated gates.
 
 - **Mail queries/actions:** typed sender/status/category/attachment/date filters, stable conversation grouping in Inbox and Sent, explicit count units and honest coverage. Reveal matching-member IDs. `mail review`, `mail done`, `mail delay` and `mail undelay` expose explicit review, atomic snapshot Done (read and clear stars), and untimed Delay/undelay using the same journal and stale-revision rules as the GUI. Fetching source content is separate from the GUI's user-open-triggered review action; an external reader cannot silently mark mail reviewed.
 - **Replies:** `draft save/show` reads/saves plain or formatted authored content, per-draft editable signature snapshots and selected retained attachments; explicit discard and local MIME capture with replayable operation outcomes and bounded capture inspection linked to the original conversation. First-save From/signature snapshots and subsequent explicit signature edits participate in the saved revision and captured-content guarantee; preference changes cannot rewrite an existing reply. A local capture never claims provider delivery. The CLI accepts content through bounded files/stdin and preserves the draft on uncertain capture. `draft history --unresolved-only` filters prepared/in-flight/acceptance-unknown operations before paging, so newer accepted history cannot hide an old unresolved capture; known rejections remain distinct. New mail, forward and local-file attachment import can follow in Phase 2; live submission is outside Phase 1.
@@ -224,15 +231,15 @@ Each packet verifies GUI-to-CLI and CLI-to-GUI readback where applicable, restar
 
 ## Required functional coverage
 
-Coverage below is the intended product surface, delivered incrementally. Phase 0 provides account selection, bounded conversation list/search/read, explicit flag/category actions, durable human drafts/capture and basic calendar queries alongside the GUI. Phase 1 expands the local workflows above, including a bounded calendar edit slice; setup/sync/live submission arrive with their corresponding Google workflows. Do not finish all command grammar, streaming, bulk tooling or assistance commands before expanding the GUI. By the pre-legacy dogfood gate, both interfaces must cover the agreed everyday Google workflows and be exercised by the founder. IMAP/SMTP and external-feed commands enter only with the later adapters.
+Coverage below is the intended product surface, delivered incrementally. Phase 0 provides account selection, bounded conversation list/search/read, explicit flag/category actions, durable human drafts/capture and basic calendar queries alongside the GUI. Phase 1 expands the local workflows above, including a bounded calendar edit slice; setup/sync/live submission arrive with their corresponding Google workflows. Do not finish all command grammar, streaming, bulk tooling or assistance commands before expanding the GUI. Both interfaces must cover the agreed everyday Google workflows. IMAP/SMTP and external calendar feeds are out of scope, so the CLI has no commands for them.
 
 | Area | CLI capabilities |
 | --- | --- |
 | Accounts and setup | Discover/select accounts, inspect provider capabilities, configure accounts/categories/local assistance, initiate explicit authentication and report actionable setup state |
 | Mail and search | List/search conversations, inspect specific messages/headers/bodies and source representations, fetch/save attachments, expose full offline/index coverage |
-| Mail management | Read/unread, star/unstar, labels/folders, category mappings, archive/trash/restore and explicitly scoped bulk operations with provider-specific semantics |
+| Mail management | Read/unread, star/unstar, labels, category mappings, archive/trash/restore and explicitly scoped bulk operations with provider-specific semantics |
 | Human-authored mail | Create/edit/reopen drafts, recipients/signatures/attachments, reply/reply-all/forward and explicit submission; preserve uncertain-send handling |
-| Calendar | Google calendar visibility/permissions, day/range/agenda/search, event edits, recurrence, RSVP and shared calendars; read-only feed commands later |
+| Calendar | Google calendar visibility/permissions, day/range/agenda/search, event edits, recurrence, RSVP and shared calendars |
 | Optional assistance | Inspect/configure mode and runner availability, request allowed local classification/summaries, accept/correct results and cancel an explicitly scoped batch |
 | Operations | Explicit sync, inspect progress/errors/pending operations, retry or cancel where valid, coverage, version/capability/schema discovery and useful diagnostics |
 | Change consumption | An explicitly invoked foreground watch/change stream with cursors, reconnection and bounded output for external automation |
@@ -244,7 +251,7 @@ GUI-only presentation controls need no artificial command equivalent. Every appl
 - Provide versioned JSON input/output and line-delimited JSON for streaming/batches; stable account/conversation/message/event IDs, bounded pagination and documented filtering/field selection. Keep human diagnostics on stderr and structured results on stdout.
 - Document consistent exit codes and distinguish invalid input, authentication required, unavailable capability, stale revision, partial/batch failure and unknown provider outcome. Do not silently prompt or launch a browser in noninteractive operation; an explicit setup/auth command may do so.
 - Writes require explicit account and target scope, with expected revisions and client request IDs where appropriate. Snapshot bulk targets; new arrivals must not inherit an earlier command. Offer preview/dry-run for applicable bulk/category changes.
-- Report local acceptance, queued/offline, provider confirmation and acceptance-unknown distinctly. Provide bounded waiting/progress/cancellation. Retrying a request ID can deduplicate local intent; it does not promise exactly-once SMTP delivery.
+- Report local acceptance, queued/offline, provider confirmation and acceptance-unknown distinctly. Provide bounded waiting/progress/cancellation. Retrying a request ID can deduplicate local intent; it does not promise exactly-once delivery.
 - Accept bodies and structured payloads from files/stdin, so callers need not put message content or secrets in shell arguments. Do not mix binary attachment bytes into JSON; use an explicit output destination or stream mode.
 - Help, discoverable capabilities/schema and examples ship with the CLI. Record compatibility/version rules before agents depend on command output. File/terminal content is data, not executable instructions.
 
@@ -276,7 +283,7 @@ Related: [Core](core-storage.md), [Platform](platform.md), [quality](quality.md)
 
 ## D052 / P2-LLM consumer boundary
 
-Revision 23 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
+Revision 23 consumes [Local assistance 6](local-ai.md): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
 
 ## D061 label commands
 

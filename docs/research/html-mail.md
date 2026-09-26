@@ -42,7 +42,7 @@ Keep evidence for source preservation, readability, editor round trips and any l
 
 ## 2026-09-23 renderer candidates
 
-Checked for [D100](../decisions.md) and the [HTML reader plan](../plans/html-reader.md). Web sources were checked on 2026-09-23; no renderer benchmark has been run yet.
+Checked for [D100](../decisions.md) and the HTML reader plan. Web sources were checked on 2026-09-23; no renderer benchmark has been run yet.
 
 - **litehtml:** BSD-3 C++ HTML/CSS layout engine. It parses with a bundled gumbo (Apache-2.0) and does no drawing, networking or scripting itself; the embedder's container supplies fonts, drawing and every image. Claws Mail replaced its WebKit "fancy" viewer with a litehtml plugin, and describes the WebKit deprecation as a security decision. Qt Creator's default help viewer is litehtml-based. [litehtml](https://github.com/litehtml/litehtml), [Claws Mail plugins](https://claws-mail.org/plugins.php), [Debian package](https://packages.debian.org/unstable/claws-mail-litehtml-viewer), [Qt Creator help](https://doc.qt.io/qtcreator/creator-how-to-get-help.html).
 - **Blitz (Rust):** html5ever + Stylo + Taffy + Parley, Apache-2.0/MIT. The project describes itself as beta, with GPU (Vello) examples, and no email or text-selection claims were found. Worth re-evaluating as a memory-safe option. [Blitz](https://github.com/DioxusLabs/blitz).
@@ -52,7 +52,7 @@ Inference, not measured: email HTML is mostly tables plus inline CSS, which suit
 
 ## D105 — HTML reader implementation (2026-09-24)
 
-This records [D105](../decisions.md): H0–H5 of the [HTML reader plan](../plans/html-reader.md#as-built-d105). It ran on one Windows 11 host with Qt 6.11.2 (MSVC) and the Rust workspace in its Debug profile. No test used a real mailbox, the real internet or a real proxy.
+This records [D105](../decisions.md): H0–H5 of the HTML reader plan. It ran on one Windows 11 host with Qt 6.11.2 (MSVC) and the Rust workspace in its Debug profile. No test used a real mailbox, the real internet or a real proxy.
 
 **Built:**
 - **Engine:** `fm_mail::html_view` (the sanitiser, version 1) and `fm_mail::image_view` (image decoding). Core adds `html_content`, `view_cache`, `link_index` and `remote_prefs`, plus schema34. The engine adds its `remote_content` runtime and link-index task. `fm_ipc::Client::call_within` gives the CLI its 30 s image and proxy-test calls.

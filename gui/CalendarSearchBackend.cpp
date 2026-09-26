@@ -213,10 +213,11 @@ void MailBackend::runCalendarSearch() {
             QVariantList rows;
             for (const auto &value : result["events"].toArray()) {
                 const auto row = value.toObject();
-                auto day = row["all_day"].toBool() ? QDate::fromString(row["start"].toString(), Qt::ISODate)
+                const auto day = row["all_day"].toBool() ? QDate::fromString(row["start"].toString(), Qt::ISODate)
                     : QDateTime::fromString(row["start"].toString(), Qt::ISODate).toTimeZone(zone).date();
-                if (!row["past"].toBool() && day < today) day = today;
-                const auto shown = calendarPresentation({row}, day, 1, zone);
+                QVariantList shown;
+                if (!row["past"].toBool() && day < today) shown = calendarPresentation({row}, today, 1, zone);
+                if (shown.isEmpty()) shown = calendarPresentation({row}, day, 1, zone);
                 if (!shown.isEmpty()) rows.append(shown.first());
             }
             m_calendarSearchResult = result.toVariantMap(); m_calendarSearchResult["events"] = rows;

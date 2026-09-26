@@ -16,8 +16,9 @@ it isn't trying to cover every use case.
   Google's APIs.
 - **Separate accounts, conversations only.** No unified inbox.
 - **Unread means unreviewed.** Only the user marks mail Done or Delayed.
-- **People write their own email.** Optional local models may tag or summarize mail; they
-  never write, send, complete or hide it.
+- **People write their own email.** Optional local models may tag or summarize mail. They
+  never write or send it, and they mark mail read or move it to Spam only through
+  per-label rules the user sets.
 - **The GUI and the CLI are equal clients** of one local engine, with one store and one
   command model. There is no always-on background service.
 - **One design on Windows, macOS and Linux**, in native Qt Quick. No Node.js or JavaScript
@@ -35,7 +36,8 @@ Rust, Qt, CMake and Ninja into `.tools/` inside the checkout. Use `--demo-profil
 with sample data. Connecting a real account needs your own Google Cloud client; see
 [Google sign-in setup](docs/build-development.md#google-sign-in-setup).
 
-Where things live:
+[docs/architecture.md](docs/architecture.md) explains how the engine, GUI, CLI, storage and sync
+fit together. Where things live:
 
 | Path | Contents |
 | --- | --- |
@@ -43,7 +45,7 @@ Where things live:
 | [gui/](gui/README.md) | Qt Quick desktop app (QML views, C++ backend, tests) |
 | [fixtures/](fixtures/README.md) | Synthetic MIME messages and demo data |
 | [scripts/](scripts/) | Developer workflow (`dev.py`), bootstrap, packaging and checks |
-| [docs/](docs/README.md) | Product scope, design, specifications and the development log |
+| [docs/](docs/README.md) | User guide, architecture, product scope, specifications and the decision log |
 
 ## Before you send a fix
 
@@ -64,7 +66,8 @@ CI runs the same checks, plus packaging, on macOS, Windows and Ubuntu.
 - **Keep the engine as the only database writer.** The GUI and CLI go through the local
   protocol ([docs/local-protocol.md](docs/local-protocol.md)).
 - **Update the documentation for behaviour changes.** Specifications live in
-  [docs/contracts/](docs/contracts/README.md).
+  [docs/contracts/](docs/contracts/README.md). User-visible changes get a line in
+  [CHANGELOG.md](CHANGELOG.md).
 - **Add or adjust tests with the change.** Rust tests run under `cargo test`; GUI tests are
   registered with CTest in [gui/CMakeLists.txt](gui/CMakeLists.txt).
 

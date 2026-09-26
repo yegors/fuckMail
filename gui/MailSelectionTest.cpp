@@ -23,6 +23,8 @@
 #include <QTextDocument>
 #include <QTextLayout>
 #include <QClipboard>
+#include <QColor>
+#include <algorithm>
 #include <QTest>
 using namespace GoogleOperationFixture;
 
@@ -237,9 +239,12 @@ class MailSelectionTest {
         // Down: the next one opens and is read; the first moves to Done, the second is kept.
         press(Qt::Key_Down);
         read=h.take(); require(read.request["params"].toObject()["id"]=="r2","Down opens the next To review item");
+        // The first folds away where it is before it moves.
+        require(ids().first()=="r1" && h.backend.conversations().first().toMap()["leaving"].toBool(),"the kept row collapses in place when the next opens");
         set("r2","done",false,false); order({"r3","h1","r1","r2","d1"}); counts(1,1,3); h.finish(read);
         await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().first()=="r2";},"second kept after Down");
         settle();
+        require(std::none_of(h.backend.conversations().cbegin(),h.backend.conversations().cend(),[](const QVariant &row){return row.toMap()["leaving"].toBool();}),"no row is left collapsing");
         require(ids()==QStringList{"r2","r3","h1","r1","d1"} && unsplit(),("after Down the kept row stays inside To review and no section repeats: "+ids().join(',')).toUtf8().constData());
         require(count("review")==2 && count("held")==1 && count("done:2026-09")==2,"section counts follow what is shown after Down");
         require(shownCount("mailGroup_review")==1 && shownCount("mailGroup_held")==1 && shownCount("mailSectionEmpty_review")==0,"one To review header, no empty state beside the kept row");
@@ -251,6 +256,23 @@ class MailSelectionTest {
         settle();
         require(ids()==QStringList{"r3","h1","r1","r2","d1"} && unsplit(),("the last kept row stays above Delayed: "+ids().join(',')).toUtf8().constData());
         require(count("review")==1 && shownCount("mailGroup_review")==1 && shownCount("mailSectionEmpty_review")==0,"the last kept row shows To review 1, not 'All reviewed'");
+        // Every other row in a group is shaded, starting again in each group.
+        {
+            const auto shade=[&](const QString &id){ auto *item=find(window->contentItem(),"rowHighlight_"+id); require(item,"row highlight exists"); return item->property("color").value<QColor>().alphaF(); };
+            require(shade("r1")==0 && qAbs(shade("r2")-.028)<.005 && shade("d1")==0 && shade("h1")==0,"Done shades its second row; Delayed's first row is plain");
+        }
+        // Drafts in the corner follow Settings' Show/Hide.
+        {
+            h.backend.m_draftChips={{"account",h.backend.m_account},{"rows",QVariantList{QVariantMap{{"id","draft-1"},{"subject","Unsent note"},{"to_recipients",QVariantList{}}}}},{"total",1}};
+            emit h.backend.draftChipsChanged();
+            auto *chips=find(window->contentItem(),"draftChips"); require(chips,"draft chips exist");
+            await([&]{return chips->isVisible();},"drafts show in the corner by default");
+            h.backend.m_preferences["show_draft_chips"]=false; emit h.backend.preferencesChanged();
+            await([&]{return !chips->isVisible();},"Hide takes the drafts out of the corner");
+            h.backend.m_preferences["show_draft_chips"]=true; emit h.backend.preferencesChanged();
+            await([&]{return chips->isVisible();},"Show brings them back");
+            h.backend.m_draftChips.clear(); emit h.backend.draftChipsChanged();
+        }
         // Delay it: it moves to Delayed at once and the view says all reviewed.
         h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
         auto delay=h.take(); require(delay.request["params"].toObject()["starred"]==true,"Delay sends the hold");
@@ -302,6 +324,67 @@ class MailSelectionTest {
             settle();
             qInfo()<<"subject heights"<<markedHeight<<subject->height();
             require(qAbs(markedHeight-subject->height())<1,"a tinted subject keeps the heading's line height");
+        }
+        // Changes waiting for or being checked with Google say nothing; a refusal
+        // shows under the buttons, in a line kept for it, so nothing moves.
+        {
+            auto *note=find(window->contentItem(),"readerNote"); auto *actions=find(window->contentItem(),"conversationActionsRow");
+            require(note && actions && note->isVisible() && actions->isVisible() && note->property("text").toString().isEmpty(),"an empty note line sits under the reader's buttons");
+            const auto key=qMakePair(h.backend.m_account,h.backend.m_selected);
+            const auto top=note->mapToScene({0,0}).y(); const auto height=note->height();
+            for (const auto &state : {"pending","unknown"}) {
+                h.backend.m_mailDelivery[key]={{"state",state}}; emit h.backend.mailDeliveryChanged(); settle();
+                require(note->property("text").toString().isEmpty(),"pending and checking changes say nothing");
+            }
+            h.backend.m_mailDelivery[key]={{"state","failed"}}; emit h.backend.mailDeliveryChanged(); settle();
+            require(note->property("text").toString().startsWith("Google did not accept this change"),"a refusal shows in the note line");
+            require(qAbs(note->mapToScene({0,0}).y()-top)<.5 && qAbs(note->height()-height)<.5 && top>=actions->mapToScene({0,actions->height()}).y(),"the refusal sits under the buttons and moves nothing");
+            require(!find(window->contentItem(),"mailDeliveryStatus") && !find(window->contentItem(),"messageDeliveryStatus"),"no status at the top of the reader");
+            h.backend.m_mailDelivery.remove(key); emit h.backend.mailDeliveryChanged();
+        }
+        // Month and section headers have no tooltip.
+        {
+            auto *header=find(window->contentItem(),"mailGroup_review"); require(header,"To review header");
+            const auto children=header->findChildren<QObject*>();
+            require(std::none_of(children.cbegin(),children.cend(),[](QObject *child){return child->metaObject()->indexOfProperty("shown")>=0;}),"section headers carry no tooltip");
+        }
+        // Opening another while a row still collapses sends the first at once.
+        {
+            h.finish(h.take());
+            await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading;},"opening the delayed row settles");
+            const auto rows=h.backend.conversations();
+            h.backend.startLeaving(rows[1].toMap(),1); h.backend.startLeaving(rows[2].toMap(),2);
+            const auto leaving=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) if (row.toMap()["leaving"].toBool()) out.append(row.toMap()["id"].toString()); return out; };
+            require(leaving()==QStringList{rows[2].toMap()["id"].toString()} && !ids().contains(rows[1].toMap()["id"].toString()),"only the latest row collapses; the earlier one goes at once");
+            await([&]{return leaving().isEmpty() && !h.backend.m_loading && ids().size()==5;},"after the collapse the list settles with every row");
+        }
+        // Collapsing the only loaded month while older mail isn't loaded keeps
+        // the headers, and refreshes never show a loading text.
+        {
+            for (const auto &id : {"r1","r2","r3","h1","d1"}) set(id,"done",false,false);
+            order({"r3","h1","r1","r2","d1"}); counts(0,0,5);
+            h.backend.loadConversations(false,true); await([&]{return !h.backend.m_loading;},"every row in one month");
+            settle();
+            auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail workspace");
+            // Load more's own "Loading…" is paging feedback, not a refresh.
+            const auto loadingText=[&]{ bool found=false; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){
+                if (item->objectName()=="loadMoreConversations") return;
+                const auto text=item->property("text").toString();
+                if (item->isVisible() && (text==QStringLiteral("Searching\u2026") || text==QStringLiteral("Loading\u2026"))) found=true;
+                for (auto *child:item->childItems()) walk(child); };
+                walk(window->contentItem()); return found; };
+            // Like Core, the refresh leaves the collapsed month's rows out.
+            const auto month=h.rows; h.rows.clear();
+            h.backend.m_nextOffset=5;
+            h.backend.setCollapsedGroups({"done:2026-09"});
+            require(h.backend.m_loading && list->property("count").toInt()==0 && !mail->property("firstLoading").toBool(),"collapsing empties the loaded rows while the refresh runs");
+            require(shownCount("mailGroup_review")==1 && shownCount("mailGroup_done:2026-09")==1 && !loadingText(),"the headers stay and nothing says Searching or Loading");
+            await([&]{return !h.backend.m_loading;},"the refresh after collapsing lands");
+            require(shownCount("mailGroup_done:2026-09")==1 && !loadingText(),"no loading text after the refresh");
+            h.rows=month;
+            h.backend.setCollapsedGroups({});
+            require(list->property("count").toInt()==5 && !loadingText(),"expanding puts the month's rows back at once with no loading text");
+            await([&]{return !h.backend.m_loading;},"the refresh after expanding lands");
         }
     }
     static void undoActions() {
@@ -472,9 +555,11 @@ class MailSelectionTest {
         await([&]{header=renderedHeader(window->contentItem());return header;},"date header painted after layout");
         click(window,header,Qt::LeftButton);
         require(!find(window->contentItem(),"conversationRow_a") || !find(window->contentItem(),"conversationRow_a")->isVisible(),"date group collapses");
+        // Sent and Drafts are always grouped; an old plain-list choice changes nothing.
         h.backend.m_preferences["mail_date_grouping"]="plain"; emit h.backend.preferencesChanged();
-        await([&]{auto item=find(window->contentItem(),"conversationRow_a");return item && item->isVisible();},"plain list restores rows");
-        require(!mail->property("dateGroups").toBool(),"shared plain-list preference applied");
+        require(mail->property("dateGroups").toBool(),"a retired plain-list preference keeps the date groups");
+        click(window,header,Qt::LeftButton);
+        await([&]{auto item=find(window->contentItem(),"conversationRow_a");return item && item->isVisible();},"the date group opens again");
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
         h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(97))},{"sent",false}}}}};
         emit h.backend.conversationChanged();

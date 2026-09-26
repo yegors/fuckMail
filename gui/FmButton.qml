@@ -25,8 +25,8 @@ T.ToolButton {
     // Hover lifts the whole button: main (prominent) actions a little, the
     // rest more. 1 turns it off.
     property real hoverBrightness: prominent ? 1.12 : 1.3
-    readonly property bool brightened: hovered && enabled && hoverBrightness !== 1
-    function lit(value) { return brightened ? Theme.brighten(value, hoverBrightness) : value }
+    // No member function here: bindings of a delegate being destroyed must not call into it.
+    readonly property real lift: hovered && enabled ? hoverBrightness : 1
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     // The Basic style's ToolButton defaults.
@@ -56,7 +56,7 @@ T.ToolButton {
             width: row.item ? row.item.labelWidth : Math.min(implicitWidth, content.width)
             text: control.text
             font: control.font
-            color: control.lit(control.foreground)
+            color: control.lift !== 1 ? Theme.brighten(control.foreground, control.lift) : control.foreground
             verticalAlignment: Text.AlignVCenter
             textFormat: Text.PlainText
             elide: Text.ElideRight
@@ -84,7 +84,7 @@ T.ToolButton {
                 FmIcon {
                     visible: parent.hasIcon
                     x: parent.placed(0, width); anchors.verticalCenter: parent.verticalCenter
-                    name: control.iconName; size: control.iconSize; color: control.lit(control.iconColor)
+                    name: control.iconName; size: control.iconSize; color: control.lift !== 1 ? Theme.brighten(control.iconColor, control.lift) : control.iconColor
                 }
                 Loader {
                     id: hint
@@ -101,7 +101,7 @@ T.ToolButton {
     }
     background: Rectangle {
         radius: control.radius
-        color: control.prominent ? (control.enabled ? control.lit(Theme.text) : Theme.controlBorder) : control.down || control.selected ? control.lit(Theme.selected) : control.hovered ? Theme.surface : "transparent"
+        color: control.prominent ? (control.enabled ? Theme.brighten(Theme.text, control.lift) : Theme.controlBorder) : control.down || control.selected ? Theme.brighten(Theme.selected, control.lift) : control.hovered ? Theme.surface : "transparent"
         border.width: control.activeFocus || control.outlined ? 1 : 0
         border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder
     }

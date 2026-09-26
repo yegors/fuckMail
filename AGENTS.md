@@ -2,8 +2,11 @@
 
 fuckMail is a personal desktop mail and calendar client for Google accounts: a Rust engine
 and `fm` CLI, a C++20/Qt Quick GUI, and SQLite/FTS5 storage behind private local IPC.
-[docs/status.md](docs/status.md) and the recorded execution evidence are the source of truth
-for what works. Source files or an isolated compile don't prove a feature is done.
+[CHANGELOG.md](CHANGELOG.md) records what shipped and [docs/decisions.md](docs/decisions.md)
+records why. Source files or an isolated compile don't prove a feature is done.
+
+If `AGENTS.local.md` exists (it's ignored by Git), read it too: it holds host- and
+account-specific rules.
 
 ## Talk to the user
 
@@ -14,11 +17,11 @@ for what works. Source files or an isolated compile don't prove a feature is don
 
 ## Read first
 
-1. [docs/status.md](docs/status.md): what exists and what is next (newest entry first)
+1. [CHANGELOG.md](CHANGELOG.md): what shipped recently (newest first)
 2. [docs/north-star.md](docs/north-star.md) and [docs/product-scope.md](docs/product-scope.md): what the product is and is not
 3. [docs/decisions.md](docs/decisions.md): accepted choices vs proposals vs open questions
 4. The owning file under [docs/contracts/](docs/contracts/README.md) or [docs/research/](docs/research/README.md) for the area you are touching
-5. [docs/development-plan.md](docs/development-plan.md) and [docs/plans/](docs/plans/) for sequence and evidence gates
+5. [docs/architecture.md](docs/architecture.md) for how the processes, IPC, storage and sync fit together; [docs/development-plan.md](docs/development-plan.md) for sequence
 6. [docs/ui-ux.md](docs/ui-ux.md) for screen structure; [docs/README.md](docs/README.md) for where new writing belongs
 7. [crates/README.md](crates/README.md) and [gui/README.md](gui/README.md) for the source layout
 
@@ -26,12 +29,11 @@ Don't invent product behaviour, stack locks or "done" features from memory. If a
 
 ## Standing rules
 
-- **Real accounts.** The founder has signed in with a real Gmail account and authorized testing with it. External mail and invitations are allowed only to the two addresses in the ignored local notes. Never automate any other external send or invitation. Never put raw mailbox or auth data in Git.
-- **Google OAuth client.** It is configured locally in the ignored `.tools/google-oauth-client.json`. Don't ask for it again on this host, and never log or commit its contents. Desktop sign-in uses a temporary loopback port; no web callback registration is needed.
-- **Mac packages.** Keep the packaged engine identity stable, to avoid unnecessary Keychain prompts.
-- **Repository hygiene.** Generated evidence (logs, manifests, run archives, profiles) stays out of Git, in ignored local or CI artifact storage; see [evidence storage](docs/research/evidence-archive.md). Keep authored reports, supplied design assets and runtime fixtures. Run `python3 scripts/check_repo_hygiene.py` (`python` on Windows) before committing.
-- **Google first.** Don't start IMAP/SMTP or external iCalendar subscription work until the founder has dogfooded working Google GUI and CLI workflows. Keep those specs as deferred.
-- **Readiness.** It stays at 0% until a required area is implemented and verified. Docs, screenshots and unrun tests don't count. Contracts are drafts. Don't invent placeholder APIs or fake benchmarks, or treat prose as a test suite.
+- **Real data.** Never automate sending mail or invitations to real people, and never put raw mailbox data, tokens or OAuth client files in Git.
+- **Repository hygiene.** Generated evidence (logs, manifests, run archives, profiles) stays out of Git, in ignored local or CI artifact storage. Keep authored reports, supplied design assets and runtime fixtures. Run `python3 scripts/check_repo_hygiene.py` (`python` on Windows) before committing.
+- **Gmail only.** The product is Gmail and Google Workspace through Google's APIs. IMAP/SMTP, other providers and external calendar subscriptions are out of scope; people who want them can fork. Bug fixes are welcome.
+- **Stale docs.** When a plan is finished or a record is superseded, delete it rather than letting it drift; Git history keeps it.
+- **Done means verified.** A feature is done only when it is implemented and its tests pass; docs, screenshots and unrun tests don't count. Don't invent placeholder APIs or fake benchmarks, or treat prose as a test suite.
 - **Design reference.** The Flight Progress v2 exports under `docs/research/assets/` are reference assets only. Reimplement them in native QML, including the themes.
 - **Licensing.** The project is MIT-licensed. When you bundle or vendor a new third-party component, add it to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and make sure packages install its license text.
 
@@ -39,7 +41,7 @@ Don't invent product behaviour, stack locks or "done" features from memory. If a
 
 - Mail and calendar only. Separate accounts. Conversation-only browsing. No unified inbox.
 - Unread = unreviewed. Read-on-open follows a deliberate user open, not prefetch or pure CLI queries. Done clears unread and stars; Delay is an untimed star hold. The daily aim is zero unread and zero starred, reached through real work. Calendar combines permitted details; mail stays separate.
-- Humans write email. Only the user chooses Done or Delayed. Optional local models tag human correspondence versus automation or user-defined noise, assign category and scope, and may summarize. They never complete or delay mail, or mark it reviewed.
+- Humans write email. Only the user chooses Done or Delayed. Optional local models tag human correspondence versus automation or user-defined noise, assign category and scope, and may summarize. They never complete or delay mail. They mark it read or move it to Spam only through per-label rules the user configured.
 - Closing the GUI ends GUI work. The CLI is a second interface with its own explicit lifetime. Build a small real CLI and GUI together, expanding shared workflows incrementally. No default always-on service.
 - Windows, macOS and Linux (Ubuntu, Arch, Omarchy). One shared visual design. QML is fine; no Node.js or separate JS/TS compilation or bundling pipeline.
 - Out of scope: tasks, contacts app, dashboards, AI writing, assistant chat, semantic search, editable CalDAV, app-operated remote services.
@@ -60,13 +62,13 @@ Follow [docs/README.md](docs/README.md):
 2. Append decisions and Q&A to `docs/decisions.md`, with a new ID and an ISO timestamp. Never edit or delete old entries.
 3. Living behaviour belongs in the owning `docs/contracts/` file. Bump its revision and name affected consumers.
 4. Update the phased plan when sequence or dependencies change; expand only the approaching phase.
-5. Update `docs/status.md` and the root README when scope, active work or readiness changes.
+5. Add a terse bullet under today's date in `CHANGELOG.md` for user-visible changes (no decision IDs or test counts). Update the root README when scope changes.
 
 Don't create empty speculative docs. Edit the owning file instead of copying it. Never commit secrets, real mailbox dumps, tokens or auth material.
 
 ## When implementation is requested
 
-- Start from the verified state in status and evidence. Inspect the actual tools and host access before installing anything or assuming it exists.
+- Start from the current code, `CHANGELOG.md` and `docs/decisions.md`. Inspect the actual tools and host access before installing anything or assuming it exists.
 - Name the scoped contract revision, the fixture revision and what evidence will count as done before writing code. Don't mark a whole feature Ready from one passing slice.
 - Integrate small end-to-end slices. Don't build a second schema to unblock a module.
-- Record measured results in the owning research file and the quality contract, then update status. Missing credentials, mockups or remote hosts block only the gate they affect, not unrelated authorized work.
+- Record measured results in the owning research file and the quality contract, then add a CHANGELOG bullet. Missing credentials, mockups or remote hosts block only the gate they affect, not unrelated authorized work.

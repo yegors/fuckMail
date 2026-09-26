@@ -96,6 +96,11 @@ fn same_snapshot(stored: &Value, current: &Value) -> bool {
 fn same_stored(stored: &str, current: &Value) -> bool {
     serde_json::from_str::<Value>(stored).is_ok_and(|v| same_snapshot(&v, current))
 }
+/// Copies the People/Automated answer of saved model classifications into
+/// `message_sender_kinds` where a message has none: every message, or with
+/// `?1`/`?2` set, that account's one message.
+const RESTORE_MODEL_KINDS: &str = "INSERT INTO message_sender_kinds(account,message_id,source_hash,kind,provenance) SELECT r.account,r.target,m.source_hash,CASE json_extract(r.result_json,'$.output.sender_kind') WHEN 'human' THEN 'people' ELSE 'automated' END,json_extract(r.result_json,'$.provider') FROM local_model_results r JOIN messages m ON m.account=r.account AND m.id=r.target WHERE r.task='classification' AND (?1 IS NULL OR (r.account=?1 AND r.target=?2)) AND json_extract(r.result_json,'$.output.sender_kind') IN ('human','automated') AND json_extract(r.result_json,'$.provider') IN ('ollama','openai_compatible') AND NOT EXISTS(SELECT 1 FROM message_sender_kinds k WHERE k.account=r.account AND k.message_id=r.target)";
+
 impl Store {
     /// Returns `{revision, settings, defaults}` for the local model; a profile
     /// that never saved settings reports revision 0 with the defaults.
@@ -221,12 +226,13 @@ impl Store {
                     return Err(stale());
                 }
                 // A manual kind is pinned to this source hash and survives
-                // later model runs; reset hands the message back to the model.
+                // later model runs; reset returns the model's saved answer.
                 if k == "reset" {
                     tx.execute(
                         "DELETE FROM message_sender_kinds WHERE account=?1 AND message_id=?2",
                         params![a, m],
                     )?;
+                    tx.execute(RESTORE_MODEL_KINDS, params![a, m])?;
                 } else {
                     tx.execute("INSERT INTO message_sender_kinds VALUES(?1,?2,?3,?4,'manual') ON CONFLICT(account,message_id) DO UPDATE SET source_hash=excluded.source_hash,kind=excluded.kind,provenance='manual'",params![a,m,hash,if k=="human"{"people"}else{k}])?;
                 }
@@ -581,6 +587,20 @@ impl Store {
             .optional()?
             .unwrap_or(0))
     }
+    /// Restores the People/Automated answer of every saved model
+    /// classification whose answer is missing. Label edits by earlier builds
+    /// deleted these answers but kept the results, so the queue never asked
+    /// again.
+    pub(crate) fn recover_model_sender_kinds(&self) -> Result<()> {
+        let restored = self
+            .db
+            .execute(RESTORE_MODEL_KINDS, params![None::<&str>, None::<&str>])?;
+        if restored > 0 {
+            self.db
+                .execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        Ok(())
+    }
     /// Classifications made before an account's labels existed chose nothing.
     /// Forget them so the queue labels that mail again; summaries stay.
     pub(crate) fn local_model_forget_unlabeled(&self, account: &str) -> Result<()> {
@@ -777,6 +797,16 @@ mod tests {
             kinds_before,
             "Auto-read does not invalidate People/Automated results"
         );
+        store.label_edit(account,"label_describe",&json!({"request_id":"describe-receipts","id":"receipts","expected_description":"","description":"Order and payment receipts"})).unwrap();
+        assert_eq!(
+            model_kinds(&store),
+            kinds_before,
+            "label instructions do not invalidate People/Automated results"
+        );
+        // Answers an earlier build deleted come back from the saved results.
+        store.db.execute("DELETE FROM message_sender_kinds WHERE account=?1 AND provenance IN ('ollama','openai_compatible')",[account]).unwrap();
+        store.recover_model_sender_kinds().unwrap();
+        assert_eq!(model_kinds(&store), kinds_before);
         assert_eq!(
             store.label_catalog(account).unwrap()["categories"]
                 .as_array()

@@ -610,9 +610,11 @@ Popup {
                 visible: panel.tab === "logs" && panel.newCount > 0
                 anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.rightMargin: 20; anchors.bottomMargin: 12
                 width: newLabel.implicitWidth + 20; height: 24; radius: 3
-                color: Theme.bg4; border.color: Theme.line2
-                Mono { id: newLabel; anchors.centerIn: parent; text: "↓ " + panel.newCount + " new"; color: Theme.amber }
-                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: panel.tail() }
+                // Lifts under the pointer like the app's buttons.
+                readonly property real lift: newLinesArea.containsMouse ? 1.3 : 1
+                color: Theme.brighten(Theme.bg4, lift); border.color: Theme.line2
+                Mono { id: newLabel; anchors.centerIn: parent; text: "↓ " + panel.newCount + " new"; color: Theme.brighten(Theme.amber, parent.lift) }
+                MouseArea { id: newLinesArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: panel.tail() }
                 Accessible.role: Accessible.Button; Accessible.name: panel.newCount + " new lines · follow"; Accessible.onPressAction: panel.tail()
             }
         }

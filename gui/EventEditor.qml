@@ -132,6 +132,21 @@ Popup {
         account: targetAccount, calendar_id: targetCalendarId, id: "editor-preview", all_day: allDay.checked,
         start: allDay.checked ? startDate.text : backend.calendarDateTime(startDate.text, startTime.text, zoneField.text),
         end: allDay.checked ? shiftDate(endDate.text, 1) : backend.calendarDateTime(endDate.text, endTime.text, zoneField.text)})
+    // Timed events that day overlapping the chosen times. Declined and all-day
+    // events and the one being edited do not count. Advisory: saving still works.
+    readonly property var clashes: {
+        backend.events
+        if (!visible || allDay.checked || backend.calendarDayEvents === undefined) return []
+        const start = Date.parse(preview.start), end = Date.parse(preview.end)
+        if (isNaN(start) || isNaN(end) || end <= start) return []
+        return backend.calendarDayEvents(startDate.text).filter(function(e) {
+            return !e.all_day && !e.busy_only && e.self_response !== "declined"
+                && !(e.id === editEvent.id && e.account === editEvent.account && e.calendar_id === editEvent.calendar_id)
+                && Date.parse(e.start) < end && Date.parse(e.end) > start
+        })
+    }
+    readonly property string clashText: clashes.length ? "Overlaps " + clashes.slice(0, 2).map(function(e) { return (e.title || "Untitled event") + " (" + e.time_display + ")" }).join(", ")
+        + (clashes.length > 2 ? " +" + (clashes.length - 2) : "") : ""
     width: Math.min(440, parent.width); height: Math.max(200, parent.height - 56 - timelineInset); padding: 0
     // The panel slides in by position; the overlay never scrolls, so focusing
     // the title while it moves cannot shift the rest of the window.
@@ -415,6 +430,13 @@ Popup {
                     }
                 }
                 FmTextField { id: zoneField; objectName: "eventTimeZone"; visible: !allDay.checked; Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; implicitHeight: 27; padding: 4; font.pointSize: Theme.fontPoints(11); color: Theme.subtle; placeholderText: "Time zone"; background: null; Accessible.name: "Event time zone" }
+                RowLayout {
+                    objectName: "eventClash"
+                    visible: editor.clashText.length > 0
+                    Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 8
+                    FmIcon { name: "warning"; size: 12; color: Theme.amber }
+                    Text { objectName: "eventClashText"; Layout.fillWidth: true; text: editor.clashText; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.amber; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 ColumnLayout {
                     id: repeatSection

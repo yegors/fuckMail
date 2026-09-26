@@ -2,6 +2,28 @@
 
 
 
+## D147 — emptying Trash after Gmail deleted the mail (Gmail36)
+
+- `google_bin_counts {folder: "trash"}` adds `stored`: the account's Trash messages stored here.
+- `google_empty {folder: "trash"}` still deletes what Gmail lists in `in:trash`. Once that listing is complete (`more` false), it also removes local Trash copies of mail Gmail no longer has:
+  - It takes the Trash messages stored here that no pending mail change uses (Core75).
+  - It lists every Gmail message from two days before the oldest of them (`after:<seconds>`, `includeSpamTrash=true`, 500 per page).
+  - Copies Gmail doesn't list are forgotten, 500 per store call. Copies Gmail still lists are kept, and sync moves them.
+  - `deleted` counts both.
+- A history item for a message whose coverage says deleted is recorded missing with no request. This applies to messages Gmail reported deleted and to messages deleted here. Gmail never reuses a message ID.
+
+Consumers: Core75, Mail UI101, CLI (`bin counts`, `bin empty`, unchanged commands).
+
+## D145 — new mail during a history backlog (Gmail35)
+
+- A history scan is behind when it is still running as the next check falls due (one sync interval after it started), or when Sync is pressed. The next step then lists Gmail's newest mail: `messages.list`, `-in:spam`, `includeSpamTrash=true`, 100 per page, at the delta read class. It keeps listing while every ID on a page is new, up to 500.
+- IDs with no coverage row are downloaded on one page of the finished recent lane (Core74). That page finishes, one part per step, before anything else. The account's last mail sync is then recorded and the next check is due one interval later. The scan continues as background work (`mail_backfill: true`).
+- The scan still replays every change. Messages the new-mail page downloaded read label state only (D143).
+- Label changes to mail already held still wait for the scan. Only new messages skip it.
+- Cost: 5 units per listed page, once per interval while a scan is behind.
+
+Consumers: Core74, Mail UI99.
+
 ## D137 — the inventory counts what it will download (Gmail34)
 
 - While the inventory lane is incomplete, each of its steps first lists `messages.list` pages with `maxResults=500`, IDs only, one after another for up to 2 s (D138), then runs its own page. It uses the inventory's own query (`after:<mail_since> -in:spam`, or `-in:spam` for all mail) and `includeSpamTrash=true`, at the backfill read class.
@@ -157,9 +179,9 @@ Local authored drafts remain durable while remote draft updates coalesce. Google
 
 Revision 3 records the next Phase 0 integration checkpoint. The fake provider now publishes complete pages and FTS changes atomically with Core checkpoints and replay receipts. Staged or failed pages stay invisible, and pending manual flags/categories win over observed labels. Shared corpus imports verify retained bytes and safe text. Consumers: Core, Search, MIME, Triage and assistance. Real authorization and HTTP remain separate gates.
 
-Revision 2 records D012’s implemented experimental slice. The fake transport, OAuth/PKCE, token-coordination and uncertain-send experiments are implemented; [execution evidence](../research/google-feasibility-execution.md) records prerequisites and limits. No live account has been connected. Consumers: Core, MIME, Calendar and Platform.
+Revision 2 records D012’s implemented experimental slice. The fake transport, OAuth/PKCE, token-coordination and uncertain-send experiments are implemented. No live account had been connected at that revision. Consumers: Core, MIME, Calendar and Platform.
 
-Revision 1 applies D009: Gmail/Workspace APIs are the first mail transport, including send; shared MIME handling stays early while IMAP/SMTP are deferred. Affected consumers: Core, Mail UI, Calendar, Triage, Local assistance and CLI.
+Revision 1 applies D009: Gmail/Workspace APIs are the first mail transport, including send; shared MIME handling stays early; IMAP/SMTP were deferred then and are now out of scope. Affected consumers: Core, Mail UI, Calendar, Triage, Local assistance and CLI.
 
 Owner: B — Gmail. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
 

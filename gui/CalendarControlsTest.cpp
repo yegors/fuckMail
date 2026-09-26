@@ -1,4 +1,4 @@
-// Calendar UI test: the production event editor, details, Activity, label setup,
+// Calendar UI test: the production event editor, details, Activity,
 // CalendarView and startup overlay against a scripted stand-in backend. Covers
 // recurring scopes, RSVP, recovery, sync/permission gates and theme layouts.
 #include <QCoreApplication>
@@ -72,9 +72,6 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(bool calendarOperationsLoading MEMBER calendarOperationsLoading NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsHasMore MEMBER calendarOperationsHasMore NOTIFY calendarOperationsChanged)
     Q_PROPERTY(QString calendarOperationStatus MEMBER calendarOperationStatus NOTIFY calendarOperationsChanged)
-    Q_PROPERTY(QVariantList categories MEMBER categories NOTIFY categoriesChanged)
-    Q_PROPERTY(QVariantList googleLabels MEMBER googleLabels NOTIFY googleLabelsChanged)
-    Q_PROPERTY(QVariantMap googleLabelState MEMBER googleLabelState NOTIFY googleLabelsChanged)
     Q_PROPERTY(QVariantList reminders MEMBER reminders CONSTANT)
 public:
     bool mailCombined = false, mailActive = false;
@@ -99,13 +96,6 @@ public:
         QVariantMap{{"account", "alpha"}, {"calendar_id", "primary"}, {"account_name", "Alpha"}, {"name", "Personal"}, {"writable", true}, {"can_create", true}},
         QVariantMap{{"account", "beta"}, {"calendar_id", "primary"}, {"account_name", "Beta"}, {"name", "Workspace"}, {"writable", true}, {"can_create", true}}};
     QVariantList events, todayEvents, calendarOperations;
-    QVariantList categories{QVariantMap{{"id", "work"}, {"name", "Work"}, {"provider_label_id", "Label_old"}}};
-    QVariantList googleLabels{
-        QVariantMap{{"id", "INBOX"}, {"name", "Inbox"}, {"present", true}, {"selectable", false}},
-        QVariantMap{{"id", "Label_new"}, {"name", "New label"}, {"present", true}, {"selectable", true}},
-        QVariantMap{{"id", "Label_gone"}, {"present", false}, {"selectable", false}},
-        QVariantMap{{"id", "Label_taken"}, {"name", "Taken"}, {"present", true}, {"selectable", true}, {"category_id", "other"}}};
-    QVariantMap googleLabelState{{"account", "alpha"}, {"catalog_revision", 1}, {"available", true}, {"connection_state", "connected"}, {"stale_connection", false}, {"next_after", "Label_new"}};
     QVariantMap lastWrite, lastAction, signaledResponse;
     QObject *responseControl = nullptr;
     Q_SLOT void captureResponseSignal() { signaledResponse = responseControl ? plain(responseControl->property("pendingResponse")).toMap() : QVariantMap{}; }
@@ -114,11 +104,11 @@ public:
     QVariantMap lastOccurrenceSelector;
     QString lastOccurrenceCorrelation;
     int occurrenceEpoch = 1;
-    int labelCacheReads = 0, labelRefreshes = 0, labelBindings = 0;
-    QVariantMap lastLabelBinding, lastLabelRead;
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const { return (capability || (readCapability && name == "calendar_read")) && account == "alpha" && (name == "calendar_read" || name == "calendar_write" || name == "mail_read" || name == "mail_write"); }
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const { return {{"active", active && account == "alpha"}}; }
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &) const { return date + "T" + time + ":00-04:00"; }
+    QVariantList dayEvents;
+    Q_INVOKABLE QVariantList calendarDayEvents(const QString &date) const { return date == "2026-09-13" ? dayEvents : QVariantList{}; }
     Q_INVOKABLE QVariantList calendarPreview(const QVariantMap &event) const { return calendarPresentation({QJsonObject::fromVariantMap(event)}, QDate::fromString(calendarFrom, Qt::ISODate), calendarView == "day" ? 1 : 7, QTimeZone("America/Toronto")); }
     Q_INVOKABLE void calendarWrite(const QVariantMap &value) { lastWrite = value; ++writes; }
     Q_INVOKABLE QString queueCalendarDeletion(const QVariantMap &value, const QVariantMap &) { lastWrite = value; ++writes; return {}; }
@@ -158,12 +148,6 @@ public:
     Q_INVOKABLE void loadCalendarOperations() {}
     Q_INVOKABLE void loadMoreCalendarOperations() {}
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &id) { lastAction = {{"account", account}, {"request_id", id}, {"action", "local_retry"}}; ++actions; }
-    Q_INVOKABLE void loadGoogleLabels(const QString &account, bool append) { ++labelCacheReads; lastLabelRead = {{"account", account}, {"append", append}}; }
-    Q_INVOKABLE void refreshGoogleLabels(const QString &) { ++labelRefreshes; }
-    Q_INVOKABLE void bindGoogleLabel(const QString &account, const QString &label, const QString &category, const QString &name, const QVariant &expected, qint64 revision) {
-        ++labelBindings; lastLabelBinding = {{"account", account}, {"label", label}, {"category", category}, {"name", name}, {"expected", expected}, {"revision", revision}};
-    }
-    Q_INVOKABLE void retryGoogleLabelBinding(const QString &) { ++labelBindings; }
     void complete(bool ok, QVariantMap result) { emit calendarWriteFinished(ok, result, ok ? QString{} : "Scripted unconfirmed result."); }
 signals:
     void modeChanged();
@@ -173,9 +157,6 @@ signals:
     void googleSyncChanged();
     void eventsChanged();
     void calendarOperationsChanged();
-    void categoriesChanged();
-    void googleLabelsChanged();
-    void googleLabelBindingFinished(const QString &account, bool ok, const QVariantMap &result, const QString &error);
     void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
     void calendarOccurrenceReadFinished(const QString &correlation, bool ok, const QVariantMap &result, const QString &error);
 };
@@ -218,7 +199,7 @@ int main(int argc, char **argv) {
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
     require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/CalendarMailCount.qml", copy.filePath("CalendarMailCount.qml")), "Copy mail count component");
-    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "ReminderPopup.qml", "AttendeeList.qml", "SenderAvatar.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "ReminderPopup.qml", "AttendeeList.qml", "SenderAvatar.qml", "CalendarOperations.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\nsingleton ShortcutRegistry 1.0 ShortcutRegistry.qml\n"); module.close();
@@ -244,7 +225,6 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     EventEditor { id: testEditor }
     EventDetails { onEditRequested: function(event) { testEditor.editEvent = event; testEditor.openForDate(event.start.slice(0, 10)) }; exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } } }
     CalendarOperations {}
-    GoogleLabelSetup { visible: false; width: 560 }
 })QML", QUrl::fromLocalFile(copy.filePath("Harness.qml")));
     require(!engine.rootObjects().isEmpty(), "Actual Calendar QML loads");
     auto root = engine.rootObjects().first();
@@ -280,6 +260,29 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         && title->property("text") == "Typed while first sync discovers calendars", "Withdrawal disables creation without silently switching accounts or losing fields");
     backend.calendarSources = catalog; emit backend.eventsChanged();
     settle([&] { return save->property("enabled").toBool() && target->property("currentIndex").toInt() == 0; });
+    // Timed events that day overlapping the chosen times, as an advisory row.
+    {
+        const auto timed = [](const QString &id, const QString &title, const QString &from, const QString &to) {
+            return QVariant(QVariantMap{{"id", id}, {"account", "alpha"}, {"calendar_id", "primary"}, {"title", title}, {"all_day", false}, {"time_display", from},
+                {"start", "2026-09-13T" + from + ":00-04:00"}, {"end", "2026-09-13T" + to + ":00-04:00"}}); };
+        auto declined = timed("x3", "Declined", "09:00", "10:00").toMap(); declined["self_response"] = "declined";
+        const QVariantMap holiday{{"id", "x4"}, {"title", "Holiday"}, {"all_day", true}, {"start", "2026-09-13"}, {"end", "2026-09-14"}};
+        backend.dayEvents = {timed("x1", "Standup", "09:30", "10:30"), timed("x2", "Design", "09:00", "09:15"), declined, holiday,
+            timed("x5", "Later", "10:00", "11:00"), timed("x6", "Third", "09:45", "09:50")};
+        emit backend.eventsChanged();
+        auto clash = qobject_cast<QQuickItem *>(named(root, "eventClash")); auto clashText = named(root, "eventClashText");
+        require(clash && clashText, "the overlap row exists");
+        settle([&] { return clash->isVisible(); });
+        require(clashText->property("text") == "Overlaps Standup (09:30), Design (09:00) +1", "names two overlaps and counts the rest; declined, all-day and touching events do not count");
+        named(root, "eventEndTime")->setProperty("text", "09:10");
+        settle([&] { return clashText->property("text") == "Overlaps Design (09:00)"; });
+        require(save->property("enabled").toBool(), "an overlap never blocks saving");
+        named(root, "eventAllDay")->setProperty("checked", true);
+        settle([&] { return !clash->isVisible(); });
+        named(root, "eventAllDay")->setProperty("checked", false); named(root, "eventEndTime")->setProperty("text", "10:00");
+        backend.dayEvents.clear(); emit backend.eventsChanged();
+        settle([&] { return !clash->isVisible(); });
+    }
     call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
     const auto original = event();
     backend.events = {original};
@@ -460,33 +463,8 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     call(activityControl(3, "calendarOperationResolve-unknown"), "clicked"); require(backend.lastAction["action"] == "reconcile", "Activity reconciles unknown outcome");
     call(history, "close");
 
-    auto labels = named(root, "googleLabelSetup"); labels->setProperty("visible", true);
-    require(backend.labelCacheReads > 0 && backend.labelRefreshes == 0 && backend.labelBindings == 0, "Opening label setup queries only local cache");
-    require(plain(labels->property("userLabels")).toList().size() == 1, "Missing, system and other-category labels cannot be selected");
-    auto chooseGoogle = named(root, "googleLabelsProviderLabel"); chooseGoogle->setProperty("currentIndex", 0);
-    require(QMetaObject::invokeMethod(chooseGoogle, "activated", Q_ARG(int, 0)), "Choose Google label");
-    auto labelBind = named(root, "googleLabelsBind");
-    require(labelBind->property("enabled").toBool(), "Explicit eligible Google label enables local creation");
-    backend.active = false; backend.googleLabelState["connection_state"] = "disconnected"; backend.googleLabelState["stale_connection"] = true; emit backend.googleLabelsChanged(); emit backend.googleSyncChanged();
-    require(labelBind->property("enabled").toBool() && !named(root, "googleLabelsRefresh")->property("enabled").toBool(), "Known offline cached labels remain locally bindable without provider refresh");
-    call(labelBind, "clicked");
-    require(backend.labelBindings == 1 && backend.lastLabelBinding["label"] == "Label_new" && backend.lastLabelBinding["account"] == "alpha" && backend.lastLabelBinding["category"].toString().isEmpty(), "Create uses explicit selected label and frozen account");
-    auto localChoice = named(root, "googleLabelsLocalCategory"); localChoice->setProperty("currentIndex", 1);
-    require(QMetaObject::invokeMethod(localChoice, "activated", Q_ARG(int, 1)), "Choose existing local label");
-    chooseGoogle->setProperty("currentIndex", 0); require(QMetaObject::invokeMethod(chooseGoogle, "activated", Q_ARG(int, 0)), "Choose replacement Google label");
-    call(labelBind, "clicked");
-    auto remap = named(root, "googleLabelsRemapConfirmation"); settle([&] { return remap->property("opened").toBool(); });
-    require(backend.labelBindings == 1, "Remap waits for explicit confirmation");
-    backend.account = "beta"; emit backend.accountChanged(); call(remap, "accept");
-    require(backend.lastLabelBinding["account"] == "alpha" && backend.lastLabelBinding["expected"] == "Label_old" && backend.lastLabelBinding["revision"] == 1, "Remap confirmation retains original account, mapping and revision across account switch");
-    require(backend.lastLabelRead["account"] == "beta" && backend.labelRefreshes == 0, "Account switch loads cached labels without provider access");
-    emit backend.googleLabelBindingFinished("alpha", true, {}, {});
-    require(labels->property("account") == "beta", "Other-account completion cannot replace current label setup");
-    labels->setProperty("visible", false); backend.account = "alpha"; emit backend.accountChanged();
-
-    // Calendar16: the native form authors only the removable address set. The
-    // shared Core boundary validates it and retains all protected/source data.
-    backend.active = true; emit backend.googleSyncChanged();
+    // The form edits only the removable guest addresses. The engine validates
+    // the list and keeps the organizer and other protected attendee data.
     auto roster = original;
     roster["can_edit_attendees"] = true;
     roster["guest_addresses"] = QStringList{"alpha@example.test", "beta@example.test"};
@@ -1064,7 +1042,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");
     visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");
-    qInfo() << "Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.";
+    qInfo() << "Calendar controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection and synthetic compatibility.";
 }
 
 #include "CalendarControlsTest.moc"

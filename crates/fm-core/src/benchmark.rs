@@ -1,9 +1,18 @@
-//! Opt-in 100k synthetic search experiment; never touches a real profile.
+//! Search-planner regression tests plus opt-in performance measurements over
+//! generated mail.
+//!
+//! The measurements are `#[ignore]`d; run one with
+//! `cargo test -p fm-core --release <name> -- --ignored --nocapture`. Each
+//! prints a JSON report and, when its `FM_*_REPORT` variable names a file,
+//! writes it there. Every test builds a fresh temporary profile and never
+//! reads a real one.
 use crate::Store;
 use rusqlite::params;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
+/// The `quantile` (0 to 1) sample in milliseconds, rounding the rank up.
+/// Sorts `samples` in place.
 fn percentile(samples: &mut [Duration], quantile: f64) -> f64 {
     samples.sort_unstable();
     let index = ((samples.len() - 1) as f64 * quantile).ceil() as usize;
@@ -292,11 +301,11 @@ fn search_100k() {
     }
     for (name, request) in [
         (
-            "phase1 grouped first50",
+            "grouped first50",
             json!({"grouped":true,"folder":"all","limit":50}),
         ),
         (
-            "phase1 combined filters first50",
+            "combined filters first50",
             json!({"query":"deployment","field":"body","grouped":true,"folder":"all","limit":50,"sender":"alex.o'hara+build@windscribe.example","status":"review","has_attachment":false,"after":"2026-09-01","before":"2026-09-12"}),
         ),
     ] {
@@ -645,6 +654,165 @@ fn mail_browse_20k() {
         "category_plan_before":category_plan_before,"category_plan_after":category_plan_after,"category_p95_ms_before":category_p95_before,"category_p95_ms_after":category_p95_after,"category_index_bytes":category_index_bytes,"category_insert_20k_ms_before":category_write_ms_before,"category_insert_20k_ms_after":category_write_ms_after});
     println!("{report}");
     if let Some(path) = std::env::var_os("FM_BROWSE_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+}
+
+/// Pages SQLite had to fetch from the file since the last call (cache misses).
+fn cache_misses(store: &Store) -> i64 {
+    let (mut current, mut highest) = (0, 0);
+    // SAFETY: the handle belongs to this open connection; reset=1 clears it.
+    unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            store.db.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_MISS,
+            &mut current,
+            &mut highest,
+            1,
+        );
+    }
+    i64::from(current)
+}
+
+/// What a running sync does to the store every second, and what the GUI's
+/// once-a-second refresh then reads: accounts plus the open Inbox page.
+#[test]
+#[ignore = "Scoped generated sync-and-refresh measurement"]
+fn sync_poll_48k() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("disposable-sync-benchmark");
+    let store = Store::open(&profile).unwrap();
+    let source = store.stage_blob(b"From: Synthetic <benchmark@fixture.example>\r\nSubject: Sync benchmark fixture\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic source.\r\n").unwrap();
+    // Sized like a large personal mailbox: 48k messages, bodies averaging ~2.2k chars.
+    let filler = "Quarterly planning notes, deployment detail and a reply thread. ".repeat(34);
+    {
+        let tx = store.db.unchecked_transaction().unwrap();
+        let mut conversation = tx
+            .prepare("INSERT OR IGNORE INTO conversations(account,id,subject,revision) VALUES(?1,?2,?3,1)")
+            .unwrap();
+        let mut message = tx.prepare("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,0,1,0,?12,1)").unwrap();
+        let mut fts = tx
+            .prepare("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)")
+            .unwrap();
+        for index in 0..48_000 {
+            let account = if index % 2 == 0 {
+                "windscribe"
+            } else {
+                "personal"
+            };
+            let conversation_id = format!("sync-{account}-thread-{:06}", index / 6);
+            let sent_at = format!(
+                "2026-{:02}-{:02}T{:02}:{:02}:00Z",
+                1 + (index / 5000) % 9,
+                1 + index % 28,
+                index % 24,
+                index % 60
+            );
+            let body = format!("{index} {filler}");
+            conversation
+                .execute(params![account, conversation_id, "Sync benchmark thread"])
+                .unwrap();
+            message
+                .execute(params![
+                    account,
+                    format!("sync-{account}-message-{index:06}"),
+                    conversation_id,
+                    format!("sync-remote-{index:06}"),
+                    "Alex Example",
+                    "alex@example.com",
+                    format!("you@{account}.example"),
+                    "Sync benchmark thread",
+                    body,
+                    sent_at,
+                    index % 7 == 0,
+                    source
+                ])
+                .unwrap();
+            fts.execute(params![
+                tx.last_insert_rowid(),
+                "Alex Example alex@example.com",
+                "Sync benchmark thread",
+                body
+            ])
+            .unwrap();
+        }
+        drop((fts, message, conversation));
+        tx.commit().unwrap();
+    }
+    store
+        .db
+        .execute_batch("ANALYZE; PRAGMA wal_checkpoint(TRUNCATE); INSERT INTO people(email,name) VALUES('p@example.com','P');")
+        .unwrap();
+    let mut store = store;
+    if std::env::var_os("FM_BENCH_NO_MMAP").is_some() {
+        // Page counts then include every page read, not only cache misses.
+        store.db.execute_batch("PRAGMA mmap_size=0;").unwrap();
+    }
+    let (mut accounts_ms, mut list_ms) = (Vec::new(), Vec::new());
+    let mut refresh = |store: &mut Store| {
+        let started = Instant::now();
+        store.handle("accounts", None, json!({})).unwrap();
+        accounts_ms.push(started.elapsed());
+        let started = Instant::now();
+        store
+            .handle(
+                "conversations",
+                Some("windscribe"),
+                json!({"folder":"inbox","grouped":true,"limit":100}),
+            )
+            .unwrap();
+        list_ms.push(started.elapsed());
+    };
+    refresh(&mut store);
+    let first: i64 = store
+        .db
+        .query_row(
+            "SELECT min(rowid) FROM messages WHERE id LIKE 'sync-%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let (mut commits, mut refreshes, mut misses) = (Vec::new(), Vec::new(), Vec::new());
+    for round in 0..40_i64 {
+        // A sync part: flag/label updates on known messages, their text index
+        // rows, and the people/link indexer's WITHOUT ROWID rows.
+        let started = Instant::now();
+        let tx = store.db.unchecked_transaction().unwrap();
+        for step in 0..10_i64 {
+            let id = first + (round * 997 + step * 4_801) % 48_000;
+            tx.execute(
+                "UPDATE messages SET unread=1-unread,revision=revision+1 WHERE rowid=?1",
+                [id],
+            )
+            .unwrap();
+            if step < 5 {
+                tx.execute("DELETE FROM message_fts WHERE rowid=?1", [id])
+                    .unwrap();
+                tx.execute("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Alex','Sync benchmark thread','updated')", [id]).unwrap();
+                tx.execute(
+                    "INSERT OR IGNORE INTO message_people(message_rowid,person) VALUES(?1,1)",
+                    [id],
+                )
+                .unwrap();
+            }
+        }
+        tx.commit().unwrap();
+        commits.push(started.elapsed());
+        cache_misses(&store);
+        let started = Instant::now();
+        refresh(&mut store);
+        refreshes.push(started.elapsed());
+        misses.push(cache_misses(&store));
+    }
+    misses.sort_unstable();
+    let report = json!({"generated_messages":48000,"rounds":40,"profile":"fresh generated, warm OS cache, same build mode",
+        "commit_p50_ms":percentile(&mut commits.clone(),0.5),"commit_p95_ms":percentile(&mut commits,0.95),
+        "refresh_p50_ms":percentile(&mut refreshes.clone(),0.5),"refresh_p95_ms":percentile(&mut refreshes,0.95),
+        "refresh_pages_read_p50":misses[misses.len()/2],"refresh_pages_read_max":misses[misses.len()-1],
+        "accounts_p50_ms":percentile(&mut accounts_ms.clone(),0.5),"list_page_p50_ms":percentile(&mut list_ms.clone(),0.5),
+        "mmap":std::env::var_os("FM_BENCH_NO_MMAP").is_none()});
+    println!("{report}");
+    if let Some(path) = std::env::var_os("FM_SYNC_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     }
 }

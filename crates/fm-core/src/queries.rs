@@ -1,3 +1,13 @@
+//! Mail read queries: accounts and their counts, the conversation list with
+//! search, filters, grouping and paging, the reader, labels and the
+//! per-account calendar view.
+//!
+//! Each account's per-conversation state (folders, unread, starred, latest
+//! date, sender kind) is projected into memory once. TEMP triggers then log
+//! every conversation a write may have changed, so later reads refresh only
+//! those. An SQLite update hook counts writes into generations that key the
+//! derived caches (counts, coverage, the first list page) and that clients
+//! poll through `status`.
 use crate::*;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
@@ -9,24 +19,37 @@ use std::{
         Arc, Mutex,
     },
 };
+/// One conversation's list-relevant state, folded from its messages.
 #[derive(Clone)]
 pub(crate) struct ConversationState {
+    /// Stable slot in the account projection. Slots are never reused while
+    /// the projection lives, so removed conversations leave gaps.
     position: usize,
+    /// Folder membership bits: 1 all (not in Trash), 2 Inbox, 4 Sent,
+    /// 8 Trash, 16 received. A conversation is in a folder when any of its
+    /// messages is.
     folders: u8,
     unread: bool,
     starred: bool,
     unread_messages: i64,
     starred_messages: i64,
+    /// Julian day of the newest message; 0 when no message has a date.
     latest: f64,
+    /// Sender kind of the newest incoming message (sent mail only when
+    /// nothing was received): 0 unknown, 1 people, 2 automated.
     kind: u8,
     kind_incoming: bool,
     kind_at: f64,
     kind_id: String,
+    messages: i64,
+    max_rowid: i64,
 }
 impl ConversationState {
     fn empty(position: usize) -> Self {
         Self {
             position,
+            messages: 0,
+            max_rowid: 0,
             folders: 0,
             unread: false,
             starred: false,
@@ -39,9 +62,12 @@ impl ConversationState {
             kind_id: String::new(),
         }
     }
+    /// Folds one message row, in `STATE_SELECT` column order, into the state.
     fn absorb(&mut self, row: &rusqlite::Row<'_>) -> rusqlite::Result<()> {
         let unread = row.get::<_, bool>(1)?;
         let starred = row.get::<_, bool>(2)?;
+        self.messages += 1;
+        self.max_rowid = self.max_rowid.max(row.get(4)?);
         self.unread |= unread;
         self.starred |= starred;
         self.unread_messages += i64::from(unread);
@@ -83,15 +109,60 @@ fn kind_name(kind: u8) -> &'static str {
         _ => "unknown",
     }
 }
+/// Per-message rows for one account's state projection. A sender kind counts
+/// only while it was computed from the message's current source.
 const STATE_SELECT:&str = "SELECT m.conversation_id,m.unread,m.starred,julianday(m.sent_at),m.rowid,m.id,m.sent,CASE k.kind WHEN 'people' THEN 1 WHEN 'automated' THEN 2 ELSE 0 END,m.inbox,m.trashed FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1";
+/// One account's cached conversation states and the change-log position
+/// they reflect.
 pub(crate) struct ConversationProjection {
-    generation: u64,
+    /// Last `mail_state_log` entry already applied to `states`.
+    log_seq: i64,
+    /// Bumped whenever `states` changes; keys derived projections.
+    version: u64,
+    next_position: usize,
     message_count: i64,
     max_rowid: i64,
     states: Arc<HashMap<String, ConversationState>>,
 }
+/// Above this many changed conversations one scan is cheaper than per-thread reads.
+const INCREMENTAL_STATE_LIMIT: usize = 512;
+/// Consumed change-log entries are dropped once this many have accumulated.
+const STATE_LOG_PRUNE: i64 = 4096;
+/// TEMP triggers record every conversation whose projected state may have
+/// changed. They live and roll back with this connection's transactions, and
+/// FTS or WITHOUT ROWID writes elsewhere no longer force a full rescan.
+/// Recursive triggers make REPLACE's implicit deletion fire the delete trigger;
+/// no schema trigger writes its own table, so nothing else recurses.
+pub(crate) const STATE_LOG_SQL: &str = "PRAGMA temp_store=MEMORY;
+PRAGMA recursive_triggers=ON;
+CREATE TEMP TABLE mail_state_log(seq INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT NOT NULL,conversation_id TEXT NOT NULL);
+CREATE TEMP TRIGGER mail_state_insert AFTER INSERT ON messages BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) VALUES(NEW.account,NEW.conversation_id);
+END;
+CREATE TEMP TRIGGER mail_state_update AFTER UPDATE OF rowid,account,id,conversation_id,sent_at,unread,starred,inbox,sent,trashed,source_hash ON messages BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) VALUES(OLD.account,OLD.conversation_id);
+ INSERT INTO mail_state_log(account,conversation_id) SELECT NEW.account,NEW.conversation_id WHERE NEW.account IS NOT OLD.account OR NEW.conversation_id IS NOT OLD.conversation_id;
+END;
+CREATE TEMP TRIGGER mail_state_delete AFTER DELETE ON messages BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) VALUES(OLD.account,OLD.conversation_id);
+END;
+CREATE TEMP TRIGGER mail_kind_insert AFTER INSERT ON message_sender_kinds BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) SELECT account,conversation_id FROM messages WHERE account=NEW.account AND id=NEW.message_id;
+END;
+CREATE TEMP TRIGGER mail_kind_update AFTER UPDATE ON message_sender_kinds BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) SELECT account,conversation_id FROM messages WHERE account=OLD.account AND id=OLD.message_id;
+ INSERT INTO mail_state_log(account,conversation_id) SELECT account,conversation_id FROM messages WHERE account=NEW.account AND id=NEW.message_id AND (NEW.account IS NOT OLD.account OR NEW.message_id IS NOT OLD.message_id);
+END;
+CREATE TEMP TRIGGER mail_kind_delete AFTER DELETE ON message_sender_kinds BEGIN
+ INSERT INTO mail_state_log(account,conversation_id) SELECT account,conversation_id FROM messages WHERE account=OLD.account AND id=OLD.message_id;
+END;";
+/// Conversation-state projections by account.
 pub(crate) type ConversationCache = RefCell<HashMap<String, ConversationProjection>>;
+/// Derived replies by `(account, name)`, each with the stamp it was built at.
+/// A lookup with a different stamp rebuilds.
 pub(crate) type ProjectionCache = RefCell<HashMap<(String, &'static str), (u64, Value)>>;
+/// A synthetic-profile coverage reply plus the inventories it was built from,
+/// so appended messages and index rows can be applied as a delta.
 pub(crate) struct CoverageProjection {
     generation: u64,
     message_generation: u64,
@@ -100,7 +171,9 @@ pub(crate) struct CoverageProjection {
     max_document_rowid: i64,
     value: Value,
 }
+/// Coverage projections by account.
 pub(crate) type CoverageCache = RefCell<HashMap<String, CoverageProjection>>;
+/// A consistent copy of `Changes` taken by `MailChanges::snapshot`.
 struct ChangeSnapshot {
     messages: u64,
     coverage: u64,
@@ -110,23 +183,42 @@ struct ChangeSnapshot {
     coverage_reset_after: u64,
     documents: Vec<(u64, i64)>,
 }
+/// Write counters maintained by the connection's update hook. Each
+/// generation only grows while the store is open (the calendar one is reset
+/// once at open), and a cache built at generation `g` is valid while the
+/// generation is still `g`.
 #[derive(Default)]
 struct Changes {
+    /// Update-hook calls, compared with `total_changes()` to detect writes
+    /// the hook never saw.
     hooks: u64,
+    /// Writes to `calendar_publication`.
     calendar: u64,
+    /// Writes to `messages` or `message_sender_kinds`.
     messages: u64,
+    /// Writes that can change coverage: messages, attachments, FTS tables.
     coverage: u64,
+    /// Writes that can change list or search results.
     search: u64,
+    /// `inserts` is complete only for message generations after this one.
     reset_after: u64,
+    /// Recent message inserts as `(messages generation, rowid)`, at most 512.
     inserts: VecDeque<(u64, i64)>,
+    /// `documents` is complete only for coverage generations after this one.
     coverage_reset_after: u64,
+    /// Recent FTS document inserts as `(coverage generation, rowid)`, at most 512.
     documents: VecDeque<(u64, i64)>,
+    /// `(total_changes, hooks, messages)` at the previous snapshot.
     observed: (u64, u64, u64),
+    /// Whether the previous snapshot was taken inside a transaction.
     observed_in_transaction: bool,
 }
+/// Shared write counters for one connection, plus an opaque epoch string that
+/// ties list cursors to this open store.
 #[derive(Clone)]
 pub(crate) struct MailChanges(Arc<Mutex<Changes>>, String);
 impl MailChanges {
+    /// Installs the update hook on `db` and starts counting from zero.
     pub(crate) fn install(db: &Connection) -> Self {
         let changes = Arc::new(Mutex::new(Changes {
             observed: (db.total_changes(), 0, 0),
@@ -201,12 +293,18 @@ impl MailChanges {
         );
         Self(changes, epoch)
     }
+    /// Calendar publications since open; reported as `calendar_generation`.
     pub(crate) fn calendar_generation(&self) -> u64 {
         self.0.lock().unwrap().calendar
     }
+    /// Zeroes the calendar counter. Opening calls it after recovery, so
+    /// clients see the counter start at 0.
     pub(crate) fn reset_calendar_generation(&self) {
         self.0.lock().unwrap().calendar = 0;
     }
+    /// Returns the current generations, first invalidating everything the
+    /// hook cannot vouch for: writes it did not see, and any read inside or
+    /// just after a transaction, since a rollback does not undo hook counts.
     fn snapshot(&self, db: &Connection) -> ChangeSnapshot {
         let mut c = self.0.lock().unwrap();
         let total = db.total_changes();
@@ -250,12 +348,18 @@ impl MailChanges {
     }
 }
 impl Store {
+    /// The search generation, reported as `mail_generation`. It changes
+    /// whenever list or search results might.
     pub(crate) fn mail_generation(&self) -> u64 {
         self.mail_changes.snapshot(&self.db).search
     }
     pub(crate) fn accounts(&self) -> Result<Value> {
         self.accounts_including_removed(false)
     }
+    /// Lists accounts in creation order with their counts, coverage,
+    /// retention, draft count, lifecycle and, for Google accounts, sync status.
+    /// Accounts that are not active appear only with `include_removed`;
+    /// removed ones are marked `read_only`.
     pub(crate) fn accounts_including_removed(&self, include_removed: bool) -> Result<Value> {
         let mut stmt = self
             .db
@@ -319,6 +423,8 @@ impl Store {
         }
         Ok(json!({"accounts":out,"fixture_revision":self.fixture_revision()?}))
     }
+    /// Returns the cached `key` reply for `account` if it was built at
+    /// `stamp`, otherwise builds and caches a new one.
     fn cached_projection(
         &self,
         account: &str,
@@ -338,58 +444,47 @@ impl Store {
             .insert(cache_key, (stamp, value.clone()));
         Ok(value)
     }
+    /// Conversation counts for the whole account (archive included): per
+    /// folder, and per review group, where a starred unread conversation
+    /// counts as both to review and held.
     pub(crate) fn account_counts(&self, account: &str) -> Result<Value> {
-        let stamp = self.mail_changes.snapshot(&self.db).messages;
-        self.cached_projection(account, "counts", stamp, || {
-            self.compute_account_counts(account)
-        })
+        let states = self.conversation_states(account)?;
+        match self.conversation_version(account) {
+            Some(version) => self.cached_projection(account, "counts", version, || {
+                Ok(Self::counts_from_states(&states))
+            }),
+            None => Ok(Self::counts_from_states(&states)),
+        }
     }
     fn account_message_counts(&self, account: &str) -> Result<(i64, i64, i64)> {
         let states = self.conversation_states(account)?;
-        let (unread, starred) = states.values().fold((0, 0), |(u, s), state| {
-            (u + state.unread_messages, s + state.starred_messages)
-        });
-        let messages = self.conversation_cache.borrow()[account].message_count;
-        Ok((unread, starred, messages))
+        Ok(states.values().fold((0, 0, 0), |(u, s, m), state| {
+            (
+                u + state.unread_messages,
+                s + state.starred_messages,
+                m + state.messages,
+            )
+        }))
     }
+    /// The `(messages, coverage)` generations before a flag write, for
+    /// `refresh_committed_flag_projections`.
     pub(crate) fn flag_projection_stamp(&self) -> (u64, u64) {
         let changes = self.mail_changes.snapshot(&self.db);
         (changes.messages, changes.coverage)
     }
+    /// Carries coverage caches that were current at `before` forward to the
+    /// generations after a committed flag write, which cannot change coverage.
     pub(crate) fn refresh_committed_flag_projections(
         &self,
-        account: &str,
-        cid: &str,
+        _account: &str,
+        _cid: &str,
         before: (u64, u64),
     ) {
         // Only the serialized, successfully committed flag path calls this.
         // Its SQL changes flags/revisions/manual intents, never source inventory,
-        // routing, kinds or another conversation. Unknown writes and rollbacks
-        // keep the update-hook invalidation path; a stale cache is never promoted.
+        // routing, kinds or another conversation. Conversation states follow the
+        // change log; only the coverage inventory would otherwise be recounted.
         let changes = self.mail_changes.snapshot(&self.db);
-        let Ok(mut state) = self.conversation_state(account, cid) else {
-            return;
-        };
-        for (owner, cached) in self.conversation_cache.borrow_mut().iter_mut() {
-            if cached.generation != before.0 {
-                continue;
-            }
-            if owner == account {
-                let Some(previous) = cached.states.get(cid) else {
-                    continue;
-                };
-                state.position = previous.position;
-                Arc::make_mut(&mut cached.states).insert(cid.to_owned(), state.clone());
-            }
-            cached.generation = changes.messages;
-        }
-        for ((owner, key), (generation, _)) in self.projection_cache.borrow_mut().iter_mut() {
-            // Counts in the changed account must be recomputed from its refreshed
-            // conversation states. Other accounts' known-valid totals are exact.
-            if *key == "counts" && owner != account && *generation == before.0 {
-                *generation = changes.messages;
-            }
-        }
         for cached in self.coverage_cache.borrow_mut().values_mut() {
             if cached.generation == before.1 && cached.message_generation == before.0 {
                 cached.generation = changes.coverage;
@@ -397,6 +492,8 @@ impl Store {
             }
         }
     }
+    /// Reads one conversation's state straight from SQL. Its `position` is 0;
+    /// callers that store it assign the slot.
     fn conversation_state(&self, account: &str, cid: &str) -> Result<ConversationState> {
         let mut state = ConversationState::empty(0);
         let mut statement = self
@@ -408,72 +505,82 @@ impl Store {
         }
         Ok(state)
     }
+    /// Returns every conversation state for `account`, keyed by conversation ID.
+    ///
+    /// Reuses the cached projection when the change log has nothing new,
+    /// re-reads up to `INCREMENTAL_STATE_LIMIT` changed conversations, and
+    /// otherwise rescans the account.
     fn conversation_states(
         &self,
         account: &str,
     ) -> Result<Arc<HashMap<String, ConversationState>>> {
-        let changes = self.mail_changes.snapshot(&self.db);
-        let stamp = changes.messages;
-        let reset_after = changes.reset_after;
-        let inserts = changes.inserts;
-        if let Some(old) = self.conversation_cache.borrow_mut().get_mut(account) {
-            if old.generation == stamp {
+        let latest: i64 =
+            self.db
+                .query_row("SELECT COALESCE(MAX(seq),0) FROM mail_state_log", [], |r| {
+                    r.get(0)
+                })?;
+        // Inside a transaction a read may see changes that later roll back:
+        // apply them to a copy and keep the committed projection unchanged.
+        let persist = self.db.is_autocommit();
+        let mut cache = self.conversation_cache.borrow_mut();
+        if let Some(old) = cache.get_mut(account) {
+            if old.log_seq == latest {
                 return Ok(old.states.clone());
             }
-            if old.generation >= reset_after {
-                let mut additions = HashSet::new();
-                let mut conversations = HashSet::new();
-                let mut row_query = self.db.prepare_cached(
-                    "SELECT account,conversation_id FROM messages WHERE rowid=?1",
-                )?;
-                let mut append_only = true;
-                for (_, rowid) in inserts
-                    .iter()
-                    .filter(|(generation, _)| *generation > old.generation)
-                {
-                    if let Some((owner, cid)) = row_query
-                        .query_row([rowid], |r| {
-                            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-                        })
-                        .optional()?
-                    {
-                        if owner == account {
-                            append_only &= *rowid > old.max_rowid;
-                            additions.insert(*rowid);
-                            conversations.insert(cid);
-                        }
+            let mut changed = self.db.prepare_cached(
+                "SELECT DISTINCT conversation_id FROM mail_state_log WHERE seq>?1 AND account=?2",
+            )?;
+            let changed = changed
+                .query_map(params![old.log_seq, account], |r| r.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if changed.is_empty() && persist {
+                // Only other accounts changed.
+                old.log_seq = latest;
+                return Ok(old.states.clone());
+            }
+            if changed.len() <= INCREMENTAL_STATE_LIMIT {
+                let mut copy = HashMap::new();
+                let states = if persist {
+                    Arc::make_mut(&mut old.states)
+                } else {
+                    copy = (*old.states).clone();
+                    &mut copy
+                };
+                let (mut message_count, mut max_rowid, mut next_position) =
+                    (old.message_count, old.max_rowid, old.next_position);
+                for cid in changed {
+                    let mut state = self.conversation_state(account, &cid)?;
+                    let previous = states.remove(&cid);
+                    message_count -= previous.as_ref().map_or(0, |p| p.messages);
+                    if state.messages == 0 {
+                        continue;
                     }
+                    message_count += state.messages;
+                    max_rowid = max_rowid.max(state.max_rowid);
+                    state.position = previous.map_or_else(
+                        || {
+                            next_position += 1;
+                            next_position - 1
+                        },
+                        |p| p.position,
+                    );
+                    states.insert(cid, state);
                 }
-                let actual: i64 = self.db.query_row(
-                    "SELECT COUNT(*) FROM messages WHERE account=?1",
-                    [account],
-                    |r| r.get(0),
-                )?;
-                // This also catches rollback/reused rowids, REPLACE's unhooked
-                // delete, and a truncate mixed with otherwise ordinary inserts.
-                if append_only && actual == old.message_count + additions.len() as i64 {
-                    let states = Arc::make_mut(&mut old.states);
-                    let mut aggregate = self
-                        .db
-                        .prepare_cached(&format!("{STATE_SELECT} AND m.conversation_id=?2"))?;
-                    for cid in conversations {
-                        let position = states
-                            .get(&cid)
-                            .map_or(states.len(), |state| state.position);
-                        let mut state = ConversationState::empty(position);
-                        let mut rows = aggregate.query(params![account, cid])?;
-                        while let Some(row) = rows.next()? {
-                            state.absorb(row)?;
-                        }
-                        states.insert(cid, state);
-                    }
-                    old.message_count = actual;
-                    old.max_rowid = additions.into_iter().fold(old.max_rowid, i64::max);
-                    old.generation = stamp;
-                    return Ok(old.states.clone());
+                if !persist {
+                    return Ok(Arc::new(copy));
                 }
+                old.log_seq = latest;
+                old.version += 1;
+                old.message_count = message_count;
+                old.max_rowid = max_rowid;
+                old.next_position = next_position;
+                let states = old.states.clone();
+                drop(cache);
+                self.prune_state_log()?;
+                return Ok(states);
             }
         }
+        self.state_scans.set(self.state_scans.get() + 1);
         let mut stmt = self.db.prepare_cached(STATE_SELECT)?;
         let mut message_count = 0;
         let mut max_rowid = 0;
@@ -489,19 +596,62 @@ impl Store {
             state.absorb(row)?;
         }
         let states = Arc::new(states);
-        self.conversation_cache.borrow_mut().insert(
-            account.into(),
-            ConversationProjection {
-                generation: stamp,
-                message_count,
-                max_rowid,
-                states: states.clone(),
-            },
-        );
+        if persist {
+            let version = cache.get(account).map_or(0, |p| p.version) + 1;
+            cache.insert(
+                account.into(),
+                ConversationProjection {
+                    log_seq: latest,
+                    version,
+                    next_position: states.len(),
+                    message_count,
+                    max_rowid,
+                    states: states.clone(),
+                },
+            );
+            drop(cache);
+            self.prune_state_log()?;
+        }
         Ok(states)
     }
+    /// Drops change-log entries every cached projection has applied. With
+    /// nothing cached, a later read scans once and needs no history.
+    fn prune_state_log(&self) -> Result<()> {
+        let floor = self
+            .conversation_cache
+            .borrow()
+            .values()
+            .map(|p| p.log_seq)
+            .min();
+        let first: i64 =
+            self.db
+                .query_row("SELECT COALESCE(MIN(seq),0) FROM mail_state_log", [], |r| {
+                    r.get(0)
+                })?;
+        if let Some(floor) = floor {
+            if floor - first >= STATE_LOG_PRUNE {
+                self.db
+                    .execute("DELETE FROM mail_state_log WHERE seq<=?1", [floor])?;
+            }
+        }
+        Ok(())
+    }
+    /// Identifies the conversation states an account's derived projections
+    /// were built from. Changes only when those states change.
+    fn conversation_version(&self, account: &str) -> Option<u64> {
+        self.db.is_autocommit().then_some(())?;
+        self.conversation_cache
+            .borrow()
+            .get(account)
+            .map(|p| p.version)
+    }
+    #[cfg(test)]
     fn compute_account_counts(&self, account: &str) -> Result<Value> {
-        let states = self.conversation_states(account)?;
+        Ok(Self::counts_from_states(
+            &*self.conversation_states(account)?,
+        ))
+    }
+    fn counts_from_states(states: &HashMap<String, ConversationState>) -> Value {
         let unread = states.values().filter(|s| s.unread).count();
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
@@ -517,10 +667,13 @@ impl Store {
             }
         }
         let folders = (totals[0], totals[1], totals[2], totals[3], totals[4]);
-        Ok(
-            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"inbox_review_count":inbox_review,"inbox_held_count":inbox_held,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
-        )
+        json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"inbox_review_count":inbox_review,"inbox_held_count":inbox_held,"scope":"all_account_mail_including_archive","held_includes_unread":true})
     }
+    /// How much of the account's mail is cached, indexed and retained.
+    ///
+    /// Live profiles report Google acquisition coverage. Synthetic profiles
+    /// count local inventories, applying bounded append-only deltas to the
+    /// cached reply when possible and recounting otherwise.
     fn coverage(&self, account: &str) -> Result<Value> {
         if self.profile_kind()? == live_profile::ProfileKind::Live {
             let coverage = self.google_live_coverage(account)?;
@@ -539,12 +692,12 @@ impl Store {
                 return Ok(old.value.clone());
             }
         }
-        self.conversation_states(account)?;
-        let (message_count, max_message_rowid) = {
-            let cache = self.conversation_cache.borrow();
-            let state = &cache[account];
-            (state.message_count, state.max_rowid)
-        };
+        let (message_count, max_message_rowid) = self
+            .conversation_states(account)?
+            .values()
+            .fold((0, 0), |(count, max), s| {
+                (count + s.messages, max.max(s.max_rowid))
+            });
         // Independent inventories validate bounded append deltas. COUNT(*) on
         // the compact FTS-owned table and MAX(id) use its B-tree directly; do
         // not combine them into a row-by-row aggregate or infer index coverage
@@ -557,6 +710,9 @@ impl Store {
             [],
             |r| r.get(0),
         )?;
+        // Try a delta: only when every insert since the cached reply is still
+        // in the bounded history, every one is an append (rowid above the old
+        // maximum), and both inventories grew by exactly those rows.
         let mut delta = None;
         if let Some(old) = self.coverage_cache.borrow().get(account) {
             if old.generation >= changes.coverage_reset_after
@@ -642,6 +798,7 @@ impl Store {
         );
         Ok(value)
     }
+    /// Recounts synthetic coverage from SQL without using the cache.
     fn compute_coverage(&self, account: &str) -> Result<Value> {
         let (messages, source_records): (i64, i64) = self.db.query_row(
             "SELECT COUNT(*),COALESCE(SUM(source_hash<>''),0) FROM messages WHERE account=?1",
@@ -686,10 +843,28 @@ impl Store {
             "text":if synthetic {format!("Synthetic text index: {indexed_messages}/{messages} messages. Full offline content verification has not run; missing/partial attachment fixtures are included.")} else {format!("Cached text index: {indexed_messages}/{messages} downloaded messages. Google inventory and offline content verification have not completed.")}}),
         )
     }
+    /// Serves the `conversations` method: one page of the account's
+    /// conversation list.
     pub(crate) fn conversations(&self, account: &str, p: &Value) -> Result<Value> {
         self.conversations_ordered(account, p, false)
     }
+    /// Lists one page of conversations matching a folder, search text and
+    /// typed filters.
+    ///
+    /// Filters and search terms apply to individual messages, and a
+    /// conversation matches when any message does; review status (unread,
+    /// held, done) and sender kind come from the whole conversation. Rows are
+    /// ordered newest first, optionally grouped by review status (`grouped`),
+    /// and paged by `offset` or by an opaque `cursor`. A plain cursor turns
+    /// `stale_cursor` once mail changes; with `live_paging` it carries the
+    /// last row's sort key and continues after it instead. Totals always
+    /// cover every match, not just the page.
+    ///
+    /// With `recent` (used by `sender_summary`), ungrouped rows sort by the
+    /// conversation's newest message rather than its newest matching one, and
+    /// the first page is not cached.
     fn conversations_ordered(&self, account: &str, p: &Value, recent: bool) -> Result<Value> {
+        // Validate the request shape and every typed filter before reading.
         fields(
             p,
             &[
@@ -749,6 +924,7 @@ impl Store {
         .trim()
         .to_lowercase();
         let kind = optional_string(p, "kind", "all")?;
+        // Substring match; LIKE's own wildcards in the input match literally.
         let sender_pattern = format!(
             "%{}%",
             sender
@@ -770,6 +946,11 @@ impl Store {
             Some(Value::Bool(value)) => *value,
             _ => return Err(err("invalid_request", "live_paging must be a boolean")),
         };
+        // Cursors. The epoch binds a cursor to this open store and the
+        // fingerprint to this exact query minus its paging fields, so a cursor
+        // cannot be replayed against another query or a restarted engine. A
+        // plain cursor also pins the search generation; a live-paging cursor
+        // instead carries the last row's sort key, `[group rank, date, id]`.
         let mut anchor = Value::Null;
         let revision = self.revision()?;
         let search_generation = self.mail_changes.snapshot(&self.db).search;
@@ -824,6 +1005,7 @@ impl Store {
                 }
             }
         }
+        // Parse the search box text and reconcile it with the typed filters.
         let query = optional_string(p, "query", "")?;
         if query.len() > 512 {
             return Err(err("invalid_request", "Search is limited to 512 bytes"));
@@ -962,6 +1144,8 @@ impl Store {
             .iter()
             .chain(&text.body)
             .any(|v| search_query::tokens(v).next().is_none());
+        // Text made only of punctuation cannot use the index; refuse it unless
+        // another criterion (a person, label, attachment or status) narrows it.
         let only_symbols = !text.words.is_empty()
             && tokens.is_empty()
             && from_patterns.is_empty()
@@ -1002,6 +1186,9 @@ impl Store {
             "sender" => TextColumn::Sender,
             _ => TextColumn::SubjectOrBody,
         };
+        // The index ignores punctuation and spacing, so every phrase except a
+        // single plain word is re-checked against the folded message text
+        // while rows are scanned below.
         let phrase_checks: Vec<(TextColumn, String)> = text
             .phrases
             .iter()
@@ -1020,11 +1207,12 @@ impl Store {
             .filter(|v| search_query::tokens(v).next().is_some())
             .map(|v| search_query::fold(v))
             .collect();
-        // One first page per account bounds this cache independently of the
-        // corpus and query history. Mail/source hooks and transaction snapshots
-        // invalidate it through the existing search generation; presentation,
-        // draft and preference writes do not force another full mailbox scan.
-        // Validation above still runs on every call, including cursor scope.
+        // First-page cache. One first page per account bounds this cache
+        // independently of the corpus and query history. Mail/source hooks and
+        // transaction snapshots invalidate it through the existing search
+        // generation; presentation, draft and preference writes do not force
+        // another full mailbox scan. Validation above still runs on every
+        // call, including cursor scope.
         let first_page_key = (account.to_owned(), "first_conversation_page");
         let cache_first_page = !recent && offset == 0;
         let next_cursor = |next: i64, anchor: &Value| -> Result<String> {
@@ -1053,12 +1241,15 @@ impl Store {
                 }
             }
         }
-        // Evaluate source predicates once. Group exact identities in Core rather
-        // than materializing two SQL grouping trees and a temporary join index.
-        // The metadata projection is derived from this same writer connection.
+        // Matching. Evaluate source predicates once. Group exact identities in
+        // Core rather than materializing two SQL grouping trees and a temporary
+        // join index. The metadata projection is derived from this same writer
+        // connection.
         struct Matched {
             first_row: i64,
             other_rows: Vec<i64>,
+            // `sent_at` text of the newest matching message; empty when the
+            // order uses the conversation state's date instead.
             latest: String,
         }
         let states = self.conversation_states(account)?;
@@ -1078,6 +1269,8 @@ impl Store {
             || !before.is_empty()
             || !from_patterns.is_empty()
             || !label_id.is_empty();
+        // A grouped list with no message-level filter is answered from the
+        // conversation states alone, without reading any message rows.
         let simple = grouped && !source_filtered;
         let sql = search_matches_sql_with(
             !expression.is_empty(),
@@ -1090,9 +1283,13 @@ impl Store {
             },
         );
         let mut stmt = self.db.prepare_cached(&sql)?;
+        // Positions are stable slots; removed threads leave gaps.
+        let slots = states.values().map(|s| s.position + 1).max().unwrap_or(0);
         let mut matches: Vec<Option<Matched>> =
-            std::iter::repeat_with(|| None).take(states.len()).collect();
+            std::iter::repeat_with(|| None).take(slots).collect();
         let mut page = Vec::new();
+        // The twelve typed slots are always bound, in the order
+        // `search_matches_sql_with` numbers them; text predicates follow.
         let mut values: Vec<&dyn rusqlite::ToSql> = vec![
             &account,
             &folder,
@@ -1129,6 +1326,9 @@ impl Store {
                     .map(|(id, state)| (id.as_str(), state)),
             );
         }
+        // Otherwise scan the matching messages. Apply the checks SQL leaves to
+        // Rust (phrase punctuation, exact addresses, conversation kind and
+        // status), then fold each row into its conversation's slot.
         if !simple {
             while let Some(row) = rows.next()? {
                 if !phrase_checks.is_empty() {
@@ -1215,6 +1415,8 @@ impl Store {
                 }
             }
         }
+        // Grouping and ordering. The filtered and per-group totals cover every
+        // match, before collapsed groups or months and paging remove rows.
         let filtered_count = page.len();
         let mut group_counts = [0usize; 3];
         for (_, state) in &page {
@@ -1258,6 +1460,10 @@ impl Store {
             });
         }
         let expanded_count = page.len();
+        // Review group first when grouped, then newest first, then conversation
+        // ID so ties never reorder between pages. Grouped and `recent` lists
+        // date a conversation by its newest message (a Julian day); plain
+        // lists by its newest matching message's `sent_at`, compared as text.
         let compare = |(aid, a): &(&str, &ConversationState),
                        (bid, b): &(&str, &ConversationState)| {
             let order = if grouped || recent {
@@ -1276,6 +1482,9 @@ impl Store {
             };
             order.then_with(|| aid.cmp(bid))
         };
+        // Paging. A live-paging anchor replaces the offset: keep only rows that
+        // sort after the last row the client saw, so rows inserted ahead of it
+        // or removed (the anchor row included) neither repeat nor skip others.
         let page_offset = if anchor.is_null() { offset } else { 0 };
         if !anchor.is_null() {
             let rank = anchor[0].as_u64().unwrap() as usize;
@@ -1334,6 +1543,9 @@ impl Store {
         } else {
             Value::Null
         };
+        // Rows, built for the page only. Each row takes its sender, recipient
+        // and snippet from the newest matching message; in a simple list every
+        // message in the folder matches.
         let mut out = Vec::with_capacity(page.len());
         for (cid, state) in page {
             let matched: HashSet<i64> = if simple {
@@ -1352,6 +1564,8 @@ impl Store {
                 params![account, cid],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
+            // Oldest first. LIMIT 201 detects a conversation over the
+            // 200-message bound, which is refused rather than truncated.
             let mut members = self.db.prepare_cached("SELECT id,sent_at,unread,starred,rowid FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),id LIMIT 201")?;
             let members = members
                 .query_map(params![account, cid], |r| {
@@ -1367,7 +1581,7 @@ impl Store {
             if members.is_empty() || members.len() > 200 {
                 return Err(err(
                     "limit_exceeded",
-                    "This experiment supports 1–200 members per conversation",
+                    "This view supports conversations of 1–200 messages",
                 ));
             }
             let matching: Vec<_> = members
@@ -1424,6 +1638,8 @@ impl Store {
         }
         Ok(result)
     }
+    /// The three most recent conversations outside Trash that `email` is on,
+    /// as sender or recipient, plus the total count of such conversations.
     pub(crate) fn sender_summary(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["email"])?;
         let email = canonical_email(
@@ -1441,6 +1657,13 @@ impl Store {
             json!({"account":account,"email":email,"conversation_count":result["filtered_conversation_count"],"conversations":result["conversations"]}),
         )
     }
+    /// The reader view of one conversation: every message oldest first with
+    /// its text, flags, attachments and labels, plus the conversation's kind
+    /// and mailing-list line. It only reads; marking messages read is a
+    /// separate `flag` write.
+    ///
+    /// Fails with `not_found` for an unknown conversation and
+    /// `limit_exceeded` above 200 messages.
     pub(crate) fn conversation(&self, account: &str, cid: &str) -> Result<Value> {
         id(cid)?;
         let (subject, revision): (String, i64) = self
@@ -1457,7 +1680,7 @@ impl Store {
         if messages.is_empty() || messages.len() > 200 {
             return Err(err(
                 "limit_exceeded",
-                "This experiment supports 1–200 members per conversation",
+                "This view supports conversations of 1–200 messages",
             ));
         }
         let mut categories = std::collections::BTreeSet::new();
@@ -1531,6 +1754,8 @@ impl Store {
             )),
         }
     }
+    /// The account's labels by name, each with the number of conversations
+    /// carrying it; live profiles add the bound Gmail label ID.
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
         let stamp = self.mail_changes.snapshot(&self.db).search;
         self.cached_projection(account, "categories", stamp, || {
@@ -1543,6 +1768,8 @@ impl Store {
             })?.collect::<std::result::Result<Vec<_>,_>>()?}))
         })
     }
+    /// The account's saved client view state (an opaque JSON object) and its
+    /// revision; revision 0 and `{}` when nothing was saved.
     pub(crate) fn view(&self, account: &str) -> Result<Value> {
         let found = self
             .db
@@ -1558,6 +1785,9 @@ impl Store {
         };
         Ok(json!({"account":account,"revision":revision,"view":view}))
     }
+    /// One account's cached calendar events between `from` and `to`
+    /// (`YYYY-MM-DD`, 1 to 42 days). Synthetic profiles default to the demo
+    /// week; live profiles must pass both dates.
     pub(crate) fn calendar(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["from", "to"])?;
         let synthetic = self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic;
@@ -1583,6 +1813,8 @@ impl Store {
         )
     }
 }
+/// Reads optional string parameter `key`, or `default` when it is absent.
+/// A present non-string value fails with `invalid_request`.
 fn optional_string<'a>(p: &'a Value, key: &str, default: &'a str) -> Result<&'a str> {
     match p.get(key) {
         None => Ok(default),
@@ -1591,6 +1823,8 @@ fn optional_string<'a>(p: &'a Value, key: &str, default: &'a str) -> Result<&'a 
             .ok_or_else(|| err("invalid_request", "Expected a string")),
     }
 }
+/// Reads optional integer parameter `key` (or `default`), which must lie in
+/// `min..=max`.
 fn number(p: &Value, key: &str, default: i64, min: i64, max: i64) -> Result<i64> {
     let n = match p.get(key) {
         Some(v) => v
@@ -1626,7 +1860,11 @@ fn search_snippet(body: &str, phrases: &[String]) -> String {
     )
 }
 
-// Structured filters combine on the same source message; status considers the whole conversation.
+/// Validates the typed list filters: exact sender or person, sender kind,
+/// sender substring, review status, attachment flag and UTC date bounds.
+///
+/// Structured filters combine on the same source message; status considers
+/// the whole conversation.
 pub(crate) fn validate_filters(p: &Value) -> Result<()> {
     for key in ["exact_sender", "exact_person"] {
         if let Some(value) = p.get(key) {
@@ -1676,6 +1914,7 @@ pub(crate) fn validate_filters(p: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// Trims, validates and lowercases an address used as an exact filter.
 fn canonical_email(email: &str) -> Result<String> {
     let trimmed = email.trim();
     if email.len() > 256
@@ -1728,9 +1967,12 @@ pub(crate) enum PersonRole {
 /// Predicates the search text adds beyond the typed filters in the request.
 #[derive(Default)]
 pub(crate) struct TextPredicates<'a> {
+    /// Keep only messages with (`Some(true)`) or without (`Some(false)`) an
+    /// attachment.
     pub attachment: Option<bool>,
     /// One LIKE pattern slot per name or address, in order.
     pub people: &'a [PersonRole],
+    /// Add one slot, after the people, for a single label ID from `label:`.
     pub label: bool,
     /// Also return subject, body and sender text (columns 4–6) for phrase checks.
     pub texts: bool,
@@ -1760,6 +2002,18 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 /// list, so the outer scan stays on its index instead of reading every row.
 const EXACT_LISTED: &str = "m.rowid IN (SELECT mp.message_rowid FROM message_people mp WHERE mp.person=(SELECT id FROM people WHERE email=?12) UNION ALL SELECT rowid FROM messages WHERE rowid>COALESCE((SELECT indexed_rowid FROM link_index_state),0) AND account=?1 AND trim(recipient)=?12 COLLATE NOCASE)";
 
+/// Builds the message-matching query for a conversation list.
+///
+/// Parameter slots are fixed: `?1` account, `?2` folder, `?3` label IDs as a
+/// JSON array, `?4` FTS expression, `?5` limit, `?6` offset, `?7` sender
+/// LIKE pattern, `?8` status, `?9` attachment flag, `?10` after, `?11`
+/// before, `?12` exact address; then one slot per `text.people` entry and
+/// one for `text.label`. Every slot is bound even when unused, and the
+/// `bindings` CTE references them all so SQLite accepts the binding. The
+/// folder and attachment choice are written into the SQL, and the caller
+/// applies status, kind and paging, so `?2`, `?5`, `?6`, `?8` and `?9` go
+/// unused. Each row is `conversation_id, rowid, sent_at, exact address`, plus
+/// subject, body and sender text when `text.texts`.
 pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredicates) -> String {
     // Only add predicates actually requested. Bound optional OR expressions kept
     // sender/body columns in the old query's scan even for unfiltered listings.
@@ -2216,6 +2470,126 @@ mod projection_tests {
             assert_eq!(coverage["attachments"], attachments);
             assert_eq!(coverage["recorded_available_attachments"], available);
         }
+    }
+    type StateRow = (u8, bool, bool, i64, i64, u64, u8, String, i64, i64);
+    fn state_rows(states: &HashMap<String, ConversationState>) -> BTreeMap<String, StateRow> {
+        states
+            .iter()
+            .map(|(cid, s)| {
+                (
+                    cid.clone(),
+                    (
+                        s.folders,
+                        s.unread,
+                        s.starred,
+                        s.unread_messages,
+                        s.starred_messages,
+                        s.latest.to_bits(),
+                        s.kind,
+                        s.kind_id.clone(),
+                        s.messages,
+                        s.max_rowid,
+                    ),
+                )
+            })
+            .collect()
+    }
+    /// The cached projection must equal what a full scan builds now.
+    fn same_as_fresh_scan(store: &Store, account: &str) {
+        let cached = state_rows(&store.conversation_states(account).unwrap());
+        let kept = store.conversation_cache.borrow_mut().remove(account);
+        let fresh = state_rows(&store.conversation_states(account).unwrap());
+        if let Some(kept) = kept {
+            store
+                .conversation_cache
+                .borrow_mut()
+                .insert(account.into(), kept);
+        }
+        assert_eq!(
+            cached, fresh,
+            "{account} projection drifted from its messages"
+        );
+    }
+    #[test]
+    fn sync_style_writes_update_only_changed_conversations() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        let scans = store.state_scans.get();
+        // Text-index and people/link index rows (virtual and WITHOUT ROWID
+        // tables) used to force a rescan of every message.
+        store.db.execute_batch("INSERT INTO people(email,name) VALUES('scan@example.com','Scan');
+            INSERT INTO message_people(message_rowid,person) SELECT rowid,(SELECT id FROM people WHERE email='scan@example.com') FROM messages WHERE account='windscribe' LIMIT 3;
+            DELETE FROM message_fts WHERE rowid=(SELECT min(rowid) FROM messages WHERE account='windscribe');
+            INSERT INTO message_fts(rowid,sender,subject,body) VALUES((SELECT min(rowid) FROM messages WHERE account='windscribe'),'a','b','c');").unwrap();
+        correct(&store);
+        // Flags, Trash, a move between threads, a deletion and a kind change.
+        store.db.execute_batch("UPDATE messages SET unread=1-unread,revision=revision+1 WHERE rowid IN (SELECT rowid FROM messages WHERE account='windscribe' ORDER BY rowid LIMIT 4);
+            UPDATE messages SET trashed=1 WHERE rowid=(SELECT max(rowid) FROM messages WHERE account='personal');
+            UPDATE messages SET conversation_id=(SELECT max(conversation_id) FROM messages WHERE account='windscribe') WHERE rowid=(SELECT min(rowid) FROM messages WHERE account='windscribe');
+            UPDATE message_sender_kinds SET kind=CASE kind WHEN 'people' THEN 'automated' ELSE 'people' END WHERE rowid=(SELECT min(rowid) FROM message_sender_kinds);
+            PRAGMA foreign_keys=OFF;
+            DELETE FROM messages WHERE rowid=(SELECT max(rowid) FROM messages WHERE account='windscribe');
+            PRAGMA foreign_keys=ON;").unwrap();
+        correct(&store);
+        for account in ["windscribe", "personal"] {
+            same_as_fresh_scan(&store, account);
+        }
+        // same_as_fresh_scan scans on purpose, once per account.
+        assert_eq!(store.state_scans.get(), scans + 2);
+    }
+    #[test]
+    fn listing_after_a_thread_is_removed_and_another_added() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let page = json!({"folder":"all","grouped":true,"limit":100});
+        store.conversations("windscribe", &page).unwrap();
+        store.db.execute_batch("PRAGMA foreign_keys=OFF;
+            DELETE FROM messages WHERE account='windscribe' AND conversation_id=(SELECT min(conversation_id) FROM messages WHERE account='windscribe');
+            PRAGMA foreign_keys=ON;").unwrap();
+        append(&store, "slot-one", "slot-thread-one");
+        append(&store, "slot-two", "slot-thread-two");
+        let rows = store.conversations("windscribe", &page).unwrap();
+        let ids: Vec<_> = rows["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].clone())
+            .collect();
+        assert!(ids.contains(&json!("slot-thread-one")) && ids.contains(&json!("slot-thread-two")));
+        correct(&store);
+        same_as_fresh_scan(&store, "windscribe");
+    }
+    #[test]
+    fn rolled_back_changes_never_reach_committed_states() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let before = store.account_counts("windscribe").unwrap();
+        store
+            .db
+            .execute_batch("BEGIN; UPDATE messages SET unread=1 WHERE account='windscribe';")
+            .unwrap();
+        let inside = store.account_counts("windscribe").unwrap();
+        assert_eq!(
+            inside["unread_conversation_count"],
+            inside["conversation_count"]
+        );
+        store.db.execute_batch("ROLLBACK;").unwrap();
+        assert_eq!(store.account_counts("windscribe").unwrap(), before);
+        store
+            .db
+            .execute_batch(
+                "SAVEPOINT probe; UPDATE messages SET starred=1 WHERE account='windscribe';",
+            )
+            .unwrap();
+        assert_ne!(store.account_counts("windscribe").unwrap(), before);
+        store
+            .db
+            .execute_batch("ROLLBACK TO probe; RELEASE probe;")
+            .unwrap();
+        assert_eq!(store.account_counts("windscribe").unwrap(), before);
+        correct(&store);
+        same_as_fresh_scan(&store, "windscribe");
     }
     #[test]
     fn category_counts_survive_navigation_and_follow_direct_membership_changes_and_rollback() {

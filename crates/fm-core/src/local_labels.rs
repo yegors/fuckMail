@@ -125,8 +125,6 @@ impl Store {
         let state = self.local_model_settings()?;
         let mut settings: Settings = serde_json::from_value(state["settings"].clone())?;
         let mut settings_changed = false;
-        // Label descriptions feed model classification; Auto-read and Spam do not.
-        let mut descriptions_changed = false;
         match method {
             "label_create" => {
                 if name.is_some() || tx.query_row("SELECT EXISTS(SELECT 1 FROM google_label_creations WHERE account=?1 AND category_id=?2)",params![account,category],|r|r.get::<_,bool>(0))? {
@@ -190,7 +188,6 @@ impl Store {
                     .validate()
                     .map_err(|message| err("invalid_request", &message))?;
                 settings_changed = true;
-                descriptions_changed = description != expected;
             }
             "label_auto_read" | "label_auto_spam" => {
                 let Some(name) = name.as_deref() else {
@@ -275,8 +272,7 @@ impl Store {
                 )?;
                 tx.execute("UPDATE views SET json=json_set(json,'$.category',''),revision=revision+1 WHERE account=?1 AND json_extract(json,'$.category')=?2",params![account,category])?;
                 if let Some(policy) = settings.accounts.get_mut(account) {
-                    descriptions_changed = policy.descriptions.remove(category).is_some();
-                    settings_changed = descriptions_changed
+                    settings_changed = policy.descriptions.remove(category).is_some()
                         | policy.auto_read.remove(category).is_some()
                         | policy.auto_spam.remove(category).is_some();
                 }
@@ -285,9 +281,6 @@ impl Store {
         }
         if settings_changed {
             tx.execute("INSERT INTO local_model_settings VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,settings_json=excluded.settings_json",params![state["revision"].as_i64().unwrap()+1,serde_json::to_string(&settings)?])?;
-        }
-        if descriptions_changed {
-            tx.execute("DELETE FROM message_sender_kinds WHERE account=?1 AND provenance IN ('ollama','openai_compatible')",[account])?;
         }
         let result = json!({"request_id":request,"id":category,"local_only":true});
         tx.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",params![account,request,fingerprint,serde_json::to_string(&result)?])?;

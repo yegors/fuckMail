@@ -1,6 +1,6 @@
 # Gmail: synchronization, authorization and quotas
 
-**D009 scope (2026-09-11):** Gmail and Google Calendar cover all current accounts. Retrieval and sending use Google APIs, with shared MIME parsing/building and text extraction. A small CLI grows beside the GUI; neither SMTP transport nor a received-HTML display engine is an early dependency.
+**D009 scope (2026-09-11):** Gmail and Google Calendar cover all current accounts. Retrieval and sending use Google APIs, with shared MIME parsing/building and text extraction. A small CLI grows beside the GUI. SMTP transport is out of scope, and a received-HTML display engine was not an early dependency.
 
 Sources checked 2026-09-10; category sources rechecked 2026-09-11; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
 
@@ -34,7 +34,7 @@ P0-02: Validate durable Google desktop OAuth for personal and Workspace access; 
 
 ## Category experiment
 
-P0-07 (Gmail): exercise selecting/creating and remapping labels, archived unread totals, mixed conversation membership, new replies, renamed/deleted destinations and cross-client edits. Automatic category filing must preserve read/star state and respect newer manual changes. Compare the separate IMAP primary-folder behavior without treating labels and folders as equivalent.
+P0-07 (Gmail): exercise selecting/creating and remapping labels, archived unread totals, mixed conversation membership, new replies, renamed/deleted destinations and cross-client edits. Automatic category filing must preserve read/star state and respect newer manual changes.
 
 ## Phase 0 investigation: authentication and a resumable provider adapter
 

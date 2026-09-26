@@ -18,7 +18,7 @@ Item {
     property bool bccOpen: false
     // A new message fills this much of the pane; 0 for replies.
     property real minimumHeight: 0
-    readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
+    readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property bool readOnly: backend.draftReadOnly || backend.accountArchived || backend.unsavedAccountBuffer
     readonly property string draftTitle: backend.unsavedAccountBuffer ? "Retained unsaved edits" : backend.accountArchived ? "Archived draft" : backend.draft.transferred ? "Moved draft" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
@@ -62,13 +62,22 @@ Item {
         const days = Math.round((Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) - Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())) / 86400000)
         return days === 0 ? "Today" : days === 1 ? "Yesterday" : Qt.formatDate(date, date.getFullYear() === today.getFullYear() ? "d MMM" : "d MMM yyyy")
     }
+    // The writer's own words mention an attachment and nothing is attached.
+    // Forwarded and quoted text does not count. Advisory only.
+    readonly property bool attachmentMissing: {
+        if ((backend.draft.attachments || []).length || attachmentIds.length) return false
+        const own = document.plainText.split("---------- Forwarded message ----------")[0]
+            .split("\n").filter(line => !/^\s*>/.test(line)).join("\n")
+        return /\b(attach(ed|ment|ments|ing)?|enclosed)\b/i.test(own)
+    }
     // One line under the buttons: a problem first, then what happens next.
     readonly property var hint: {
         if (backend.recipientError.length) return {text: backend.recipientError, tone: Theme.accent}
         if (backend.draftStatus.indexOf("Not saved") >= 0) return {text: backend.draftStatus, tone: Theme.error}
         if (backend.googleDraft.attention) return {text: backend.googleDraft.status || "", tone: backend.googleDraft.warning ? Theme.warn : Theme.inkAlpha(.45)}
+        if (!backend.syntheticProfile && !(backend.draft.to_recipients || []).length) return {text: "Add at least one recipient", tone: Theme.inkAlpha(.45)}
+        if (attachmentMissing) return {text: "Mentions an attachment — none added", tone: Theme.amber}
         if (backend.syntheticProfile) return {text: "Kept here as a draft · nothing is delivered", tone: Theme.inkAlpha(.45)}
-        if (!(backend.draft.to_recipients || []).length) return {text: "Add at least one recipient", tone: Theme.inkAlpha(.45)}
         return {text: "Kept as a draft until it sends", tone: Theme.inkAlpha(.45)}
     }
     implicitHeight: Math.max(minimumHeight, composer.implicitHeight) + (recent.visible ? recent.implicitHeight + 28 : 0)
@@ -368,7 +377,7 @@ Item {
                     tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Send through Gmail"
                     onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
                 }
-                FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12.5); tip: "Attach files — or drop them anywhere on the message"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
+                FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12.5); tip: "Attach files — or drop them anywhere on the message"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: root.chooseLocalAttachment() }
                 Text {
                     objectName: "composerHint"
                     Layout.fillWidth: true
@@ -440,22 +449,6 @@ Item {
                     }
                     Text { text: root.dayLabel(recentRow.modelData.latest_at); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1} }
                 }
-            }
-        }
-    }
-    Menu {
-        id: attachmentMenu
-        objectName: "draftAttachmentMenu"
-        MenuItem { objectName: "draftAttachLocalFile"; text: "Choose files…"; enabled: !root.readOnly && !backend.attachmentImport.pending; onTriggered: root.chooseLocalAttachment() }
-        MenuSeparator { visible: root.availableAttachments.length > 0 }
-        Repeater {
-            model: root.availableAttachments
-            MenuItem {
-                required property var modelData
-                text: modelData.name
-                checkable: true
-                checked: root.attachmentIds.indexOf(modelData.id) >= 0
-                onTriggered: backend.setDraftAttachment(modelData.id, checked)
             }
         }
     }

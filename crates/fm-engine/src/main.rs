@@ -34,7 +34,6 @@ mod ollama;
 mod openai_local;
 mod remote_content;
 mod verification_fixture;
-mod verification_google;
 
 #[derive(Parser)]
 #[command(
@@ -52,58 +51,6 @@ struct Args {
     demo_profile: bool,
     #[arg(long, hide = true, value_enum)]
     verification_fixture: Option<verification_fixture::Mode>,
-    /// In-memory provider verification, compiled only in an isolated developer build.
-    #[cfg(feature = "verification-google")]
-    #[arg(
-        long,
-        hide = true,
-        requires = "live_profile",
-        conflicts_with = "verification_fixture"
-    )]
-    verification_google: bool,
-    /// Permit bounded generated submissions only in the isolated provider fixture.
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires = "verification_google")]
-    verification_google_send: bool,
-    /// Seed read-only generated remote Drafts only in the isolated provider fixture.
-    #[cfg(feature = "verification-google")]
-    #[arg(
-        long,
-        hide = true,
-        requires = "verification_google",
-        conflicts_with = "verification_google_send"
-    )]
-    verification_google_drafts: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires = "verification_google", conflicts_with_all = ["verification_google_send", "verification_google_drafts"])]
-    verification_google_draft_actions: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_calendar_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions"])]
-    verification_google_calendar: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires = "verification_google_calendar", value_parser = calendar_fixture_base)]
-    verification_google_calendar_base: Option<u64>,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_accounts_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions", "verification_google_calendar"])]
-    verification_google_accounts: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires = "verification_google_accounts", value_parser = calendar_fixture_base)]
-    verification_google_accounts_base: Option<u64>,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_occurrences_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions", "verification_google_calendar", "verification_google_accounts"])]
-    verification_google_occurrences: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, hide = true, requires = "verification_google_occurrences", value_parser = calendar_fixture_base)]
-    verification_google_occurrences_base: Option<u64>,
-}
-
-#[cfg(feature = "verification-google")]
-fn calendar_fixture_base(value: &str) -> Result<u64, String> {
-    value
-        .parse::<u64>()
-        .ok()
-        .filter(|n| (946_684_800..4_102_444_800).contains(n) && n % 60 == 0)
-        .ok_or_else(|| "Use a UTC minute-aligned timestamp between 2000 and 2100".into())
 }
 
 /// A unit of work for the store-writer thread, the only owner of the `Store`.
@@ -526,10 +473,12 @@ async fn session_inner(
         }
         // Removing or disconnecting an account first stops its model jobs, and
         // removal also drops the account's remote-content state.
+        // Without an account the request is invalid, and `cancel_account(None)`
+        // would cancel the account-less settings tests instead.
         if request.method == "account_remove" || request.method == "google_disconnect" {
-            services
-                .assistance
-                .cancel_account(request.account.as_deref());
+            if let Some(account) = request.account.as_deref() {
+                services.assistance.cancel_account(Some(account));
+            }
         }
         if request.method == "account_remove" {
             services.remote.forget_account(request.account.as_deref());
@@ -860,13 +809,6 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(feature = "verification-google")]
-    if !args.verification_google {
-        return Err(
-            "This isolated build requires --verification-google and a new disposable live profile"
-                .into(),
-        );
-    }
     if args.verification_fixture.is_some() && args.profile.is_none() {
         return Err("verification fixtures require an explicit disposable profile".into());
     }
@@ -880,13 +822,6 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         None => fm_ipc::default_profile()?,
     };
     let profile = fm_ipc::private_profile(&selected_profile)?;
-    // This refusal is present in ordinary builds too. A verification profile
-    // must never fall through to real Google services on a later startup.
-    verification_google::refuse_marked_profile(&profile)?;
-    #[cfg(feature = "verification-google")]
-    if args.verification_google {
-        verification_google::claim_empty_profile(&profile)?;
-    }
     if let Some(mode) = args.verification_fixture {
         verification_fixture::preflight(mode, &profile)?;
     }
@@ -925,24 +860,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .verification_fixture
         .map(|mode| verification_fixture::Fixture::prepare(mode, &profile, &mut store))
         .transpose()?;
-    #[cfg(feature = "verification-google")]
-    let google_fixture = args
-        .verification_google
-        .then(|| {
-            verification_google::Fixture::prepare_with_occurrences(
-                &profile,
-                &mut store,
-                args.verification_google_send,
-                args.verification_google_drafts,
-                args.verification_google_draft_actions,
-                args.verification_google_calendar_base,
-                args.verification_google_accounts_base,
-                args.verification_google_occurrences_base,
-            )
-        })
-        .transpose()?;
     diagnostics::initialize(&profile);
-    #[cfg(not(feature = "verification-google"))]
     let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
         .then(|| store.vault_namespace())
         .transpose()?;
@@ -972,7 +890,6 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let engine_cancel = fm_google::transport::CancellationToken::new();
     // Runtimes. Google auth and sync exist only for live profiles; every
     // runtime reaches the store through a `CoreBridge` on the background slots.
-    #[cfg(not(feature = "verification-google"))]
     let provider = provider_namespace
         .map(|namespace| {
             google_auth::Runtime::new(
@@ -982,16 +899,6 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             )
         })
         .transpose()?;
-    #[cfg(feature = "verification-google")]
-    let provider = Some(
-        google_fixture
-            .as_ref()
-            .ok_or("Verification fixture was not initialized")?
-            .auth(
-                core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
-                engine_cancel.clone(),
-            ),
-    );
     let sync = provider.as_ref().map(|auth| {
         google_sync::Runtime::new(
             core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
@@ -1042,20 +949,10 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let worker_owners = owners.clone();
     let worker_authenticated = authenticated_work.clone();
     let worker_schedule = schedule.clone();
-    #[cfg(feature = "verification-google")]
-    let writer_google_fixture = google_fixture.clone();
-    #[cfg(feature = "verification-google")]
-    let google_reporter = google_fixture
-        .as_ref()
-        .map(|fixture| fixture.start_reporter(engine_cancel.clone()));
     // The store writer: the only thread that touches `store` from here on. It
     // runs client requests in FIFO order, interleaved with background steps,
     // and exits once every queue sender is dropped and the queues are empty.
     let worker = std::thread::spawn(move || {
-        #[cfg(feature = "verification-google")]
-        let _trace = writer_google_fixture
-            .as_ref()
-            .map(|f| f.install_writer_trace());
         let mut store = store;
         let mut pending = PendingWork::default();
         let mut ingestion = None;
@@ -1226,16 +1123,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     drop(provider);
     drop(queue);
-    let writer_finished = worker.join().is_ok();
-    #[cfg(feature = "verification-google")]
-    if let Some(fixture) = google_fixture {
-        if let Some(reporter) = google_reporter {
-            let _ = reporter.await;
-        }
-        fixture.finish(writer_finished).await?;
-    }
-    #[cfg(not(feature = "verification-google"))]
-    let _ = writer_finished;
+    let _ = worker.join();
     Ok(())
 }
 
@@ -1292,8 +1180,11 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "mail_notifications",
         "calendar_combined",
         "calendar_search",
+        "calendar_mail_activity",
         "account_update",
         "draft_discard",
+        "draft_discard_status",
+        "draft_undo_discard",
         "capture_history",
         "calendar_write",
         "calendar_write_ack",
@@ -1320,7 +1211,6 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "google_auth_status",
         "google_auth_cancel",
         "google_disconnect",
-        "accounts_archived",
         "account_remove_preview",
         "account_remove",
         "account_remove_status",
@@ -1463,7 +1353,7 @@ mod session_tests {
             assert_eq!(hello["result"]["protocol"], 1);
             assert_eq!(hello["result"]["fixture_revision"], expected_fixture);
             assert_eq!(hello["result"]["schema_version"], fm_core::SCHEMA_VERSION);
-            assert_eq!(hello["result"]["capabilities"]["phase1"], true);
+            assert_eq!(hello["result"]["mode"], "synthetic");
             assert_eq!(hello["result"]["capabilities"]["send"], false);
             let methods = hello["result"]["methods"].as_array().unwrap();
             for method in [

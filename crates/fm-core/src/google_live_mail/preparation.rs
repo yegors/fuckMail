@@ -158,6 +158,45 @@ pub fn prepare_google_item(
     prepare_google_item_since(blobs, page, remote_id, outcome, cancel, None)
 }
 
+/// Prepares a message Gmail reports changed from its retained source and
+/// Gmail's current `state`, exactly as [`prepare_google_item_since`] would
+/// from a download of it. `None` when the retained source cannot be read, so
+/// the caller downloads it instead.
+pub fn prepare_google_item_retained(
+    blobs: &BlobStore,
+    page: &GooglePageIdentity,
+    remote_id: &str,
+    retained: &RetainedGoogleSource,
+    state: fm_google::gmail_api::GmailMessageState,
+    cancel: &CancellationToken,
+    since: Option<i64>,
+) -> Result<Option<PreparedGoogleItem>> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    cancelled(cancel)?;
+    let Ok(source) = crate::local_content::read_source(blobs, &retained.source_hash) else {
+        return Ok(None);
+    };
+    let raw = fm_google::gmail_api::RawItem {
+        message: fm_google::sync::RawMessage {
+            id: state.id,
+            thread_id: state.thread_id,
+            label_ids: state.label_ids,
+            history_id: state.history_id,
+            raw: URL_SAFE_NO_PAD.encode(source),
+        },
+        internal_date: Some(retained.internal_date_ms.to_string()),
+        size_estimate: None,
+    };
+    prepare_google_item_since(
+        blobs,
+        page,
+        remote_id,
+        Some(RawOutcome::Available(raw)),
+        cancel,
+        since,
+    )
+    .map(Some)
+}
 /// Like [`prepare_google_item`], but a message whose Gmail internal date falls
 /// before `since` (Unix seconds, the retention start) is marked outside
 /// retention and nothing of it is staged.

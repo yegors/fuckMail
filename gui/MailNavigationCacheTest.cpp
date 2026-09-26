@@ -548,6 +548,44 @@ public:
             && !backend.restoreConversation("two","0"), "reader cache evicts old bodies under its byte budget");
         qInfo() << "Mail cache passed: instant observed view, query/draft/lifecycle fences, no read mutation, stable body updates and bounded eviction.";
         visibleRefresh();
+        instantFilters();
+    }
+    // A sender-kind or label filter narrows the rows on screen at once and in
+    // place, and turning it off shows the view seen before it, before Core
+    // answers either.
+    static void instantFilters() {
+        GoogleOperationFixture::Engine syncEngine;
+        MailBackend backend(syncEngine.profile, "unused");
+        backend.m_shutdown = true;
+        backend.m_allAccounts = {account("one")}; backend.publishAccounts(backend.m_allAccounts);
+        backend.m_account = "one"; backend.m_folder = "inbox";
+        QVariantList rows;
+        for (int number = 0; number < 6; ++number) {
+            const auto id = "row-" + QString::number(number);
+            const auto label = number % 3 == 0 ? QVariantList{QVariantMap{{"id", "finance"}, {"name", "Finance"}}} : QVariantList{};
+            rows.append(QVariantMap{{"id", id}, {"account", "one"}, {"subject", id}, {"sender_name", id},
+                {"latest_at", "2026-09-11T23:00:00Z"}, {"kind", number % 2 ? "automated" : "people"},
+                {"categories", label}, {"group", "review"}, {"unread", true}, {"message_count", 1}});
+        }
+        require(backend.publishConversations(rows), "initial rows");
+        backend.rememberView(backend.m_querySummary);
+        const auto shown = [&] {
+            QStringList ids;
+            for (const auto &row : std::as_const(backend.m_conversations)) ids.append(row.toMap().value("id").toString());
+            return ids;
+        };
+        int resets = 0;
+        QObject::connect(&backend.m_conversationModel, &QAbstractItemModel::modelReset, [&] { ++resets; });
+        backend.applyFilters({{"kind", "people"}});
+        require(shown() == QStringList{"row-0", "row-2", "row-4"}, "People narrows the rows on screen at once");
+        backend.applyFilters({});
+        require(shown().size() == 6, "turning People off shows the view seen before it");
+        backend.setCategory("finance");
+        require(shown() == QStringList{"row-0", "row-3"}, "a label narrows the rows on screen at once");
+        backend.setCategory("finance,travel");
+        require(shown() == QStringList{"row-0", "row-3"}, "a second label widens the view, so Core decides");
+        require(resets == 0, "filters and labels change rows in place, never resetting the list");
+        qInfo() << "Instant filters passed: kind and label narrowing, a revisited view, in-place rows.";
     }
 };
 int main(int argc, char **argv) { QGuiApplication app(argc,argv); QQuickStyle::setStyle("Basic"); MailNavigationCacheTest::run(); return 0; }

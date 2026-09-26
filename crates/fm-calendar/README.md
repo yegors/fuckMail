@@ -45,7 +45,7 @@ zones and rules the recurrence library rejects return errors; a truncated
 result never claims full coverage. Custom `VTIMEZONE` definitions and external
 iCalendar feeds are not supported.
 
-Time zones come from `chrono-tz`'s bundled IANA database (`TZDB_VERSION`).
+Time zones come from `chrono-tz`'s bundled IANA database.
 
 ## Vendored `rrule`
 

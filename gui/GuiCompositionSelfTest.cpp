@@ -541,12 +541,10 @@ void GuiCompositionSelfTest::step() {
         if (!saved() || !click("draftAttachButton")) return;
         m_stage=73; break;
     case 73: {
-        auto menu=m_window->findChild<QObject *>("draftAttachmentMenu");
-        auto choice=m_window->findChild<QObject *>("draftAttachLocalFile");
-        if (!menu || !menu->property("opened").toBool() || !choice || !choice->property("enabled").toBool()) return;
-        QMetaObject::invokeMethod(menu,"close");
+        // Attach opens the file picker straight away.
         auto dialog=m_window->findChild<QObject *>("draftAttachmentFileDialog");
-        if (!dialog || !QMetaObject::invokeMethod(dialog,"rejected")) { finish("Native attachment picker cancellation handler is unavailable."); return; }
+        if (!dialog || !dialog->property("visible").toBool()) return;
+        if (!QMetaObject::invokeMethod(dialog,"reject")) { finish("Native attachment picker cancellation handler is unavailable."); return; }
         if (m_backend.attachmentImportBusy() || m_backend.activeDraftId()!=m_attachmentDraft) { finish("Cancelling a picker changed the draft or started import."); return; }
         if (!type("replyComposer","Authored immediately before import")) return;
         if (!attachmentSelection(m_attachmentPath,"windscribe",m_attachmentDraft)) return;

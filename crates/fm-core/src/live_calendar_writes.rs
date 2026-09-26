@@ -1572,7 +1572,7 @@ pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: 
     {
         return Err(err(
             "unsupported_operation",
-            "This write slice supports ordinary nonrecurring events",
+            "Only ordinary events can be changed here",
         ));
     }
     if kind != "rsvp"

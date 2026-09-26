@@ -3,13 +3,12 @@ use super::*;
 use std::path::PathBuf;
 
 /// The client registration file shipped next to the engine executable.
-#[cfg(not(feature = "verification-google"))]
 pub(super) const APP_CLIENT_FILE: &str = "google-oauth-client.json";
 
 /// Where this build finds its Google OAuth client registration.
 #[derive(Default)]
 pub(super) struct AppClient {
-    // Captured once at engine startup; tests and isolated fixtures inject a path.
+    // Captured once at engine startup; tests inject a path.
     path: Option<PathBuf>,
     /// The path was set explicitly, so a missing file is an error rather than
     /// a reason to fall back to the profile's recorded registration.
@@ -19,7 +18,6 @@ pub(super) struct AppClient {
 impl AppClient {
     /// The packaged registration beside the executable, or the file named by
     /// `FM_GOOGLE_CLIENT_CONFIG`, which is then required.
-    #[cfg(not(feature = "verification-google"))]
     pub(super) fn installed() -> Self {
         if let Some(path) = std::env::var_os("FM_GOOGLE_CLIENT_CONFIG") {
             return Self::configured(PathBuf::from(path));

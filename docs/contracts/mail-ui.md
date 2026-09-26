@@ -2,6 +2,61 @@
 
 
 
+## D148 — instant filters, no unknown-kind mark (Mail UI102)
+
+- **Sender kind mark.** The person or bot mark shows only for a known kind. Unknown shows nothing, both on list rows and in the reader's correction button. Only mail the model hasn't read yet has no kind.
+- **Changing what the list shows.** People/Automated, labels, Sent day chips, folder tabs, Trash and the contact card's "All N with" update the list in place. Rows still shown keep their delegates. A search is still a new list, placed by the saved list position.
+  - A view seen in the last few moments, and its counts, comes back from memory (`m_viewRows`, first pages by account, folder, search, filters, labels and collapsed months). The list then reconciles with Core.
+  - Hovering one of those controls loads the view it would show, so the click is instant. A click before that answer arrives shows it as soon as it does.
+  - Without either, adding People or Automated, choosing a first label, or dropping one of several labels narrows the rows on screen at once. Counts follow Core's answer.
+  - With nothing to show yet, the rows still shown fade to 55% over 90 ms if the answer takes longer than 80 ms, then come back.
+- **Saved list place.** When rows merged in above the visible ones move the list's origin, the saved offset follows what is shown.
+- **Collapsed months** keep their rows per view, so a month never expands with another filter's rows.
+
+Consumers: Local assistance27.
+
+## D147 — no row tooltip, honest Empty trash (Mail UI101)
+
+- Mail list rows have no hover tooltip. Subject, sender kind, time, labels and Delayed state are all on the row or in the reader.
+- **Empty trash confirm.** The count is the larger of Gmail's Trash total and `stored`. When Gmail's Trash is already empty and copies remain here, it reads "Gmail’s Trash is already empty. N message(s) left here will be removed from this computer."
+
+Consumers: Gmail36.
+
+## D146 — quiet delivery, steady month toggles (Mail UI100)
+
+- **Reader note** (`readerNote`): one line under the reader's buttons, always reserved while they show, so its text never moves the thread. It reads, in order:
+  - "Read from the server · not on this machine";
+  - "Read-only account archive";
+  - "Cached copy · reconnect with Mail access to make changes";
+  - "Google did not accept this change · check account access" (in the error colour) when `mailDelivery.state` is `failed`.
+- Pending and unknown delivery states show nothing. The thread line and the message header show no status (`mailDeliveryStatus` and `messageDeliveryStatus` are gone).
+- **Section headers** have no tooltip.
+- **Loading texts.** `firstLoading` is true only while the first list read of an account's folder runs. The list's empty-state text is blank then; outside it the list shows "No matches" or "No conversations in this view", never "Searching…". The reader shows "Loading…" only then. "Inbox clear" and the other empty-reader lines stay up during refreshes.
+- **Collapsing everything loaded.** With more mail to read and no rows loaded, `trailingSections` lists the sections down to and including the first open one with mail. Its rows arrive under its header, and Load more stays hidden until they do.
+
+Consumers: none outside the GUI.
+
+## D144 — list, thread, buttons, top bar, composer (Mail UI99)
+
+- **List shading.** Every other row in a group has a 2.8% ink background (`groupPositions`), starting again at each group, including the whole list in Spam and Trash. The multi-selection, opened and pointer states take priority.
+- **Leaving To review.**
+  - When another conversation opens while a read row is kept in To review, the backend marks that row `leaving` where it is.
+  - The delegate folds its height to 0 in 170 ms (ease-in), its opacity reaching 0 at 70% of the way.
+  - After 190 ms the list refreshes and the row appears in its section. A second opening during the fold drops the first row at once, and the next refresh places it.
+  - Leaving rows are skipped by Up/Down. Inbox only.
+- **Thread.** A folded message's row adds a 3.5% ink wash on hover, fading over 150 ms, over its every-other tone.
+- **Button hover.** `FmButton.hoverBrightness` (1.12 for prominent buttons, else 1.3; 1 turns it off) multiplies the label, icon and filled background colour channels while hovered, like CSS `brightness()`. The selected option of `FmSegmented` lifts too.
+- **Top bar.**
+  - The left starts with the Mail/Calendar switch.
+  - Settings (`settingsButton`) is a 30×30 outlined icon button after the search box: radius 6, a `line2` border that turns `line3` with an ink icon on hover. While Settings is open it is solid ink with a canvas icon.
+  - The export's 2 px account-colour strip along the top is left out: the founder asked for it removed.
+- **Composer hint.** When the writer's own text matches `\b(attach(ed|ment|ments|ing)?|enclosed)\b` (case-insensitive) and the draft has no files or included attachments, the hint reads "Mentions an attachment — none added" in gold. It ranks after Add at least one recipient.
+  - Text after "---------- Forwarded message ----------" and lines starting with `>` don't count.
+- **Settings → Mail.** "Show drafts in the corner" (Show/Hide; `show_draft_chips`) replaces "Group Sent and Drafts by date". Hide removes the draft chips and the reading pane's extra bottom room. Sent and Drafts always group by date.
+- **Search dropdown.** `to:` reads "Recipient name or address", with example `to:finance@example.com`.
+
+Consumers: Core73, Calendar38.
+
 ## D137 — mail download progress (Mail UI98)
 
 The Accounts card's Mail row (`AccountProgress.view`):
@@ -273,7 +328,7 @@ The composer no longer shows Google draft sync progress ("Saved to Google.", "Up
   - A 22 px progress ring shows amber while downloading and silver-blue while the model processes; its space is reserved so tabs don't shift. A red dot marks a disconnected account.
   - Names always show, followed by the review count.
   - A 300 px hover card appears after 250 ms and takes no input. It shows name, address, "N to review · N delayed" or "All reviewed", then the Mail and model rows, each with a bar, count and status.
-  - The header sync button shows the icon and the time ("2 min", "just now", "Syncing" or "Retry"); its tooltip has the full text.
+  - The header sync button shows the icon and the time ("2 min", "just now", "Syncing" or "Retry"); its tooltip has the full text. "Syncing" covers new-mail checks, a requested refresh and the first sync, not a background download of older mail (`progress.mail_backfill`, D141).
 - **Colours.** The picker is an 8×2 grid of 22 px swatches with the current one ringed. Calendar events use the account colour for their rule and corner badge; other accounts' events use it at half strength.
 - **Labels modal.** "Labels · {Account}", 720 px wide, with the address and the existing label table and Sync with Google. Esc, the close button or a click outside closes it. Settings → Mail no longer has a per-account section.
 - **Settings.**
@@ -631,15 +686,15 @@ Retain all themes, compact controls, right-aligned reader actions, readable butt
 
 Revision 13 requires directly measured native cached mailbox/conversation navigation and stable resize rendering, plus the current prototype's right-aligned reader actions, readable enabled/disabled action buttons and correct compact geometry in all three themes. Use the existing Quality 100 ms p95 navigation target; a passing search budget is not a substitute. Preserve exact account/source selection, deliberate read-on-open, serial durable writes and authored fields while reducing unnecessary work. Never display another mailbox's rows as a fast substitute. Consumers: Core 13, CLI 7, Calendar 11, Search 5, Triage 6, Platform 10 and Quality 10; schema 7/fresh fixture 3/additive protocol 1 unchanged. Baseline and corrected input-to-painted-content/resize evidence remain required before this spike passes.
 
-[Windows package acceptance at `25b8b1e`](../research/phase-1-execution.md#p1-10-final-windows-package--25b8b1e) records passing navigation/source checks, native controls/CLI/restart, readable enabled/disabled local capture and right-aligned reader actions at regular/compact sizes in all three themes. Compact actions wrap beneath labels; selected mailbox controls remain fully visible during Tab/Shift+Tab, with long account names elided and the full existing tooltip preserved. Delayed user opens retain the clicked row/index/group through a real mutation receipt, then hydrate the authoritative reader source; loading saved document text updates action availability without counting as a new authored edit. [Final P1-10 native CI/package checks](../research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) pass on three hosts; physical input/scanout remain separately unverified.
+Windows package acceptance at `25b8b1e` records passing navigation/source checks, native controls/CLI/restart, readable enabled/disabled local capture and right-aligned reader actions at regular/compact sizes in all three themes. Compact actions wrap beneath labels; selected mailbox controls remain fully visible during Tab/Shift+Tab, with long account names elided and the full existing tooltip preserved. Delayed user opens retain the clicked row/index/group through a real mutation receipt, then hydrate the authoritative reader source; loading saved document text updates action availability without counting as a new authored edit. Final P1-10 native CI/package checks pass on three hosts; physical input/scanout remain separately unverified.
 
 Revision 12 applies D018's September 12 Update 2 reference: shared Graphite/Paper/Harbour themes and text sizes, General-first Settings, typed startup/duration/timeline placement preferences, complete counted collapsible mail groups, explicit sender-kind filters and an account-scoped sender card. Source-hash-bound kind annotations and exact sender/count projections come from Core; the GUI does not infer a person or automation from a display name. Preserve durable composition, stale-result rejection, exact snapshot actions and capture recovery. Consumers: Core 13, CLI 7, Search 5, Triage 6, Calendar 11, Platform 10 and Quality 9; schema 7/fresh fixture 3/additive protocol 1. Source implementation is active; the new controls and projections require their own native/CLI/restart evidence.
 
 Revision 11 applies D016's September 12 reference and D017's explicit confirmation of the P1-08 composition extension. New/reply/reply-all/forward share durable independent draft identities, explicit account/To/Cc/Bcc/subject, frozen source context and local MIME capture. Drafts lists actual saved drafts separately within the active account; it does not manufacture received messages or merge accounts. Existing replies migrate with authored fields, signatures, retained attachment identities and recovery receipts preserved. Account changes never retarget a draft's From identity. Preserve existing conflict handling, exact capture recovery and read-on-open snapshots. The header, list, inline composer, settings and calendar surfaces follow the updated reference; truthful coverage and recovery remain reachable through compact secondary controls. Consumers: Core 12, CLI 6, Search, Calendar, Triage, MIME, Platform and native acceptance tooling; schema 6/fixture 2/additive protocol 1. Alias editing, new-file import, live sending and model/account setup remain later. Implementation is active; earlier schema-5 acceptance does not verify this revision.
 
-Revision 10 aligns native sender validation with Core 11's existing 256 UTF-8 byte/control-character boundary. Invalid sender/date input stays visible in the open filter form without changing active filters. Search coalesces input for 25 ms and cancels superseded unsent conversation queries; received results must still match the current account and generation. This changes neither query meaning nor the 200 ms input-to-painted-result target. Native filter, held-response/account-switch, explicit discard/capture inspection and independent timeline control coverage extend the acceptance harness; executed results belong in [Phase 1 evidence](../research/phase-1-execution.md). Consumers: Core, CLI, Search, Calendar, Platform and native test tooling; schema 5/fixture 2/protocol 1 are unchanged.
+Revision 10 aligns native sender validation with Core 11's existing 256 UTF-8 byte/control-character boundary. Invalid sender/date input stays visible in the open filter form without changing active filters. Search coalesces input for 25 ms and cancels superseded unsent conversation queries; received results must still match the current account and generation. This changes neither query meaning nor the 200 ms input-to-painted-result target. Native filter, held-response/account-switch, explicit discard/capture inspection and independent timeline control coverage extend the acceptance harness; executed results were recorded in Phase 1 evidence, kept in Git history. Consumers: Core, CLI, Search, Calendar, Platform and native test tooling; schema 5/fixture 2/protocol 1 are unchanged.
 
-Revision 9 records the active native implementation against Core 10/schema 5/fixture 2 and additive protocol 1. Deliberate conversation opening uses a successfully hydrated member snapshot; passive restoration remains a query. Done uses one read+unstar mutation, Delay changes only the hold, and a reviewed active row remains pinned until navigation/query changes. The composer edits authoritative plain text with a limited HTML alternative, per-draft signature snapshots, retained attachment IDs, explicit discard and local MIME capture. Formatting applies to selected text; paste inserts plain text. Conflicting authored saves retain local fields and require explicit confirmation before saving that version over the latest revision. Capture recovery queries unfinished journal entries before creating a new operation identity, including after restart. Capture history is labeled local and never claims delivery. Global typed preferences and revisioned account metadata are shared with CLI. Native integration/visual acceptance remains open in [Phase 1 evidence](../research/phase-1-execution.md). Consumers: Core, CLI, Calendar, Search, Triage, MIME and Platform.
+Revision 9 records the active native implementation against Core 10/schema 5/fixture 2 and additive protocol 1. Deliberate conversation opening uses a successfully hydrated member snapshot; passive restoration remains a query. Done uses one read+unstar mutation, Delay changes only the hold, and a reviewed active row remains pinned until navigation/query changes. The composer edits authoritative plain text with a limited HTML alternative, per-draft signature snapshots, retained attachment IDs, explicit discard and local MIME capture. Formatting applies to selected text; paste inserts plain text. Conflicting authored saves retain local fields and require explicit confirmation before saving that version over the latest revision. Capture recovery queries unfinished journal entries before creating a new operation identity, including after restart. Capture history is labeled local and never claims delivery. Global typed preferences and revisioned account metadata are shared with CLI. Native integration/visual acceptance remained open in Phase 1 evidence at this revision. Consumers: Core, CLI, Calendar, Search, Triage, MIME and Platform.
 
 Revision 8 applies D014 and the [Flight Progress v2 reference](../research/flight-progress-v2.md). Phase 1 adapts the native mail/calendar/settings interface, with confirmed read-on-open, Done clearing unread and stars, untimed Delay, and the browsable timeline only in Mail. Mail accounts stay separate; Calendar supplies combined permitted details. Durable drafts, conversation-only Sent and real local preferences replace prototype shortcuts. Consumers: Core, Triage, Search, Calendar, CLI, Platform and Local assistance.
 
@@ -718,7 +773,7 @@ This is product inspiration, not a port of exec-buddy's code, visuals, generic i
 
 Phase 1 Settings opens on General first, followed by Accounts, Local model, Mail, Calendar and Shortcuts; reopening during a session retains the visited section. General supplies theme, text size and Open on. The six typed P1-09 keys/defaults and startup behavior are defined in [Platform](platform.md#local-appearance-and-startup). Theme and font changes preserve account selection, scroll/focus and every authored draft field. Sync and Notifications remain disabled with an explicit unavailable explanation. No preference creates provider/OS activity.
 
-Settings also persists local account display names/signatures, row density, Mail timeline hours, week start and selected-calendar visibility. Calendar settings presents independent source selection, 30/45/60-minute default event duration, then Timeline placement/hours and week start. The full Calendar uses a fixed 00:00–24:00 day/week grid starting at midnight; legacy calendar/grid-hour values remain stored for compatibility without ineffective controls. Calendar defaults to combined permitted details. Its explicit source selection is independent of the selected mailbox; switching mail accounts does not filter the combined calendar. Hiding a source changes neither mail scope nor provider permissions. Return restores the prior view/selection/draft; the timeline is shown only in Mail. Account freshness, index and offline coverage describe actual local state. Local categories remain account scoped, with no global label deletion invented from the prototype. Real OAuth, account removal and model downloads/configuration remain later; their simulations must not claim success. Delay remains untimed. See the [Phase 1 plan](../plans/phase-1.md) for delivery and evidence.
+Settings also persists local account display names/signatures, row density, Mail timeline hours, week start and selected-calendar visibility. Calendar settings presents independent source selection, 30/45/60-minute default event duration, then Timeline placement/hours and week start. The full Calendar uses a fixed 00:00–24:00 day/week grid starting at midnight; legacy calendar/grid-hour values remain stored for compatibility without ineffective controls. Calendar defaults to combined permitted details. Its explicit source selection is independent of the selected mailbox; switching mail accounts does not filter the combined calendar. Hiding a source changes neither mail scope nor provider permissions. Return restores the prior view/selection/draft; the timeline is shown only in Mail. Account freshness, index and offline coverage describe actual local state. Local categories remain account scoped, with no global label deletion invented from the prototype. Real OAuth, account removal and model downloads/configuration remain later; their simulations must not claim success. Delay remains untimed.
 
 UI commands use the same account-scoped core operations exposed by the [CLI](cli.md). The UI does not own provider/sync logic or require a separate agent automation surface. Built-in AI still cannot write or send email; external command callers use their own explicit workflow and authority.
 
@@ -744,11 +799,11 @@ The composer exposes no model-generated writing, rewrite, autocomplete or send p
 
 ## Open before affected behavior ships
 
-Validate the P1-08 composer and updated native layout at reference/compact sizes and on required platforms. Phase 1 remains local and synthetic: no real Google connection, model execution, legacy protocols, received HTML renderer, new-file import, aliases or timed hold. New/Reply all/Forward/Drafts and bounded recipient editing are confirmed current scope; their source-freezing, migration, conflict, restart and MIME evidence remains required. Provider-synchronized drafts and live delivery come later. Preserve earlier passes and failed attempts without treating either source presence or an isolated compile as acceptance. See [Slint](../research/slint-ui.md) for retained candidate-specific history.
+Validate the P1-08 composer and updated native layout at reference/compact sizes and on required platforms. Phase 1 remains local and synthetic: no real Google connection, model execution, legacy protocols, received HTML renderer, new-file import, aliases or timed hold. New/Reply all/Forward/Drafts and bounded recipient editing are confirmed current scope; their source-freezing, migration, conflict, restart and MIME evidence remains required. Provider-synchronized drafts and live delivery come later. Preserve earlier passes and failed attempts without treating either source presence or an isolated compile as acceptance.
 
 ## D052 / P2-LLM consumer boundary
 
-Revision 30 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
+Revision 30 consumes [Local assistance 6](local-ai.md): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
 
 
 ## D053 summary presentation and control repair

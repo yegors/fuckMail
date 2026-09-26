@@ -35,16 +35,13 @@ struct Args {
     /// Print each reply, including errors, as one line of JSON on stdout.
     #[arg(long, global = true)]
     json: bool,
-    #[cfg(feature = "verification-google")]
-    #[arg(long, global = true, hide = true)]
-    verification_google_auth: bool,
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Optional local Ollama summaries and label/sender-kind classification.
+    /// Optional local-model (Ollama or OpenAI-compatible) summaries and label/sender-kind classification.
     Assist {
         #[command(subcommand)]
         command: Assist,
@@ -129,7 +126,8 @@ enum Command {
     },
     /// List all cached calendar sources and their permissions.
     CalendarSources,
-    /// Nonrecurring create/edit or self RSVP through deterministic local fake acknowledgment.
+    /// Demo profile only: create or edit a nonrecurring event, or RSVP, acknowledged locally.
+    /// For real accounts use `google calendar-write`.
     CalendarWrite {
         /// JSON request file, or `-` for stdin; at most 64 KiB.
         #[arg(long)]
@@ -144,7 +142,7 @@ enum Command {
         #[arg(long)]
         cursor: Option<String>,
     },
-    /// Acknowledge a previously prepared local calendar operation.
+    /// Demo profile only: acknowledge a previously prepared local calendar operation.
     CalendarAck {
         /// Request ID of the prepared operation.
         request_id: String,
@@ -1163,7 +1161,7 @@ enum Draft {
         #[arg(long)]
         keep_original: bool,
     },
-    /// Inspect a recorded account change without repeating provider work.
+    /// Resume a blocked account change so its cleanup continues.
     TransferRetry {
         /// Request ID of the interrupted account change.
         #[arg(long)]
@@ -1814,20 +1812,10 @@ fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, 
     Ok(Some((method, params)))
 }
 
-/// How `open_google_browser` finishes once the URL has been checked.
-enum BrowserLaunch {
-    /// Open the URL with the platform's default-browser launcher.
-    System,
-    /// Launch nothing. Only the default-off verification build uses this, and
-    /// only after the engine confirms its isolated sign-in fixture.
-    #[cfg(feature = "verification-google")]
-    VerifiedFixture,
-}
-
 /// Opens Google's sign-in page in the default browser. The launcher runs
 /// detached with no stdio; the sign-in itself stays tied to this CLI's engine
 /// session while `run` polls for the result.
-fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> {
+fn open_google_browser(url: &str) -> Result<(), Failure> {
     // The engine supplies one fixed HTTPS authorization endpoint. No shell
     // evaluates the query, and URLs/state are never copied to terminal logs.
     if !url.starts_with("https://accounts.google.com/o/oauth2/v2/auth?")
@@ -1836,11 +1824,6 @@ fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> 
         || url.contains('#')
     {
         return Err(invalid("The engine returned an invalid Google sign-in URL"));
-    }
-    match launch {
-        BrowserLaunch::System => {}
-        #[cfg(feature = "verification-google")]
-        BrowserLaunch::VerifiedFixture => return Ok(()),
     }
     #[cfg(windows)]
     let mut command = {
@@ -2028,21 +2011,6 @@ fn notification_request(command: &Command) -> Result<Option<(&'static str, Value
 /// without creating a profile, with status 2 for invalid values. Other input
 /// files are read after connecting.
 async fn run(args: &Args) -> Result<(), Failure> {
-    // The browserless verification sign-in only runs against explicitly named
-    // profile and engine paths.
-    #[cfg(feature = "verification-google")]
-    if args.verification_google_auth
-        && (args.profile.is_none()
-            || args.engine.is_none()
-            || !matches!(
-                args.command,
-                Command::Google {
-                    command: Google::Connect { .. } | Google::Restore { .. }
-                }
-            ))
-    {
-        return Err(invalid("Synthetic sign-in requires explicit profile/engine paths and a Google connect or restore command"));
-    }
     let profile = match &args.profile {
         Some(p) => p.to_owned(),
         None if args.demo_profile => fm_ipc::demo_profile()?,
@@ -2241,26 +2209,6 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Client::connect(&profile, engine.as_deref()).await?
     };
     let scope = args.account.as_deref();
-    #[cfg(not(feature = "verification-google"))]
-    let browser_launch = BrowserLaunch::System;
-    // The verification build skips the browser only after the engine confirms
-    // that it is running the isolated account fixture.
-    #[cfg(feature = "verification-google")]
-    let browser_launch = if args.verification_google_auth {
-        let fixture = result(
-            client
-                .call("verification_google_auth_fixture", None, json!({}))
-                .await?,
-        )?;
-        if fixture != json!({"mode":"accounts-v1","browser_stub_allowed":true}) {
-            return Err(invalid(
-                "The engine did not confirm the isolated account fixture",
-            ));
-        }
-        BrowserLaunch::VerifiedFixture
-    } else {
-        BrowserLaunch::System
-    };
     let reply = match &args.command {
         // Accounts and account lifecycle.
         Command::Accounts { include_removed } => {
@@ -2693,7 +2641,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .ok_or_else(|| invalid("Engine omitted Google sign-in"))?;
             // If the browser cannot be opened, cancel the attempt rather than
             // leave it waiting for a sign-in that cannot happen.
-            if let Err(error) = open_google_browser(url, browser_launch) {
+            if let Err(error) = open_google_browser(url) {
                 let _ = client
                     .call("google_auth_cancel", None, json!({"attempt_id":attempt}))
                     .await;
@@ -2874,12 +2822,18 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         break;
                     }
                 }
+                // A failed job is the model's failure, not bad input: keep the
+                // job's own error code so the exit status isn't 2.
                 if result["result"]["status"] == "failed" {
-                    return Err(invalid(
-                        result["result"]["error"]["message"]
+                    let error = &result["result"]["error"];
+                    return Err(Failure {
+                        code: error["code"].as_str().unwrap_or("assist_failed").into(),
+                        message: error["message"]
                             .as_str()
-                            .unwrap_or("Local inference failed"),
-                    ));
+                            .unwrap_or("Local inference failed")
+                            .into(),
+                        recovery: RecoveryProofs::default(),
+                    });
                 }
                 result
             } else {
@@ -3112,7 +3066,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
             Mail::Unsubscribe { id, source_version } => {
                 let params = json!({"id":id,"source_version":source_version});
-                let source = client.call("message_source", scope, params.clone()).await?;
+                let source = result(client.call("message_source", scope, params.clone()).await?)?;
                 match source["unsubscribe"]["method"].as_str() {
                     Some("mailto") => {
                         client.call("google_unsubscribe_mail", scope, params).await?
@@ -3951,9 +3905,15 @@ mod tests {
         );
         assert!(notification_request(&args.command).unwrap().is_none());
         assert!(args.account.is_none());
-        let around =
-            Args::try_parse_from(["fm", "calendar", "search", "with:maya", "--around", "2026-09-12"])
-                .unwrap();
+        let around = Args::try_parse_from([
+            "fm",
+            "calendar",
+            "search",
+            "with:maya",
+            "--around",
+            "2026-09-12",
+        ])
+        .unwrap();
         assert_eq!(
             calendar_search_request(&around.command).unwrap(),
             Some(json!({"query":"with:maya","around":"2026-09-12","limit":100}))
@@ -3961,7 +3921,15 @@ mod tests {
         for tail in [
             vec!["calendar", "search", "term"],
             vec!["calendar", "search", "term", "--from", "2026-09-12"],
-            vec!["calendar", "search", "term", "--around", "2026-09-12", "--from", "2026-09-12"],
+            vec![
+                "calendar",
+                "search",
+                "term",
+                "--around",
+                "2026-09-12",
+                "--from",
+                "2026-09-12",
+            ],
             vec![
                 "calendar",
                 "--combined",

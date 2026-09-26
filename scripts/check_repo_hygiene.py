@@ -9,8 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_DOC_ASSET_BYTES = 10 * 1024 * 1024
 GENERATED_PREFIXES = (
-    ".artifacts/", ".tools/", "build/", "dist/", "target/",
-    ".profiles/", "profiles/", "docs/research/assets/phase-", "docs/search/assets/",
+    ".tools/", "build/", "dist/", "target/", "docs/research/assets/phase-",
 )
 GENERATED_DOC_SUFFIXES = (".log", ".zip", ".tar", ".gz", ".7z", ".sqlite", ".sqlite3")
 
@@ -56,7 +55,7 @@ def main():
             print(f"  {problem}", file=sys.stderr)
         if len(problems) > 20:
             print(f"  ... and {len(problems) - 20} more", file=sys.stderr)
-        print("See docs/research/evidence-archive.md.", file=sys.stderr)
+        print("Keep generated output in ignored local or CI artifact storage; see CONTRIBUTING.md.", file=sys.stderr)
         return 1
     print(f"Repository hygiene passed: {checked} source files; {asset_bytes:,} bytes of curated documentation assets.")
     return 0

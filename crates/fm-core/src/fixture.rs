@@ -219,7 +219,7 @@ impl Store {
         if schema >= 5 {
             tx.execute("INSERT INTO account_metadata(account,signature_text) SELECT id,'—'||char(10)||name FROM accounts",[])?;
             tx.execute("INSERT INTO drafts(account,draft_id,conversation_id,legacy_reply,mode,body,revision,signature_text,from_name,identity_revision) SELECT a.id,a.id||'-thread-003',a.id||'-thread-003',1,'reply','I will review the rollout window and confirm the timing.',1,m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id",[])?;
-            crate::phase1_calendar::seed_fixture_calendars(&tx)?;
+            crate::combined_calendar::seed_fixture_calendars(&tx)?;
             if schema >= 31 {
                 seed_sender_kinds(&tx)?;
                 for account in fixture_accounts {

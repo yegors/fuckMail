@@ -20,7 +20,6 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     AccountLifecycleBackend.cpp
     MailBackend.cpp
     GoogleBackend.cpp
-    GoogleLabels.cpp
     GoogleOperation.cpp
     GoogleOperation.h
     MailBackend.h
@@ -30,7 +29,6 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     ConversationListModel.h
     DraftAttachmentBackend.cpp
     GoogleDraftBackend.cpp
-    GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp
     GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp
     CalendarOperations.cpp CalendarSearchBackend.cpp
     ReplyDocument.cpp
@@ -45,10 +43,6 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiCalendarSelfTest.h
     GuiCompositionSelfTest.cpp
     GuiCompositionSelfTest.h
-    GuiGoogleCalendarSelfTest.cpp
-    GuiGoogleCalendarSelfTest.h
-    GuiAccountLifecycleSelfTest.cpp
-    GuiAccountLifecycleSelfTest.h
     GuiSettingsSelfTest.cpp
     GuiSettingsSelfTest.h
     GuiMailNavigationSelfTest.cpp
@@ -74,7 +68,7 @@ qt_add_qml_module(fuckmail-gui
     QML_FILES AccountProgress.qml AccountPolicy.qml AccountCard.qml AccountHoverCard.qml AccountColorPicker.qml LabelsDialog.qml SignatureDialog.qml
     QML_FILES HtmlMessageBody.qml MessageNotices.qml RemoteContentSettings.qml
     QML_FILES CalendarMailCount.qml
-    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
+    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt app-icon/app-icon.png
 )
 target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-html-content Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
@@ -181,7 +175,7 @@ if(BUILD_TESTING)
     set_tests_properties(gui-google-operation PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_FORCE_STDERR_LOGGING=1")
     add_executable(gui-google-draft-controls-test GoogleDraftControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
-    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleOperation.cpp GoogleOperation.h
         RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -195,7 +189,7 @@ if(BUILD_TESTING)
     set_tests_properties(gui-google-draft-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-google-send-controls-test GoogleSendControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
-    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleOperation.cpp GoogleOperation.h
         RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -209,7 +203,7 @@ if(BUILD_TESTING)
     set_tests_properties(gui-google-send-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-calendar-occurrence-test CalendarOccurrenceBackendTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp
-        GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleOperation.cpp GoogleOperation.h
         RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-calendar-occurrence-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -317,7 +311,7 @@ if(BUILD_TESTING)
     # Controls tests below share the full backend.
     set(FM_AUTHORING_TEST_SOURCES GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
-    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+    MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleOperation.cpp GoogleOperation.h
         RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)

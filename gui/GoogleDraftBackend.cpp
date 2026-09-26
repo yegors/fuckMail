@@ -1,6 +1,6 @@
-// MailBackend's Gmail copy of the open draft: merging its sync status into the
-// draft, the plain hint line the composer shows about it, and the explicit
-// check and replace operations.
+// MailBackend's Gmail copy of the open draft: merging its sync status and any
+// deletion receipt into the draft, the plain hint line the composer shows about
+// it, and the explicit check and replace operations.
 #include "MailBackend.h"
 #include "GoogleOperation.h"
 #include <QJsonArray>
@@ -22,6 +22,15 @@ bool olderStatus(const QJsonObject &candidate, const QJsonObject &current) {
     return candidate["revision"].toInteger() < current["revision"].toInteger()
         || (candidate["revision"] == current["revision"]
             && candidate["local_revision"].toInteger() < current["local_revision"].toInteger());
+}
+// A Gmail deletion receipt is usable only for this draft (or one it names as
+// related), with its request, revisions and a known state all present.
+bool validDeletion(const QJsonObject &status, const QString &account, const QString &draft) {
+    static const QStringList states{"prepared", "in_flight", "deleted", "rejected", "acceptance_unknown", "abandoned"};
+    return status["account"] == account && (status["draft_id"] == draft || status["related_draft_ids"].toArray().contains(draft))
+        && !status["request_id"].toString().isEmpty() && status["revision"].toInteger() > 0
+        && status["source_revision"].toInteger() > 0 && status["current_google_revision"].toInteger(-1) >= 0
+        && status["operation_is_current"].isBool() && states.contains(status["state"].toString());
 }
 QString preparationReason(const QString &code) {
     if (code == "limit_exceeded") return "It's larger than Gmail's 35 MB limit.";
@@ -62,6 +71,30 @@ bool MailBackend::mergeGoogleDraftStatus(const QJsonObject &status, const QStrin
     if (status["revision"].toInteger() > current["revision"].toInteger(-1)
         && m_googleDraftFeedbackAccount == account && m_googleDraftFeedbackId == draftId) m_googleDraftFeedback.clear();
     return true;
+}
+
+void MailBackend::mergeDraftDeletionProjection(QVariantMap &next, const QJsonObject &result) const {
+    const auto account = result["account"].toString(), id = result["draft_id"].toString();
+    const auto incoming = result["google_delete"].toObject();
+    const auto current = QJsonObject::fromVariantMap(m_draft.value("google_delete").toMap());
+    const bool same = m_draft.value("account").toString() == account && m_draft.value("draft_id").toString() == id;
+    if (same && validDeletion(current, account, id)
+        && (!validDeletion(incoming, account, id) || !incoming["operation_is_current"].toBool()
+            || incoming["current_google_revision"].toInteger() < current["current_google_revision"].toInteger()
+            || (incoming["request_id"] == current["request_id"] && incoming["revision"].toInteger() < current["revision"].toInteger())))
+        next["google_delete"] = current.toVariantMap();
+    else if (!validDeletion(incoming, account, id) || !incoming["operation_is_current"].toBool()) next["google_delete"] = QVariant{};
+}
+
+bool MailBackend::mergeDraftDeletion(const QJsonObject &status, const QString &account, const QString &draftId) {
+    if (account != m_account || draftId != m_draft.value("draft_id").toString() || !validDeletion(status, account, draftId)) return false;
+    const auto current = QJsonObject::fromVariantMap(m_draft.value("google_delete").toMap());
+    if (status["operation_is_current"].toBool()
+        && (!validDeletion(current, account, draftId)
+            || (status["current_google_revision"].toInteger() >= current["current_google_revision"].toInteger()
+                && (status["request_id"] != current["request_id"] || status["revision"].toInteger() >= current["revision"].toInteger()))))
+        m_draft["google_delete"] = status.toVariantMap();
+    return current != QJsonObject::fromVariantMap(m_draft.value("google_delete").toMap());
 }
 
 bool MailBackend::googleDraftRecoveryReady() const {
