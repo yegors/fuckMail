@@ -15,7 +15,7 @@ ColumnLayout {
     property string account: ""
     property string conversation: ""
     property bool active: false
-    // The search's phrases, tinted where they appear (Search 10).
+    // The search's phrases, tinted where they appear.
     property var matchPhrases: []
     property var result: ({})
     property string ticket: ""

@@ -1,4 +1,23 @@
 //! Durable Calendar pages in the existing Core store. No provider or browser calls.
+//!
+//! A sync run (`calendar_sync_runs`) is either the account's calendar-list
+//! catalog (empty calendar ID) or one calendar's events, in `full` or `delta`
+//! mode. The engine drives it: begin, stage each page in cursor order, seal it,
+//! publish once the final page carries a sync token, then consolidate in
+//! bounded chunks. A run's lease stamps the connection generation, and each
+//! write rechecks it along with the calendar's revision and permission epoch,
+//! so responses from a revoked connection or an outdated permission policy
+//! cannot commit.
+//!
+//! Event sources are versioned by run ID ("generation"). A run that touches
+//! an event already owned by an earlier generation writes a pending copy
+//! (`pending_json`, index slot 1) beside the published one. Publishing only
+//! moves the calendar's `published_generation`; the `calendar_published_sources`
+//! view then exposes the run's copies at once, and
+//! [`Store::calendar_finalize_chunk`] later folds them into the main columns.
+//! An expired run's copies are discarded instead. After a clean full run,
+//! events that run did not see drop out of `calendar_visible_sources`, which
+//! is how full syncs detect deletions.
 use crate::calendar_store::{fingerprint, parse_access};
 use crate::{err, Result, Store};
 use fm_calendar::google_api::{BusySnapshot, CalendarBusy};
@@ -14,6 +33,7 @@ pub use preparation::{
     PreparedCalendarPage,
 };
 
+/// Maximum number of page items staged in one writer transaction.
 pub const CALENDAR_STAGE_CHUNK: usize = 32;
 const CHUNK_BYTES: usize = 1024 * 1024;
 pub(crate) fn provider_id(value: &str) -> Result<&str> {
@@ -28,9 +48,15 @@ fn token(value: &str) -> Result<&str> {
     }
     Ok(value)
 }
+/// Whether a sync run lists the whole inventory or continues from the
+/// committed sync token.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CalendarSyncMode {
+    /// Lists everything from the beginning; a clean full run also becomes the
+    /// baseline that later catalog membership and event visibility are judged
+    /// against.
     Full,
+    /// Continues from the committed `nextSyncToken`; requires one to exist.
     Delta,
 }
 impl CalendarSyncMode {
@@ -42,16 +68,25 @@ impl CalendarSyncMode {
         }
     }
 }
+/// Handle to one staging sync run. Every staging call compares it with the
+/// stored run, so a lease taken under an older connection cannot commit.
 #[derive(Clone)]
 pub struct CalendarSyncLease {
+    /// Run row ID, also used as the generation of the sources it stages.
     pub run: i64,
     pub account: String,
+    /// Calendar ID, or empty for the account's calendar-list catalog run.
     pub calendar: String,
+    /// Google account connection generation captured when the run began or
+    /// was last rebound.
     pub connection_generation: i64,
 }
+/// One raw provider page as received, before preparation.
 #[derive(Clone)]
 pub struct CalendarPage {
+    /// Page token this page was requested with, or `None` for the first page.
     pub input_cursor: Option<String>,
+    /// Raw `items` from the response, unmodified.
     pub items: Vec<Value>,
     pub next_page_token: Option<String>,
     pub next_sync_token: Option<String>,
@@ -127,6 +162,10 @@ impl Store {
         Ok(scope)
     }
 
+    /// Pages through the account's known calendars in ID order, returning
+    /// `{scopes, continuation}` with each scope shaped like
+    /// [`Store::calendar_sync_scope`]. `limit` must be 1 to 100; pass the
+    /// returned continuation as `after` for the next page.
     pub fn calendar_sync_scopes(
         &self,
         account: &str,
@@ -157,6 +196,13 @@ impl Store {
         }
         Ok(json!({"scopes":scopes,"continuation":if has_more{continuation}else{None}}))
     }
+    /// Starts an events run for one calendar and returns its lease.
+    ///
+    /// Fails with `permission_denied` when the calendar is missing from the
+    /// committed catalog or only grants free/busy, `calendar_finalize_pending`
+    /// while an earlier run still needs consolidation, `scope_mismatch` when
+    /// the stored cursor belongs to a different query, and `invalid_request`
+    /// for a delta without a committed sync token.
     pub fn calendar_sync_begin(
         &mut self,
         account: &str,
@@ -178,6 +224,8 @@ impl Store {
             fm_calendar::google_api::EVENT_SYNC_FINGERPRINT,
         )
     }
+    /// Starts a calendar-list catalog run for the account and returns its
+    /// lease. The lease's calendar ID is empty.
     pub fn calendar_catalog_begin(
         &mut self,
         account: &str,
@@ -200,6 +248,8 @@ impl Store {
         query: &str,
     ) -> Result<CalendarSyncLease> {
         let connection = self.calendar_connection(account, kind)?;
+        // A source has at most one pending slot, so a new run cannot start
+        // until the previous run's copies are consolidated or discarded.
         if self.db.query_row("SELECT EXISTS(SELECT 1 FROM calendar_sources s JOIN calendar_sync_state c USING(account,calendar_id) WHERE s.account=?1 AND s.calendar_id=?2 AND (s.pending_generation IS NOT NULL OR s.source_generation>c.published_generation))",params![account,calendar],|r|r.get::<_,bool>(0))? { return Err(err("calendar_finalize_pending","Consolidate or discard the prior Calendar run first")); }
         let (base, permission, input): (i64, i64, Option<String>) = if kind == "events" {
             let row:(i64,i64,Option<String>,String,String)=self.db.query_row("SELECT revision,permission_epoch,sync_token,access,query_fingerprint FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",params![account,calendar],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?.ok_or_else(||err("not_found","Calendar is not discovered"))?;
@@ -230,6 +280,8 @@ impl Store {
                 "A delta requires a committed Calendar token",
             ));
         }
+        // The run remembers the publication revision it started under; catalog
+        // finalization uses it to let later explicit permission observations win.
         let projection: i64 =
             self.db
                 .query_row("SELECT revision FROM calendar_publication", [], |r| {
@@ -243,6 +295,9 @@ impl Store {
             connection_generation: connection,
         })
     }
+    /// Returns the lease of the calendar's staging run, if one survived, so a
+    /// restarted worker can continue it. Pass an empty calendar ID for the
+    /// catalog run. The lease may need [`Store::calendar_sync_rebind`] first.
     pub fn calendar_sync_resume(
         &self,
         account: &str,
@@ -254,6 +309,11 @@ impl Store {
         }
         self.db.query_row("SELECT id,connection_generation FROM calendar_sync_runs WHERE account=?1 AND calendar_id=?2 AND state='staging'",params![account,calendar],|r|Ok(CalendarSyncLease{run:r.get(0)?,account:account.into(),calendar:calendar.into(),connection_generation:r.get(1)?})).optional().map_err(Into::into)
     }
+    /// Reports a run's state for the sync worker, including the cursor to
+    /// request next and whether the final page is staged.
+    ///
+    /// The result contains provider sync and page tokens; it is native-only
+    /// and must not be logged or projected to the GUI or CLI.
     pub fn calendar_sync_progress(&self, lease: &CalendarSyncLease) -> Result<Value> {
         let run = self.calendar_run(lease)?;
         let input: Option<String> = self.db.query_row(
@@ -279,6 +339,8 @@ impl Store {
         let chunk = prepare_calendar_chunk(&prepared, input, &cancel)?;
         self.calendar_stage_prepared_chunk(lease, &prepared, &chunk)
     }
+    /// Synchronous counterpart of [`Store::calendar_seal_prepared_page`] that
+    /// prepares `page` on the calling thread.
     pub fn calendar_seal_page(
         &mut self,
         lease: &CalendarSyncLease,
@@ -291,6 +353,14 @@ impl Store {
         )?;
         self.calendar_seal_prepared_page(lease, &prepared)
     }
+    /// Publishes a run whose final page is sealed and commits its sync token.
+    ///
+    /// For an events run this moves the calendar's published generation to
+    /// the run; a clean full run (no item errors) also becomes the new full
+    /// baseline. A catalog run requires every staged entry to be finalized
+    /// first (`calendar_finalize_pending` otherwise). Returns
+    /// `{run, state, errors, complete}` and is idempotent once published.
+    /// Consolidation of events runs follows with [`Store::calendar_finalize_chunk`].
     pub fn calendar_publish_sync(&mut self, lease: &CalendarSyncLease) -> Result<Value> {
         let run = self.calendar_run(lease)?;
         if run.state == "published" {
@@ -312,6 +382,8 @@ impl Store {
             return Err(err("page_incomplete", "Calendar pages remain unsealed"));
         }
         if run.kind == "events" {
+            // Item errors are carried as `retained_errors` so the worker later
+            // retries a full run; only a clean full run clears them.
             tx.execute("UPDATE calendar_sync_state SET published_generation=?3,full_generation=CASE WHEN ?4 AND ?5 THEN ?3 ELSE full_generation END,sync_token=?6,retained_errors=CASE WHEN ?4 AND ?5 THEN 0 ELSE retained_errors+?7 END,revision=revision+1 WHERE account=?1 AND calendar_id=?2",params![lease.account,lease.calendar,lease.run,run.mode=="full",run.identity_complete&&run.errors==0,final_token,run.errors])?;
         } else {
             // Catalog is bounded separately: publish item chunks via catalog_finalize_chunk
@@ -343,6 +415,9 @@ impl Store {
             json!({"run":lease.run,"state":"published","errors":run.errors,"complete":run.identity_complete&&run.errors==0}),
         )
     }
+    /// Abandons a staging run, for example after the provider rejects its
+    /// sync token. Published runs are unaffected. Staged copies stay in place
+    /// until [`Store::calendar_finalize_chunk`] discards them.
     pub fn calendar_expire_sync(&mut self, lease: &CalendarSyncLease) -> Result<()> {
         let _ = self.calendar_run(lease)?;
         self.db.execute(
@@ -351,7 +426,11 @@ impl Store {
         )?;
         Ok(())
     }
+    /// Consolidates or discards up to 32 of a finished run's pending sources
+    /// and returns how many it handled; call until it returns 0.
+    ///
     /// Consolidation and expiry cleanup are bounded and restartable. No source/journal bulk deletion.
+    /// Fails with `calendar_sync_pending` while the run is still staging.
     pub fn calendar_finalize_chunk(&mut self, lease: &CalendarSyncLease) -> Result<usize> {
         let run = self.calendar_run(lease)?;
         if run.state == "staging" {
@@ -377,11 +456,14 @@ impl Store {
         let tx = self.db.unchecked_transaction()?;
         for id in &ids {
             if run.state == "published" {
+                // Promote the pending copy and its slot-1 index row to the main slot.
                 tx.execute("UPDATE calendar_event_state SET observed_json=pending_observed_json,visible=pending_visible,seen_full_generation=pending_seen_full_generation,pending_observed_json=NULL,pending_visible=NULL,pending_seen_full_generation=NULL WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id])?;
                 tx.execute("UPDATE calendar_sources SET json=pending_json,source_generation=pending_generation,pending_json=NULL,pending_generation=NULL WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id])?;
                 tx.execute("DELETE FROM calendar_event_index WHERE account=?1 AND calendar_id=?2 AND event_id=?3 AND slot=0",params![lease.account,lease.calendar,id])?;
                 tx.execute("UPDATE calendar_event_index SET slot=0 WHERE account=?1 AND calendar_id=?2 AND event_id=?3 AND slot=1",params![lease.account,lease.calendar,id])?;
             } else {
+                // Expired: drop the run's pending copy, and remove events that
+                // this run introduced, since no published generation owns them.
                 tx.execute("DELETE FROM calendar_event_index WHERE account=?1 AND calendar_id=?2 AND event_id=?3 AND generation=?4",params![lease.account,lease.calendar,id,lease.run])?;
                 tx.execute("UPDATE calendar_event_state SET pending_observed_json=NULL,pending_visible=NULL,pending_seen_full_generation=NULL WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id])?;
                 tx.execute("UPDATE calendar_sources SET pending_json=NULL,pending_generation=NULL WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id])?;
@@ -395,12 +477,23 @@ impl Store {
         tx.commit()?;
         Ok(ids.len())
     }
+    /// Synchronous counterpart of the prepared catalog finalization: applies
+    /// the next chunk of staged catalog entries and returns how many it
+    /// covered, 0 when none remain.
     pub fn calendar_catalog_finalize_chunk(&mut self, lease: &CalendarSyncLease) -> Result<usize> {
         let input = self.calendar_catalog_prepare_finalization(lease)?;
         let prepared =
             prepare_calendar_catalog_chunk(input, &fm_google::transport::CancellationToken::new())?;
         self.calendar_catalog_finalize_prepared(&prepared)
     }
+    /// Stores a `freeBusy.query` snapshot for its exact time window.
+    ///
+    /// `observed_at` is UTC epoch milliseconds. `permission_epochs` holds the
+    /// epoch each calendar had before the request; any change, a different
+    /// connection generation, more than 50 calendars or a window over 43 days
+    /// fails with `stale_revision`. Per-calendar provider errors are stored as
+    /// unavailable coverage, never as free time, and intervals outside the
+    /// window fail with `invalid_response`.
     pub fn calendar_busy_commit(
         &mut self,
         snapshot: &BusySnapshot,
@@ -521,6 +614,9 @@ impl Store {
         }
         Ok(())
     }
+    /// A calendar is denied when the committed catalog marks it deleted or the
+    /// latest clean full catalog run did not list it. Accounts without a
+    /// catalog checkpoint deny nothing.
     pub(crate) fn calendar_membership_denied(&self, account: &str, calendar: &str) -> Result<bool> {
         Ok(self.db.query_row("SELECT COALESCE(k.deleted,0)=1 OR COALESCE(k.observed_epoch,0)<COALESCE(c.full_generation,0) FROM calendar_catalog_state c LEFT JOIN calendar_catalog k ON k.account=c.account AND k.calendar_id=?2 WHERE c.account=?1",params![account,calendar],|r|r.get(0)).optional()?.unwrap_or(false))
     }
@@ -544,6 +640,14 @@ impl Store {
             expected_permission_epoch,
         )
     }
+    /// Records an explicit access-role and time-zone observation for one
+    /// calendar and returns the new permission epoch.
+    ///
+    /// Every call bumps the epoch, which fences older responses captured under
+    /// the previous one. A changed role or zone also drops the sync token and
+    /// marks the calendar for a full resync. Fails with `stale_revision` when
+    /// the connection generation or expected epoch no longer match, or the
+    /// zone is invalid.
     pub fn calendar_observe_permission(
         &mut self,
         account: &str,
@@ -597,6 +701,9 @@ impl Store {
     }
 }
 
+/// Writes one normalized event for the run. A new event, or one this run
+/// already owns, is written in place (slot 0); an event owned by an earlier
+/// generation gets a pending copy (slot 1) that stays hidden until publication.
 fn stage_event(
     tx: &rusqlite::Transaction<'_>,
     lease: &CalendarSyncLease,
@@ -607,6 +714,8 @@ fn stage_event(
 ) -> Result<()> {
     let existing:Option<i64>=tx.query_row("SELECT source_generation FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id],|r|r.get(0)).optional()?;
     let raw = event.source.as_ref();
+    // A full run marks what it saw with its own ID so unseen events drop out
+    // once it becomes the baseline; a delta inherits the current baseline.
     let full: i64 = if run.mode == "full" {
         lease.run
     } else {
@@ -666,6 +775,7 @@ fn role(source: &Value) -> &'static str {
         _ => "none",
     }
 }
+/// Orders access roles from least (`none`) to most (`owner`) privileged.
 fn rank(role: &str) -> u8 {
     match role {
         "owner" => 5,
@@ -676,6 +786,8 @@ fn rank(role: &str) -> u8 {
         _ => 0,
     }
 }
+/// Applies a catalog role only when it narrows access. Used while staging, so
+/// a revoked or reduced calendar stops syncing before the catalog publishes.
 fn restrict_catalog_role(
     tx: &rusqlite::Transaction<'_>,
     lease: &CalendarSyncLease,
@@ -714,6 +826,8 @@ fn publish_catalog_prepared(
         .zone
         .as_deref()
         .or(existing.as_ref().map(|v| v.1.as_str()));
+    // An explicit permission observation made after this run began is newer
+    // than the list entry: keep its zone and never raise access above it.
     if let Some((old, old_zone, observed)) = &existing {
         if *observed > projection {
             if rank(old) < rank(new_role) {

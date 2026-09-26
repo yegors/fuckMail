@@ -1,3 +1,5 @@
+// FmIconItem: the app's line icons as QPainter paths, rendered once per window,
+// name, colour and size into a shared texture cache.
 #include "FmIconItem.h"
 #include "FmHtmlView.h"
 #include <QHash>
@@ -178,6 +180,8 @@ size_t qHash(const IconKey &key, size_t seed = 0) {
 }
 
 // One texture per icon image and window, created and released on the render thread.
+// The cache object itself is a child of its window, created from itemChange()
+// on the GUI thread; only texture() and clear() run on the render thread.
 class FmIconCache final : public QObject {
 public:
     static FmIconCache *of(QQuickWindow *window) {
@@ -185,6 +189,10 @@ public:
         if (!cache) cache = new FmIconCache(window);
         return cache;
     }
+    // Called from updatePaintNode(), so the render thread creates the texture
+    // while the GUI thread is blocked in the sync step. Entries are never
+    // evicted individually; keys are bounded by the icon names, theme colours
+    // and sizes the UI actually uses.
     QSGTexture *texture(QQuickWindow *window, const IconKey &key) {
         auto &texture = m_textures[key];
         if (!texture) texture = window->createTextureFromImage(
@@ -194,6 +202,9 @@ public:
     ~FmIconCache() override { caches().remove(m_window); clear(); }
 private:
     explicit FmIconCache(QQuickWindow *window) : QObject(window), m_window(window) {
+        // A direct connection runs clear() on the render thread while the
+        // graphics context still exists, so textures die where they were made.
+        // The next updatePaintNode() recreates whatever is still shown.
         connect(window, &QQuickWindow::sceneGraphInvalidated, this, &FmIconCache::clear, Qt::DirectConnection);
     }
     static QHash<QQuickWindow *, FmIconCache *> &caches() { static QHash<QQuickWindow *, FmIconCache *> all; return all; }
@@ -233,6 +244,8 @@ void FmIconItem::geometryChange(const QRectF &newGeometry, const QRectF &oldGeom
 
 void FmIconItem::itemChange(ItemChange change, const ItemChangeData &data) {
     QQuickItem::itemChange(change, data);
+    // Look the cache up here, on the GUI thread, so updatePaintNode() never
+    // touches the shared window-to-cache map from the render thread.
     if (change == ItemSceneChange) m_cache = data.window ? FmIconCache::of(data.window) : nullptr;
     if (change == ItemDevicePixelRatioHasChanged || change == ItemSceneChange) update();
 }
@@ -249,6 +262,7 @@ QSGNode *FmIconItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) {
     if (!node) {
         node = window()->createImageNode();
         node->setFiltering(QSGTexture::Linear);
+        // The window's cache owns the texture; other items share it.
         node->setOwnsTexture(false);
     }
     if (node->texture() != texture) node->setTexture(texture);

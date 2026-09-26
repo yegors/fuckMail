@@ -1,3 +1,5 @@
+// Developer harness: account add, removal to an archive and restoration through
+// the native UI, started by `--account-lifecycle-self-test`; see the .cpp.
 #pragma once
 #include <QObject>
 #include <QElapsedTimer>

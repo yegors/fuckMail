@@ -1,20 +1,35 @@
+//! Off-writer preparation of fetched Gmail messages: size limits, MIME parsing,
+//! text extraction and blob staging, with no SQLite access.
 use super::*;
 use crate::google_store::StagedMessage;
 use fm_google::gmail_api::RawOutcome;
 use fm_google::transport::CancellationToken;
 use std::path::PathBuf;
 
+/// Why a message was not fully imported. The source is still kept whenever it
+/// was downloaded and decoded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemIssue {
+    /// The raw source exceeds the Gmail client's download bound.
     TooLarge,
+    /// Gmail's reply failed validation or could not be decoded.
     MalformedResponse,
+    /// The source could not be parsed as MIME.
     MalformedMime,
+    /// Not produced by current preparation.
     IndexTooLarge,
+    /// The message has more attachments than one import may stage.
     AttachmentLimit,
+    /// Normalized headers exceed the import bound, or the whole record exceeds
+    /// [`MAX_PART_BYTES`].
     HeaderLimit,
+    /// Gmail's `internalDate` is missing or unusable.
     InvalidInternalDate,
+    /// The message carries Gmail's `DRAFT` label; drafts are imported
+    /// separately, so only its source is kept here.
     RemoteDraft,
+    /// The ID was observed but deliberately not fetched on this page.
     NotFetched,
 }
 impl ItemIssue {
@@ -32,22 +47,33 @@ impl ItemIssue {
         }
     }
 }
+/// What publication does with a prepared item.
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum Disposition {
+    /// Parsed, indexed and publishable as a message.
     Ready,
+    /// Nothing usable was downloaded; `issue` says why.
     Unavailable,
+    /// The source is stored but was not turned into a message; `issue` says why.
     SourceRetainedUnindexed,
+    /// Gmail reported the message deleted or returned 404.
     Missing,
+    /// Seen on the page without being downloaded.
     Observed,
+    /// Dated before the retention window; nothing is stored.
     OutsideRetention,
     /// In Gmail's Spam. Spam is read live, never kept; a local copy goes.
     Spam,
 }
+/// A staged blob named by its SHA-256 hex digest.
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct BlobRef {
     pub hash: String,
     pub size: u64,
 }
+/// The normalized record of one item's outcome; it references blobs instead
+/// of holding source bytes. Its JSON is what is staged, digested and bounded
+/// by [`MAX_PART_BYTES`].
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Manifest {
     pub remote_id: String,
@@ -73,15 +99,21 @@ impl PreparedGoogleItem {
     pub fn remote_id(&self) -> &str {
         &self.manifest.remote_id
     }
+    /// The size of the normalized manifest, which counts toward a part's
+    /// [`MAX_PART_BYTES`].
     pub fn normalized_bytes(&self) -> usize {
         self.json.len()
     }
+    /// Why the message was not fully imported, if it was not.
     pub fn issue(&self) -> Option<ItemIssue> {
         self.manifest.issue
     }
 }
 
 /// Untrusted recovery manifest; obtaining it from SQLite is not a blob proof.
+///
+/// Turn it back into a [`PreparedGoogleItem`] with
+/// [`verify_staged_google_item`].
 pub struct StoredGoogleItem(pub(super) String);
 
 fn cancelled(cancel: &CancellationToken) -> Result<()> {
@@ -126,6 +158,15 @@ pub fn prepare_google_item(
     prepare_google_item_since(blobs, page, remote_id, outcome, cancel, None)
 }
 
+/// Like [`prepare_google_item`], but a message whose Gmail internal date falls
+/// before `since` (Unix seconds, the retention start) is marked outside
+/// retention and nothing of it is staged.
+///
+/// Writes the raw source, and any attachments found while parsing, as
+/// content-addressed blobs before any SQL refers to them. Fails with
+/// `cancelled` when `cancel` fires, and with a storage error if a blob cannot
+/// be written. Content problems are not errors: they become an [`ItemIssue`]
+/// on the returned item.
 pub fn prepare_google_item_since(
     blobs: &BlobStore,
     page: &GooglePageIdentity,
@@ -166,6 +207,8 @@ pub fn prepare_google_item_since(
         .internal_date
         .as_ref()
         .and_then(|s| s.parse::<i64>().ok());
+    // Spam and out-of-window mail are recognised before decoding, so neither
+    // costs a blob write. Spam comes first: a local copy goes whatever its date.
     if raw.message.label_ids.iter().any(|label| label == "SPAM") {
         if raw.message.id != remote_id {
             return Err(err(
@@ -236,15 +279,19 @@ pub fn prepare_google_item_since(
     }
     match parsed {
         Ok(mut message) => {
+            // Dated by Gmail's internal date, as the retention cutoff is, not
+            // by the sender-supplied Date header.
             message.sent_at = timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
             manifest.message = Some(message);
             manifest.disposition = Disposition::Ready;
+            // A record too large for any part keeps only its source.
             if serde_json::to_vec(&manifest)?.len() > MAX_PART_BYTES {
                 manifest.message = None;
                 manifest.disposition = Disposition::SourceRetainedUnindexed;
                 manifest.issue = Some(ItemIssue::HeaderLimit);
             }
         }
+        // These are the exact reasons `google_store::prepare_message` reports.
         Err(fm_google::GoogleError::InvalidResponse(reason)) => {
             manifest.issue = Some(match reason {
                 "Too many staged attachments" => ItemIssue::AttachmentLimit,
@@ -264,6 +311,10 @@ pub fn prepare_google_item_since(
 
 /// After restart/reauthorization, re-hash every referenced source/attachment on
 /// the preparation worker and bind the result to the newly admitted page epoch.
+///
+/// Fails if a referenced blob is missing or altered, or with
+/// `stale_google_work` if the manifest is inconsistent or exceeds the bounds
+/// fresh preparation enforces.
 pub fn verify_staged_google_item(
     blobs: &BlobStore,
     page: &GooglePageIdentity,

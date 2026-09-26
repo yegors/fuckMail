@@ -1,3 +1,6 @@
+// Per-message controller in MailView: loads the parsed source (HTML body and
+// header metadata) through backend.requestMessageSource() for the reader, and
+// owns the "Message source" dialog that shows the raw message.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

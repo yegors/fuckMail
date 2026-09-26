@@ -1,3 +1,9 @@
+//! `fm-engine`, the local background process that the GUI and the `fm` CLI
+//! both talk to over `fm-ipc`. A client starts it on demand for one profile.
+//! It holds the profile lock, runs the single `fm-core` store writer on its
+//! own thread, and does the Google sync, sending, remote-content and
+//! local-model work. It exits shortly after its last client disconnects;
+//! there is no always-on service.
 use clap::Parser;
 use fm_ipc::{
     error, response, AnyStream, Discovery, Request, HANDSHAKE_TIMEOUT, IO_TIMEOUT, MAX_CLIENTS,
@@ -100,22 +106,37 @@ fn calendar_fixture_base(value: &str) -> Result<u64, String> {
         .ok_or_else(|| "Use a UTC minute-aligned timestamp between 2000 and 2100".into())
 }
 
+/// A unit of work for the store-writer thread, the only owner of the `Store`.
 enum Work {
+    /// A client request answered by `Store::handle_cancellable`.
     Request(ClientWork),
+    /// A synthetic ingestion batch for the search verification fixture.
     VerificationBatch(verification_fixture::Batch),
+    /// A short store call queued by a runtime through `CoreBridge`.
     Provider(core_tasks::CoreCall),
 }
 
+/// A queued client request and the means to answer or abandon it.
 struct ClientWork {
     request: Request,
     reply: oneshot::Sender<Value>,
+    /// Set when the connection that queued the request goes away.
     cancelled: Arc<AtomicBool>,
+    /// Foreground slot, held until the job is dropped, even after its client leaves.
     _permit: OwnedSemaphorePermit,
 }
 
+/// Capacity of the writer FIFO, and the total of foreground plus background permits.
 const WORK_LIMIT: usize = 32;
+/// Client requests the writer runs back to back before background work gets a turn.
 const FOREGROUND_BURST_LIMIT: usize = 4;
 
+/// Runs one runtime request on the session task while watching its connection.
+///
+/// Returns `Ok(None)` when the owner is cancelled or the client closes, and
+/// `InvalidData` when the client sends a second frame, because a connection
+/// carries one request at a time. A close or second frame cancels `owner`;
+/// with `finish_on_close`, `work` still runs to completion first.
 async fn await_sync_reply<F, R>(
     work: F,
     stream: &mut R,
@@ -150,6 +171,7 @@ where
     }
 }
 
+/// Writes one reply frame within `IO_TIMEOUT`, giving up when `cancel` fires.
 async fn session_write<W: tokio::io::AsyncWrite + Unpin>(
     stream: &mut W,
     reply: &Value,
@@ -162,11 +184,15 @@ async fn session_write<W: tokio::io::AsyncWrite + Unpin>(
     }
 }
 
+/// The writer's local queues, split by kind so client requests can overtake
+/// background work. Queued jobs keep their permits, so draining the FIFO into
+/// these queues does not admit more work.
 #[derive(Default)]
 struct PendingWork {
     requests: VecDeque<ClientWork>,
     batches: VecDeque<verification_fixture::Batch>,
     provider: VecDeque<core_tasks::CoreCall>,
+    /// Client requests run since background work last had a turn.
     foreground_burst: usize,
 }
 impl PendingWork {
@@ -178,6 +204,8 @@ impl PendingWork {
         }
     }
 
+    /// Pops the next client request, or `None` once the foreground burst is
+    /// used up while background work is waiting.
     fn request(&mut self, background_active: bool) -> Option<ClientWork> {
         if background_active && self.foreground_burst >= FOREGROUND_BURST_LIMIT {
             return None;
@@ -188,6 +216,8 @@ impl PendingWork {
     }
 }
 
+/// Sets a queued request's cancellation flag when the session drops it, so
+/// the writer can stop that request's queued work or active reads.
 struct RequestOwner(Arc<AtomicBool>);
 impl Drop for RequestOwner {
     fn drop(&mut self) {
@@ -195,6 +225,7 @@ impl Drop for RequestOwner {
     }
 }
 
+/// Cancels a session's owner token when the session ends, however it ends.
 struct SessionCancellation(fm_google::transport::CancellationToken);
 impl Drop for SessionCancellation {
     fn drop(&mut self) {
@@ -210,11 +241,14 @@ struct Listener {
     endpoint: String,
 }
 
+/// Binds the profile's socket with mode 0600, replacing only a stale socket
+/// owned by the current user.
 #[cfg(unix)]
 fn listen(endpoint: &str) -> io::Result<Listener> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
     if let Ok(md) = std::fs::symlink_metadata(endpoint) {
         // Only invoked after acquiring the store's exclusive profile lock.
+        // SAFETY: geteuid takes no arguments, cannot fail and has no side effects.
         if !md.file_type().is_socket() || md.uid() != unsafe { libc::geteuid() } {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
@@ -228,6 +262,9 @@ fn listen(endpoint: &str) -> io::Result<Listener> {
     Ok(listener)
 }
 
+/// Creates one named-pipe instance that only the current user can open and
+/// that rejects remote clients. With `first`, creation fails if another
+/// process already owns the pipe name.
 #[cfg(windows)]
 fn pipe(
     endpoint: &str,
@@ -240,6 +277,9 @@ fn pipe(
         .first_pipe_instance(first)
         .reject_remote_clients(true)
         .max_instances(MAX_CLIENTS + 1);
+    // SAFETY: `attrs` is a valid SECURITY_ATTRIBUTES whose descriptor is owned
+    // by `security`; both outlive the call, which copies the descriptor into
+    // the new pipe instance.
     unsafe {
         options.create_with_security_attributes_raw(endpoint, std::ptr::from_mut(&mut attrs).cast())
     }
@@ -252,9 +292,11 @@ fn listen(endpoint: &str) -> io::Result<Listener> {
     })
 }
 
+/// Accepts one client, refusing peers running as a different user.
 #[cfg(unix)]
 async fn accept(listener: &mut Listener) -> io::Result<AnyStream> {
     let (stream, _) = listener.accept().await?;
+    // SAFETY: geteuid takes no arguments, cannot fail and has no side effects.
     if stream.peer_cred()?.uid() != unsafe { libc::geteuid() } {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -263,6 +305,8 @@ async fn accept(listener: &mut Listener) -> io::Result<AnyStream> {
     }
     Ok(Box::new(stream))
 }
+/// Accepts one client on the waiting pipe instance, creating the next
+/// instance before handing this one over so a listener always exists.
 #[cfg(windows)]
 async fn accept(listener: &mut Listener) -> io::Result<AnyStream> {
     listener.next.connect().await?;
@@ -270,6 +314,8 @@ async fn accept(listener: &mut Listener) -> io::Result<AnyStream> {
     Ok(Box::new(std::mem::replace(&mut listener.next, next)))
 }
 
+/// Checks the handshake token against the discovery token. Equal-length
+/// tokens are compared without an early exit, so timing does not reveal a prefix.
 fn authenticated(expected: &str, provided: Option<&str>) -> bool {
     let Some(provided) = provided else {
         return false;
@@ -290,8 +336,11 @@ struct GoogleServices {
     sync: Arc<google_sync::Runtime>,
 }
 
+/// The runtimes every session shares. Requests that don't match one of them
+/// go to the store writer.
 #[derive(Clone)]
 struct SessionServices {
+    /// `None` unless the profile is live; demo and fixture profiles have no Google.
     google: Option<GoogleServices>,
     content: Arc<local_content::Runtime>,
     assistance: Arc<local_model::Runtime>,
@@ -320,6 +369,9 @@ impl SessionServices {
     }
 }
 
+/// Serves one client connection: the token handshake, then one request at a
+/// time until the client closes or the engine stops. Errors that happen after
+/// engine shutdown began are not reported.
 async fn session(
     stream: AnyStream,
     token: Arc<String>,
@@ -357,6 +409,7 @@ async fn session_inner(
     services: SessionServices,
     engine_cancel: fm_google::transport::CancellationToken,
 ) -> io::Result<()> {
+    // Handshake: the first frame must be `hello` carrying the discovery token.
     let mut stream = BufReader::new(stream);
     let hello = tokio::select! {
         biased;
@@ -390,6 +443,9 @@ async fn session_inner(
         &engine_cancel,
     )
     .await?;
+    // Runtimes key per-client state (sign-in attempts, model jobs, sync
+    // ownership) by `owner_id` and stop this client's work through
+    // `owner_cancel` when it leaves.
     let owner_id = fm_ipc::random_token();
     let owner_cancel = engine_cancel.child_token();
     let _owner_cancel = SessionCancellation(owner_cancel.clone());
@@ -446,6 +502,9 @@ async fn session_inner(
             .await?;
             continue;
         }
+        // Route by method. The runtimes below do their network and model work
+        // on this task and reach the store only through short queued calls;
+        // any other method is a store request for the writer thread.
         if local_model::Runtime::handles(&request.method) {
             let work = services.assistance.handle(
                 &owner_id,
@@ -465,6 +524,8 @@ async fn session_inner(
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
         }
+        // Removing or disconnecting an account first stops its model jobs, and
+        // removal also drops the account's remote-content state.
         if request.method == "account_remove" || request.method == "google_disconnect" {
             services
                 .assistance
@@ -489,6 +550,9 @@ async fn session_inner(
                 Ok(v) => response(&request.id, v),
                 Err(e) => error(&request.id, &e.code, &e.message),
             };
+            // A reply must fit one newline-terminated frame. Checking here turns
+            // an oversized result into an error reply instead of a failed write
+            // that would end the session.
             let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {
                 error(
                     &request.id,
@@ -510,6 +574,8 @@ async fn session_inner(
                     request.account.as_deref(),
                     request.params,
                 );
+                // Account removal runs to completion once started, so its local
+                // cleanup is never left half done by a closing client.
                 let finish_on_close = request.method == "account_remove";
                 let Some(result) =
                     await_sync_reply(work, &mut stream, &owner_cancel, finish_on_close).await?
@@ -532,6 +598,8 @@ async fn session_inner(
         }
         if google_sync::Runtime::handles(&request.method) {
             let result = if let Some(provider) = &services.google {
+                // Methods that can dispatch a Google mutation. Once admitted they
+                // finish even if the client leaves, so the outcome is journaled.
                 let finish_on_close = matches!(
                     request.method.as_str(),
                     "google_calendar_write"
@@ -570,6 +638,8 @@ async fn session_inner(
                 }
                 result
             } else {
+                // Without Google services nothing was dispatched; the markers
+                // tell the client it may discard or retry the request safely.
                 Err(fm_core::CoreError {
                     code: "capability_unavailable".into(),
                     message: "Google sync requires a live profile".into(),
@@ -587,6 +657,8 @@ async fn session_inner(
             let reply = match result {
                 Ok(result) => response(&request.id, result),
                 Err(e) => {
+                    // Error replies carry no details except these known markers
+                    // saying nothing was dispatched or committed, copied per method.
                     let mut reply = error(&request.id, &e.code, &e.message);
                     if request.method == "google_draft_adopt"
                         && e.details["draft_authoring_invocation_finished_without_commit"] == true
@@ -620,6 +692,8 @@ async fn session_inner(
             continue;
         }
         if local_content::Runtime::handles(&request.method) {
+            // Local content shares the foreground limit with store requests;
+            // when it is used up the client gets `busy` rather than a wait.
             let Ok(_permit) = foreground_slots.clone().try_acquire_owned() else {
                 let mut reply = error(
                     &request.id,
@@ -670,6 +744,9 @@ async fn session_inner(
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
         }
+        // Everything else is a store request for the writer thread. Changes
+        // to sync interval, services or retention wake the sync scheduler
+        // after they commit.
         let cadence_changed = (request.method == "preferences_save"
             && ["sync_every_minutes", "google_sync_services"]
                 .iter()
@@ -738,6 +815,8 @@ async fn session_inner(
     }
 }
 
+/// Counts one connected client for as long as its session task lives. The
+/// idle shutdown in `run` waits for this count to reach zero.
 struct Owner(Arc<AtomicUsize>);
 impl Drop for Owner {
     fn drop(&mut self) {
@@ -745,6 +824,8 @@ impl Drop for Owner {
     }
 }
 
+/// Removes the discovery file if it still names this process, and on Unix the
+/// socket. A newer engine's discovery file is left alone.
 fn cleanup(profile: &Path, endpoint: &str, pid: u32) {
     if fm_ipc::read_discovery(profile).is_ok_and(|d| d.pid == pid) {
         let _ = std::fs::remove_file(profile.join("engine.json"));
@@ -763,6 +844,9 @@ fn cleanup(profile: &Path, endpoint: &str, pid: u32) {
 async fn main() {
     if let Err(e) = run(Args::parse()).await {
         eprintln!("fm-engine: {e}");
+        // A dedicated exit code tells the launching client that the profile
+        // has the other kind (live versus demo), a permanent refusal that a
+        // relaunch cannot fix.
         let code = if e
             .downcast_ref::<fm_core::CoreError>()
             .is_some_and(|e| e.code == "profile_kind_mismatch")
@@ -786,6 +870,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.verification_fixture.is_some() && args.profile.is_none() {
         return Err("verification fixtures require an explicit disposable profile".into());
     }
+    // Select and open the profile. `--live-profile` and the default profile
+    // must be live; a plain `--profile` opens an existing store of either kind
+    // and creates a live one when none exists.
     let require_live = args.live_profile || (args.profile.is_none() && !args.demo_profile);
     let selected_profile = match args.profile {
         Some(profile) => profile,
@@ -818,6 +905,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
             }
+            // Record permanent refusals in the profile so the launching
+            // client can show the reason instead of a timeout.
             if e.code == "schema_mismatch" || e.code == "profile_kind_mismatch" {
                 let _ = fm_ipc::write_startup_refusal(
                     &profile,
@@ -858,6 +947,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         .then(|| store.vault_namespace())
         .transpose()?;
     let hello_metadata = Arc::new(handshake_metadata(&mut store)?);
+    // Listen before publishing discovery, so any client that reads
+    // `engine.json` finds a live endpoint and the matching token.
     let endpoint = fm_ipc::endpoint(&profile)?;
     let mut listener = listen(&endpoint)?;
     let token = Arc::new(fm_ipc::random_token());
@@ -879,6 +970,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     ));
     let background_slots = Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT));
     let engine_cancel = fm_google::transport::CancellationToken::new();
+    // Runtimes. Google auth and sync exist only for live profiles; every
+    // runtime reaches the store through a `CoreBridge` on the background slots.
     #[cfg(not(feature = "verification-google"))]
     let provider = provider_namespace
         .map(|namespace| {
@@ -935,10 +1028,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         let core = core_tasks::CoreBridge::new(queue.clone(), background_slots.clone());
         let stop = engine_cancel.clone();
         tokio::spawn(async move {
-            while let Ok(true) = core
-                .call(|store| store.repair_inline_attachments(50))
-                .await
-            {
+            while let Ok(true) = core.call(|store| store.repair_inline_attachments(50)).await {
                 tokio::select! {
                     _ = stop.cancelled() => return,
                     _ = tokio::time::sleep(Duration::from_millis(50)) => {}
@@ -958,6 +1048,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_reporter = google_fixture
         .as_ref()
         .map(|fixture| fixture.start_reporter(engine_cancel.clone()));
+    // The store writer: the only thread that touches `store` from here on. It
+    // runs client requests in FIFO order, interleaved with background steps,
+    // and exits once every queue sender is dropped and the queues are empty.
     let worker = std::thread::spawn(move || {
         #[cfg(feature = "verification-google")]
         let _trace = writer_google_fixture
@@ -981,6 +1074,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            // With no client left, fixture ingestion is abandoned rather than
+            // kept running for nobody.
             if worker_owners.load(Ordering::SeqCst) == 0 {
                 if let Some(fixture) = &mut fixture {
                     if let Some(ingestion) = ingestion.take() {
@@ -994,6 +1089,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             let background_active =
                 ingestion.is_some() || !pending.batches.is_empty() || !pending.provider.is_empty();
             let Some(work) = pending.request(background_active) else {
+                // Background gets one step (one provider call, or one fixture
+                // ingestion step), then the foreground burst starts again.
                 if background_active {
                     pending.foreground_burst = 0;
                     if let Some(call) = pending.provider.pop_front() {
@@ -1018,12 +1115,14 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 if closed {
                     break;
                 }
+                // Idle: block until new work arrives or the last sender drops.
                 match receive.blocking_recv() {
                     Some(work) => pending.push(work),
                     None => closed = true,
                 }
                 continue;
             };
+            // The requesting session is gone; skip the job without running it.
             if work.reply.is_closed() {
                 continue;
             }
@@ -1055,6 +1154,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         // Dropping SQLite closes/checkpoints without bypassing the core's writer lock.
         drop(store);
     });
+    // Accept loop. Connections beyond `MAX_CLIENTS` are closed at once. The
+    // engine exits 350 ms after its last client disconnects, 10 s after start
+    // if no client ever connects, or on Ctrl-C.
     let slots = Arc::new(Semaphore::new(MAX_CLIENTS));
     let start = tokio::time::Instant::now();
     let mut ever_connected = false;
@@ -1107,6 +1209,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     // Stop accepting before removing discovery. Outstanding client jobs finish
     // durable core writes; normal final-client shutdown already has no clients.
+    // Then cancel sessions and wait for them (admitted provider mutations
+    // record their outcome first), stop sync before auth, and drop the last
+    // queue sender so the writer drains and closes the store.
     drop(listener);
     cleanup(&profile, &endpoint, pid);
     engine_cancel.cancel();
@@ -1134,6 +1239,8 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Builds the `hello` reply: protocol, schema and fixture revisions, profile
+/// mode, capabilities, frame and page bounds, and the advertised method names.
 fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
     let status = store.handle("status", None, json!({}))?;
     let methods = [

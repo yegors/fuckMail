@@ -1,3 +1,6 @@
+// Singleton list of every keyboard shortcut (id, label, default key, scope).
+// sequence() applies the user's overrides from preferences.shortcuts; label()
+// and combo() format and capture keys for display and for ShortcutSettings.
 pragma Singleton
 import QtQuick
 

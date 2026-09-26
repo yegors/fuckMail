@@ -1,3 +1,6 @@
+// Local model (Ollama) UI test against a stand-in backend: LocalModelSettings
+// edits and saves, and message summaries in the reader, including start, poll,
+// cancel, switch and disconnect races and layout in every theme and text size.
 #include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>

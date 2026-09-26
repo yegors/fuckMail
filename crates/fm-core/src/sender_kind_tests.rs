@@ -411,6 +411,87 @@ fn sender_history_uses_exact_identity_full_counts_and_actual_recent_instants_wit
 }
 
 #[test]
+fn contact_card_counts_conversations_the_person_is_on_as_recipient() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let person = "caron.rigg@partner.example";
+    let count = |store: &mut Store| {
+        call(store, "sender_summary", json!({"email":person}))["conversation_count"].clone()
+    };
+    assert_eq!(count(&mut store), 0);
+    // Only Cc'd: the link index lists them on the message.
+    append(
+        &mut store,
+        ACCOUNT,
+        "card-cc",
+        "card-cc",
+        "lead@partner.example",
+        "2026-09-20T10:00:00Z",
+        (false, false, false),
+    );
+    store
+        .db
+        .execute(
+            "INSERT INTO people(email,name) VALUES(?1,'Caron Rigg')",
+            [person],
+        )
+        .unwrap();
+    store.db.execute("INSERT INTO message_people(message_rowid,person) SELECT m.rowid,p.id FROM messages m,people p WHERE m.id='card-cc' AND p.email=?1", [person]).unwrap();
+    assert_eq!(count(&mut store), 1);
+    // Written to directly, before the link index has read the message.
+    append(
+        &mut store,
+        ACCOUNT,
+        "card-to",
+        "card-to",
+        "you@example.test",
+        "2026-09-21T10:00:00Z",
+        (true, false, true),
+    );
+    store
+        .db
+        .execute(
+            "UPDATE messages SET recipient=' Caron.Rigg@Partner.example ' WHERE id='card-to'",
+            [],
+        )
+        .unwrap();
+    let summary = call(&mut store, "sender_summary", json!({"email":person}));
+    assert_eq!(summary["conversation_count"], 2);
+    assert_eq!(summary["conversations"][0]["id"], "card-to");
+    // A longer address containing theirs is someone else.
+    append(
+        &mut store,
+        ACCOUNT,
+        "card-other",
+        "card-other",
+        "lead@partner.example",
+        "2026-09-22T10:00:00Z",
+        (false, false, false),
+    );
+    store
+        .db
+        .execute(
+            "UPDATE messages SET recipient='x.caron.rigg@partner.example' WHERE id='card-other'",
+            [],
+        )
+        .unwrap();
+    assert_eq!(count(&mut store), 2);
+    // The sender-only filter is unchanged, and the two cannot be combined.
+    let from = call(
+        &mut store,
+        "conversations",
+        json!({"folder":"all","exact_sender":person}),
+    );
+    assert_eq!(from["filtered_conversation_count"], 0);
+    let both = store.handle(
+        "conversations",
+        Some(ACCOUNT),
+        json!({"exact_sender":person,"exact_person":person}),
+    );
+    assert_eq!(both.unwrap_err().code, "invalid_request");
+}
+
+#[test]
 fn collapsed_groups_page_expanded_rows_without_changing_full_filter_counts() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();

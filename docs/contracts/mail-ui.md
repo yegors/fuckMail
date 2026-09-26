@@ -2,6 +2,47 @@
 
 
 
+## D137 — mail download progress (Mail UI98)
+
+The Accounts card's Mail row (`AccountProgress.view`):
+- **Counting** (inventory incomplete, no `inventory_total`):
+  - the count shows local messages only;
+  - the status reads "Counting · N found" from `inventory_counting` ("Counting…" before the first page, D138);
+  - the bar shimmers;
+  - the tooltip says what is local and how many Google has so far.
+- **Counted:**
+  - "local of total", where the total is `max(local, inventory_total)`;
+  - the bar and percentage are local/total, capped at 99% until `inventory_complete`;
+  - the time left comes from the one-minute download rate;
+  - "Paused at" and "Stopped at" keep the percentage.
+- **Finished:** "Complete", as before. The old "N of N+" and "Counting mail…" states are gone.
+- **Account tab ring** (`view().ring`): the same share while downloading, and an 8% sliver only while counting (D139).
+
+Consumers: Core72 (reads `google.sync`).
+
+## D133 — the engine CLI in the console (Mail UI97)
+
+- **`fm <args>`** in the console command line runs the bundled `fm` (CLI55) and prints its output as console lines, facility `fm`: stdout at info, stderr at err. Bare `fm` runs `fm --help`. Starting a command pauses live events (as `pause` does; the log file keeps recording) and says so, so the output stays in view until `resume` or tail -f.
+- **Same engine.** The console runs `fm` from beside the app (else beside the engine) and adds `--profile` and `--engine` for this app's profile and engine, so `fm` talks to the engine the GUI already runs. It adds `--account` for the selected account, except for `accounts`, `status`, `help`, `google connect`, `google sync-status` and `google setup-status`, where it would change the command. Any of these the user types wins.
+- **JSON.** With `--json`, stdout becomes one expandable line holding the reply (up to 1 MB; otherwise plain lines).
+- **Lifetime.** One command at a time. Ctrl+C ends it (on Windows and Linux only when no text is selected; ⌘C still copies on macOS), as does `stop`. Closing the app ends it. The status bar shows "● fm running", and a failed start or non-zero exit is reported.
+- **Full window, quick slide.** The console fills the whole window (replacing the earlier `max(360, 76%)` height). `~` slides it down from above in 200 ms (OutCubic) and back up in 160 ms (InCubic), with no fade. `~` follows the intended state, so a press mid-slide reverses it; a press while it slides up brings it back down. App shortcuts stay blocked for the whole slide.
+- **Output scrolls into view.** Whenever a typed command or its replies (including `fm` output arriving later) reach the view, it jumps to the bottom and follows again, even if you had scrolled up.
+- **Privacy.** `fm` output is the user's own mail data: it is never scrubbed and never written to `gui.log`. It stays in the in-memory view, so copy and export include it like any other visible line. A run keeps at most 5,000 lines of 4,000 characters.
+
+## D131 — contact card text can be copied (Mail UI96)
+
+- Recipient names no longer have an address tooltip; the contact card already shows the address.
+- The card's name, address and status line are `CardText`: read-only `TextEdit`s (`senderCardName`, `senderCardEmail`, `senderCardStatus`) with `selectByMouse`, an I-beam cursor and `persistentSelection`. They never take keyboard focus. They wrap instead of eliding, the address anywhere, so the whole text can be selected.
+- While any of them holds a selection (`holding`), the card stays open:
+  - leaving it, or the name under the pointer, no longer closes it;
+  - passing over another name doesn't switch to that contact;
+  - it closes on Esc or a click outside, and opening another contact or closing clears the selection.
+- A `Shortcut` on `StandardKey.Copy`, enabled only while the card is holding a selection, copies it.
+- The card's conversation rows stay clickable, not selectable.
+
+Consumers: none outside Mail UI.
+
 ## D130 — search highlights, labels by name (Mail UI95)
 
 - **Search highlights.** MailView reads `searchTerms.phrases` (Search 11). `subjectPhrases` are the `any` and `subject` phrases; `bodyPhrases` are the `any` and `body` phrases.
@@ -639,7 +680,7 @@ A collapsed thread must preserve access to all members and reveal the exact matc
 
 Review, delayed and done headings use Core's complete `filtered_group_counts` before pagination, not counts of loaded delegates. Collapsing a list group hides its rows while retaining its true filtered count and the active reader/draft. Paging, query changes and new arrivals refresh the scoped totals without treating unloaded conversations as absent. Account badges keep their unfiltered account meaning. Show People/Automated controls and a neutral unknown state from Core's authoritative conversation kind: newest incoming member, or newest member for an outgoing-only conversation. Missing or stale source-hash annotations stay unknown. Kind is independent of which source member matched a keyword, does not change flags and is not a live classifier promise.
 
-The sender card uses `sender_summary` for the displayed exact email within the current account, with a full conversation count and at most three recent conversations. It never combines matching display names or crosses accounts. Loading the card is read-only; clicking a recent conversation uses deliberate open, and its filter action applies `exact_sender` through the same shared query path. Exact sender combines with the other source predicates on the same member. Show removable active sender/kind chips, preserve them when applying the More filters form and clear them explicitly. Drafts excludes all received-source filters. The prototype's name-based bot heuristic and static sender-card examples are reference data only.
+The sender card uses `sender_summary` for the displayed exact email within the current account, with a full conversation count and at most three recent conversations. It counts every conversation the person is on as sender or on To or Cc (`exact_person`, D140), and its "All N with …" link searches the bare address, which matches the same roles. It never combines matching display names or crosses accounts. Loading the card is read-only; clicking a recent conversation uses deliberate open, and its filter action applies `exact_sender` through the same shared query path. Exact sender combines with the other source predicates on the same member. Show removable active sender/kind chips, preserve them when applying the More filters form and clear them explicitly. Drafts excludes all received-source filters. The prototype's name-based bot heuristic and static sender-card examples are reference data only.
 
 ## Mail workflows
 

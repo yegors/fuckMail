@@ -157,7 +157,11 @@ fn recipient_free_rich_draft_retains_exact_alternatives_and_attachment_metadata(
         .filter(|part| part.is_content_type("text", "html"))
         .collect();
     assert_eq!(html.len(), 1);
-    assert_eq!(html[0].contents(), "<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\"><br><br><b>Signature</b>".as_bytes());
+    assert_eq!(
+        html[0].contents(),
+        "<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\"><br><br><b>Signature</b>"
+            .as_bytes()
+    );
     let parts: BTreeMap<_, _> = parsed
         .attachments()
         .map(|part| (part.attachment_name().unwrap(), part))

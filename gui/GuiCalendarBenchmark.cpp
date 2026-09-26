@@ -1,3 +1,6 @@
+// Developer benchmark for `fuckmail-gui --benchmark-calendar-output <report.json>
+// --profile <dir>`: times Calendar view and date input to the first frame whose
+// grid matches, and writes a JSON report. Not run by CTest.
 #include "GuiCalendarBenchmark.h"
 #include "GuiBenchmarkSupport.h"
 #include <QCoreApplication>

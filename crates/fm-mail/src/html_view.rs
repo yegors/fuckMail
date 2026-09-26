@@ -15,7 +15,10 @@ use std::fmt::Write as _;
 
 /// Bump when output or manifest meaning changes, so cached copies are rebuilt.
 pub const SANITIZER_VERSION: u32 = 4;
+/// Largest HTML input [`sanitize`] accepts, in bytes (4 MiB).
 pub const MAX_HTML_BYTES: usize = 4 * 1024 * 1024;
+// Bounds on sender-controlled input. Past most of them the excess is dropped
+// or flattened and `HtmlView::limited` is set, rather than refusing the message.
 const MAX_NODES: usize = 50_000;
 const MAX_DEPTH: usize = 256;
 const MAX_TABLE_DEPTH: usize = 16;
@@ -26,6 +29,7 @@ const MAX_LINKS: usize = 2_000;
 const MAX_DATA_URI: usize = 2 * 1024 * 1024;
 const MAX_URL: usize = 8 * 1024;
 
+/// Where an image in the view comes from, which decides whether and how it loads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResourceKind {
     /// An https image. Only the engine's remote-content path may fetch it.
@@ -39,6 +43,8 @@ pub enum ResourceKind {
 }
 
 impl ResourceKind {
+    /// Stable lowercase name used in the reader's JSON: `remote`, `insecure`,
+    /// `cid` or `data`.
     pub fn as_str(&self) -> &'static str {
         match self {
             ResourceKind::Remote => "remote",
@@ -49,35 +55,50 @@ impl ResourceKind {
     }
 }
 
+/// One image the view references as `fm-res:{id}`, from an `<img>`, a legacy
+/// `background` attribute or a CSS `url()`.
 #[derive(Debug, Clone)]
 pub struct Resource {
+    /// 1-based, in document order; the `N` of `fm-res:N`.
     pub id: usize,
     pub kind: ResourceKind,
     /// Engine-only: the URL, Content-ID or data URI. Never sent to the GUI.
     pub source: String,
     /// Lowercase host for remote and insecure resources.
     pub host: String,
+    /// Declared `<img>` size in pixels, capped at 10,000; `None` when absent,
+    /// not a pixel count, or for backgrounds.
     pub width: Option<u32>,
     pub height: Option<u32>,
+    /// The `alt` text, cut to 300 characters.
     pub alt: String,
 }
 
+/// One anchor target the view references as `fm-link:{id}`.
 #[derive(Debug, Clone)]
 pub struct Link {
+    /// 1-based, in document order; the `N` of `fm-link:N`.
     pub id: usize,
+    /// The parsed, absolute URL as re-serialized by the `url` crate.
     pub href: String,
+    /// `http`, `https` or `mailto`.
     pub scheme: String,
     /// Lowercase ASCII host; empty for mailto.
     pub host: String,
 }
 
+/// The result of [`sanitize`]: display HTML plus the manifests that its
+/// `fm-res:N` and `fm-link:N` placeholders index into.
 #[derive(Debug, Default)]
 pub struct HtmlView {
+    /// A complete `<!DOCTYPE html>` document with at most one inline stylesheet.
     pub html: String,
     pub resources: Vec<Resource>,
     pub links: Vec<Link>,
     /// Likely tracking images that were dropped and are never fetched.
     pub trackers: usize,
+    /// Quoted reply history, recognized by Gmail, Yahoo, Proton or Outlook
+    /// markup or `<blockquote type="cite">`, was left out.
     pub quote_removed: bool,
     /// Some content was dropped or flattened at a limit.
     pub limited: bool,
@@ -148,7 +169,12 @@ pub fn inline_content_ids(message: &mail_parser::Message<'_>) -> BTreeSet<String
 pub fn part_content_id(part: &mail_parser::MessagePart<'_>) -> Option<String> {
     use mail_parser::MimeHeaders;
     part.content_id()
-        .map(|id| id.trim().trim_start_matches('<').trim_end_matches('>').to_ascii_lowercase())
+        .map(|id| {
+            id.trim()
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .to_ascii_lowercase()
+        })
         .filter(|id| !id.is_empty())
 }
 
@@ -157,7 +183,10 @@ pub fn sanitize(html: &str) -> Option<HtmlView> {
     if html.len() > MAX_HTML_BYTES {
         return None;
     }
+    // Parse with the HTML5 algorithm, as a browser would, then rebuild from
+    // the tree: nothing from the source text is copied through unparsed.
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    // A forward's quote blocks hold the forwarded message itself; keep them.
     let forwarded = html.to_ascii_lowercase().contains("forwarded message");
     let mut walk = walk_document(&dom, forwarded);
     if walk.view.quote_removed && !shows_anything(&walk.body) {
@@ -364,17 +393,22 @@ fn parse_url(value: &str) -> Option<url::Url> {
     url::Url::parse(value).ok()
 }
 
+/// State of one pass over the parsed document.
 struct Walk {
     view: HtmlView,
+    /// Rebuilt markup for the inside of `<body>`.
     body: String,
+    /// Accepted rules from every `<style>` element, in document order.
     css: String,
     css_rules: usize,
     nodes: usize,
     table_depth: usize,
     /// Tables past the nesting limit whose structure is being unwrapped.
     flat_tables: usize,
+    /// Set at the node limit or an Outlook reply header; the rest is skipped.
     stopped: bool,
     keep_quotes: bool,
+    /// Filtered attributes of the source `<body>`, reapplied to the output's.
     body_attrs: String,
     /// Legacy `align` inherited from ancestors, which browsers also apply to
     /// nested blocks such as tables (`text-align: -webkit-center`).
@@ -390,6 +424,9 @@ enum BlockAlign {
     End,
 }
 
+/// Elements dropped together with everything inside them: scripts, embedded
+/// documents and media, form controls and document metadata. Their content is
+/// active, loads something, or is not message text.
 const DROP_WITH_CONTENT: &[&str] = &[
     "script", "template", "iframe", "frame", "frameset", "object", "embed", "applet", "param",
     "svg", "math", "video", "audio", "source", "track", "canvas", "input", "button", "select",
@@ -397,6 +434,9 @@ const DROP_WITH_CONTENT: &[&str] = &[
     "base", "title", "area", "dialog", "portal", "xml",
 ];
 
+/// Elements re-emitted with filtered attributes. Any other element, apart from
+/// `DROP_WITH_CONTENT`, `head` and `style`, is unwrapped: its tag goes and its
+/// children stay.
 const KEEP: &[&str] = &[
     "a",
     "abbr",
@@ -472,6 +512,7 @@ const KEEP: &[&str] = &[
     "wbr",
 ];
 
+/// Kept elements written without a closing tag.
 const VOID: &[&str] = &["br", "col", "hr", "img", "wbr"];
 
 impl Walk {
@@ -571,6 +612,9 @@ impl Walk {
                     self.flat_tables -= 1;
                     return;
                 }
+                // A table part with no emitted table around it (its table was
+                // flattened) is unwrapped too, so no orphan row or cell reaches
+                // the renderer. A `<br>` keeps flattened rows on separate lines.
                 if !KEEP.contains(&tag.as_str())
                     || (table_part && (self.flat_tables > 0 || self.table_depth == 0))
                 {
@@ -715,6 +759,8 @@ impl Walk {
         let tiny = matches!((width, height), (Some(w), Some(h)) if w <= 3 && h <= 3)
             || width == Some(0)
             || height == Some(0);
+        // Hidden or pixel-sized images are counted as trackers and get no
+        // manifest entry, so nothing can ever fetch them.
         if hidden || tiny {
             self.view.trackers += 1;
             return;
@@ -760,6 +806,9 @@ impl Walk {
     ) -> Option<usize> {
         let src = src.trim();
         let lower = src.to_ascii_lowercase();
+        // Only three sources survive: a part of this message by Content-ID, a
+        // base64 raster `data:` image (never SVG, which can carry script), and
+        // an absolute http(s) URL. Relative, `file:` and other URLs are dropped.
         let (kind, source, host) = if lower.starts_with("cid:") {
             let value = src[4..]
                 .trim()
@@ -801,6 +850,9 @@ impl Walk {
         Some(id)
     }
 
+    /// Record an anchor target. Returns its manifest id, or `None` to drop the
+    /// `href`: only absolute http(s) and mailto URLs are kept. The anchor's
+    /// text stays either way.
     fn link(&mut self, href: &str) -> Option<usize> {
         let url = parse_url(href)?;
         let scheme = url.scheme().to_owned();
@@ -826,6 +878,9 @@ impl Walk {
         Some(id)
     }
 
+    /// The filtered attribute string for a kept element, with a leading space.
+    /// `href` becomes `fm-link:N`, a legacy `background` becomes a CSS
+    /// `background-image` on the manifest, and inline `style` is re-validated.
     fn attributes(&mut self, tag: &str, node: &Handle) -> String {
         let mut out = String::new();
         let NodeData::Element { attrs, .. } = &node.data else {
@@ -880,6 +935,8 @@ impl Walk {
     /// A validated, escaped attribute value, or `None` to drop the attribute.
     fn attribute_value(&self, tag: &str, name: &str, value: &str) -> Option<String> {
         let value = value.trim();
+        // Each attribute has its own value grammar. Anything unlisted is
+        // dropped, which covers event handlers and every URL-bearing attribute.
         let ok = match name {
             "width" | "height" => {
                 matches!(
@@ -914,6 +971,8 @@ impl Walk {
         if !ok {
             return None;
         }
+        // Classes and ids keep their simple ASCII tokens so the sender's
+        // stylesheet can still match them.
         let value = if matches!(name, "class" | "id") {
             let tokens: Vec<String> = value
                 .split_ascii_whitespace()
@@ -936,6 +995,7 @@ impl Walk {
         Some(escaped)
     }
 
+    /// Re-serialize an inline `style` value, keeping only allowed declarations.
     fn declarations(&mut self, css: &str) -> String {
         if css.len() > MAX_CSS_BYTES {
             self.view.limited = true;
@@ -952,6 +1012,8 @@ impl Walk {
         out
     }
 
+    /// Append a `<style>` element's accepted rules to the output stylesheet. A
+    /// rule with an unsupported selector, or no allowed declaration, is dropped.
     fn stylesheet(&mut self, css: &str) {
         if self.css.len() + css.len() > MAX_CSS_BYTES {
             self.view.limited = true;
@@ -1151,7 +1213,12 @@ fn escape_attr(text: &str, out: &mut String) {
 }
 
 // ---- CSS: every property and every value token must be on the allowlist ----
+//
+// A declaration that fails any check is dropped whole; its siblings survive.
+// Output is rebuilt from tokens, never copied from the source text.
 
+/// Layout and typography properties. Nothing here can run script, and the only
+/// way to load anything is `url()` in a background, routed through the manifest.
 const PROPERTIES: &[&str] = &[
     "color",
     "background",
@@ -1268,6 +1335,7 @@ const UNITS: &[&str] = &[
 
 const COLOR_FUNCTIONS: &[&str] = &["rgb", "rgba", "hsl", "hsla"];
 
+/// Declaration-list parser that appends accepted `property:value` pairs to `out`.
 struct Declarations<'w, 'o> {
     walk: &'w mut Walk,
     out: &'o mut String,
@@ -1346,10 +1414,13 @@ fn value<'i>(walk: &mut Walk, property: &str, input: &mut Parser<'i, '_>) -> Res
             Token::WhiteSpace(_) => out.push(' '),
             Token::Comma => out.push(','),
             Token::Ident(ref ident) => {
+                // Legacy script hooks (`expression`, `-moz-binding`) never pass.
                 let lower = ident.to_ascii_lowercase();
                 if lower.contains("expression") || lower.starts_with("-moz-") {
                     return Err(());
                 }
+                // No absolute, fixed or sticky positioning, which would take
+                // content out of the message's normal flow.
                 if property == "position" && !matches!(lower.as_str(), "static" | "relative") {
                     return Err(());
                 }
@@ -1391,6 +1462,7 @@ fn value<'i>(walk: &mut Walk, property: &str, input: &mut Parser<'i, '_>) -> Res
                 if !UNITS.contains(&unit.as_str()) {
                     return Err(());
                 }
+                // Clamp lengths so hostile values cannot blow up layout work.
                 let limit = if property == "font-size" || property == "font" {
                     200.0
                 } else {
@@ -1421,6 +1493,8 @@ fn value<'i>(walk: &mut Walk, property: &str, input: &mut Parser<'i, '_>) -> Res
                 }
                 _ => return Err(()),
             },
+            // Background images join the manifest like `<img>`; any other
+            // `url()` rejects the declaration.
             Token::UnquotedUrl(ref url) if background => {
                 let id = walk.resource(url, None, None, "").ok_or(())?;
                 let _ = write!(out, "url(fm-res:{id})");
@@ -1474,6 +1548,7 @@ fn value<'i>(walk: &mut Walk, property: &str, input: &mut Parser<'i, '_>) -> Res
     Ok(out)
 }
 
+/// A finite number limited to ±10,000 and three decimals; NaN and infinities become 0.
 fn clamp(value: f32) -> f32 {
     if value.is_finite() {
         (value.clamp(-10_000.0, 10_000.0) * 1000.0).round() / 1000.0
@@ -1482,6 +1557,8 @@ fn clamp(value: f32) -> f32 {
     }
 }
 
+/// Stylesheet parser that appends accepted rules to `out`. `nested` is set
+/// inside `@media`, where another at-rule is refused.
 struct Rules<'w, 'o> {
     walk: &'w mut Walk,
     out: &'o mut String,
@@ -1534,6 +1611,8 @@ impl<'i> AtRuleParser<'i> for Rules<'_, '_> {
         name: CowRcStr<'i>,
         input: &mut Parser<'i, 't>,
     ) -> Result<String, ParseError<'i, ()>> {
+        // Only one level of `@media`. Every other at-rule goes, including
+        // `@import` and `@font-face`, which would load remote resources.
         if self.nested || !name.eq_ignore_ascii_case("media") {
             return Err(input.new_custom_error(()));
         }

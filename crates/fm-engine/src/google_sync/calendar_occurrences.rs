@@ -14,6 +14,10 @@ use fm_google::scheduler::WorkClass;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, sync::Arc};
 
+/// Handles `google_calendar_occurrence_read`: re-reads the calendar's access,
+/// then fetches and validates one occurrence of a recurring event. With a
+/// `scope` parameter it instead returns what a recurring edit of that scope
+/// needs.
 pub(crate) async fn read(ctx: &SyncContext, params: Value) -> Result<Value> {
     if params.get("scope").is_some() {
         let (selector, scope, action) = fm_core::live_calendar_recurring::read_selector(&params)?;
@@ -33,6 +37,7 @@ pub(crate) async fn read(ctx: &SyncContext, params: Value) -> Result<Value> {
     .await
 }
 
+/// Builds a selector from a stored occurrence's series id and original start.
 pub(super) fn selector(
     calendar: &str,
     event: &str,
@@ -44,6 +49,9 @@ pub(super) fn selector(
     }))
 }
 
+/// Fetches the series master and the selected instance, and returns the
+/// validated occurrence with the preparation permit that still holds it.
+/// `epoch` is the calendar's permission epoch from the preceding refresh.
 pub(super) async fn prepare(
     ctx: &SyncContext,
     selector: CalendarOccurrenceSelector,
@@ -62,6 +70,9 @@ pub(super) async fn prepare(
     instance_source(ctx, master, source, Arc::new(memory)).await
 }
 
+/// Fetches the complete series master and checks it against the store's plan,
+/// returning the proof the instance step requires. A conditional
+/// "not modified" reply is refused: the master must be read fresh.
 pub(super) async fn master(
     ctx: &SyncContext,
     selector: CalendarOccurrenceSelector,
@@ -107,6 +118,7 @@ pub(super) async fn master(
     Ok(proof)
 }
 
+/// Validates a fetched instance against the master proof on the blocking pool.
 pub(super) async fn instance_source(
     ctx: &SyncContext,
     master: CalendarOccurrenceMasterProof,
@@ -123,6 +135,9 @@ pub(super) async fn instance_source(
     .await
 }
 
+/// Finds the provider instance id whose original start matches the
+/// selector, reading at most four pages of instances. Fails when no instance
+/// or more than one matches, or when Google repeats a page token.
 async fn resolve_instance_id(
     ctx: &SyncContext,
     selector: &CalendarOccurrenceSelector,
@@ -187,6 +202,8 @@ async fn resolve_instance_id(
     ))
 }
 
+/// Compares original starts: all-day by date, timed by instant regardless of
+/// time zone.
 fn same_original(left: &EventTime, right: &EventTime) -> bool {
     match (left, right) {
         (EventTime::Date { date: left }, EventTime::Date { date: right }) => left == right,

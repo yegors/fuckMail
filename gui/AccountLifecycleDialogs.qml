@@ -1,3 +1,6 @@
+// Confirmation dialogs for removing an account, deleting its local archive and
+// discarding a removed account's unsaved draft edits. Main.qml creates one
+// instance; each dialog opens when the matching `backend` signal asks for it.
 import QtQuick
 import QtQuick.Controls
 

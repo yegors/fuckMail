@@ -1,3 +1,6 @@
+// DebugConsole: captures Qt messages from any thread, tails the engine's
+// engine.log, records backend state changes with scrubbed fields, writes gui.log,
+// and implements the console's commands, export and `fm` runs.
 #include "DebugConsole.h"
 #include <QClipboard>
 #include <QCoreApplication>
@@ -11,7 +14,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QProcess>
 #include <QStandardPaths>
+#include <algorithm>
 #include <cstdio>
 
 namespace {
@@ -179,6 +184,7 @@ DebugConsole::DebugConsole(QObject *parent) : QObject(parent), m_model(this) {
     record("info", "app", "Debug capture started.");
 }
 DebugConsole::~DebugConsole() {
+    if (m_cli) { m_cli->disconnect(this); m_cli->kill(); m_cli->waitForFinished(2000); }
     if (m_capturing) {
         QMutexLocker lock(&handlerMutex);
         sink = nullptr;
@@ -247,6 +253,7 @@ void DebugConsole::attach(QObject *backend) {
     refresh();
 }
 void DebugConsole::identifyRuntime(const QString &engine) {
+    m_engine = engine;
     const auto digest = [](const QString &path) {
         QFile file(path); QCryptographicHash hash(QCryptographicHash::Sha256);
         return file.open(QIODevice::ReadOnly) && hash.addData(&file) ? QString::fromLatin1(hash.result().toHex()) : QString("unavailable");
@@ -316,14 +323,120 @@ void DebugConsole::add(DebugLogEntry entry, bool persist) {
         QMetaObject::invokeMethod(this, [this] { flush(); }, Qt::QueuedConnection);
     }
 }
-void DebugConsole::say(int level, const QString &message) {
+void DebugConsole::say(int level, const QString &message, const QString &facility, const QString &json) {
     DebugLogEntry entry;
     entry.at = QDateTime::currentMSecsSinceEpoch();
     entry.level = level;
-    entry.facility = "app";
+    entry.facility = facility;
     entry.message = message;
     entry.reply = true;
+    if (!json.isEmpty()) {
+        entry.json = json;
+        entry.jsonLines = int(QJsonDocument::fromJson(json.toUtf8()).toJson(QJsonDocument::Indented).trimmed().count('\n')) + 1;
+    }
     add(std::move(entry), false);
+}
+QString DebugConsole::cliProgram() const {
+    if (!m_cliProgram.isEmpty()) return m_cliProgram;
+    const auto name = QStringLiteral("fm") +
+#ifdef Q_OS_WIN
+        QStringLiteral(".exe");
+#else
+        QString();
+#endif
+    for (const auto &dir : {QCoreApplication::applicationDirPath(), m_engine.isEmpty() ? QString() : QFileInfo(m_engine).absolutePath()}) {
+        if (dir.isEmpty()) continue;
+        const auto path = QDir(dir).filePath(name);
+        if (QFileInfo(path).isExecutable()) return path;
+    }
+    return {};
+}
+// fm's output is the user's own data and stays in memory: replies are never
+// scrubbed or written to gui.log. A run keeps at most 5,000 lines.
+void DebugConsole::cliOutput(QByteArray &partial, const QByteArray &bytes, bool error, bool flush) {
+    partial += bytes;
+    int start = 0;
+    while (true) {
+        const int end = partial.indexOf('\n', start);
+        if (end < 0 && !(flush && start < partial.size())) break;
+        auto line = QString::fromUtf8(partial.mid(start, (end < 0 ? partial.size() : end) - start));
+        start = end < 0 ? int(partial.size()) : end + 1;
+        if (line.endsWith('\r')) line.chop(1);
+        if (++m_cliLines == 5000) say(4, "fm output truncated at 5,000 lines", "fm");
+        if (m_cliLines >= 5000) continue;
+        say(error ? 3 : 6, line.left(4000), "fm");
+    }
+    partial.remove(0, start);
+}
+void DebugConsole::cliStdout(const QByteArray &bytes, bool flush) {
+    if (!m_cliWantsJson) { cliOutput(m_cliStdout, bytes, false, flush); return; }
+    if (m_cliJson.size() < 8 * 1024 * 1024) m_cliJson += bytes;
+}
+bool DebugConsole::runCli(const QString &arguments) {
+    if (m_cli) { say(3, "fm is still running · ctrl+c or stop ends it", "fm"); return false; }
+    const auto program = cliProgram();
+    if (program.isEmpty()) { say(3, "fm is not installed beside the app", "fm"); return false; }
+    auto args = QProcess::splitCommand(arguments);
+    // Bare `fm` shows what it can do rather than clap's missing-command error.
+    if (args.isEmpty()) args << "--help";
+    // Live events would bury the reply: pause them until the user resumes.
+    if (!paused()) {
+        setPaused(true);
+        say(5, "live log paused so fm output stays put · resume or tail -f to continue", "fm");
+    }
+    m_cliWantsJson = args.contains("--json");
+    // The app's own profile, engine and account, unless the command names its own.
+    if (!args.contains("--profile") && !args.contains("--demo-profile") && !m_profile.isEmpty()) args = QStringList{"--profile", m_profile} + args;
+    if (!args.contains("--engine") && !m_engine.isEmpty() && QFileInfo::exists(m_engine)) args = QStringList{"--engine", m_engine} + args;
+    // The selected account, except where --account changes what a command does:
+    // all-account listings, and connect (where it means reconnect).
+    QStringList words;
+    for (const auto &arg : args) if (!arg.startsWith('-') && words.size() < 2) words << arg.toLower();
+    const auto verb = words.join(' ');
+    const bool unscoped = verb.isEmpty() || words.first() == "accounts" || words.first() == "status" || words.first() == "help"
+        || verb == "google connect" || verb == "google sync-status" || verb == "google setup-status";
+    const auto account = backendValue("account").toString();
+    if (!unscoped && !args.contains("--account") && !account.isEmpty()) args = QStringList{"--account", account} + args;
+    m_cliCommand = arguments.trimmed();
+    m_cliStdout.clear(); m_cliStderr.clear(); m_cliJson.clear(); m_cliLines = 0;
+    m_cli = new QProcess(this);
+    m_cli->setProgram(program);
+    m_cli->setArguments(args);
+    connect(m_cli, &QProcess::readyReadStandardOutput, this, [this] { cliStdout(m_cli->readAllStandardOutput(), false); });
+    connect(m_cli, &QProcess::readyReadStandardError, this, [this] { cliOutput(m_cliStderr, m_cli->readAllStandardError(), true, false); });
+    connect(m_cli, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart) return;
+        say(3, "fm could not start: " + m_cli->errorString(), "fm");
+        m_cli->deleteLater(); m_cli = nullptr; emit cliChanged();
+    });
+    connect(m_cli, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
+        // Output not yet read when fm exits takes the same path as the rest.
+        cliStdout(m_cli->readAllStandardOutput(), true);
+        cliOutput(m_cliStderr, m_cli->readAllStandardError(), true, true);
+        if (m_cliWantsJson && !m_cliJson.isEmpty()) {
+            QJsonParseError error;
+            const auto document = QJsonDocument::fromJson(m_cliJson, &error);
+            const auto compact = document.toJson(QJsonDocument::Compact);
+            // One expandable line for a JSON reply; plain lines if it is not JSON or too large.
+            if (error.error == QJsonParseError::NoError && compact.size() <= 1024 * 1024)
+                say(6, "fm " + m_cliCommand.left(200), "fm", QString::fromUtf8(compact));
+            else cliOutput(m_cliJson, {}, false, true);
+        }
+        if (status == QProcess::CrashExit) say(3, "fm stopped", "fm");
+        else if (code != 0) say(3, "fm exited with code " + QString::number(code), "fm");
+        m_cli->deleteLater(); m_cli = nullptr;
+        emit cliChanged();
+    });
+    emit cliChanged();
+    // A failed start is reported synchronously and clears m_cli.
+    m_cli->start();
+    if (!m_cli) return false;
+    m_cli->closeWriteChannel();
+    return true;
+}
+void DebugConsole::stopCli() {
+    if (!m_cli) return;
+    m_cli->kill();
 }
 bool DebugConsole::passes(const DebugLogEntry &e) const {
     if (e.sequence <= m_clearedThrough) return false;
@@ -347,6 +460,7 @@ void DebugConsole::flush() {
     auto &rows = m_model.m_rows;
     std::vector<DebugLogEntry> passing;
     for (auto &entry : pending) if (entry.sequence >= oldest && passes(entry)) passing.push_back(std::move(entry));
+    const bool typed = std::any_of(passing.begin(), passing.end(), [](const DebugLogEntry &e) { return e.console || e.reply; });
     m_appended += passing.size();
     if (passing.size() > 50) {
         // A burst replaces most of the view: one reset keeps the list's geometry exact.
@@ -377,6 +491,7 @@ void DebugConsole::flush() {
     }
     countRecent();
     emit countsChanged();
+    if (typed) emit commandOutput();
 }
 void DebugConsole::rebuild() {
     std::deque<DebugLogEntry> rows;
@@ -518,6 +633,8 @@ QVariantMap DebugConsole::run(const QString &raw) {
                  QString("grep <text>          filter lines · grep alone clears"), QString("tail · pause · resume"),
                  QString("state · logs         switch tab"), QString("sync <account>       sync one account now"),
                  QString("export               save filtered lines to ~/Downloads"), QString("copy                 copy filtered lines to the clipboard"),
+                 QString("fm <args>            run the fm CLI against this app's engine · fm --help"),
+                 QString("stop                 end a running fm command (or ctrl+c)"),
                  QString("exit                 close the console")})
             say(6, text);
         return tail;
@@ -541,6 +658,8 @@ QVariantMap DebugConsole::run(const QString &raw) {
     if (command == "state" || command == "logs") return {{"tab", command}, {"tail", true}};
     if (command == "export") { exportLog(); return tail; }
     if (command == "copy") { copyLog(); return tail; }
+    if (command == "fm") { runCli(line.mid(2)); return tail; }
+    if (command == "stop") { if (m_cli) stopCli(); else say(3, "no fm command is running"); return tail; }
     if (command == "exit" || command == "quit") return {{"close", true}};
     if (command == "sync") {
         if (argument.isEmpty()) { say(3, "usage: sync <account> · an address prefix or display name"); return tail; }

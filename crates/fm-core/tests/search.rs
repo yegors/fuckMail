@@ -26,18 +26,37 @@ fn punctuation_partial_sender_and_source_fields_are_scoped() {
     assert_eq!(sender["conversations"][0]["id"], "windscribe-thread-000");
     assert_eq!(sender["conversations"][1]["id"], "windscribe-thread-004");
     // A bare address is the sender or a recipient: those two threads and the mail to her.
-    let either = search(&mut store, "windscribe", "maya@windscribe.example", "sender");
-    let either: HashSet<_> = either["conversations"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap().to_owned()).collect();
-    assert!(either.len() > 2 && either.contains("windscribe-thread-000") && either.contains("windscribe-thread-004"));
+    let either = search(
+        &mut store,
+        "windscribe",
+        "maya@windscribe.example",
+        "sender",
+    );
+    let either: HashSet<_> = either["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(
+        either.len() > 2
+            && either.contains("windscribe-thread-000")
+            && either.contains("windscribe-thread-004")
+    );
     assert_eq!(
-        search(&mut store, "personal", "from:maya@windscribe.example", "sender")["conversations"],
+        search(
+            &mut store,
+            "personal",
+            "from:maya@windscribe.example",
+            "sender"
+        )["conversations"],
         json!([])
     );
     assert_eq!(
         search(&mut store, "windscribe", "may linq", "sender")["conversations"],
         json!([])
     );
-    // Words typed together are one phrase; only its last word may be partial (Search 10).
+    // Words typed together are one phrase; only its last word may be partial.
     assert_eq!(
         search(&mut store, "windscribe", "maya lind", "sender")["conversations"]
             .as_array()

@@ -1,3 +1,5 @@
+// Hover help for any item: add it as a child, set `text` and bind `shown`
+// (usually to a HoverHandler). FmButton's `tip` property uses it.
 import QtQuick
 import QtQuick.Controls
 // Hover help is created only while it is shown: most controls are never

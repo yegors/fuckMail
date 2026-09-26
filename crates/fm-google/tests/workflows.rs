@@ -1,3 +1,5 @@
+//! Sync, attachment, send and OAuth workflows through the public API, against
+//! in-memory transports, stores and vaults.
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{attachment::*, auth::*, send::*, sync::*, *};
 use std::collections::{BTreeMap, BTreeSet};

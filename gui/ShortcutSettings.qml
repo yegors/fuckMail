@@ -1,3 +1,6 @@
+// Settings > Shortcuts page: the ShortcutRegistry table. Click a row and press
+// a key to rebind it; a key already used in the same scope moves here and the
+// other row is left without a shortcut. Saved to preferences.shortcuts.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

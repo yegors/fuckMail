@@ -1,3 +1,6 @@
+// MailBackend's draft composition: starting and opening drafts, recipient chips,
+// validation and suggestions, the subject, the Drafts list and chips row, and
+// discarding a new message that was left empty.
 #include "MailBackend.h"
 
 #include <QJsonArray>
@@ -71,6 +74,8 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     if (!m_connected || m_account.isEmpty() || accountArchived() || m_unsavedAccountBuffer) return;
     if (mode != "new" && mode != "reply" && mode != "reply_all" && mode != "forward") return;
     cancelPendingGoogleSend("Send cancelled by draft navigation.");
+    // Save pending edits first; the continuation re-runs this navigation if
+    // the same account is still selected.
     if (m_draftDirty || draftBusy()) {
         const auto account = m_account;
         m_afterDraftSave = [this, account, mode, email, name] { if (account == m_account) beginDraftWithRecipient(mode, email, name); };
@@ -190,6 +195,8 @@ void MailBackend::loadDraftPage(const QString &account, int generation, int offs
                     auto existing = std::find_if(rows.begin(), rows.end(), [&row](const QVariant &value) { return value.toMap()["draft_id"] == row["draft_id"]; });
                     if (existing == rows.end()) rows.append(row); else *existing = row;
                 }
+                // Keep paging until the list is as long as before, so a refresh
+                // does not shrink what the user had scrolled through.
                 const int next = result["next_offset"].isDouble() ? result["next_offset"].toInt() : -1;
                 if (!result["drafts"].toArray().isEmpty() && next > offset && rows.size() < desiredCount) {
                     loadDraftPage(account, generation, next, std::move(rows), desiredCount); return;
@@ -244,6 +251,8 @@ bool MailBackend::rejectRecipient(const QString &message) {
 QString MailBackend::recipientSuggestions(const QString &query, const QStringList &exclude) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto account = m_account;
+    // Dispatch from the event loop so even an immediate reply reaches QML
+    // after it has stored the ticket.
     QTimer::singleShot(0, this, [this, ticket, account, query, exclude] {
         request("recipient_suggestions", account, {{"query", query}, {"exclude", QJsonArray::fromStringList(exclude)}},
             [this, ticket](auto result, bool ok) { emit recipientSuggestionsReply(ticket, result.toVariantMap(), ok); });

@@ -1,8 +1,13 @@
+// MailBackend's actions on drafts that exist only in Gmail: whether each can be
+// copied as plain text, adopted for editing here, or deleted, and running,
+// retrying or abandoning those actions.
 #include "MailBackend.h"
 #include <QJsonArray>
 
 namespace {
 QString ownerKey(const QString &account, const QString &draft) { return account + '\n' + draft; }
+// Maps the engine's refusal codes to a few plain sentences by keyword, so new
+// codes still get a sensible explanation; unknown ones get a generic sentence.
 QString reasonText(const QString &code) {
     if (code.contains("from") || code.contains("identity")) return "The original From cannot be preserved by this editor.";
     if (code.contains("html") || code.contains("cid") || code.contains("inline")) return "The source has HTML or inline presentation this editor cannot preserve.";
@@ -132,6 +137,8 @@ void MailBackend::confirmDraftSourceAction(const QVariantMap &context) {
         emit draftAuthoringChanged(); return;
     }
     const auto key = ownerKey(m_account, m_draft.value("draft_id").toString());
+    // At most 64 per-draft action records. Resolved ones are evicted to make
+    // room; running or unconfirmed ones are never dropped.
     if (!m_draftSourceActions.contains(key) && m_draftSourceActions.size() >= 64) {
         for (auto it = m_draftSourceActions.begin(); it != m_draftSourceActions.end() && m_draftSourceActions.size() >= 64;)
             if (!it->active && !it->uncertain) it = m_draftSourceActions.erase(it); else ++it;
@@ -164,6 +171,8 @@ void MailBackend::startDraftSourceAction(const QString &key) {
             if (!m_draftSourceActions.contains(key) || m_draftSourceActions[key].request != params) return;
             auto &saved = m_draftSourceActions[key]; saved.active = false;
             const auto target = result["google"].toObject()["effective_target"].toObject();
+            // Adopting a Gmail draft that already has a local owner returns that
+            // owner. Accept it only if it targets the same Gmail source bytes.
             const bool existingOwner = action == "adopt" && !source["linked_local_draft_id"].toString().isEmpty()
                 && result["draft_id"] == source["linked_local_draft_id"]
                 && target["provider_draft_id"] == source["provider_draft_id"] && target["message_id"] == source["message_id"]

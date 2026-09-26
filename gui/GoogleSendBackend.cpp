@@ -1,9 +1,15 @@
+// MailBackend's Send through Gmail: saving the draft first, starting the send
+// operation, merging its status into the draft, and check, resume, abandon or
+// cancel for a send whose result is unconfirmed.
 #include "MailBackend.h"
 #include "GoogleOperation.h"
 #include <QJsonArray>
 #include <algorithm>
 
 namespace {
+// A send status is usable only for this draft, in a known state, and with its
+// four-field request (draft, request id, both expected revisions) consistent
+// with the status itself.
 bool validSend(const QJsonObject &status, const QString &account, const QString &draft) {
     static const QStringList states{"prepared", "in_flight", "accepted", "rejected", "acceptance_unknown", "abandoned"};
     const auto request = status["request"].toObject();
@@ -14,6 +20,8 @@ bool validSend(const QJsonObject &status, const QString &account, const QString 
         && request.size() == 4 && request["draft_id"] == draft && request["request_id"] == status["request_id"]
         && request["expected_revision"] == status["draft_revision"] && request["expected_google_revision"] == status["google_revision"];
 }
+// True when `next` is older than `current`: an older Gmail-copy revision, or an
+// older revision of the same request. Stops late replies from rolling back.
 bool earlierSend(const QJsonObject &next, const QJsonObject &current) {
     return next["current_google_revision"].toInteger() < current["current_google_revision"].toInteger()
         || (next["request_id"] == current["request_id"] && next["revision"].toInteger() < current["revision"].toInteger());
@@ -175,6 +183,8 @@ void MailBackend::sendGoogleDraft() {
         if (m_googleSendUi.size() >= 64) { fail("Check outstanding send requests before starting another."); return; }
     }
     m_googleSendUi[googleSendKey()].feedback.clear();
+    // Send what is on screen now: save first, and finishGoogleSendSave() only
+    // proceeds if the saved draft still matches this snapshot.
     m_googleSendPending = {{"account", m_account}, {"context", draftContext()}, {"generation", m_generation},
         {"authored", googleSendAuthorSnapshot()}};
     emit draftChanged();
@@ -213,6 +223,8 @@ void MailBackend::finishGoogleSendSave(bool ok) {
         emit draftChanged(); return;
     }
     m_googleSendWaitTimer.stop();
+    // Name the newest Gmail-copy revision known from either status, so the
+    // engine refuses the send if the copy has moved since.
     const auto params = QJsonObject{{"draft_id", m_draft.value("draft_id").toString()},
         {"expected_revision", m_draft.value("revision").toLongLong()},
         {"expected_google_revision", std::max(m_draft.value("google").toMap().value("revision").toLongLong(),
@@ -270,6 +282,8 @@ void MailBackend::startGoogleSendForDraft(const QString &method, const QJsonObje
             saved.request = {}; saved.uncertain = false; saved.notFound = false;
             saved.feedback = "This attempt stopped before submission. " + result["message"].toString("Review the draft before sending again.");
         } else {
+            // Anything else leaves the request unresolved. Nothing is resent
+            // automatically; the user checks or resumes the same request.
             saved.uncertain = true;
             if (!ok && method == "google_send_status" && result["code"] == "not_found") saved.notFound = true;
             saved.feedback = "Result not confirmed. " + result["message"].toString("Check the exact saved request.");
@@ -294,6 +308,8 @@ void MailBackend::startGoogleSendForDraft(const QString &method, const QJsonObje
             emit draftChanged();
         }
     };
+    // Status reads are local and use the main queue; send, reconcile and
+    // abandon go through a dedicated operation connection.
     if (method == "google_send_status") request(method, account, params, std::move(done));
     else googleOperation(method, account, params, std::move(done));
 }

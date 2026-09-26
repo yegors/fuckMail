@@ -1,8 +1,13 @@
+// MailBackend's Gmail copy of the open draft: merging its sync status into the
+// draft, the plain hint line the composer shows about it, and the explicit
+// check and replace operations.
 #include "MailBackend.h"
 #include "GoogleOperation.h"
 #include <QJsonArray>
 
 namespace {
+// A Gmail-copy status is usable only for this exact draft, with non-negative
+// revisions and a known state, and not flagged as a historical receipt.
 bool validStatus(const QJsonObject &status, const QString &account, const QString &draft) {
     static const QStringList states{"local", "adopted", "prepared", "in_flight", "acceptance_unknown", "acknowledged", "synced", "conflict", "failed"};
     return !account.isEmpty() && !draft.isEmpty() && status["account"].toString() == account
@@ -11,6 +16,8 @@ bool validStatus(const QJsonObject &status, const QString &account, const QStrin
         && status["local_revision"].toInteger(-1) >= 0 && states.contains(status["state"].toString())
         && status["operation_is_current"] != QJsonValue(false);
 }
+// Statuses order by their own revision, then by the local draft revision they
+// describe. Replies from separate connections can arrive out of order.
 bool olderStatus(const QJsonObject &candidate, const QJsonObject &current) {
     return candidate["revision"].toInteger() < current["revision"].toInteger()
         || (candidate["revision"] == current["revision"]
@@ -34,6 +41,8 @@ QVariantMap MailBackend::mergedDraftProjection(const QJsonObject &result) const 
     const auto account = result["account"].toString(), id = result["draft_id"].toString();
     const auto incoming = result["google"].toObject();
     const auto current = QJsonObject::fromVariantMap(m_draft.value("google").toMap());
+    // Keep the status already held when the incoming one is missing, invalid
+    // or older, so a late read cannot roll the Gmail-copy state back.
     const bool sameDraft = m_draft.value("account").toString() == account && m_draft.value("draft_id").toString() == id;
     if (sameDraft && validStatus(current, account, id)
         && (!validStatus(incoming, account, id) || olderStatus(incoming, current))) next["google"] = current.toVariantMap();
@@ -80,7 +89,7 @@ QVariantMap MailBackend::googleDraft() const {
     const auto preparationFailure = status["preparation_failure"].toObject();
     const bool mismatch = !baseline["observed_sha256"].toString().isEmpty() && !baseline["upload_sha256"].toString().isEmpty()
         && baseline["observed_sha256"] != baseline["upload_sha256"];
-    // Drafts are Gmail drafts (D122): syncing, conflicts and Gmail's own edits
+    // Drafts are Gmail drafts: syncing, conflicts and Gmail's own edits
     // resolve on their own. Only what the person should know is said, plainly.
     QString text;
     if (state == "failed") text = "Couldn't save this draft to Gmail. It's kept here.";
@@ -150,6 +159,8 @@ void MailBackend::startGoogleDraftOperation(const QString &method, const QJsonOb
     googleOperation(method, account, params, [this, account, id, generation, method](auto result, bool ok) {
         m_googleDraftOperationAccount.clear(); m_googleDraftOperationId.clear(); m_googleDraftOperationMethod.clear();
         const auto key = account + '\n' + id;
+        // A replace whose outcome was not applied to the editor must be
+        // checked before another replace is offered for the same draft.
         if (account != m_account || id != m_draft.value("draft_id").toString() || generation != m_generation) {
             if (method == "google_draft_resolve") m_googleDraftRequiresCheck.insert(key);
             emit draftChanged(); return;

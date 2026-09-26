@@ -1,10 +1,15 @@
+//! Plain text from received MIME, for the reader and the search index. HTML-only
+//! mail is sanitized before conversion; the original MIME is kept elsewhere.
 use ammonia::{Builder, UrlRelative};
 use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
 use std::collections::{HashMap, HashSet};
 
+/// Why no text could be extracted from received MIME.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncomingError {
+    /// The raw message is over 64 MiB.
     SourceTooLarge,
+    /// The bytes do not parse as a MIME message.
     InvalidMime,
 }
 
@@ -37,6 +42,10 @@ pub fn extract_parsed_incoming_contribution(
     extract(message, true)
 }
 
+/// Picks the text source in order: real plain body parts, then HTML body parts,
+/// then any other part labelled `text/html`, then HTML source found in plain
+/// parts. mail-parser has already decoded transfer encodings and charsets, so
+/// everything here is Unicode text. `contribution` drops reply history.
 fn extract(
     message: &mail_parser::Message<'_>,
     contribution: bool,
@@ -67,6 +76,8 @@ fn extract(
             _ => None,
         })
         .collect();
+    // An empty HTML body can sit beside the real HTML part, for example one
+    // with an unknown transfer encoding that mail-parser left as plain text.
     if html.iter().all(|html| html.trim().is_empty()) {
         html = crate::html_view::html_part(message)
             .filter(|html| !html.trim().is_empty())
@@ -81,7 +92,8 @@ fn extract(
         .into_iter()
         .map(|html| {
             // Drop quote bodies before conversion, so HTML-only quotations
-            // do not become indistinguishable from new unquoted prose.
+            // do not become indistinguishable from new unquoted prose. A
+            // forward keeps its blockquotes: they are the forwarded content.
             let omit_quotes =
                 contribution && !html.to_ascii_lowercase().contains("forwarded message");
             if omit_quotes {
@@ -95,6 +107,9 @@ fn extract(
             }
             let text = html_to_text(&cleaner.clean(html).to_string());
             if contribution {
+                // With the quotes already gone, no `>` lines follow an
+                // attribution. The flag makes the text pass skip only the
+                // attribution and keep the answers after it, not cut there.
                 crate::reply_text::project(
                     &text,
                     omit_quotes && html.to_ascii_lowercase().contains("<blockquote"),
@@ -114,6 +129,9 @@ pub fn html_source_text(html: &str) -> String {
     html_to_text(&cleaner().clean(html).to_string())
 }
 
+/// Structure-only allowlist for text extraction. Scripts, styles, embedded
+/// documents, forms, SVG and MathML go with their content, so their text never
+/// reaches the reader or the search index; every attribute except `a href` goes.
 fn cleaner() -> Builder<'static> {
     let mut cleaner = Builder::default();
     cleaner

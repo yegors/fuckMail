@@ -5,9 +5,18 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, io::Read};
 
+/// The largest draft body in bytes, for plain text and HTML alike. Forwarded
+/// text counts toward it.
 pub(crate) const MAX_BODY: usize = 256 * 1024;
 const MAX_SUBJECT: usize = 8192;
 
+/// Builds the MIME composition request and sender identity for a projected
+/// draft, as capture, Google draft upload and send all need.
+///
+/// `message_id` becomes the Message-ID and `timestamp_secs` the Date. Fails
+/// with `invalid_draft` while any recipient field still holds unparsed text,
+/// so a half-typed address is never dropped silently, and with
+/// `invalid_request` if the draft has no From address.
 pub(crate) fn compose_request(
     account: &str,
     draft: &Value,
@@ -52,6 +61,9 @@ pub(crate) fn compose_request(
     ))
 }
 
+/// Reads the draft selector from `p`: a `draft_id`, or a `conversation_id`
+/// naming that conversation's legacy reply draft. Returns the ID and whether
+/// it is the legacy form; exactly one of the two keys must be present.
 pub(crate) fn selector(p: &Value) -> Result<(&str, bool)> {
     match (p.get("draft_id"), p.get("conversation_id")) {
         (Some(_), None) => Ok((string(p, "draft_id")?, false)),
@@ -63,6 +75,7 @@ pub(crate) fn selector(p: &Value) -> Result<(&str, bool)> {
     }
 }
 
+/// The wall clock in Unix seconds, for draft timestamps.
 pub(crate) fn now() -> Result<i64> {
     i64::try_from(
         std::time::SystemTime::now()
@@ -86,6 +99,8 @@ fn subject(value: &Value) -> Result<String> {
         })
 }
 
+/// Parses an array of at most 100 `{name?, email}` objects into addresses,
+/// checking each with the MIME builder's own `fm_mail::validate_address`.
 pub(crate) fn recipients(value: &Value) -> Result<Vec<fm_mail::Address>> {
     let rows = value
         .as_array()
@@ -122,6 +137,8 @@ pub(crate) fn recipients(value: &Value) -> Result<Vec<fm_mail::Address>> {
         .collect()
 }
 
+/// Checks a draft's routing: a one-line subject, valid recipients, at most
+/// 100 across To, Cc and Bcc, and at most 64 KiB encoded.
 pub(crate) fn validate_routing(routing: &Value) -> Result<()> {
     subject(&routing["subject"])?;
     let count = ["to_recipients", "cc_recipients", "bcc_recipients"]
@@ -184,6 +201,8 @@ impl Store {
         self.composition(account, &json!({"conversation_id":cid}))
     }
 
+    /// Reads the stored draft row for `p`'s selector as raw JSON, before
+    /// projection, or `None` if there is none.
     pub(crate) fn stored_composition(&self, account: &str, p: &Value) -> Result<Option<Value>> {
         let (selected, legacy) = selector(p)?;
         let row:Option<Value>=self.db.query_row(
@@ -197,6 +216,11 @@ impl Store {
         Ok(row)
     }
 
+    /// Returns the draft for `p`'s selector in the shape clients edit.
+    ///
+    /// A discarded draft reopens empty apart from the current signature. A
+    /// legacy reply never saved is built on the fly at revision 0 and not
+    /// written. Fails with `not_found` for a `draft_id` outside the account.
     pub(crate) fn composition(&self, account: &str, p: &Value) -> Result<Value> {
         let (selected, legacy) = selector(p)?;
         let row = if let Some(mut row) = self.stored_composition(account, p)? {
@@ -223,6 +247,13 @@ impl Store {
         self.project_composition(account, row)
     }
 
+    /// Expands a stored draft row for clients: routing fields inlined,
+    /// attachment metadata (a vanished attachment shows as `missing`),
+    /// read-only state, account transfer, and Google upload, send and delete
+    /// status.
+    ///
+    /// A draft is read-only when it is a retained Gmail snapshot, belongs to
+    /// an archived account, or moved to another account.
     pub(crate) fn project_composition(&self, account: &str, mut row: Value) -> Result<Value> {
         row["recipient_inputs"] = crate::draft_discard::recipient_inputs(&serde_json::from_str(
             row["recipient_inputs_json"].as_str().unwrap_or("{}"),
@@ -288,6 +319,9 @@ impl Store {
         Ok(row)
     }
 
+    /// Returns the account's display name, signature and metadata revision.
+    /// A draft records the name and revision when it is first saved, so later
+    /// identity edits do not silently change a draft in progress.
     pub(crate) fn draft_identity(&self, account: &str) -> Result<(String, String, i64)> {
         Ok(self.db.query_row("SELECT a.name,m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",
             [account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
@@ -301,6 +335,14 @@ impl Store {
         self.legacy_routing_at(account, cid, None)
     }
 
+    /// Builds a legacy reply's routing: from `source_message` when given,
+    /// otherwise from the newest message someone else sent in the
+    /// conversation (the account's own newest message if there is none).
+    /// Returns the source message ID, its source hash, the routing and the
+    /// quoted body.
+    ///
+    /// When the source cannot be read, the reply still addresses the stored
+    /// sender and is flagged `source_unavailable`.
     fn legacy_routing_at(
         &self,
         account: &str,
@@ -335,8 +377,12 @@ impl Store {
             if let Ok((mut routing, body)) = self.source_routing(account, cid, &mid, "reply") {
                 // A reply goes where the source says (Reply-To, else From);
                 // the stored sender stands in only when it names nobody.
-                if routing["to_recipients"].as_array().is_none_or(|rows| rows.is_empty()) {
-                    routing["to_recipients"] = json!([{"email":if sender==from {to} else {sender}}]);
+                if routing["to_recipients"]
+                    .as_array()
+                    .is_none_or(|rows| rows.is_empty())
+                {
+                    routing["to_recipients"] =
+                        json!([{"email":if sender==from {to} else {sender}}]);
                 }
                 routing["subject"] = json!(format!("Re: {title}"));
                 return Ok((Some(mid), Some(hash), routing, body));
@@ -354,6 +400,9 @@ impl Store {
         ))
     }
 
+    /// Reads message `mid` of conversation `cid` from its verified raw source
+    /// and derives routing and quoted text for `mode`; see
+    /// [`routing_from_source`].
     fn source_routing(
         &self,
         account: &str,
@@ -379,6 +428,17 @@ impl Store {
     }
 }
 
+/// Derives routing for `mode` (`reply`, `reply_all` or `forward`) from a raw
+/// message, plus the quoted text a forward starts with.
+///
+/// A reply goes to Reply-To, else From; when that names only the account
+/// itself (`from`), it goes to the original To instead. Reply all adds the
+/// other To recipients and keeps Cc. The account's own address and duplicates
+/// are dropped, case-insensitively. A forward has no recipients or threading
+/// headers and quotes `body`, the stored text, line by line with `> `. The
+/// subject gains `Re:` or `Fwd:` unless it already starts with it.
+/// `references` holds the source's own References; composing appends its
+/// Message-ID from `reply_to_message_id`.
 pub(crate) fn routing_from_source(
     bytes: &[u8],
     from: &str,
@@ -471,6 +531,9 @@ pub(crate) fn routing_from_source(
 }
 
 impl Store {
+    /// Reads a stored raw source by hash and re-verifies its size and SHA-256
+    /// after reading. Fails with `content_unavailable` if the blob is missing
+    /// or changed on disk.
     pub(crate) fn composition_source_bytes(&self, hash: &str) -> Result<Vec<u8>> {
         if !self.blob_present(hash) {
             return Err(err(
@@ -480,6 +543,8 @@ impl Store {
         }
         let size = std::fs::symlink_metadata(self.profile.join("blobs").join(hash))?.len();
         let path = self.verified_blob(hash, size)?;
+        // Hash what was actually read: the file could change between the
+        // check above and this read. Reading one byte past `size` catches growth.
         let mut bytes = Vec::new();
         std::fs::File::open(path)?
             .take(size + 1)
@@ -493,6 +558,13 @@ impl Store {
         Ok(bytes)
     }
 
+    /// Creates a draft for `p.mode` (`new`, `reply`, `reply_all` or `forward`)
+    /// at revision 1 and returns it projected.
+    ///
+    /// Reply and forward modes take `conversation_id` and `source_message_id`
+    /// and read routing from the source's raw bytes. The body starts with the
+    /// account signature (see [`signed_body`]). The draft ID is derived from
+    /// the account and `request_id`, so one request cannot create two drafts.
     pub(crate) fn create_composition(&self, account: &str, p: &Value) -> Result<Value> {
         let mode = string(p, "mode")?;
         if !["new", "reply", "reply_all", "forward"].contains(&mode) {
@@ -540,6 +612,19 @@ impl Store {
         self.composition(account, &json!({"draft_id":draft_id}))
     }
 
+    /// Saves an edit to the draft at revision `expected` and returns it
+    /// projected at the next revision; with `discard`, empties it instead.
+    ///
+    /// `p` carries the whole `body`. Subject, recipients, `attachment_ids`,
+    /// `body_html` and `signature_text` keep their stored values when absent,
+    /// except that a changed body without `body_html` drops the stored HTML,
+    /// which would no longer match. The first save of a legacy reply may pick
+    /// its source message; after that the source cannot change. `prepared` is
+    /// the draft as the caller already loaded and verified it, so attachments
+    /// are not checked again. A save that changes no authored field does not
+    /// turn an adopted Gmail draft into an upload. Fails with `stale_revision`
+    /// on a revision mismatch and `draft_read_only` for a transferred or
+    /// retained remote draft.
     pub(crate) fn save_composition_prepared(
         &self,
         account: &str,
@@ -575,6 +660,8 @@ impl Store {
         }
         let was_discarded = draft["discarded"] == true;
         let original_signature = draft["signature_text"].clone();
+        // Recipient text not yet parsed into addresses is kept per field. A
+        // field whose parsed addresses arrive in this save no longer has any.
         let pending = if discard {
             json!({})
         } else if let Some(inputs) = p.get("recipient_inputs") {
@@ -627,6 +714,7 @@ impl Store {
         if prepared.is_none() {
             self.validate_draft_attachments(account, &attachments)?;
         }
+        // The From identity is captured when a draft starts, or starts over.
         if draft["revision"] == 0 || was_discarded {
             let (name, _, revision) = self.draft_identity(account)?;
             draft["from_name"] = json!(name);
@@ -672,6 +760,8 @@ impl Store {
             }
         }
         validate_routing(&routing)?;
+        // Whether this save changes anything the author wrote. An unchanged
+        // save of an adopted Gmail draft must not queue an upload.
         let unchanged = !discard
             && draft
                 .get("recipient_inputs")
@@ -719,6 +809,9 @@ impl Store {
         self.composition(account, &json!({"draft_id":draft["draft_id"]}))
     }
 
+    /// Requires at most 50 distinct attachment IDs of this account, each fully
+    /// stored and verified on disk, totalling at most the MIME builder's
+    /// attachment limit.
     fn validate_draft_attachments(&self, account: &str, value: &Value) -> Result<()> {
         let ids = value
             .as_array()
@@ -760,6 +853,13 @@ impl Store {
         Ok(())
     }
 
+    /// Lists the account's open drafts, newest first, optionally filtered by
+    /// `query` in the mail search grammar.
+    ///
+    /// Takes `limit` (1 to 100, default 30) and `offset`; a page also stops
+    /// at 512 KiB of summaries. A search matches in Rust over every open
+    /// draft rather than through the full-text index. The reply carries
+    /// `total` matches, `next_offset` and the parsed `search_terms` for chips.
     pub(crate) fn drafts(&self, account: &str, p: &Value) -> Result<Value> {
         let archived = self.account_lifecycle(account)?["state"] == "removed";
         fields(p, &["query", "limit", "offset"])?;
@@ -795,7 +895,7 @@ impl Store {
             lowered(&text.subject),
             lowered(&text.body),
         );
-        // Each phrase must appear as written, as in mail search (Search 10).
+        // Each phrase must appear as written, as in mail search.
         let phrases = |values: &[String]| {
             values
                 .iter()
@@ -853,6 +953,8 @@ impl Store {
             result["search_terms"] = search_terms;
             return Ok(result);
         }
+        // The same open-draft predicate as `drafts_unfiltered`. Every open
+        // draft is read so `total` counts all matches, not only this page.
         let mut stmt=self.db.prepare("SELECT draft_id,conversation_id,mode,body,routing_json,updated_at,revision,origin FROM drafts d WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL)) ORDER BY updated_at DESC,draft_id")?;
         let mut rows = stmt.query([account])?;
         let mut count = 0i64;
@@ -866,7 +968,8 @@ impl Store {
             let routing: Value = serde_json::from_str(&row.get::<_, String>(4)?)?;
             let in_subject = crate::search_query::fold(routing["subject"].as_str().unwrap_or(""));
             let in_body = crate::search_query::fold(&body);
-            let has = |text: &str, phrase: &String| crate::search_query::contains_phrase(text, phrase);
+            let has =
+                |text: &str, phrase: &String| crate::search_query::contains_phrase(text, phrase);
             let mut people = String::new();
             for key in ["to_recipients", "cc_recipients", "bcc_recipients"] {
                 for address in routing[key].as_array().into_iter().flatten() {
@@ -909,6 +1012,8 @@ impl Store {
 }
 
 impl Store {
+    /// Attaches each summary's remote Gmail source, without raw headers or
+    /// attachment IDs, and trims the page again to its 512 KiB budget.
     fn enrich_draft_summaries(&self, account: &str, rows: &mut Vec<Value>) -> Result<()> {
         let ids: Vec<String> = rows
             .iter()
@@ -936,8 +1041,12 @@ impl Store {
         rows.truncate(keep);
         Ok(())
     }
+    /// One page of open drafts with no search, counted and paged in SQL.
     fn drafts_unfiltered(&self, account: &str, limit: i64, offset: i64) -> Result<Value> {
         let archived = self.account_lifecycle(account)?["state"] == "removed";
+        // Open drafts: not discarded, current revision not yet accepted for
+        // sending, and not a Gmail snapshot already linked to a local draft,
+        // which would otherwise be listed twice.
         let predicate="account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))";
         let count: i64 = self.db.query_row(
             &format!("SELECT COUNT(*) FROM drafts d WHERE {predicate}"),

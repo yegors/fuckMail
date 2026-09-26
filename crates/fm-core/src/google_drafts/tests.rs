@@ -402,11 +402,21 @@ fn a_draft_uploads_once_its_text_has_rested() {
     save(&mut store, &scope, &id, 1, "Still typing");
     let saved: i64 = store
         .db
-        .query_row("SELECT updated_at FROM drafts WHERE draft_id=?1", [&id], |r| r.get(0))
+        .query_row(
+            "SELECT updated_at FROM drafts WHERE draft_id=?1",
+            [&id],
+            |r| r.get(0),
+        )
         .unwrap();
     let due = |store: &Store, now_ms: i64| {
         store
-            .google_draft_due_at(&scope.account, scope.connection_generation, 10, now_ms, 30_000)
+            .google_draft_due_at(
+                &scope.account,
+                scope.connection_generation,
+                10,
+                now_ms,
+                30_000,
+            )
             .unwrap()
             .iter()
             .any(|row| row.draft_id == id)
@@ -480,7 +490,13 @@ fn transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revi
         "Edited while prior bytes await retry",
     );
     assert!(store
-        .google_draft_due_at(&scope.account, scope.connection_generation, 10, until - 1, 0)
+        .google_draft_due_at(
+            &scope.account,
+            scope.connection_generation,
+            10,
+            until - 1,
+            0
+        )
         .unwrap()
         .iter()
         .any(|row| row.draft_id == id && row.revision == 2));
@@ -992,7 +1008,9 @@ fn prepared_due_partial_index_skips_synced_inventory_and_keeps_exact_resume_revi
         .db
         .prepare(&format!("EXPLAIN QUERY PLAN {DUE_SQL}"))
         .unwrap()
-        .query_map(params![scope.account, 10, unix_ms().unwrap(), 0], |r| r.get(3))
+        .query_map(params![scope.account, 10, unix_ms().unwrap(), 0], |r| {
+            r.get(3)
+        })
         .unwrap()
         .collect::<rusqlite::Result<_>>()
         .unwrap();

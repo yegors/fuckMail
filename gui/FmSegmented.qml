@@ -1,3 +1,5 @@
+// Segmented control: a row of mutually exclusive buttons built from `model`,
+// with arrow / Home / End keyboard selection. Emits activated(index).
 import QtQuick
 import QtQuick.Controls
 

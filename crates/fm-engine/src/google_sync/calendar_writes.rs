@@ -12,11 +12,19 @@ use fm_google::{scheduler::WorkClass, transport::TransportError, GoogleError};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::OwnedSemaphorePermit;
+/// A shared Calendar preparation permit. Store calls and replies that carry
+/// data from a fetched source hold a clone, so the slot stays taken until
+/// that data is gone.
 pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
+/// Handles `google_calendar_write`: journals the intent, runs a fresh
+/// preflight read, and submits the mutation once. Resubmitting the same
+/// request id returns the journaled state instead of writing again.
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {
     execute_inner(ctx, request, false).await
 }
+/// Handles `google_calendar_resume`: like [`execute`], but also continues a
+/// multi-step "this and following" edit that stopped part way.
 pub(crate) async fn resume(ctx: &SyncContext, request: Value) -> Result<Value> {
     execute_inner(ctx, request, true).await
 }
@@ -25,6 +33,8 @@ async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool)
     let occurrence = request.get("occurrence").cloned();
     let recurring = request.get("recurring").cloned();
     let account = ctx.account.as_str().to_owned();
+    // Journal (or look up) the intent. Anything not ready to submit, such as
+    // a finished or in-flight operation, is returned as it is.
     let prepared = ctx
         .core_call(move |s| s.calendar_live_prepare(&account, &request))
         .await?;
@@ -34,6 +44,7 @@ async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool)
     ) {
         return Ok(prepared);
     }
+    // A multi-step edit past its first step continues only on explicit resume.
     if prepared["state"] == "partial" || prepared["step_index"] == 1 {
         if !explicit_resume {
             return Ok(prepared);
@@ -48,6 +59,9 @@ async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool)
     let version = prepared["revision"]
         .as_i64()
         .ok_or_else(|| failure("invalid_request", "Calendar intent revision is invalid"))?;
+    // Preflight: re-read the calendar's access, then the current source
+    // (for recurring and single-occurrence edits, the series master and the
+    // instance), and stage it against the intent.
     let epoch = refresh_permission(ctx, &calendar).await?;
     let generation = ctx.connection_generation;
     if recurring
@@ -102,6 +116,8 @@ async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool)
         .await?;
         drop(memory);
     }
+    // Submit once. A "following" edit's second step runs straight away
+    // unless the request was cancelled in between.
     let staged = status(ctx, &request_id).await?;
     let receipt = submit(ctx, &request_id, &staged).await?;
     if receipt["state"] == "partial" && !ctx.cancel.is_cancelled() {
@@ -111,6 +127,8 @@ async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool)
     Ok(receipt)
 }
 
+/// Re-reads the trimmed series after the first step of a "this and
+/// following" edit and stages the next step.
 async fn advance_following(ctx: &SyncContext, request_id: &str, current: &Value) -> Result<Value> {
     let calendar = text(&current["target"], "calendar")?;
     let epoch = refresh_permission(ctx, calendar).await?;
@@ -144,6 +162,9 @@ async fn advance_following(ctx: &SyncContext, request_id: &str, current: &Value)
     .await
 }
 
+/// Dispatches the staged mutation once and records its outcome, then
+/// publishes it if possible. Attendee notifications are left to Google: every
+/// write asks for `sendUpdates=all`.
 async fn submit(ctx: &SyncContext, request_id: &str, current: &Value) -> Result<Value> {
     let generation = ctx.connection_generation;
     let calendar = text(&current["target"], "calendar")?.to_owned();
@@ -237,6 +258,9 @@ async fn submit(ctx: &SyncContext, request_id: &str, current: &Value) -> Result<
     }
 }
 
+/// Handles `google_calendar_reconcile`. An in-flight or unknown write is
+/// resolved by reading the event back, never by repeating the mutation; an
+/// accepted write is only published.
 pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Value> {
     let current = status(ctx, request_id).await?;
     if matches!(current["state"].as_str(), Some("accepted" | "reconciled")) {
@@ -329,6 +353,8 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     Ok(receipt)
 }
 
+/// Read-back reconciliation for a single-occurrence write, which needs the
+/// series master to validate the instance.
 async fn reconcile_occurrence(
     ctx: &SyncContext,
     request_id: &str,
@@ -386,6 +412,8 @@ async fn reconcile_occurrence(
     publish_if_possible(ctx, &lease, receipt?, &memory).await
 }
 
+/// Returns the event's source JSON, with the ETag filled in when Google sent
+/// it only as a response header.
 pub(super) fn event_source(mut event: EventResource) -> Value {
     // The adapter validates matching body/header ETags; retain header-only
     // versions for Core's conditional-write boundary as well.
@@ -395,6 +423,10 @@ pub(super) fn event_source(mut event: EventResource) -> Value {
     event.source
 }
 
+/// Publishes an accepted or reconciled write into the visible calendar after
+/// clearing any staging runs it would conflict with. Staleness, lost
+/// permission, pending sync or cancellation return the receipt unchanged
+/// instead of failing, because the write itself is already recorded.
 async fn publish_if_possible(
     ctx: &SyncContext,
     lease: &CalendarWriteLease,
@@ -456,6 +488,8 @@ async fn publish_if_possible(
         Err(error) => Err(error),
     }
 }
+/// Re-reads the calendar's list entry and records the access role it reports.
+/// Returns the permission epoch the rest of the operation is checked against.
 pub(super) async fn refresh_permission(ctx: &SyncContext, calendar: &str) -> Result<i64> {
     let account = ctx.account.as_str().to_owned();
     let id = calendar.to_owned();
@@ -481,6 +515,7 @@ pub(super) async fn refresh_permission(ctx: &SyncContext, calendar: &str) -> Res
     })
     .await
 }
+/// Loads the journaled operation, including its dispatch lease if it has one.
 async fn operation(
     ctx: &SyncContext,
     id: &str,
@@ -537,6 +572,9 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
         .as_str()
         .ok_or_else(|| failure("invalid_request", "Invalid Calendar operation field"))
 }
+/// Classifies a failed write. A cooldown means nothing was sent, a failed
+/// `If-Match` is a conflict, clear refusals are rejections, and anything
+/// ambiguous is `Unknown` until a read-back reconciles it.
 fn write_error(error: ApiError) -> CalendarWriteOutcome {
     match error {
         ApiError::Transport(TransportError::Cooldown { retry_after_secs }) => {
@@ -561,6 +599,7 @@ fn write_error(error: ApiError) -> CalendarWriteOutcome {
         _ => CalendarWriteOutcome::Unknown,
     }
 }
+/// Maps a failed preflight or read-back request to an engine error.
 pub(super) fn read_error(error: ApiError) -> fm_core::CoreError {
     match error {
         ApiError::Provider(GoogleError::PermissionDenied | GoogleError::NotFound) => {

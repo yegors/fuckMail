@@ -1,8 +1,10 @@
 [package]
 name = "fm-calendar"
+description = "Google Calendar event, recurrence and invitation model for fuckMail"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

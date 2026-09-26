@@ -1,5 +1,30 @@
 # Current status
 
+**D137 / mail download progress (2026-09-26):**
+- **Accounts:** while mail downloads, the engine counts what Google has for the account's window, for up to 2 s per step so it finishes in about a minute (D138). The account tab's ring shows the same share (D139). The Mail row shows "Counting · 8.5k found" and then "13.2k of 21.4k", with a real bar, percentage and time left, and "Complete" at the end. It no longer says "13.2k of 13.2k+" with a full bar.
+- **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (810); clippy `-D warnings` clean. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before). New checks:
+  - the engine counts alongside the download with the inventory's exact query and doesn't repeat a finished count;
+  - Core ties a count to the retention window's generation;
+  - the Accounts row's counting, counted, capped and complete states.
+- **Not verified:** the live accounts (the 2-year change); the count against a real Gmail mailbox; other hosts.
+
+[Decision](decisions.md) · [Gmail34](contracts/gmail.md) · [Core72](contracts/core-storage.md) · [Mail UI98](contracts/mail-ui.md) · [Record](research/prototype-september-23.md#d137--mail-download-progress-2026-09-26).
+
+**D133 / engine CLI in the console (2026-09-26):**
+- **Console:** `fm <args>` in the developer console runs the bundled `fm` CLI against the app's own profile and running engine, with the selected account filled in for account commands. Output shows as console lines (`--json` as one expandable line). Bare `fm` shows the help. Running a command pauses live events so the output stays put, until `resume`. The console now fills the whole window and slides down/up on `~` (200/160 ms); a `~` mid-slide reverses it. Command output always scrolls you to the bottom. One command at a time; Ctrl+C or `stop` ends it. `fm` output is never written to `gui.log`.
+- **Checks (Windows Release, build/dc):** `gui-debug-console` runs the real `fm` (`--help`, a `--json` failure with exit code 2), checks nothing reaches `gui.log`, one-at-a-time, `stop`, a failed start, and Ctrl+C in the real panel. `fm` against a fresh profile's engine answers `accounts` and exits cleanly. `gui-smoke`, `gui-live-empty`, `gui-integration` and `gui-attachments` (the tests that load the full app with the console) pass; the other GUI tests were not rerun because the build folder had been wiped and they don't touch the console. Rust is unchanged.
+- **Not verified:** a long command against the live app by hand; other hosts.
+
+[Decision](decisions.md) · [Mail UI97](contracts/mail-ui.md) · [CLI55](contracts/cli.md).
+
+**D132 / app icon and themed title bar (2026-09-26):**
+- **Icon:** the yellow character is now the app icon (exe, window, taskbar, Start menu, macOS bundle) and the installer's icon.
+- **Title bar:** the native title bar now takes each theme's background, with dark or light buttons to match, and follows a theme change straight away. On Windows 10 it only switches dark or light.
+- **Checks (Windows):** the icon was extracted back out of the built exe and installer. On Windows 11 the title bar pixels equal each theme's canvas colour, captured for Graphite at startup and for Paper, Harbour and Terminal after switching live. The full package check, including the GUI self-test, passes.
+- **Not verified:** macOS (icon, title bar colour and the Objective-C++ file have not been built on a Mac yet); Linux; Windows 10.
+
+[Decision](decisions.md) · [Platform 21](contracts/platform.md).
+
 **D130 / installers for testers (2026-09-25):**
 - **One file per platform:** `scripts/dev.ps1 package --preset release` now writes `dist/fuckMail-<version>-<commit>-windows-amd64-setup.exe`. On a Mac, `scripts/dev.sh package --preset release` writes a `.dmg` with `fuckMail.app` and an Applications shortcut. Linux keeps its `.tar.gz`. Packaging builds in `build/release-package`, so it works while the app from `build/release` is open.
 - **Windows installer:** per user, no admin prompt, Start menu entry, uninstaller in Settings > Apps. An upgrade replaces the old program files, and mail data is never touched. It is unsigned, so SmartScreen shows "More info > Run anyway". The macOS image is unsigned too: testers use Open Anyway in Privacy & Security.
@@ -7,6 +32,13 @@
 - **Not verified:** the macOS disk image (needs a Mac or CI run); a Windows machine without the Visual C++ runtime installed; signing for either platform.
 
 [Decision](decisions.md) · [Platform 20](contracts/platform.md) · [Build guide](build-development.md#installers-for-testers-d130).
+
+**D131 / contact card copy (2026-09-26):**
+- **Contact card:** the name, address and status line can be selected and copied (Ctrl+C). The card stays open while something in it is selected. Recipient names no longer show a redundant address tooltip.
+- **Checks (Windows Release, build/p9):** all 31 GUI tests pass (`gui-startup-recovery` excluded, as before). `gui-mail-selection` drags across the card's address, moves the pointer away, checks the card is still open, then presses a real Ctrl+C and reads the clipboard. Rust is unchanged.
+- **Not verified:** the live app by hand; other hosts.
+
+[Decision](decisions.md) · [Mail UI96](contracts/mail-ui.md) · [Record](research/prototype-september-23.md#d131--contact-card-copy-2026-09-26).
 
 **D130 / search highlights, labels A–Z (2026-09-25):**
 - **Search:** matched text is highlighted with a soft amber tint in the list's subject and preview, the reader's subject, and the message body (text and HTML). The preview now starts near the match.
@@ -292,7 +324,7 @@ Settings now takes a Gmail/Workspace email and opens the system browser. Configu
 
 **Remaining:** sustained refresh, real Workspace policy/multiple-account comparison, complete agreed source/attachment inventory, protected backup/restore and current other-host acceptance. Incoming invitation RSVP and destructive account lifecycle were exercised by the isolated native suite, not against the connected real account. Performance and the broad workspace sweep remain deferred. Phase 2 and whole-area readiness stay **0/9**.
 
-Launch `dist/darwin-arm64/fuckmail-gui.app` from the Mac package after [one-time registration setup](build-development.md#email-first-google-setup-d040). Packaged UI/mail boundary: **Core 28/Gmail 14/Calendar 21/Platform 16/Mail UI 29/CLI 22/Quality 29/Search 5/schema 20**; fixtures 0/3 and protocol 1 unchanged. The [execution record](research/phase-2-execution.md) and one Mac evidence directory own exact inputs/binaries and all results. Historical Windows results below retain their source scope.
+Launch `dist/darwin-arm64/fuckmail-gui.app` from the Mac package after [one-time registration setup](build-development.md#google-sign-in-setup). Packaged UI/mail boundary: **Core 28/Gmail 14/Calendar 21/Platform 16/Mail UI 29/CLI 22/Quality 29/Search 5/schema 20**; fixtures 0/3 and protocol 1 unchanged. The [execution record](research/phase-2-execution.md) and one Mac evidence directory own exact inputs/binaries and all results. Historical Windows results below retain their source scope.
 
 ## Computer handoff — start here
 

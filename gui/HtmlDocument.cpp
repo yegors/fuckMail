@@ -1,3 +1,6 @@
+// HtmlDocument on top of the vendored litehtml: HtmlContainer implements
+// litehtml's document_container with Qt fonts and QPainter drawing, including
+// image placeholders and blocked-link styling.
 #include "HtmlDocument.h"
 #include <litehtml.h>
 #include <litehtml/render_item.h>
@@ -69,6 +72,9 @@ const QString &monoFamily() {
     static const QString family = firstInstalled({"Consolas", "Menlo", "SF Mono", "DejaVu Sans Mono", "Liberation Mono", "Courier New"}, QFontDatabase::FixedFont);
     return family;
 }
+// Resolves a CSS font-family list to one installed family. The cache is shared
+// by every document, whatever thread builds it, hence the mutex; it is cleared
+// past 512 entries so the family lists found in mail cannot grow it unbounded.
 QString resolveFamily(const std::string &list) {
     static QMutex mutex;
     static QHash<QString, QString> resolved;
@@ -97,13 +103,15 @@ struct Font {
     QFontMetricsF metrics;
 };
 
+// The `hdc` handle litehtml passes back to every draw callback. With `record`
+// set, a draw pass collects text runs for snapshot() and paints nothing.
 struct Canvas {
     QPainter *painter = nullptr;
     HtmlSnapshot *record = nullptr;
 };
 
 const QImage &stripes() {
-    // The prototype's 135° stripes: 8 px bands of two pale greys.
+    // The design's 135° stripes: 8 px bands of two pale greys.
     static const QImage tile = [] {
         QImage image(16, 16, QImage::Format_ARGB32_Premultiplied);
         image.fill(QColor(0xf4, 0xf5, 0xf7));
@@ -195,6 +203,9 @@ bool visible(const litehtml::border &side) {
 }
 }
 
+// litehtml's callbacks into the host. They run on the thread that calls
+// HtmlDocument, during parse, render() and draw(). Every coordinate is a CSS
+// pixel at 96 dpi; FmHtmlView scales the painter for the screen.
 class HtmlContainer final : public litehtml::document_container {
 public:
     qreal defaultFont = 16, width = 600;
@@ -213,6 +224,8 @@ public:
         return QSizeF(std::clamp(metrics.horizontalAdvance(label) + 46, chipMinWidth, chipMaxWidth), chipHeight);
     }
 
+    // The returned handle is an owned Font; litehtml keeps it for the
+    // document's lifetime and releases it through delete_font().
     litehtml::uint_ptr create_font(const litehtml::font_description &description, const litehtml::document *,
                                    litehtml::font_metrics *fm) override {
         QFont font(resolveFamily(description.family));
@@ -253,9 +266,11 @@ public:
         auto &painter = *canvas->painter;
         painter.save(); applyClips(painter);
         painter.setFont(font->font); painter.setPen(color(c));
+        // litehtml passes the text's line box; QPainter wants the baseline.
         painter.drawText(QPointF(float(pos.x), float(pos.y) + float(pos.height) - font->metrics.descent()), value);
         painter.restore();
     }
+    // CSS defines 1pt as 1/72 in and 1px as 1/96 in, independent of the screen.
     litehtml::pixel_t pt_to_px(float pt) const override { return pt * 96.0f / 72.0f; }
     litehtml::pixel_t get_default_font_size() const override { return float(defaultFont); }
     const char *get_default_font_name() const override { return "sans-serif"; }
@@ -278,7 +293,11 @@ public:
         }
         painter.restore();
     }
+    // Nothing loads from a URL here: the owner decodes `fm-res:N` images and
+    // hands them over through HtmlDocument::setImage().
     void load_image(const char *, const char *, bool) override {}
+    // Unloaded images take the placeholder chip's size, so the layout does
+    // not collapse and jump when pixels arrive.
     void get_image_size(const char *src, const char *, litehtml::size &size) override {
         const auto value = imageSize(resourceId(src ? src : ""));
         size.width = float(value.width()); size.height = float(value.height());
@@ -387,6 +406,8 @@ public:
         }
         painter.restore();
     }
+    // Titles, base URLs, <link> elements and pointer interaction are unused:
+    // FmHtmlView handles hover, clicks and cursors from the snapshot's link boxes.
     void set_caption(const char *) override {}
     void set_base_url(const char *) override {}
     void link(const std::shared_ptr<litehtml::document> &, const litehtml::element::ptr &) override {}
@@ -434,8 +455,12 @@ public:
     }
     // Sanitised mail has no stylesheet links; nothing is ever imported.
     void import_css(std::string &text, const std::string &, std::string &) override { text.clear(); }
+    // Overflow clips nest as a stack. Each draw callback wraps its painting in
+    // save()/restore(), so the whole stack is re-applied per call.
     void set_clip(const litehtml::position &pos, const litehtml::border_radiuses &radius) override { clips.emplace_back(pos, radius); }
     void del_clip() override { if (!clips.empty()) clips.pop_back(); }
+    // The message scrolls as one tall item, so there is no real viewport
+    // height; 1000 px is a fixed nominal value for vh units and media queries.
     void get_viewport(litehtml::position &viewport) const override { viewport = litehtml::position(0, 0, float(width), 1000); }
     litehtml::element::ptr create_element(const char *, const litehtml::string_map &, const std::shared_ptr<litehtml::document> &) override { return nullptr; }
     void get_media_features(litehtml::media_features &media) const override {
@@ -473,7 +498,7 @@ HtmlDocument::HtmlDocument(const QByteArray &html, qreal defaultFontPixels, cons
     m_container->defaultFont = defaultFontPixels;
     m_container->images = images;
     for (const auto &image : images) liveBytes += image.image.sizeInBytes();
-    // Blocked links read as disabled, as in the prototype.
+    // Blocked links read as disabled, as in the design.
     std::string user;
     for (const int id : blockedLinks) {
         const auto selector = "a[href=\"fm-link:" + std::to_string(id) + "\"]";
@@ -497,6 +522,8 @@ HtmlDocument::~HtmlDocument() {
 bool HtmlDocument::valid() const { return m_document && m_document->root(); }
 
 bool HtmlDocument::setImage(int id, const HtmlImage &image) {
+    // Only an <img> element's box follows the image size; background images
+    // never size a box. Compare sizes to report whether layout is now stale.
     const auto before = m_container->imageSize(id);
     if (const auto old = m_container->images.constFind(id); old != m_container->images.cend()) liveBytes -= old->image.sizeInBytes();
     liveBytes += image.image.sizeInBytes();
@@ -507,6 +534,7 @@ bool HtmlDocument::setImage(int id, const HtmlImage &image) {
 QSizeF HtmlDocument::layout(qreal width) {
     if (!valid()) return {};
     m_container->width = width;
+    // Width-dependent media queries must see the new width before render().
     m_document->media_changed();
     m_document->render(float(width));
     return QSizeF(std::max<qreal>(width, float(m_document->width())), float(m_document->height()));
@@ -516,6 +544,9 @@ HtmlSnapshot HtmlDocument::snapshot() {
     HtmlSnapshot result;
     if (!valid()) return result;
     result.size = QSizeF(float(m_document->width()), float(m_document->height()));
+    // A record-mode pass over the whole document collects the text runs in
+    // paint order; the clip stack is reset around it in case a previous pass
+    // ended unbalanced.
     Canvas canvas{nullptr, &result};
     const litehtml::position all(0, 0, m_document->width(), m_document->height());
     m_container->clips.clear();

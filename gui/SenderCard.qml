@@ -1,3 +1,6 @@
+// Contact popover for a sender or recipient name in MailView: name, address,
+// recent conversations, a filter link and Write. Opens on click or after a
+// hover dwell (hoverSender / leaveSender); data comes from backend.senderCard.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -17,6 +20,11 @@ Popup {
     readonly property bool current: cardData.account === account && cardData.email === email
     readonly property var conversations: current && !cardData.loading && !cardData.error ? cardData.conversations || [] : []
     readonly property int total: current ? cardData.conversation_count || 0 : 0
+    // Name, address and status can be selected. While one holds a selection
+    // the card stays open until Esc or a click outside; Ctrl+C copies it.
+    readonly property Item selectionField: nameField.selectedText ? nameField : emailField.selectedText ? emailField : statusField.selectedText ? statusField : null
+    readonly property bool holding: selectionField !== null
+    function clearSelection() { nameField.deselect(); emailField.deselect(); statusField.deselect() }
     signal conversationOpened(string id)
     width: Math.min(300, parent.width - 32); padding: 16; topPadding: 14; bottomPadding: 14
     height: Math.min(content.implicitHeight + 28, parent.height - 80)
@@ -44,6 +52,7 @@ Popup {
         const point = anchor.mapToItem(parent, 0, anchor.height + 4)
         originX = point.x; originY = point.y
         if (!opened || email !== canonical || account !== backend.account) {
+            clearSelection()
             email = canonical; displayName = name || canonical; account = backend.account
             backend.requestSenderCard(canonical)
         }
@@ -54,6 +63,8 @@ Popup {
     function hoverSender(address, name, anchor) {
         if (!address || !backend.connected) return
         if (opened && email === address.trim().toLowerCase() && account === backend.account) { hideDelay.stop(); switchDelay.stop(); pending = null; return }
+        // Passing over another name never takes away a selection being copied.
+        if (holding) return
         pending = {address: address, name: name, anchor: anchor}
         switchDelay.interval = opened ? 350 : 200
         switchDelay.restart()
@@ -70,22 +81,25 @@ Popup {
         const above = point.y < y
         return above ? dy > 0 && Math.abs(dx) <= Math.max(dy * 3, 24) && point.x >= x - 40 && point.x <= x + width + 40 : false
     }
-    function scheduleClose() { hideDelay.restart() }
+    function scheduleClose() { if (!holding) hideDelay.restart() }
     function stayOpen() { hideDelay.stop(); switchDelay.stop(); pending = null }
     function openConversation(id) { close(); conversationOpened(id) }
     // The search box shows this filter, so it can be read and removed there.
-    // All mail is the scope the card's count covers.
+    // All mail is the scope the card's count covers; a bare address matches
+    // the person as sender or on To or Cc, like the count.
     function filterSender() {
         const address = email
-        close(); backend.folder = "all"; backend.query = "from:" + address
+        close(); backend.folder = "all"; backend.query = address
     }
     function writeMessage() {
         const address = email, name = displayName
         close(); backend.writeToSender(address, name)
     }
-    onClosed: { hideDelay.stop(); switchDelay.stop(); pending = null; lastPointer = Qt.point(-1, -1); backend.clearSenderCard() }
+    onClosed: { hideDelay.stop(); switchDelay.stop(); pending = null; lastPointer = Qt.point(-1, -1); clearSelection(); backend.clearSenderCard() }
+    onHoldingChanged: if (holding) { hideDelay.stop(); switchDelay.stop(); pending = null }
+    Shortcut { sequences: [StandardKey.Copy]; enabled: card.opened && card.holding; onActivated: card.selectionField.copy() }
     Connections { target: backend; function onAccountChanged() { card.close() } }
-    Timer { id: hideDelay; interval: 220; onTriggered: card.close() }
+    Timer { id: hideDelay; interval: 220; onTriggered: if (!card.holding) card.close() }
     Timer {
         id: switchDelay
         onTriggered: {
@@ -107,6 +121,16 @@ Popup {
         settle.restart()
     }
     Timer { id: settle; interval: 120; onTriggered: card.pointerMoving = false }
+    // Selectable, read-only text that wraps instead of eliding, so all of it
+    // can be selected. It never takes keyboard focus from the workspace.
+    component CardText: TextEdit {
+        Layout.fillWidth: true
+        readOnly: true; selectByMouse: true; activeFocusOnPress: false; persistentSelection: true
+        textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap
+        selectionColor: Theme.selection; selectedTextColor: Theme.text
+        font.family: Theme.fontFamily
+        HoverHandler { cursorShape: Qt.IBeamCursor }
+    }
     contentItem: ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
         property bool blocksWorkspaceShortcuts: true
@@ -130,13 +154,14 @@ Popup {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2
-                    Text { text: card.displayName; Layout.fillWidth: true; color: Theme.text; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; elide: Text.ElideRight; textFormat: Text.PlainText }
-                    Text { text: card.email; Layout.fillWidth: true; color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; textFormat: Text.PlainText }
+                    CardText { id: nameField; objectName: "senderCardName"; text: card.displayName; color: Theme.text; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium }
+                    CardText { id: emailField; objectName: "senderCardEmail"; text: card.email; color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); wrapMode: TextEdit.WrapAnywhere }
                 }
             }
-            Text {
+            CardText {
+                id: statusField
                 objectName: "senderCardStatus"
-                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.pointSize: Theme.fontPoints(12)
+                font.pointSize: Theme.fontPoints(12)
                 color: card.current && card.cardData.error ? Theme.error : Theme.muted
                 text: !card.current || card.cardData.loading ? "Loading conversations…" : card.cardData.error || (card.total + (card.total === 1 ? " conversation" : " conversations") + " · " + (backend.currentAccount.name || card.account))
             }
@@ -160,7 +185,7 @@ Popup {
                 }
                 FmButton {
                     objectName: "senderCardFilter"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; leftPadding: 0; rightPadding: 0
-                    text: (card.total > 3 ? "All " + card.total + " from " : "Filter to ") + card.displayName.split(" ")[0] + " →"
+                    text: (card.total > 3 ? "All " + card.total + " with " : "Filter to ") + card.displayName.split(" ")[0] + " →"
                     font.pointSize: Theme.fontPoints(12); foreground: Theme.accent
                     onClicked: card.filterSender()
                 }

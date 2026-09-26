@@ -13,6 +13,12 @@ struct Candidate {
 }
 
 impl Store {
+    /// Suggests recipients matching `query` from recent cached mail and drafts
+    /// across all active accounts, ranking this account's history first.
+    ///
+    /// `limit` is 1-10 (default 6); `exclude` lists up to 100 addresses
+    /// already chosen. The account's own address is never suggested. Each
+    /// suggestion names the account it was seen in.
     pub(crate) fn recipient_suggestions(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["query", "exclude", "limit"])?;
         self.require_active_account(account)?;

@@ -1,3 +1,6 @@
+// MailBackend's calendar write tracking: resolving a recurring occurrence before
+// an edit, the paged Activity list of calendar operations, and check, resume,
+// reconcile or abandon for an operation whose outcome is unconfirmed.
 #include "MailBackend.h"
 #include <QJsonArray>
 #include <memory>
@@ -32,6 +35,9 @@ void MailBackend::readCalendarOccurrence(const QVariantMap &selector, const QStr
         emit calendarOccurrenceReadFinished(correlation, false, {}, "This occurrence has no complete source identity."); return;
     }
     googleOperation("google_calendar_occurrence_read", account, params, [this, account, calendar, context, original, series, correlation, scope, action, scoped](auto result, bool ok) {
+        // The answer is only usable if it describes exactly the occurrence and
+        // scope asked for, with etags to guard the edit, and nothing about the
+        // account, calendar or permissions changed while it was in flight.
         if (context != calendarOccurrenceContext(account, calendar)) {
             emit calendarOccurrenceReadFinished(correlation, false, {}, "The account or calendar changed. Check this occurrence again."); return;
         }
@@ -81,6 +87,9 @@ void MailBackend::loadCalendarOperationsPage(bool append) {
         emit calendarOperationsChanged(); return;
     }
     m_calendarOperationsLoading = true; emit calendarOperationsChanged();
+    // One request per account (only accounts with more pages when appending).
+    // Rows merge by account and request id, and the list is published once,
+    // when the last reply arrives; a newer load's generation discards the rest.
     auto collected = std::make_shared<QVariantList>(append ? m_calendarOperations : QVariantList());
     auto remaining = std::make_shared<int>(0);
     const auto accounts = accountArchived() ? QVariantList{currentAccount()} : m_accounts;
@@ -164,6 +173,8 @@ void MailBackend::calendarOperationAction(const QString &account, const QString 
         : action == "resume" ? "google_calendar_resume"
         : action == "abandon" ? "google_calendar_abandon"
         : action == "check" ? "google_calendar_operation" : QString{};
+    // Counted before validation: every path below ends in
+    // finishCalendarOperation(), which releases it. Shutdown waits for zero.
     ++m_calendarWrites;
     if (method.isEmpty() || account.isEmpty() || requestId.isEmpty() || (action == "abandon" && expectedRevision < 0)) {
         finishCalendarOperation(account, requestId, {{"code", "invalid_request"}, {"message", "Choose a recorded calendar change."}}, false); return;
@@ -185,6 +196,8 @@ void MailBackend::calendarOperationAction(const QString &account, const QString 
         result["operation_action"] = action;
         finishCalendarOperation(account, requestId, result, ok);
     };
+    // Resume and reconcile talk to Google and may take minutes, so they get a
+    // dedicated connection; check and abandon are local and use the main queue.
     if (action == "reconcile" || action == "resume") googleOperation(method, account, params, completed);
     else request(method, account, params, completed);
 }
@@ -215,6 +228,7 @@ void MailBackend::finishCalendarOperation(const QString &account, const QString 
     else if (state == "rejected") message = "Google did not accept this change. Your submitted fields are retained.";
     else if (state == "abandoned") message = "The recorded change was abandoned. This does not undo a change already accepted by Google.";
     else message = "The calendar outcome needs review in activity.";
+    // An unconfirmed outcome cancels a pending close so the user sees it.
     if (!confirmed && state != "abandoned" && !(m_shutdown && result["code"].toString() == "cancelled")) cancelShutdown();
     m_calendarOperationStatus = message;
     finishQueuedCalendarDeletion(account, requestId, confirmed, message);

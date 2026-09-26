@@ -1,3 +1,6 @@
+// GUI entry point: parses the command line, picks the profile and engine path,
+// creates MailBackend, the debug console and the notification presenter, loads
+// Main.qml, and wires up the smoke, screenshot, self-test and benchmark modes.
 #include "MailBackend.h"
 #include "FmIconItem.h"
 #include "DebugConsole.h"
@@ -11,6 +14,7 @@
 #include "GuiInteractionBenchmark.h"
 #include "GuiResizeBenchmark.h"
 #include "GuiCalendarBenchmark.h"
+#include "TitleBar.h"
 
 #include <QCommandLineParser>
 #include <QDir>
@@ -19,6 +23,7 @@
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
+#include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -38,8 +43,8 @@
 int main(int argc, char **argv) {
 #ifdef Q_OS_WIN
     // Qt 6.11.2's DXGI VBlank notifier can leave an exposed window without
-    // update requests on this host. Use Qt's timer fallback; D3D rendering
-    // and presentation vsync remain enabled. Preserve an explicit override.
+    // update requests on some Windows machines. Use Qt's timer fallback; D3D
+    // rendering and presentation vsync remain enabled. Preserve an explicit override.
     if (!qEnvironmentVariableIsSet("QT_D3D_NO_VBLANK_THREAD"))
         qputenv("QT_D3D_NO_VBLANK_THREAD", "1");
 #endif
@@ -49,6 +54,10 @@ int main(int argc, char **argv) {
     app.setApplicationName("fuckMail");
     app.setOrganizationName("fuckMail");
     app.setApplicationVersion("0.1.0");
+#ifndef Q_OS_MACOS
+    // macOS shows the bundle's .icns in the Dock instead.
+    app.setWindowIcon(QIcon(":/qt/qml/FuckMail/app-icon/app-icon.png"));
+#endif
     for (const auto &weight : {"Regular", "Medium", "SemiBold"})
         QFontDatabase::addApplicationFont(QString(":/qt/qml/FuckMail/fonts/Geist-%1.ttf").arg(weight));
     app.setFont(QFont("Geist", 10));
@@ -354,6 +363,11 @@ int main(int argc, char **argv) {
         QCoreApplication::exit(3);
     });
     engine.loadFromModule("FuckMail", "Main");
+    // The window colour is Theme.canvas, so this follows every theme change.
+    if (auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0))) {
+        QObject::connect(window, &QQuickWindow::colorChanged, window, [window] { matchTitleBar(window); });
+        matchTitleBar(window);
+    }
     if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount || calendarTest || lifecycleTest) && !engine.rootObjects().isEmpty())
         engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
     if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {

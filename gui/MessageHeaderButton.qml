@@ -1,3 +1,5 @@
+// Compact 26px button for a message header's actions and attachment tiles:
+// icon-only or short text, faint until hovered.
 import QtQuick
 
 FmButton {

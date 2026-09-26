@@ -1,3 +1,6 @@
+// Singleton design tokens: the four colour themes, text-size scaling, font and
+// line-height helpers, account colours and small shared formatters. Main.qml
+// binds themeId, textSize and devicePixelRatio from the user's preferences.
 pragma Singleton
 import QtQuick
 QtObject {
@@ -55,6 +58,11 @@ QtObject {
     }
     function withAlpha(value, opacity) { return Qt.rgba(value.r, value.g, value.b, Math.max(0, Math.min(1, opacity))) }
     function inkAlpha(opacity) { return withAlpha(text, opacity) }
+    // A hover lift, like CSS brightness(): each channel scaled, alpha kept.
+    function brighten(value, factor) {
+        const c = Qt.color(value)
+        return Qt.rgba(Math.min(1, c.r * factor), Math.min(1, c.g * factor), Math.min(1, c.b * factor), c.a)
+    }
     function accentAlpha(opacity) { return withAlpha(accent, opacity) }
     function warnAlpha(opacity) { return withAlpha(warn, opacity) }
     function errorAlpha(opacity) { return withAlpha(error, opacity) }
@@ -88,7 +96,7 @@ QtObject {
     readonly property color accent: current.accent
     readonly property color ai: themeId === "paper" ? "#4F6C86" : themeId === "terminal" ? "#7FA98A" : themeId === "harbour" ? "#A7BBD0" : "#9BB0C4"
     readonly property color amber: accent
-    // Search matches (Search 10): the accent as a tint behind text, stronger
+    // Search matches: the accent as a tint behind text, stronger
     // on an HTML message's white paper.
     readonly property color matchTint: Qt.rgba(accent.r, accent.g, accent.b, light ? .34 : .32)
     readonly property color matchPaper: Qt.rgba(accent.r, accent.g, accent.b, .45)

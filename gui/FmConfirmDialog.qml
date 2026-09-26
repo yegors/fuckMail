@@ -1,3 +1,6 @@
+// Confirm / Cancel dialog built on FmDialog: set `message` and `actionText`,
+// then handle accepted(). Enter confirms. The *ObjectName properties name the
+// generated buttons and label so tests can find them.
 import QtQuick
 import QtQuick.Controls
 

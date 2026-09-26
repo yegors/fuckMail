@@ -13,6 +13,8 @@ use fm_google::{
 use serde_json::json;
 use std::time::Duration;
 
+/// Delivers the account's queued mail actions (label changes, trash, restore)
+/// to Gmail, one message per step.
 pub(crate) struct MailMutationWorker {
     account: AccountId,
 }
@@ -20,6 +22,10 @@ impl MailMutationWorker {
     pub(crate) fn new(account: AccountId) -> Self {
         Self { account }
     }
+    /// Handles the next ready message: reads its current Gmail labels, lets
+    /// the store decide whether a change is still needed, and if so sends one
+    /// modify, trash or untrash and records the attempt. `now_ms` is wall-clock
+    /// Unix time, used for the store's retry deadlines.
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
         if ctx.account != self.account {
             return Err(failure("stale_google_work", "Google account changed"));
@@ -109,12 +115,15 @@ impl MailMutationWorker {
                 }
             },
         };
+        // Plain bridge call, without the generation check: the attempt's
+        // outcome is recorded even if the account reconnected meanwhile.
         ctx.core
             .call(move |store| store.google_mail_mutation_attempt_result(&attempt, outcome))
             .await?;
         Ok(Step::Progress)
     }
 }
+/// The engine error code recorded for a Gmail error.
 fn code(error: &GoogleError) -> &'static str {
     match error {
         GoogleError::ReauthorizationRequired => "google_reauthorization_required",

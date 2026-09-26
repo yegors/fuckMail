@@ -2,17 +2,23 @@
 use super::*;
 use std::path::PathBuf;
 
+/// The client registration file shipped next to the engine executable.
 #[cfg(not(feature = "verification-google"))]
 pub(super) const APP_CLIENT_FILE: &str = "google-oauth-client.json";
 
+/// Where this build finds its Google OAuth client registration.
 #[derive(Default)]
 pub(super) struct AppClient {
     // Captured once at engine startup; tests and isolated fixtures inject a path.
     path: Option<PathBuf>,
+    /// The path was set explicitly, so a missing file is an error rather than
+    /// a reason to fall back to the profile's recorded registration.
     required: bool,
 }
 
 impl AppClient {
+    /// The packaged registration beside the executable, or the file named by
+    /// `FM_GOOGLE_CLIENT_CONFIG`, which is then required.
     #[cfg(not(feature = "verification-google"))]
     pub(super) fn installed() -> Self {
         if let Some(path) = std::env::var_os("FM_GOOGLE_CLIENT_CONFIG") {
@@ -26,6 +32,7 @@ impl AppClient {
         }
     }
 
+    /// A required registration at `path`.
     pub(super) fn configured(path: PathBuf) -> Self {
         Self {
             path: Some(path),
@@ -33,6 +40,12 @@ impl AppClient {
         }
     }
 
+    /// Loads the registration to sign in with, returning it and its path.
+    ///
+    /// Tries `explicit`, then this build's file, then the path recorded by an
+    /// existing account. Fails with `google_not_configured` when there is none,
+    /// and `client_mismatch` when its client id differs from one the profile's
+    /// accounts already use.
     pub(super) async fn load(
         &self,
         explicit: Option<String>,
@@ -66,6 +79,9 @@ impl AppClient {
         Ok((config, path))
     }
 
+    /// Loads the registration an account was connected with, falling back to
+    /// this build's file when the recorded path no longer exists. The client
+    /// id must still match.
     pub(super) async fn load_saved(
         &self,
         reference: GoogleClientReference,

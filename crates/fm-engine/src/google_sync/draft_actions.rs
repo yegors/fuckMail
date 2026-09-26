@@ -10,6 +10,8 @@ use fm_google::{
 use serde_json::Value;
 use std::sync::{atomic::Ordering, Arc};
 
+/// Checks that a draft-action request has exactly the method's fields, with
+/// bounded identifiers and positive revisions.
 pub(crate) fn validate(method: &str, params: &Value) -> Result<()> {
     let keys: &[&str] = match method {
         "google_draft_adopt" | "google_draft_delete" => {
@@ -50,6 +52,9 @@ pub(crate) fn validate(method: &str, params: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Handles `google_draft_adopt`: reads a remote Gmail draft fresh and turns it
+/// into an editable local draft. Nothing is written to Google. Errors before
+/// the local commit carry the "finished without commit" marker.
 pub(crate) async fn adopt(ctx: &SyncContext, params: Value) -> Result<Value> {
     let scope = drafts::verified_scope(ctx)
         .await
@@ -86,6 +91,7 @@ pub(crate) async fn adopt(ctx: &SyncContext, params: Value) -> Result<Value> {
     })
 }
 
+/// The account and connection generation that deletion steps are checked against.
 fn scope(ctx: &SyncContext) -> GoogleDraftDeleteScope {
     GoogleDraftDeleteScope {
         account: ctx.account.as_str().into(),
@@ -93,6 +99,8 @@ fn scope(ctx: &SyncContext) -> GoogleDraftDeleteScope {
     }
 }
 
+/// Marks `error` as raised before any delete request was sent, so the client
+/// knows the Google draft is untouched.
 pub(crate) fn predispatch_error(mut error: fm_core::CoreError) -> fm_core::CoreError {
     if !error.details.is_object() {
         error.details = serde_json::json!({});
@@ -101,6 +109,8 @@ pub(crate) fn predispatch_error(mut error: fm_core::CoreError) -> fm_core::CoreE
     error
 }
 
+/// Journals the deletion request and checks, against a fresh read, that the
+/// remote draft still matches the source revision the user chose.
 async fn prepare_delete(ctx: &SyncContext, params: Value) -> Result<Value> {
     let deletion_scope = scope(ctx);
     let step = ctx
@@ -125,6 +135,10 @@ async fn prepare_delete(ctx: &SyncContext, params: Value) -> Result<Value> {
     Ok(reply)
 }
 
+/// Handles `google_draft_delete`: sends one `drafts.delete` for exactly the
+/// chosen draft and returns the journaled outcome. When Google's answer is
+/// lost the state is `unknown`; `google_draft_delete_reconcile` resolves it by
+/// reading back, and the delete is never repeated automatically.
 pub(crate) async fn delete(ctx: &SyncContext, params: Value) -> Result<Value> {
     let reply = prepare_delete(ctx, params)
         .await
@@ -164,6 +178,8 @@ pub(crate) async fn delete(ctx: &SyncContext, params: Value) -> Result<Value> {
         Ok(call) => api.execute(call, "engine-managed", &ctx.cancel).await,
         Err(error) => Err(error),
     };
+    // Only a request that never left the engine counts as undispatched; any
+    // failure after dispatch is an unknown outcome.
     let outcome = if !dispatched.load(Ordering::Acquire) {
         GoogleDraftDeleteOutcome::Undispatched {
             code: "google_undispatched".into(),
@@ -203,6 +219,8 @@ pub(crate) async fn delete(ctx: &SyncContext, params: Value) -> Result<Value> {
         .await
 }
 
+/// Handles `google_draft_delete_reconcile`: settles an unknown deletion by
+/// reading the draft back, never by deleting again.
 pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Value> {
     let deletion_scope = scope(ctx);
     let request_id = request_id.to_owned();
@@ -222,6 +240,8 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     .await
 }
 
+/// Fetches a draft's RAW source with a preparation permit. `None` means
+/// Google reports the draft absent; the permit is still returned.
 async fn read(ctx: &SyncContext, target: &str) -> Result<(Option<GmailDraft>, drafts::Memory)> {
     let call = GmailCall::get_draft(&ctx.account, target).map_err(drafts::provider)?;
     match ctx.gmail_prepared(call).await {
@@ -234,6 +254,7 @@ async fn read(ctx: &SyncContext, target: &str) -> Result<(Option<GmailDraft>, dr
         )),
     }
 }
+/// Decodes the draft's base64url RAW message, tolerating trailing padding.
 fn decode(remote: GmailDraft) -> Result<GoogleDraftActionRemote> {
     let raw = URL_SAFE_NO_PAD
         .decode(

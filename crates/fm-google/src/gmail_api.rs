@@ -13,10 +13,16 @@ use serde_json::{json, Value};
 use std::{fmt, sync::Arc};
 
 const MAX_JSON: usize = 4 * 1024 * 1024;
+/// Largest decoded message source accepted from Gmail, in bytes.
 pub const MAX_RAW_MIME: usize = 40 * 1024 * 1024;
+// Base64url grows the source by 4/3; the rest is room for the JSON envelope.
 const MAX_RAW_JSON: usize = MAX_RAW_MIME.div_ceil(3) * 4 + 64 * 1024;
+/// Largest authored MIME, in bytes before encoding, that a draft or send
+/// call will upload.
 pub const MAX_SUBMITTED_MIME: usize = 35_000_000;
 
+/// The Gmail API methods this crate calls, each with a fixed quota cost and
+/// work class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GmailMethod {
     Profile,
@@ -42,7 +48,8 @@ pub enum GmailMethod {
     DraftSend,
 }
 impl GmailMethod {
-    /// Google's method-unit table checked 2026-09-13; project limits are separate.
+    /// Returns the quota units charged for one call, from Google's per-method
+    /// unit table. Project and per-account limits are configured separately.
     pub fn quota_units(self) -> u32 {
         match self {
             Self::Profile | Self::LabelsList | Self::LabelGet => 1,
@@ -77,6 +84,13 @@ impl GmailMethod {
     }
 }
 
+/// One validated, account-bound Gmail request and the quota [`Work`] it costs.
+///
+/// Built by the constructors below and run once with [`GmailApi::execute`]
+/// after quota admission. Path segments and parameters are bounded and
+/// percent-encoded; invalid input is `InvalidResponse`. The reply is later
+/// checked against the requested ID and page token. `Debug` shows only the
+/// method.
 pub struct GmailCall {
     request: HttpRequest,
     work: Work,
@@ -92,6 +106,8 @@ impl fmt::Debug for GmailCall {
     }
 }
 impl GmailCall {
+    /// `labels.create` for a user label (name up to 256 bytes) shown in both
+    /// the label list and the message list.
     pub fn create_label(account: &AccountId, name: &str) -> Result<Self, GoogleError> {
         checked(name, 256)?;
         Self::new(
@@ -119,6 +135,7 @@ impl GmailCall {
             path.pop_if_empty();
             for segment in segments {
                 checked(segment, 256)?;
+                // Dot segments would be normalized away and retarget the path.
                 if matches!(*segment, "." | "..") {
                     return Err(invalid());
                 }
@@ -157,6 +174,7 @@ impl GmailCall {
             previous_page: None,
         })
     }
+    /// The quota work item to admit before executing this call.
     pub fn work(&self) -> Work {
         self.work.clone()
     }
@@ -167,6 +185,8 @@ impl GmailCall {
     pub fn request_url(&self) -> &str {
         self.request.url()
     }
+    /// Charges a read as another read class, for example as backfill.
+    /// Errors if this call or `class` is not a read.
     pub fn with_read_class(mut self, class: WorkClass) -> Result<Self, GoogleError> {
         if !self.work.class.is_read() || !class.is_read() {
             return Err(invalid());
@@ -174,6 +194,7 @@ impl GmailCall {
         self.work.class = class;
         Ok(self)
     }
+    /// `users.getProfile`: the address, totals and current history ID.
     pub fn profile(account: &AccountId) -> Result<Self, GoogleError> {
         Self::new(
             account,
@@ -184,6 +205,9 @@ impl GmailCall {
             None,
         )
     }
+    /// `messages.list`: up to `max_results` (1–500) message IDs, optionally
+    /// filtered by a Gmail search `query`. `page` continues an earlier
+    /// listing; a reply that returns the same token again is refused as a loop.
     pub fn list_messages(
         account: &AccountId,
         page: Option<&str>,
@@ -212,6 +236,8 @@ impl GmailCall {
         call.previous_page = page.map(str::to_owned);
         Ok(call)
     }
+    /// `history.list` from the numeric history ID `start`, charged as a delta
+    /// read. A 404 reply is [`GoogleError::HistoryExpired`].
     pub fn history(
         account: &AccountId,
         start: &str,
@@ -234,6 +260,8 @@ impl GmailCall {
         call.work.class = WorkClass::DeltaRead;
         Ok(call)
     }
+    /// `messages.get` with `format=raw`: the full message source. A 404 or an
+    /// oversized reply is a [`RawOutcome`], not an error.
     pub fn raw_message(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
         let mut call = Self::new(
             account,
@@ -246,6 +274,7 @@ impl GmailCall {
         call.expected_id = Some(id.into());
         Ok(call)
     }
+    /// `labels.list`: every system and user label.
     pub fn labels(account: &AccountId) -> Result<Self, GoogleError> {
         Self::new(
             account,
@@ -345,7 +374,11 @@ impl GmailCall {
             Some(json!({ "ids": ids })),
         )
     }
+    /// `messages.modify`: adds and removes label IDs on one message.
+    ///
     /// One explicit existing message. Never uses threads.modify, which could capture a new arrival.
+    /// Each list holds at most 100 label IDs, at least one is non-empty, and
+    /// no label may appear in both.
     pub fn modify_message(
         account: &AccountId,
         id: &str,
@@ -372,6 +405,7 @@ impl GmailCall {
         call.expected_id = Some(id.into());
         Ok(call)
     }
+    /// `messages.trash`, or `messages.untrash` when `restore` is set.
     pub fn trash_message(
         account: &AccountId,
         id: &str,
@@ -394,6 +428,8 @@ impl GmailCall {
         call.expected_id = Some(id.into());
         Ok(call)
     }
+    /// `drafts.list`: up to `max_results` (1–500) drafts. A 400 on a
+    /// continuation is [`GmailReply::DraftPageExpired`].
     pub fn list_drafts(
         account: &AccountId,
         page: Option<&str>,
@@ -413,6 +449,7 @@ impl GmailCall {
         call.previous_page = page.map(str::to_owned);
         Ok(call)
     }
+    /// `drafts.get` with `format=raw`; the reply must include the source.
     pub fn get_draft(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
         let mut call = Self::new(
             account,
@@ -425,6 +462,7 @@ impl GmailCall {
         call.expected_id = Some(id.into());
         Ok(call)
     }
+    /// `drafts.create` with `mime` as the message, optionally in `thread`.
     pub fn create_draft(
         account: &AccountId,
         mime: &[u8],
@@ -458,6 +496,8 @@ impl GmailCall {
         call.expected_id = Some(id.into());
         Ok(call)
     }
+    /// `drafts.delete`. Every outcome comes back as
+    /// [`GmailReply::DraftDeletion`], never as an error.
     pub fn delete_draft(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
         Self::new(
             account,
@@ -468,6 +508,9 @@ impl GmailCall {
             None,
         )
     }
+    /// `messages.send` of `mime`. Every outcome comes back as
+    /// [`GmailReply::Submission`], never as an error.
+    ///
     /// Caller must have persisted frozen MIME/account/recipients and InFlight.
     pub fn send_message(
         account: &AccountId,
@@ -483,6 +526,8 @@ impl GmailCall {
             Some(authored(mime, thread)?),
         )
     }
+    /// `drafts.send` of draft `id`, reported like [`GmailCall::send_message`].
+    ///
     /// Include frozen MIME rather than sending whichever content another client
     /// may have last stored under this draft ID.
     pub fn send_draft(
@@ -503,6 +548,7 @@ impl GmailCall {
     }
 }
 
+/// Reply to [`GmailCall::profile`].
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailProfile {
@@ -511,6 +557,7 @@ pub struct GmailProfile {
     pub threads_total: u64,
     pub history_id: String,
 }
+/// One Gmail label. `label_type` is `system` or `user`.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailLabel {
@@ -521,11 +568,13 @@ pub struct GmailLabel {
     pub message_list_visibility: Option<String>,
     pub label_list_visibility: Option<String>,
 }
+/// Reply to [`GmailCall::labels`].
 #[derive(Deserialize)]
 pub struct GmailLabels {
     #[serde(default)]
     pub labels: Vec<GmailLabel>,
 }
+/// One page of [`GmailCall::list_drafts`]. Listed drafts carry no source.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailDraftPage {
@@ -534,11 +583,14 @@ pub struct GmailDraftPage {
     pub next_page_token: Option<String>,
     pub result_size_estimate: Option<u64>,
 }
+/// A draft ID and its current message.
 #[derive(Deserialize)]
 pub struct GmailDraft {
     pub id: String,
     pub message: DraftMessage,
 }
+/// The message behind a draft. `raw` is the base64url source, present only
+/// on `format=raw` reads.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftMessage {
@@ -549,39 +601,60 @@ pub struct DraftMessage {
     #[serde(default)]
     pub label_ids: Vec<String>,
 }
+/// A `format=raw` message with Gmail's metadata.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawItem {
     #[serde(flatten)]
     pub message: RawMessage,
+    /// Gmail's internal date: epoch milliseconds as a decimal string.
     pub internal_date: Option<String>,
     pub size_estimate: Option<u64>,
 }
+/// Result of [`GmailCall::raw_message`]. Each case is a normal outcome the
+/// sync can record, not a transport failure.
 pub enum RawOutcome {
     Available(RawItem),
+    /// Gmail returned 404: the message no longer exists.
     Missing,
+    /// The source exceeds [`MAX_RAW_MIME`].
     TooLarge,
+    /// The reply failed validation (identity, IDs, labels or encoding).
     Malformed,
 }
+/// The outcome of one send, plus any provider error.
+///
 /// Submission certainty and provider scheduling/auth metadata are independent.
 /// An error may pause work or require reconnect; it never authorizes a resend.
+/// Every transport error, including one raised before the request left the
+/// process, is `NoDefinitiveResponse`; callers that need to know whether
+/// anything was sent must track dispatch themselves.
 pub struct GmailSubmission {
     pub result: SubmissionResult,
     pub error: Option<GoogleError>,
 }
+/// What a draft deletion reply proves.
+///
 /// An exact draft deletion has its own certainty model. Absence is read evidence,
 /// never an acknowledgement of this particular request.
 #[derive(Debug, PartialEq, Eq)]
 pub enum DraftDeletionResult {
+    /// A 204 with no body, or a 200 with `{}`.
     Deleted,
+    /// HTTP 404: the draft was already gone.
     Absent,
+    /// HTTP 400, 401, 403, 413 or 429: Google refused this request.
     Rejected,
+    /// A transport failure, another status or an unexpected success body; the
+    /// draft may or may not have been deleted.
     NoDefinitiveResponse,
 }
+/// A draft deletion outcome, plus any provider error.
 pub struct GmailDeletion {
     pub result: DraftDeletionResult,
     pub error: Option<GoogleError>,
 }
+/// Reply to [`GmailCall::message_state`]: the labels at `history_id`.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailMessageState {
@@ -591,6 +664,7 @@ pub struct GmailMessageState {
     #[serde(default)]
     pub label_ids: Vec<String>,
 }
+/// Reply to [`GmailCall::message_metadata`].
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailMessageMetadata {
@@ -611,6 +685,7 @@ struct GmailThread {
     #[serde(default)]
     messages: Vec<GmailThreadMessage>,
 }
+/// One message of a thread and its labels.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailThreadMessage {
@@ -618,6 +693,7 @@ pub struct GmailThreadMessage {
     #[serde(default)]
     pub label_ids: Vec<String>,
 }
+/// Reply to [`GmailCall::label`].
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailLabelCounts {
@@ -627,17 +703,20 @@ pub struct GmailLabelCounts {
     #[serde(default)]
     pub threads_total: u64,
 }
+/// The requested headers of a metadata read.
 #[derive(Deserialize, Default)]
 pub struct GmailMetadataPayload {
     #[serde(default)]
     pub headers: Vec<GmailHeader>,
 }
+/// One message header as Gmail returns it.
 #[derive(Deserialize)]
 pub struct GmailHeader {
     pub name: String,
     pub value: String,
 }
 impl GmailMessageMetadata {
+    /// Returns the first header called `name`, compared case-insensitively.
     pub fn header(&self, name: &str) -> Option<&str> {
         self.payload
             .headers
@@ -646,11 +725,16 @@ impl GmailMessageMetadata {
             .map(|header| header.value.as_str())
     }
 }
+/// The validated reply to a [`GmailCall`]; each method has its own variant.
+/// `Debug` hides all content.
 pub enum GmailReply {
     Profile(GmailProfile),
     Messages(ListPage),
+    /// Bounds are checked here; the caller still validates the page against
+    /// its checkpoint with [`crate::sync::prepare_history_page`].
     History(HistoryPage),
     Raw(RawOutcome),
+    /// None when the message is gone.
     MessageState(Option<GmailMessageState>),
     /// None when the message is gone.
     MessageMetadata(Option<GmailMessageMetadata>),
@@ -660,6 +744,7 @@ pub enum GmailReply {
     /// Messages deleted for good.
     Deleted,
     Labels(GmailLabels),
+    /// The label just created.
     Label(GmailLabel),
     /// HTTP 400/409 rejected creation; a malformed success remains uncertain.
     LabelCreateRejected,
@@ -668,6 +753,7 @@ pub enum GmailReply {
     /// read enumeration must preserve already retained snapshots.
     DraftPageExpired,
     Draft(GmailDraft),
+    /// The message after a modify, trash or untrash.
     Message(MessageRef),
     DraftDeletion(GmailDeletion),
     Submission(GmailSubmission),
@@ -678,6 +764,7 @@ impl fmt::Debug for GmailReply {
     }
 }
 
+/// Runs [`GmailCall`]s for one account over an [`HttpTransport`].
 pub struct GmailApi<T: HttpTransport> {
     account: AccountId,
     transport: Arc<T>,
@@ -688,6 +775,14 @@ impl<T: HttpTransport> GmailApi<T> {
     }
     /// Execute exactly once after quota admission. This never opens auth, changes
     /// local state or treats an accepted receipt as proof of eventual delivery.
+    ///
+    /// Some statuses are normal replies rather than errors: 404 on raw, state,
+    /// metadata and thread reads, 400/409 on label creation, 400 on a draft
+    /// page continuation, and every send or draft-delete outcome. Otherwise
+    /// errors are `PermissionDenied` for another account's call, `RateLimited`
+    /// for a local cooldown, `TransportInterrupted` for other transport
+    /// failures, [`crate::classify_api_error`] for non-2xx statuses and
+    /// `InvalidResponse` for a reply that fails validation.
     pub async fn execute(
         &self,
         call: GmailCall,
@@ -703,6 +798,8 @@ impl<T: HttpTransport> GmailApi<T> {
             .header("authorization", &format!("Bearer {access_token}"))
             .map_err(|_| invalid())?;
         let response = self.transport.execute(request, cancel).await;
+        // Sends and draft deletes report every outcome in-band, so an
+        // interrupted request is never mistaken for a plain retryable error.
         if call.method.is_send() {
             return Ok(GmailReply::Submission(submission(response)));
         }
@@ -1005,6 +1102,8 @@ fn submission(response: Result<HttpResponse, TransportError>) -> GmailSubmission
                 };
             }
         }
+        // A 2xx without a usable receipt cannot say which message was created,
+        // so the send stays uncertain rather than accepted.
         return GmailSubmission {
             result: SubmissionResult::NoDefinitiveResponse,
             error: Some(GoogleError::InvalidResponse(
@@ -1103,6 +1202,8 @@ fn authored(mime: &[u8], thread: Option<&str>) -> Result<Value, GoogleError> {
     }
     Ok(value)
 }
+/// Checks base64url without allocating the decoded message: 4096-character
+/// chunks decode to at most 3072 bytes in a fixed buffer.
 fn valid_raw_encoding(value: &str) -> bool {
     let unpadded = value.trim_end_matches('=');
     if unpadded.is_empty() || value.len() - unpadded.len() > 2 {
@@ -1136,6 +1237,7 @@ fn page_size(size: u16) -> Result<String, GoogleError> {
 fn page_token(value: Option<&str>, previous: Option<&str>) -> Result<(), GoogleError> {
     if let Some(value) = value {
         checked(value, 4096)?;
+        // A continuation that hands back the same token would page forever.
         if Some(value) == previous {
             return Err(invalid());
         }

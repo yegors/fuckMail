@@ -1,3 +1,8 @@
+//! `fm`, the command-line client. Each command becomes one or more requests to
+//! the engine over `fm-ipc`, starting the engine when none is running, so the
+//! CLI shares the GUI's profile, store and command set. Output is text for
+//! people or, with `--json`, the engine's JSON. `fm` never opens the mail
+//! database itself.
 use clap::{Parser, Subcommand};
 use fm_ipc::Client;
 use serde_json::{json, Value};
@@ -15,15 +20,19 @@ use std::{
     after_help = "The default profile is an empty live profile shared with the GUI. Use --demo-profile only for synthetic examples.\nGoogle sign-in starts only with an explicit google connect or google restore command and --profile. fm never opens the mail database directly."
 )]
 struct Args {
+    /// Profile directory (absolute path); defaults to the shared live profile.
     #[arg(long, global = true)]
     profile: Option<PathBuf>,
     /// Explicitly open/create synthetic demo content in a separate profile.
     #[arg(long, global = true)]
     demo_profile: bool,
+    /// Engine binary to start if none is running; defaults to FM_ENGINE_PATH, then fm-engine beside fm.
     #[arg(long, global = true)]
     engine: Option<PathBuf>,
+    /// Account id for account-scoped commands; `fm accounts` lists them.
     #[arg(long, global = true)]
     account: Option<String>,
+    /// Print each reply, including errors, as one line of JSON on stdout.
     #[arg(long, global = true)]
     json: bool,
     #[cfg(feature = "verification-google")]
@@ -62,10 +71,13 @@ enum Command {
     Status,
     /// Read a bounded cursor of newly acquired incoming mail; starts at the current cache end.
     Notifications {
+        /// Cursor returned as `after` by the previous call; needs --since.
         #[arg(long, requires = "since", value_parser = clap::value_parser!(i64).range(0..))]
         after: Option<i64>,
+        /// RFC 3339 time; report only mail sent since then, looking back at most five minutes.
         #[arg(long, requires = "after")]
         since: Option<String>,
+        /// Treat this RFC 3339 time as the current time.
         #[arg(long)]
         now: Option<String>,
     },
@@ -86,6 +98,7 @@ enum Command {
     },
     /// Update display name and signature, preserving existing draft snapshots.
     AccountUpdate {
+        /// How far back to keep this account's mail; shortening it removes older local copies.
         #[arg(long, value_parser=["1_month","3_months","90_days","1_year","2_years","5_years","all"])]
         mail_retention: Option<String>,
         /// Mail access; supply together with --calendar-access.
@@ -101,12 +114,16 @@ enum Command {
         /// The account's colour, one of the 16 palette entries such as #6FB5B2.
         #[arg(long)]
         color: Option<String>,
+        /// Display name, 1–80 characters.
         #[arg(long)]
         name: String,
+        /// File with the signature text, or `-` for stdin; at most 16 KiB.
         #[arg(long)]
         signature_file: PathBuf,
+        /// The account's `metadata_revision` from `fm accounts --json`.
         #[arg(long)]
         expected_revision: u64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -114,27 +131,34 @@ enum Command {
     CalendarSources,
     /// Nonrecurring create/edit or self RSVP through deterministic local fake acknowledgment.
     CalendarWrite {
+        /// JSON request file, or `-` for stdin; at most 64 KiB.
         #[arg(long)]
         params_file: PathBuf,
     },
     /// Inspect the selected account's local calendar mutation journal.
     CalendarOperations {
+        /// Operations per page.
         #[arg(long, default_value_t = 30)]
         limit: u32,
+        /// The `continuation` JSON object from the previous page.
         #[arg(long)]
         cursor: Option<String>,
     },
     /// Acknowledge a previously prepared local calendar operation.
     CalendarAck {
+        /// Request ID of the prepared operation.
         request_id: String,
     },
     /// Read a half-open date range from the selected account or combined calendars.
     #[command(args_conflicts_with_subcommands = true)]
     Calendar {
+        /// Combine the selected calendars of every account; --account is not needed.
         #[arg(long)]
         combined: bool,
+        /// First day, as YYYY-MM-DD.
         #[arg(long)]
         from: Option<String>,
+        /// Day after the last day, as YYYY-MM-DD.
         #[arg(long)]
         to: Option<String>,
         #[command(subcommand)]
@@ -142,10 +166,13 @@ enum Command {
     },
     /// Copy a verified retained attachment to a new file, or inspect its state.
     Attachment {
+        /// Attachment id, as listed by `mail read`.
         id: String,
+        /// Copy the attachment to this new file; never overwrites an existing file.
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    /// List the selected account's labels.
     Categories,
     /// Manage account labels and their local classification instructions.
     Labels {
@@ -154,6 +181,7 @@ enum Command {
     },
     /// Explicit foreground session; report changes until Ctrl-C or --seconds.
     Watch {
+        /// Stop after this many seconds instead of waiting for Ctrl-C.
         #[arg(long)]
         seconds: Option<u64>,
     },
@@ -169,7 +197,9 @@ enum Command {
     },
     /// Exercise a documented protocol method with JSON read from a file or '-'.
     Call {
+        /// Engine protocol method name.
         method: String,
+        /// JSON params file, or `-` for stdin; without it the params are an empty object.
         #[arg(long)]
         params_file: Option<PathBuf>,
     },
@@ -177,31 +207,47 @@ enum Command {
 
 #[derive(Subcommand)]
 enum CalendarCommand {
-    /// Search cached permitted occurrences in an explicit 1–42 day range; no Google request.
+    /// Search cached permitted occurrences in a 1–42 day range, or the next time of
+    /// each matching event around a day; no Google request.
     Search {
+        /// Words match titles and notes as one phrase; `title:` matches titles only;
+        /// `with:` or a bare address matches guests. 1–32 words in at most 512 bytes.
         query: String,
-        #[arg(long)]
-        from: String,
-        #[arg(long)]
-        to: String,
+        /// First day, as YYYY-MM-DD.
+        #[arg(long, required_unless_present = "around")]
+        from: Option<String>,
+        /// Day after the last day, as YYYY-MM-DD.
+        #[arg(long, required_unless_present = "around")]
+        to: Option<String>,
+        /// Instead of a range: each event's next time within a year of this day
+        /// (YYYY-MM-DD), then its latest time in the 60 days before.
+        #[arg(long, conflicts_with_all = ["from", "to"])]
+        around: Option<String>,
+        /// Maximum occurrences to return.
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=100))]
         limit: u64,
     },
     /// List current selected, permitted Soon/Now reminders without acknowledging them.
     Reminders {
+        /// Treat this RFC 3339 time as the current time.
         #[arg(long)]
         now: Option<String>,
     },
     /// Record display/dismissal of an exact currently permitted occurrence; no provider write.
     ReminderAck {
+        /// Calendar id, as listed by `calendar reminders`.
         #[arg(long)]
         calendar_id: String,
+        /// Occurrence `id`, as listed by `calendar reminders`.
         #[arg(long)]
         occurrence_id: String,
+        /// The occurrence's `start`, exactly as listed.
         #[arg(long)]
         start: String,
+        /// Whether the reminder was shown or dismissed.
         #[arg(long, value_parser = ["shown", "dismissed"])]
         state: String,
+        /// Treat this RFC 3339 time as the current time.
         #[arg(long)]
         now: Option<String>,
     },
@@ -211,8 +257,10 @@ enum CalendarCommand {
 enum AccountCommand {
     /// Permanently delete a removed local archive; Google data is unchanged.
     DeleteArchive {
+        /// The archive's current lifecycle revision.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -220,15 +268,19 @@ enum AccountCommand {
     RemovePreview,
     /// Remove from active views and clear local credentials; keep a read-only archive.
     Remove {
+        /// Lifecycle revision from `account remove-preview`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
+        /// What stays on this machine; only a read-only `archive` is supported.
         #[arg(long, default_value = "archive", value_parser = ["archive"])]
         retention: String,
     },
     /// Inspect a retained removal receipt and current credential-cleanup state.
     RemovalStatus {
+        /// Request ID used for the removal.
         #[arg(long)]
         request_id: String,
     },
@@ -241,8 +293,10 @@ enum Google {
     /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
     /// Add --account for an identity-checked reconnect.
     Connect {
+        /// Gmail access to request.
         #[arg(long, default_value="write", value_parser=["none","read","write"])]
         mail_access: String,
+        /// Google Calendar access to request.
         #[arg(long, default_value="write", value_parser=["none","read","write"])]
         calendar_access: String,
         /// Gmail or Workspace email to prefill in Google's browser sign-in.
@@ -251,23 +305,29 @@ enum Google {
         /// Developer override; configured builds do not need this file.
         #[arg(long)]
         client_config: Option<PathBuf>,
+        /// Ask Google to show its consent screen again.
         #[arg(long)]
         reauthorize: bool,
     },
     /// Restore the selected archive by signing in as the same Google identity.
     /// Retained work and sync do not start automatically.
     Restore {
+        /// Gmail access to request.
         #[arg(long, default_value="write", value_parser=["none","read","write"])]
         mail_access: String,
+        /// Google Calendar access to request.
         #[arg(long, default_value="write", value_parser=["none","read","write"])]
         calendar_access: String,
+        /// Gmail or Workspace email to prefill in Google's browser sign-in.
         #[arg(long)]
         email: Option<String>,
         /// Developer override; configured builds do not need this file.
         #[arg(long)]
         client_config: Option<PathBuf>,
+        /// The archive's current lifecycle revision.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Ask Google to show its consent screen again.
         #[arg(long)]
         reauthorize: bool,
     },
@@ -279,14 +339,19 @@ enum Google {
         /// Fetch new mail immediately and retry denied credential access.
         #[arg(long)]
         refresh: bool,
+        /// Developer override: Gmail quota units per minute for the whole project.
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
         gmail_project_units_per_minute: Option<u32>,
+        /// Developer override: Gmail quota units per minute for each account.
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
         gmail_account_units_per_minute: Option<u32>,
+        /// Developer override: Calendar quota units per minute for the whole project.
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
         calendar_project_units_per_minute: Option<u32>,
+        /// Developer override: Calendar quota units per minute for each account.
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
         calendar_account_units_per_minute: Option<u32>,
+        /// Stop after this many seconds instead of waiting for Ctrl-C.
         #[arg(long)]
         seconds: Option<u64>,
     },
@@ -296,105 +361,141 @@ enum Google {
     SyncStop,
     /// Execute one explicit conditional Calendar operation from JSON; requires an active sync session.
     CalendarWrite {
+        /// JSON operation file, or `-` for stdin; at most 512 KiB.
         #[arg(long)]
         params_file: PathBuf,
     },
     /// Read back an uncertain Calendar operation without submitting it again.
-    CalendarReconcile { request_id: String },
+    CalendarReconcile {
+        /// Request ID of the Calendar operation.
+        request_id: String,
+    },
     /// Resolve one recurring occurrence for editing; requires an active owned Google session.
     /// Reads Google without creating a mutation or starting acquisition.
     CalendarOccurrence {
+        /// JSON lookup file, or `-` for stdin; at most 16 KiB.
         #[arg(long)]
         params_file: PathBuf,
     },
     /// Inspect one retained Calendar outcome without provider access.
-    CalendarOperation { request_id: String },
+    CalendarOperation {
+        /// Request ID of the Calendar operation.
+        request_id: String,
+    },
     /// Resume an operation that has never dispatched; requires an active sync session.
-    CalendarResume { request_id: String },
+    CalendarResume {
+        /// Request ID of the Calendar operation.
+        request_id: String,
+    },
     /// Abandon retained local intent; does not undo a Google change or contact Google.
     CalendarAbandon {
+        /// Request ID of the Calendar operation.
         request_id: String,
+        /// The operation's current revision.
         #[arg(long)]
         expected_revision: u64,
     },
     /// Synchronize one saved draft through an already active owned Google session.
     /// Unknown outcomes are inspected without automatically repeating creation.
     DraftSync {
+        /// Draft id, as listed by `draft list`.
         #[arg(long)]
         draft_id: String,
+        /// Saved local draft revision to upload.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// Inspect the retained Google draft state without contacting Google.
     DraftStatus {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
     },
     /// Read the current Google draft without repeating a create or update.
     DraftReconcile {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
     },
     /// Adopt a fully supported retained Google draft after a fresh source check.
     /// Opening the adopted editor alone does not upload it.
     DraftAdopt {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Retained source revision, as listed by `draft sources`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         source_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// Permanently delete the exact observed Google draft; retained local sources remain.
     /// Requires an owned sync session. Unknown results are never automatically retried.
     DraftDelete {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Retained source revision, as listed by `draft sources`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         source_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// Inspect one retained deletion receipt without contacting Google.
     DraftDeleteStatus {
+        /// Request ID used for the deletion.
         #[arg(long)]
         request_id: String,
     },
     /// Check an uncertain deletion without repeating it. Absence alone is not success.
     DraftDeleteReconcile {
+        /// Request ID used for the deletion.
         #[arg(long)]
         request_id: String,
     },
     /// Abandon only a proven-undispatched deletion at its current receipt revision.
     DraftDeleteAbandon {
+        /// Request ID used for the deletion.
         #[arg(long)]
         request_id: String,
+        /// The deletion receipt's current revision.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
     },
     /// Explicitly replace a known remote conflict with the exact saved local revision.
     /// Another client can still edit between the provider read and replacement.
     DraftReplace {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Saved local draft revision to upload.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Revision of the conflicting Google copy, from `google draft-status`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_google_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// Explicitly submit one exact saved revision through an active Google session.
     /// Unknown outcomes never trigger another automatic submission.
     Send {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Saved local draft revision to send.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Google draft revision, from `google draft-status`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(0..))]
         expected_google_revision: i64,
+        /// Unique ID for this submission; reuse it only to retry the same send.
         #[arg(long)]
         request_id: String,
         /// Wait six seconds before connecting; Ctrl+C keeps the draft unsent.
@@ -403,41 +504,52 @@ enum Google {
     },
     /// Inspect one retained submission outcome without contacting Google.
     SendStatus {
+        /// Request ID used for the send.
         #[arg(long)]
         request_id: String,
     },
     /// List retained outgoing messages awaiting acquisition, without contacting Google.
     Sent {
+        /// Messages to skip.
         #[arg(long, default_value_t = 0)]
         offset: u64,
+        /// Messages per page.
         #[arg(long, default_value_t = 50, value_parser=clap::value_parser!(u64).range(1..=100))]
         limit: u64,
+        /// Only messages in this conversation.
         #[arg(long)]
         conversation_id: Option<String>,
     },
     /// Read the exact retained submission content, without contacting Google.
     SentMessage {
+        /// Request ID used for the send.
         #[arg(long)]
         request_id: String,
     },
     /// Inspect bounded Sent evidence without submitting the message again.
     SendReconcile {
+        /// Request ID used for the send.
         #[arg(long)]
         request_id: String,
     },
     /// Abandon only a proven-undispatched prepared submission at its current revision.
     SendAbandon {
+        /// Request ID used for the send.
         #[arg(long)]
         request_id: String,
+        /// The submission's current revision.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
     },
     /// Browse cached account labels; pagination is bound to the catalog revision.
     Labels {
+        /// Labels per page.
         #[arg(long,default_value_t=100,value_parser=clap::value_parser!(u32).range(1..=100))]
         limit: u32,
+        /// Continue after this label id (`next_after` from the previous page).
         #[arg(long, requires = "expected_catalog_revision")]
         after: Option<String>,
+        /// Catalog revision the pages must belong to; required with --after.
         #[arg(long)]
         expected_catalog_revision: Option<u64>,
     },
@@ -445,33 +557,51 @@ enum Google {
     LabelsRefresh,
     /// List Gmail Spam live, 50 at a time; spam is never downloaded or stored.
     Spam {
+        /// Page token from the previous page.
         #[arg(long)]
         page_token: Option<String>,
     },
     /// Read one Spam message's text live from Gmail without storing it.
-    SpamShow { id: String },
+    SpamShow {
+        /// Gmail message id, as listed by `google spam`.
+        id: String,
+    },
     /// Search the account on Gmail; lists threads with nothing on this machine, read live.
     Search {
+        /// Search text; it is translated to a Gmail search.
         query: String,
+        /// Folder to search.
         #[arg(long,default_value="all",value_parser=["inbox","sent","all","trash","drafts"])]
         folder: String,
     },
     /// Read a remote search result's thread live from Gmail without storing it.
-    Thread { thread_id: String },
+    Thread {
+        /// Gmail thread id, as listed by `google search`.
+        thread_id: String,
+    },
     /// Fetch one attachment of a remote thread into the view cache and print its path.
-    Attachment { id: String },
+    Attachment {
+        /// Attachment id, as listed by `google thread`.
+        id: String,
+    },
     /// Gmail's message and conversation totals for Spam or Trash.
     BinCount {
+        /// Folder to count.
         #[arg(value_parser=["spam","trash"])]
         folder: String,
     },
     /// Move a Spam thread to the Inbox, marking it not spam.
-    NotSpam { thread_id: String },
+    NotSpam {
+        /// Gmail thread id, as listed by `google spam`.
+        thread_id: String,
+    },
     /// Delete one conversation's Spam or Trash messages for good (Spam takes a
     /// Gmail thread id, Trash a conversation id). Needs full mail access.
     DeleteForever {
+        /// Folder the messages are in.
         #[arg(value_parser=["spam","trash"])]
         folder: String,
+        /// Gmail thread id for Spam, conversation id for Trash.
         id: String,
         /// Confirm: this cannot be undone.
         #[arg(long)]
@@ -479,6 +609,7 @@ enum Google {
     },
     /// Delete everything in Spam or Trash for good. Needs full mail access.
     Empty {
+        /// Folder to empty.
         #[arg(value_parser=["spam","trash"])]
         folder: String,
         /// Confirm: this cannot be undone.
@@ -491,16 +622,23 @@ enum Google {
     DraftsStatus,
     /// Bind an existing Google label to a local category; never creates provider labels.
     CategoryBind {
+        /// Local label id.
         category_id: String,
+        /// Gmail label id to link it to, as listed by `google labels`.
         provider_label_id: String,
+        /// Label catalog revision, from `google labels`.
         #[arg(long)]
         expected_catalog_revision: u64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
+        /// Create the local label with this name; it must not exist yet.
         #[arg(long,conflicts_with_all=["expected_provider_label_id","unmapped"],required_unless_present_any=["expected_provider_label_id","unmapped"])]
         create_name: Option<String>,
+        /// Gmail label id the existing local label is linked to now.
         #[arg(long,conflicts_with_all=["create_name","unmapped"],required_unless_present_any=["create_name","unmapped"])]
         expected_provider_label_id: Option<String>,
+        /// The existing local label is not linked to a Gmail label yet.
         #[arg(long,conflicts_with_all=["create_name","expected_provider_label_id"],required_unless_present_any=["create_name","expected_provider_label_id"])]
         unmapped: bool,
     },
@@ -512,29 +650,39 @@ enum Google {
 enum Mail {
     /// Restore the exact retained state before a mail action (fails after newer edits).
     Undo {
+        /// Conversation id.
         id: String,
+        /// Request ID of the action to undo.
         #[arg(long)]
         undo_request_id: String,
+        /// Conversation revision you last read.
         #[arg(long)]
         expected_revision: u64,
+        /// Unique ID for this undo; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Archive, move to Trash or restore the currently loaded conversation members.
     Filing {
+        /// Conversation id.
         id: String,
+        /// What to do with the conversation.
         #[arg(long,value_parser=["archive","trash","restore"])]
         action: String,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Inspect pending, uncertain and failed Google state changes without provider access.
     Delivery {
+        /// Show only the change made with this request ID.
         #[arg(long)]
         request_id: Option<String>,
     },
+    /// List the selected account's conversations, filtered and paged.
     List {
         /// Search text: bare words match subject or message text; a bare
         /// address matches the sender or a recipient; subject:, body:, from:
@@ -545,24 +693,34 @@ enum Mail {
         /// Column for bare words; `all` means subject or message text.
         #[arg(long,default_value="all",value_parser=["all","sender","subject","body"])]
         field: String,
+        /// Folder to list; `received` also includes archived incoming mail.
         #[arg(long,default_value="inbox",value_parser=["inbox","received","sent","all","trash"])]
         folder: String,
+        /// Only mail with any of these label ids (comma-separated).
         #[arg(long)]
         category: Option<String>,
+        /// Only mail whose sender name or address contains this text.
         #[arg(long)]
         sender: Option<String>,
+        /// Only mail from exactly this address.
         #[arg(long)]
         exact_sender: Option<String>,
+        /// Only mail from this kind of sender; `unknown` means not yet classified.
         #[arg(long,value_parser=["all","people","automated","unknown"])]
         kind: Option<String>,
+        /// Only conversations to review (unread), held (Delayed) or done.
         #[arg(long,value_parser=["all","review","held","done"])]
         status: Option<String>,
+        /// Only mail with (true) or without (false) attachments.
         #[arg(long)]
         has_attachment: Option<bool>,
+        /// Only mail sent on or after this UTC date (YYYY-MM-DD).
         #[arg(long)]
         after: Option<String>,
+        /// Only mail sent before this UTC date (YYYY-MM-DD).
         #[arg(long)]
         before: Option<String>,
+        /// Group conversations into Review, Delayed and Done.
         #[arg(long)]
         grouped: bool,
         /// IANA zone for counting Done conversations by month (grouped lists).
@@ -571,10 +729,13 @@ enum Mail {
         /// Leave a Done month (YYYY-MM) out of the page; needs --month-zone.
         #[arg(long)]
         collapsed_month: Vec<String>,
+        /// Continue from the previous page's `next_cursor` instead of using --offset.
         #[arg(long)]
         cursor: Option<String>,
+        /// Conversations per page.
         #[arg(long,default_value_t=30,value_parser=clap::value_parser!(u32).range(1..=100))]
         limit: u32,
+        /// Conversations to skip.
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
@@ -582,26 +743,37 @@ enum Mail {
     /// people you wrote to with --role recipient (the default in --folder
     /// sent|drafts). Querying never marks mail reviewed.
     Senders {
+        /// Text to match against names and addresses.
         #[arg(default_value = "")]
         query: String,
+        /// Folder to look in.
         #[arg(long,default_value="inbox",value_parser=["inbox","all","sent","drafts","trash"])]
         folder: String,
+        /// List senders, or the people you wrote to.
         #[arg(long,value_parser=["sender","recipient"])]
         role: Option<String>,
+        /// Maximum people to return.
         #[arg(long,default_value_t=5,value_parser=clap::value_parser!(u8).range(1..=10))]
         limit: u8,
     },
     /// Query only; this does not mark mail reviewed.
-    Read { id: String },
+    Read {
+        /// Conversation id, as listed by `mail list`.
+        id: String,
+    },
     /// Inspect retained message headers, HTML and source without marking reviewed.
     Source {
+        /// Message id, as listed by `mail read`.
         id: String,
+        /// The message's `source_version`, from `mail read`.
         #[arg(long)]
         source_version: String,
     },
     /// Show a received invitation's calendar details and its cached event, read-only.
     Invite {
+        /// Message id, as listed by `mail read`.
         id: String,
+        /// The message's `source_version`, from `mail read`.
         #[arg(long)]
         source_version: String,
     },
@@ -609,13 +781,17 @@ enum Mail {
     /// background, the list's unsubscribe email through Google, or print the
     /// unsubscribe page to open.
     Unsubscribe {
+        /// Message id, as listed by `mail read`.
         id: String,
+        /// The message's `source_version`, from `mail read`.
         #[arg(long)]
         source_version: String,
     },
     /// The sanitised HTML the reader renders, with its image and link lists.
     Html {
+        /// Message id, as listed by `mail read`.
         id: String,
+        /// The message's `source_version`, from `mail read`.
         #[arg(long)]
         source_version: String,
     },
@@ -623,72 +799,105 @@ enum Mail {
     /// the remote ones through the engine, over https only, and through the
     /// HTTPS proxy when one is set. Blocked hosts never load.
     Images {
+        /// Message id, as listed by `mail read`.
         id: String,
+        /// The message's `source_version`, from `mail read`.
         #[arg(long)]
         source_version: String,
+        /// Also fetch remote images.
         #[arg(long)]
         load: bool,
     },
     /// Exact sender history in this account; querying never marks mail reviewed.
-    Sender { address: String },
+    Sender {
+        /// Sender email address.
+        address: String,
+    },
     /// Suggest addresses from recent cached mail and drafts; never changes routing.
     Recipients {
+        /// Text to match against names and addresses.
         query: String,
+        /// Address to leave out, such as one already on the draft; repeatable.
         #[arg(long)]
         exclude: Vec<String>,
+        /// Maximum suggestions to return.
         #[arg(long, default_value_t = 6)]
         limit: u8,
     },
     /// Mark the loaded snapshot read.
     Review {
+        /// Conversation id.
         id: String,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Atomically mark the loaded snapshot read and clear all its stars.
     Done {
+        /// Conversation id.
         id: String,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Place the loaded snapshot on untimed hold without changing read state.
     Delay {
+        /// Conversation id.
         id: String,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Clear snapshot stars without changing read state.
     Undelay {
+        /// Conversation id.
         id: String,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
+    /// Set the read and starred state of the loaded snapshot directly.
     Flag {
+        /// Conversation id.
         id: String,
+        /// Mark read (true) or unread (false).
         #[arg(long)]
         read: Option<bool>,
+        /// Star (true) or unstar (false).
         #[arg(long)]
         starred: Option<bool>,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
+    /// Add a label to the loaded snapshot, or remove it.
     Category {
+        /// Conversation id.
         id: String,
+        /// Label id.
         category_id: String,
+        /// Remove the label instead of adding it.
         #[arg(long)]
         remove: bool,
+        /// Conversation revision you last read; defaults to the one just loaded.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this change; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
@@ -696,52 +905,77 @@ enum Mail {
 
 #[derive(Subcommand)]
 enum Labels {
+    /// List the account's labels with their instructions and Auto-read and Spam settings.
     List,
+    /// Create a local label in this account.
     Create {
+        /// Label name, 1–256 bytes, unique in the account.
         name: String,
+        /// Id for the new label.
         #[arg(long)]
         id: String,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
+    /// Set the instructions the local model follows for a label.
     Describe {
+        /// Label id.
         id: String,
+        /// New instructions, at most 512 bytes; empty clears them.
         description: String,
+        /// The current instructions, so a concurrent edit is refused.
         #[arg(long)]
         expected_description: String,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
+    /// Remove a local label and its memberships; Gmail labels and mail are unchanged.
     Remove {
+        /// Label id.
         id: String,
+        /// The label's current name.
         #[arg(long)]
         expected_name: String,
+        /// The Gmail label id it is linked to now; omit when it has none.
         #[arg(long)]
         expected_provider_label_id: Option<String>,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// When the local model applies this label, mark arriving mail read.
     AutoRead {
+        /// Label id.
         id: String,
+        /// New setting.
         #[arg(value_parser = ["on", "off"])]
         state: String,
+        /// Current setting, so a concurrent change is refused.
         #[arg(long, value_parser = ["on", "off"])]
         expected: String,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// When the local model applies this label, send the message to Spam.
     Spam {
+        /// Label id.
         id: String,
+        /// New setting.
         #[arg(value_parser = ["on", "off"])]
         state: String,
+        /// Current setting, so a concurrent change is refused.
         #[arg(long, value_parser = ["on", "off"])]
         expected: String,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
+    /// Match local and Gmail labels by name, creating missing ones; Ctrl-C cancels.
     Sync {
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -756,6 +990,7 @@ enum Assist {
     /// Queue older mail in this account after new mail, newest first. The range
     /// only widens; `stop` drops older mail from the queue again.
     CatchUp {
+        /// How far back to queue older mail, or `stop`.
         #[arg(long, value_parser = ["week", "month", "year", "all", "stop"])]
         range: String,
     },
@@ -765,8 +1000,10 @@ enum Assist {
     Resume,
     /// Discover models from the configured same-machine service.
     Discover {
+        /// Service URL to query instead of the saved one.
         #[arg(long)]
         endpoint: Option<String>,
+        /// Service type to query instead of the saved one.
         #[arg(long, value_parser = ["ollama", "openai_compatible"])]
         provider: Option<String>,
     },
@@ -774,39 +1011,57 @@ enum Assist {
     Settings,
     /// Save a settings JSON object with compare-and-swap revision checking.
     Configure {
+        /// Settings JSON file, or `-` for stdin; at most 48 KiB.
         #[arg(long)]
         settings_file: PathBuf,
+        /// Settings revision, from `assist settings`.
         #[arg(long)]
         expected_revision: u64,
     },
     /// Run built-in synthetic mail through the model without changing settings.
     Test {
+        /// Built-in sample to run, such as personal or receipt.
         #[arg(long, default_value = "personal")]
         sample_case: String,
+        /// Try these settings (JSON file, or `-` for stdin) instead of the saved ones.
         #[arg(long)]
         settings_file: Option<PathBuf>,
     },
     /// Summarize, label and tag one received message now, replacing saved results.
     Analyze {
+        /// Conversation id.
         conversation_id: String,
+        /// Received message to analyze.
         #[arg(long)]
         message_id: String,
     },
+    /// Show the local model's saved results for a conversation.
     Results {
+        /// Conversation id.
         conversation_id: String,
     },
+    /// Set a message's sender kind by hand, or clear it with `reset`.
     Correct {
+        /// Conversation id.
         conversation_id: String,
+        /// Message id.
         message_id: String,
+        /// Sender kind to record, or `reset`.
         #[arg(value_parser=["human","automated","unknown","reset"])]
         kind: String,
+        /// Message revision you last read.
         #[arg(long)]
         expected_revision: u64,
     },
+    /// Apply a label that the local model currently suggests for a message.
     Accept {
+        /// Conversation id.
         conversation_id: String,
+        /// Message id.
         message_id: String,
+        /// Suggested label id.
         category_id: String,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -819,7 +1074,9 @@ enum Assist {
 enum LinkCommand {
     /// Messages in every account that link to a host, outside one conversation.
     Summary {
+        /// Host to look up, such as example.com.
         host: String,
+        /// Conversation in the selected account to leave out of the count.
         #[arg(long)]
         conversation: Option<String>,
     },
@@ -827,9 +1084,12 @@ enum LinkCommand {
     Blocked,
     /// Block a host (tracker.io) or a domain and its subdomains (*.tracker.io).
     Block {
+        /// Host or `*.domain`; a URL is reduced to its host.
         pattern: String,
     },
+    /// Remove a pattern from the blocklist.
     Unblock {
+        /// Pattern to unblock, as listed by `links blocked`.
         pattern: String,
     },
 }
@@ -841,7 +1101,9 @@ enum ProxyCommand {
     /// Send every remote image request through host[:port] (443 by default).
     /// Nothing goes direct while the proxy is on, even when it is unavailable.
     Set {
+        /// Proxy host, with an optional :port.
         host: String,
+        /// User name for the proxy, if it needs one.
         #[arg(long, default_value = "")]
         username: String,
         /// Read the password from standard input into the system keychain.
@@ -854,6 +1116,7 @@ enum ProxyCommand {
     Test,
     /// The image cache's size on disk; --clear empties it.
     Cache {
+        /// Empty the image cache.
         #[arg(long)]
         clear: bool,
     },
@@ -861,13 +1124,17 @@ enum ProxyCommand {
 
 #[derive(Subcommand)]
 enum Preferences {
+    /// Show the saved preferences and their revision.
     Show,
     /// Apply a bounded preferences JSON patch from a file or stdin (-).
     Save {
+        /// JSON patch file, or `-` for stdin; at most 16 KiB.
         #[arg(long)]
         preferences_file: PathBuf,
+        /// Preferences revision, from `preferences show`.
         #[arg(long)]
         expected_revision: u64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -877,35 +1144,46 @@ enum Preferences {
 enum Draft {
     /// Change the owning From account while preserving this saved composition.
     Transfer {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Account to move the draft to.
         #[arg(long)]
         target_account: String,
+        /// Saved local draft revision.
         #[arg(long)]
         expected_revision: i64,
+        /// Google draft revision, from `google draft-status`.
         #[arg(long)]
         expected_google_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
+        /// Keep the original draft in its account instead of moving it.
         #[arg(long)]
         keep_original: bool,
     },
     /// Inspect a recorded account change without repeating provider work.
     TransferRetry {
+        /// Request ID of the interrupted account change.
         #[arg(long)]
         transfer_request_id: String,
+        /// Unique ID for this retry; reuse it only to repeat the same request.
         #[arg(long)]
         request_id: String,
     },
     /// Inspect a recorded account change without repeating provider work
     TransferStatus {
+        /// Request ID of the account change.
         #[arg(long)]
         request_id: String,
     },
     /// Inspect exact retained-source conversion and editing eligibility without Google access.
     Authoring {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Retained source revision, as listed by `draft sources`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         source_revision: i64,
     },
@@ -913,37 +1191,50 @@ enum Draft {
     /// Uses primary From, omits HTML/inline placement/reply linkage and adds no signature.
     /// The copy may sync automatically while account sync is running; the original is retained.
     Copy {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Retained source revision, as listed by `draft sources`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         source_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
+        /// From address for the copy; only the account's `primary` address is supported.
         #[arg(long, value_parser = ["primary"])]
         from_policy: String,
+        /// Body format for the copy; only `plain_text` is supported.
         #[arg(long, value_parser = ["plain_text"])]
         content_policy: String,
+        /// Where inline images go; only `attachments` is supported.
         #[arg(long, value_parser = ["attachments"])]
         inline_policy: String,
+        /// Reply threading for the copy; only `omit` is supported.
         #[arg(long, value_parser = ["omit"])]
         thread_policy: String,
     },
     /// Browse retained Google source versions without contacting Google.
     Sources {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Source versions per page.
         #[arg(long, default_value_t=30, value_parser=clap::value_parser!(u32).range(1..=100))]
         limit: u32,
+        /// Source versions to skip.
         #[arg(long, default_value_t=0, value_parser=clap::value_parser!(u64).range(0..=10_000_000))]
         offset: u64,
     },
     /// Export exact retained Google RAW or an attachment at the specified source revision.
     /// Requires an explicit profile and account, but no active Google sync session.
     Source {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
+        /// Retained source revision, as listed by `draft sources`.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         source_revision: i64,
+        /// Export this attachment instead of the RAW message.
         #[arg(long)]
         attachment_id: Option<String>,
         /// Copy the verified bytes to a new file; never overwrites an existing file.
@@ -952,34 +1243,46 @@ enum Draft {
     },
     /// Browse durable drafts in the selected account.
     List {
+        /// Text to search the drafts for.
         #[arg(long)]
         query: Option<String>,
+        /// Drafts per page.
         #[arg(long,default_value_t=30,value_parser=clap::value_parser!(u32).range(1..=100))]
         limit: u32,
+        /// Drafts to skip.
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
     /// Create local human composition; Google submission is a separate explicit action.
     Create {
+        /// Kind of draft to create.
         #[arg(long, default_value="new", value_parser=["new","reply","reply_all","forward"])]
         mode: String,
+        /// Conversation to reply to or forward.
         #[arg(long)]
         conversation_id: Option<String>,
+        /// Message to reply to or forward.
         #[arg(long)]
         source_message_id: Option<String>,
+        /// Unique ID for this draft; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
     /// Inspect bounded local capture history; never claims provider delivery.
     History {
+        /// Only captures from this conversation.
         #[arg(long)]
         conversation_id: Option<String>,
+        /// Only captures of this draft.
         #[arg(long, conflicts_with = "conversation_id")]
         draft_id: Option<String>,
+        /// Only captures still prepared, in flight or of unknown outcome.
         #[arg(long)]
         unresolved_only: bool,
+        /// Captures per page.
         #[arg(long, default_value_t = 30)]
         limit: u32,
+        /// Captures to skip.
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
@@ -987,8 +1290,10 @@ enum Draft {
     Discard {
         #[command(flatten)]
         target: DraftTarget,
+        /// Draft revision you last read.
         #[arg(long)]
         expected_revision: u64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
         /// Optional authored editor fields and unfinished recipients to preserve for Undo.
@@ -997,29 +1302,37 @@ enum Draft {
     },
     /// Inspect the original discard receipt and whether its exact revision can be restored.
     DiscardStatus {
+        /// Request ID used for the discard.
         #[arg(long)]
         request_id: String,
     },
     /// Restore the exact draft snapshot from a prior discard; never overwrites newer edits.
     UndoDiscard {
+        /// Id of the discarded draft.
         #[arg(long)]
         draft_id: String,
+        /// Request ID used for the discard.
         #[arg(long)]
         discard_request_id: String,
+        /// The revision the draft had when it was discarded.
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
     /// Retain a local file and select it on this saved draft. Never sends or uploads.
     Attach {
+        /// Draft id.
         #[arg(long)]
         draft_id: String,
         /// Local file path; matching replay works after the original file is removed.
         #[arg(long)]
         file: PathBuf,
+        /// Draft revision you last read.
         #[arg(long, value_parser=clap::value_parser!(u64).range(1..=i64::MAX as u64))]
         expected_revision: u64,
+        /// Unique ID for this change; reuse it only to retry the same change.
         #[arg(long)]
         request_id: String,
     },
@@ -1027,42 +1340,57 @@ enum Draft {
     Capture {
         #[command(flatten)]
         target: DraftTarget,
+        /// Saved draft revision to capture.
         #[arg(long)]
         expected_revision: u64,
+        /// Unique ID for this capture; reuse it only to retry the same capture.
         #[arg(long)]
         request_id: String,
+        /// Outcome to record; `unknown` simulates an unconfirmed acceptance.
         #[arg(long, default_value="accepted", value_parser=["accepted","unknown"])]
         outcome: String,
     },
+    /// Show a saved draft.
     Show {
         #[command(flatten)]
         target: DraftTarget,
     },
+    /// Save a draft's body and, optionally, its subject, recipients and attachments.
     Save {
         #[command(flatten)]
         target: DraftTarget,
+        /// New subject; omit to keep the saved one.
         #[arg(long)]
         subject: Option<String>,
         /// JSON object with optional to_recipients/cc_recipients/bcc_recipients arrays.
         #[arg(long)]
         recipients_file: Option<PathBuf>,
+        /// Plain-text body file, or `-` for stdin; at most 256 KiB.
         #[arg(long)]
         body_file: PathBuf,
+        /// HTML body file; when omitted, saved HTML is kept only if the text body is unchanged.
         #[arg(long)]
         html_file: Option<PathBuf>,
+        /// Signature text file for this draft; at most 16 KiB.
         #[arg(long)]
         signature_file: Option<PathBuf>,
+        /// Retained attachment id to select; repeatable, and replaces the saved selection.
         #[arg(long)]
         attachment: Vec<String>,
+        /// Remove every attachment from the draft.
         #[arg(long)]
         clear_attachments: bool,
+        /// Draft revision you last read; defaults to the current one.
         #[arg(long)]
         expected_revision: Option<u64>,
+        /// Unique ID for this save; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
     },
 }
 
+// Selects a draft by its id or, for a legacy reply, by conversation; exactly one
+// of the two is required.
 #[derive(clap::Args)]
 struct DraftTarget {
     /// Legacy conversation reply identity.
@@ -1077,6 +1405,7 @@ struct DraftTarget {
     draft_id: Option<String>,
 }
 impl DraftTarget {
+    /// The engine's draft selector: `draft_id` when given, otherwise `conversation_id`.
     fn params(&self) -> Value {
         match &self.draft_id {
             Some(id) => json!({"draft_id":id}),
@@ -1085,6 +1414,8 @@ impl DraftTarget {
     }
 }
 
+/// Why a command failed. `code` is the engine's or the CLI's stable error code
+/// and picks the exit status in `main`; `message` is for people.
 #[derive(Debug)]
 struct Failure {
     code: String,
@@ -1119,6 +1450,8 @@ impl RecoveryProofs {
     }
 }
 impl Failure {
+    /// The error envelope printed under `--json`: the engine's error shape with
+    /// id `cli`, and only the affirmative recovery proofs as `details`.
     fn json_reply(&self) -> Value {
         let mut reply = fm_ipc::error("cli", &self.code, &self.message);
         if let Some(details) = self.recovery.details() {
@@ -1127,6 +1460,8 @@ impl Failure {
         reply
     }
 }
+// A broken pipe gets its own code so `main` can exit quietly when whoever reads
+// stdout goes away (for example `fm mail list | head`).
 impl From<io::Error> for Failure {
     fn from(e: io::Error) -> Self {
         Self {
@@ -1143,6 +1478,7 @@ impl From<io::Error> for Failure {
         }
     }
 }
+/// An `invalid_request` failure, which exits with status 2.
 fn invalid(msg: &str) -> Failure {
     Failure {
         code: "invalid_request".into(),
@@ -1150,6 +1486,8 @@ fn invalid(msg: &str) -> Failure {
         recovery: RecoveryProofs::default(),
     }
 }
+/// Unwraps an engine reply envelope: its `result` when `ok` is true, otherwise
+/// a `Failure` with the engine's error code, message and recovery proofs.
 fn result(reply: Value) -> Result<Value, Failure> {
     if reply["ok"] == true {
         Ok(reply["result"].clone())
@@ -1167,6 +1505,8 @@ fn result(reply: Value) -> Result<Value, Failure> {
         })
     }
 }
+/// Reads a whole input file, or stdin when `path` is `-`. Input longer than
+/// `limit` bytes is refused as `invalid_request`.
 fn read_input(path: &Path, limit: u64) -> Result<Vec<u8>, Failure> {
     let reader: Box<dyn Read> = if path == Path::new("-") {
         Box::new(io::stdin())
@@ -1174,18 +1514,22 @@ fn read_input(path: &Path, limit: u64) -> Result<Vec<u8>, Failure> {
         Box::new(std::fs::File::open(path)?)
     };
     let mut data = Vec::new();
+    // Read one byte past the limit to detect oversized input without reading it all.
     reader.take(limit + 1).read_to_end(&mut data)?;
     if data.len() as u64 > limit {
         return Err(invalid("input file is too large"));
     }
     Ok(data)
 }
+/// The `--account` value, or an `invalid_request` failure when it is missing.
 fn account(args: &Args) -> Result<&str, Failure> {
     args.account.as_deref().ok_or_else(|| {
         invalid("this command requires --account; use 'fm accounts' to list accounts")
     })
 }
 
+/// Builds the `draft_attachment_import` params for `draft attach`, or `None`
+/// for any other command. The file path is made absolute but not opened.
 fn attachment_import_params(command: &Command) -> Result<Option<Value>, Failure> {
     let Command::Draft {
         command:
@@ -1212,6 +1556,12 @@ fn attachment_import_params(command: &Command) -> Result<Option<Value>, Failure>
     })))
 }
 
+/// Maps a Google draft or Send command to its engine method and params, or
+/// returns `None` for any other command.
+///
+/// Called before connecting: an empty draft id or request id, one containing
+/// control characters, or one longer than 256 (draft) or 128 (request) bytes is
+/// `invalid_request`. `--undo` is client-side and never reaches the params.
 fn google_composition_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let Command::Google { command } = command else {
         return Ok(None);
@@ -1323,6 +1673,12 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
     Ok(Some((method, params)))
 }
 
+/// Maps the retained Google draft commands (`draft authoring`, `copy`,
+/// `sources` and `source`) to their engine method and params, or returns `None`.
+///
+/// Identities are checked before connecting, with the same bounds as
+/// `google_composition_request` (attachment ids up to 256 bytes).
+/// `draft source --output` is handled after the reply by `copy_export`.
 fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let (method, params) = match command {
         Command::Draft {
@@ -1396,6 +1752,11 @@ fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value
     Ok(Some((method, params)))
 }
 
+/// Copies the retained file named by the reply's `path` to `output`.
+///
+/// An error reply, a missing `path` or an unreadable source fails before
+/// `output` is created. The output file is created exclusively, so an existing
+/// file is never overwritten, and it is synced to disk before this returns.
 fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
     let data = result(reply.clone())?;
     let source = data["path"].as_str().ok_or_else(|| Failure {
@@ -1413,6 +1774,9 @@ fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
+/// Maps an `account` subcommand to its engine method and params, or returns
+/// `None` for any other command. Any request id must be 1–128 bytes without
+/// control characters.
 fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let Command::Account { command } = command else {
         return Ok(None);
@@ -1450,12 +1814,19 @@ fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, 
     Ok(Some((method, params)))
 }
 
+/// How `open_google_browser` finishes once the URL has been checked.
 enum BrowserLaunch {
+    /// Open the URL with the platform's default-browser launcher.
     System,
+    /// Launch nothing. Only the default-off verification build uses this, and
+    /// only after the engine confirms its isolated sign-in fixture.
     #[cfg(feature = "verification-google")]
     VerifiedFixture,
 }
 
+/// Opens Google's sign-in page in the default browser. The launcher runs
+/// detached with no stdio; the sign-in itself stays tied to this CLI's engine
+/// session while `run` polls for the result.
 fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> {
     // The engine supplies one fixed HTTPS authorization endpoint. No shell
     // evaluates the query, and URLs/state are never copied to terminal logs.
@@ -1478,6 +1849,8 @@ fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> 
             .ok_or_else(|| invalid("Windows browser launcher is unavailable"))?;
         let mut command =
             std::process::Command::new(PathBuf::from(windows).join("System32/rundll32.exe"));
+        // Launch through the absolute system rundll32 path, not a PATH lookup.
+        // 0x08000000 is CREATE_NO_WINDOW, so no console window flashes up.
         command
             .arg("url.dll,FileProtocolHandler")
             .arg(url)
@@ -1509,18 +1882,47 @@ fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> 
     Ok(())
 }
 
-#[tokio::main]
-async fn main() {
+/// Stack for the thread that parses arguments and runs the command. clap builds
+/// the whole command tree on this thread, and in unoptimized builds that needs
+/// nearly all of the 1 MiB main-thread stack Windows gives a process.
+const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+fn main() {
+    let cli = std::thread::Builder::new()
+        .name("fm".into())
+        .stack_size(CLI_STACK_BYTES)
+        .spawn(cli_main)
+        .expect("start the CLI thread");
+    // A panic has already printed its message; exit like an unwinding main would.
+    if cli.join().is_err() {
+        std::process::exit(101);
+    }
+}
+
+fn cli_main() {
     let args = Args::parse();
-    if let Err(e) = run(&args).await {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("start the async runtime");
+    let result = runtime.block_on(run(&args));
+    // Shut the runtime down before any exit below, as `#[tokio::main]` did on return.
+    drop(runtime);
+    if let Err(e) = result {
+        // Nobody is reading stdout any more; end quietly with status 0.
         if e.code == "broken_pipe" {
             return;
         }
+        // With --json the error goes to stdout like any reply, so scripts read
+        // one stream; otherwise it is a one-line message on stderr.
         if args.json {
             let _ = writeln!(io::stdout(), "{}", e.json_reply());
         } else {
             eprintln!("fm: {}: {}", e.code, e.message);
         }
+        // Stable exit codes for scripts: 2 invalid input, 3 authentication or
+        // permission, 4 stale revision or cursor, 5 missing or unavailable
+        // content, 1 anything else.
         std::process::exit(match e.code.as_str() {
             "invalid_request" | "invalid_params" | "request_id_conflict" => 2,
             "permission_denied" | "unauthorized" | "authentication_required" => 3,
@@ -1531,6 +1933,8 @@ async fn main() {
     }
 }
 
+/// Builds the `calendar_search` params for `calendar search`, or returns `None`.
+/// The query must have 1–32 words in at most 512 bytes.
 fn calendar_search_request(command: &Command) -> Result<Option<Value>, Failure> {
     let Command::Calendar {
         command:
@@ -1538,6 +1942,7 @@ fn calendar_search_request(command: &Command) -> Result<Option<Value>, Failure> 
                 query,
                 from,
                 to,
+                around,
                 limit,
             }),
         ..
@@ -1551,11 +1956,15 @@ fn calendar_search_request(command: &Command) -> Result<Option<Value>, Failure> 
             "Calendar search needs 1–32 words in at most 512 UTF-8 bytes",
         ));
     }
-    Ok(Some(
-        json!({"query":query,"from":from,"to":to,"limit":limit}),
-    ))
+    Ok(Some(match around {
+        Some(around) => json!({"query":query,"around":around,"limit":limit}),
+        None => json!({"query":query,"from":from,"to":to,"limit":limit}),
+    }))
 }
 
+/// Maps `notifications`, `calendar reminders` and `calendar reminder-ack` to
+/// their engine method and params, or returns `None`. Identities and
+/// timestamps must be nonempty, bounded and free of control characters.
 fn notification_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let (method, mut params, now) = match command {
         Command::Notifications { after, since, now } => {
@@ -1611,7 +2020,16 @@ fn notification_request(command: &Command) -> Result<Option<(&'static str, Value
     Ok(Some((method, params)))
 }
 
+/// Runs one parsed command against the engine and prints its reply.
+///
+/// Connecting creates the profile directory if needed and may start an engine,
+/// so account scope, profile rules, request identities and the Google Calendar
+/// and draft-discard input files are checked first: a mistake there fails
+/// without creating a profile, with status 2 for invalid values. Other input
+/// files are read after connecting.
 async fn run(args: &Args) -> Result<(), Failure> {
+    // The browserless verification sign-in only runs against explicitly named
+    // profile and engine paths.
     #[cfg(feature = "verification-google")]
     if args.verification_google_auth
         && (args.profile.is_none()
@@ -1630,11 +2048,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
         None if args.demo_profile => fm_ipc::demo_profile()?,
         None => fm_ipc::default_profile()?,
     };
+    // --engine wins over FM_ENGINE_PATH. With neither, fm-ipc starts the
+    // fm-engine next to this executable. Either way it is only used when no
+    // engine is already running for the profile.
     let engine = args
         .engine
         .clone()
         .or_else(|| std::env::var_os("FM_ENGINE_PATH").map(PathBuf::from));
     // Validate scope and local input before starting any engine work.
+    // The commands listed here skip this up-front --account check (a few check
+    // it later); every other command needs it now.
     if !matches!(
         args.command,
         Command::Accounts { .. }
@@ -1670,6 +2093,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
     ) {
         account(args)?;
     }
+    // profile-init, Google, account and retained Google draft commands must
+    // name their profile explicitly and cannot use the demo profile.
     let live_command = matches!(
         args.command,
         Command::ProfileInit
@@ -1692,6 +2117,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             "Google and account commands cannot use --demo-profile",
         ));
     }
+    // Resolve a developer client file now: a bad path fails before connecting,
+    // and the engine only ever receives an absolute path.
     let google_client_path = if let Command::Google {
         command:
             Google::Connect {
@@ -1711,6 +2138,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
     } else {
         None
     };
+    // Read and parse the Google Calendar and draft-discard JSON files up front,
+    // each with its own size limit.
     let google_calendar_input = match &args.command {
         Command::Google {
             command: Google::CalendarWrite { params_file },
@@ -1747,11 +2176,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
     } else {
         None
     };
+    // Build and validate the remaining requests now; dispatch below only
+    // unwraps them.
     let google_composition = google_composition_request(&args.command)?;
     let draft_source = draft_source_request(&args.command)?;
     let account_lifecycle = account_lifecycle_request(&args.command)?;
     let notification = notification_request(&args.command)?;
     let calendar_search = calendar_search_request(&args.command)?;
+    // `google send --undo` waits here, before connecting, so Ctrl+C in the
+    // six-second window cancels without any engine or Google work.
     if matches!(
         &args.command,
         Command::Google {
@@ -1774,6 +2207,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             // Launchers can pass down the per-process attribute that ignores
             // Ctrl+C. Register the listener first, then enable delivery only
             // for this CLI process, before advertising the Undo interval.
+            // SAFETY: with a null handler and FALSE, SetConsoleCtrlHandler only
+            // clears this process's ignore-Ctrl+C flag; no pointer is passed.
             if unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0) } == 0 {
                 return Err(unavailable());
             }
@@ -1792,6 +2227,12 @@ async fn run(args: &Args) -> Result<(), Failure> {
             });
         }
     }
+    // Connect, starting an engine for the profile if none is running. The
+    // engine is shared with the GUI and exits shortly after its last client
+    // disconnects, so session-bound work (sync, sign-in, `assist run`) lasts
+    // only while this process stays connected. The demo and live variants
+    // refuse a profile of the other kind; an explicit --profile for other
+    // commands may be either.
     let mut client = if args.demo_profile {
         Client::connect_demo(&profile, engine.as_deref()).await?
     } else if live_command || args.profile.is_none() {
@@ -1802,6 +2243,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
     let scope = args.account.as_deref();
     #[cfg(not(feature = "verification-google"))]
     let browser_launch = BrowserLaunch::System;
+    // The verification build skips the browser only after the engine confirms
+    // that it is running the isolated account fixture.
     #[cfg(feature = "verification-google")]
     let browser_launch = if args.verification_google_auth {
         let fixture = result(
@@ -1819,6 +2262,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         BrowserLaunch::System
     };
     let reply = match &args.command {
+        // Accounts and account lifecycle.
         Command::Accounts { include_removed } => {
             let params = if *include_removed {
                 json!({"include_removed":true})
@@ -1832,7 +2276,11 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 account_lifecycle.ok_or_else(|| invalid("Missing account lifecycle request"))?;
             client.call(method, scope, params).await?
         }
+        // Status. For profile-init, the live connection above has already
+        // created or opened the live profile; status reports it.
         Command::Status | Command::ProfileInit => client.call("status", None, json!({})).await?,
+        // Calendar search, notifications and reminders. These read every
+        // account; only a reminder acknowledgement is account-scoped.
         Command::Calendar {
             command: Some(CalendarCommand::Search { .. }),
             ..
@@ -1858,6 +2306,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             };
             client.call(method, account, params).await?
         }
+        // Google: setup, connection and sync-session queries.
         Command::Google {
             command: Google::SetupStatus,
         } => {
@@ -1874,6 +2323,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command: Google::SyncStop,
         } => client.call("google_sync_stop", scope, json!({})).await?,
+        // Google drafts and Send; their requests were built before connecting.
         Command::Google {
             command: Google::DraftsRefresh,
         } => {
@@ -1911,6 +2361,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .expect("Google composition request validated before connection");
             client.call(method, scope, params.clone()).await?
         }
+        // Google labels, live Spam and remote search, Trash and label binding.
         Command::Google {
             command:
                 Google::Labels {
@@ -2026,6 +2477,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 },
         } => {
             let mut params = json!({"category_id":category_id,"provider_label_id":provider_label_id,"expected_catalog_revision":expected_catalog_revision,"request_id":request_id});
+            // clap requires exactly one of the three; --unmapped is sent as an
+            // explicit null previous link.
             if let Some(name) = create_name {
                 params["create_name"] = json!(name);
             } else if *unmapped {
@@ -2035,6 +2488,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
             client.call("google_category_bind", scope, params).await?
         }
+        // Google Calendar operations.
         Command::Google {
             command: Google::CalendarResume { request_id },
         } => {
@@ -2105,6 +2559,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 )
                 .await?
         }
+        // Google sync: this process owns a share of the account's sync until
+        // Ctrl-C, --seconds, or no account is active any more.
         Command::Google {
             command:
                 Google::Sync {
@@ -2129,6 +2585,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             } else {
                 json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})
             };
+            // No overrides means the engine's built-in limits. --refresh wakes a
+            // session that already runs with shared limits, so it takes none.
             if *refresh && limits != json!({}) {
                 return Err(invalid(
                     "--refresh uses the existing shared limits; omit quota overrides",
@@ -2150,6 +2608,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             if !args.json {
                 eprintln!("Google sync is running in this CLI session. Press Ctrl-C to stop.");
             }
+            // Poll status about once a second and print it only when it changes.
             let started = tokio::time::Instant::now();
             let mut previous = Value::Null;
             loop {
@@ -2180,8 +2639,12 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     break;
                 }
             }
+            // Release only this session's share; the engine stops the account's
+            // workers when no other owner remains.
             client.call("google_sync_release", scope, json!({})).await?
         }
+        // Google sign-in (connect or restore). The attempt belongs to this
+        // engine session: open the browser, then poll until it finishes.
         Command::Google {
             command:
                 Google::Connect {
@@ -2228,6 +2691,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             let url = begin["authorization_url"]
                 .as_str()
                 .ok_or_else(|| invalid("Engine omitted Google sign-in"))?;
+            // If the browser cannot be opened, cancel the attempt rather than
+            // leave it waiting for a sign-in that cannot happen.
             if let Err(error) = open_google_browser(url, browser_launch) {
                 let _ = client
                     .call("google_auth_cancel", None, json!({"attempt_id":attempt}))
@@ -2270,6 +2735,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     }
                     _ => {}
                 }
+                // Poll every 500 ms. Give up after 330 s, a little past the
+                // engine's 300 s attempt lifetime, or at Ctrl-C.
                 let interrupted = tokio::select! { _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_millis(500))=>false };
                 if interrupted || start.elapsed() >= Duration::from_secs(330) {
                     let _ = client
@@ -2283,7 +2750,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
             }
         }
+        // Local model.
         Command::Assist { command } => 'assist: {
+            // Pause and resume edit this account's entry in the shared model
+            // settings, saved against the revision just read.
             if matches!(command, Assist::Pause | Assist::Resume) {
                 let account = account(args)?;
                 let state = self::result(client.call("assist_settings_get", None, json!({})).await?)?;
@@ -2381,11 +2851,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 Assist::Run => ("assist_watch", json!({})),
             };
             let mut result = client.call(method, scope, params).await?;
+            // The queue keeps working only while this session is connected, so
+            // `assist run` holds it open until Ctrl-C.
             if matches!(command, Assist::Run) {
                 self::result(result.clone())?;
                 tokio::signal::ctrl_c().await?;
                 json!({"version":1,"ok":true,"result":{"status":"stopped"}})
             } else if method == "assist_start" {
+                // `test` and `analyze` start a job: poll it every 250 ms until it
+                // leaves queued/running, and cancel it on Ctrl-C.
                 self::result(result.clone())?;
                 let job = result["result"]["job_id"].clone();
                 loop {
@@ -2412,6 +2886,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 result
             }
         }
+        // Preferences and account settings.
         Command::Preferences { command } => match command {
             Preferences::Show => client.call("preferences_get", None, json!({})).await?,
             Preferences::Save {
@@ -2441,11 +2916,14 @@ async fn run(args: &Args) -> Result<(), Failure> {
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
             if let Some(analyze)=analyze_history {params["analyze_history"]=json!(analyze);}
             if let Some(color)=color {params["color"]=json!(color);}
+            // clap requires both access flags together. `none` turns that service
+            // off; the engine still wants an access level for it, so read is sent.
             if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {
                 params["sync"]=json!({"mail":mail!="none","calendar":calendar!="none","mail_access":if mail=="none" {"read"} else {&mail},"calendar_access":if calendar=="none" {"read"} else {&calendar}});
             }
             client.call("account_update",scope,params).await?
         }
+        // Calendar sources, local calendar writes and the operation journal.
         Command::CalendarSources => client.call("calendar_sources", None, json!({})).await?,
         Command::CalendarWrite { params_file } => {
             let params: Value = serde_json::from_slice(&read_input(params_file, 64 * 1024)?)
@@ -2454,6 +2932,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         }
         Command::CalendarOperations { limit, cursor } => {
             let mut params = json!({"limit":limit});
+            // The cursor is the previous page's `continuation` object, passed as JSON text.
             if let Some(cursor) = cursor {
                 if cursor.len() > 1024 {
                     return Err(invalid("Calendar cursor exceeds 1024 bytes"));
@@ -2476,6 +2955,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 )
                 .await?
         }
+        // Labels.
         Command::Categories => client.call("categories", scope, json!({})).await?,
         Command::Labels { command } => {
             let (method, params) = match command {
@@ -2529,6 +3009,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
             };
             let mut reply = client.call(method, scope, params).await?;
+            // Label sync runs as an engine job: poll it every 250 ms while it
+            // runs, and cancel it on Ctrl-C.
             if method == "google_labels_sync" {
                 let job = result(reply.clone())?["job_id"].clone();
                 while result(reply.clone())?["state"] == "running" {
@@ -2551,6 +3033,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
             reply
         }
+        // Mail.
         Command::Mail { command } => match command {
             Mail::List {
                 query,
@@ -2601,6 +3084,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 if let Some(value) = has_attachment {
                     params["has_attachment"] = json!(value);
                 }
+                // The engine refuses a cursor together with an offset.
                 if let Some(cursor) = cursor {
                     params.as_object_mut().unwrap().remove("offset");
                     params["cursor"] = json!(cursor);
@@ -2697,6 +3181,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 expected_revision,
                 request_id,
             } => {
+                // Act on exactly the messages this read returns, so a reply that
+                // arrives in the meantime is left alone. The read itself does not
+                // mark anything reviewed; omitted revision and request ID default
+                // to the snapshot's revision and a random token.
                 let snapshot = result(client.call("conversation", scope, json!({"id":id})).await?)?;
                 let mut params = json!({"id":id,"message_ids":snapshot["message_ids"],"expected_revision":expected_revision.map(Value::from).unwrap_or(snapshot["revision"].clone()),"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)});
                 match command {
@@ -2747,6 +3235,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 expected_revision,
                 request_id,
             } => {
+                // Same snapshot rule as review/done above.
                 let snapshot = result(client.call("conversation", scope, json!({"id":id})).await?)?;
                 client.call("mail_filing",scope,json!({"id":id,"action":action,"message_ids":snapshot["message_ids"],"expected_revision":expected_revision.map(Value::from).unwrap_or(snapshot["revision"].clone()),"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)})).await?
             }
@@ -2761,6 +3250,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client.call("set_category",scope,json!({"id":id,"message_ids":snapshot["message_ids"],"category_id":category_id,"present":!remove,"expected_revision":expected_revision.map(Value::from).unwrap_or(snapshot["revision"].clone()),"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)})).await?
             }
         },
+        // Drafts.
         Command::Draft { command } => match command {
             Draft::Transfer { draft_id,target_account,expected_revision,expected_google_revision,request_id,keep_original } => client.call("draft_transfer",scope,json!({"draft_id":draft_id,"target_account":target_account,"expected_revision":expected_revision,"expected_google_revision":expected_google_revision,"request_id":request_id,"keep_original":keep_original})).await?,
             Draft::TransferRetry { transfer_request_id, request_id } => client.call("draft_transfer_retry",scope,json!({"transfer_request_id":transfer_request_id,"request_id":request_id})).await?,
@@ -2773,6 +3263,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     .as_ref()
                     .expect("Draft source request validated before connection");
                 let reply = client.call(method, scope, params.clone()).await?;
+                // With --output, copy the engine's verified export to a new file.
                 if let Draft::Source {
                     output: Some(output),
                     ..
@@ -2875,6 +3366,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
             } => {
                 let body = String::from_utf8(read_input(body_file, 256 * 1024)?)
                     .map_err(|_| invalid("draft must be UTF-8 text"))?;
+                // The current draft supplies the default --expected-revision. The
+                // first save of a legacy conversation reply also binds the source
+                // message that `draft_get` reported.
                 let current = result(client.call("draft_get", scope, target.params()).await?)?;
                 let mut params = target.params();
                 params["body"] = json!(body);
@@ -2892,6 +3386,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 if let Some(subject) = subject {
                     params["subject"] = json!(subject);
                 }
+                // Only the three recipient arrays are accepted; an array left out
+                // keeps the saved recipients.
                 if let Some(path) = recipients_file {
                     let addresses: Value = serde_json::from_slice(&read_input(path, 64 * 1024)?)
                         .map_err(|_| invalid("Recipients file must be valid JSON"))?;
@@ -2916,6 +3412,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     params["body_html"] = json!(String::from_utf8(read_input(path, 256 * 1024)?)
                         .map_err(|_| invalid("HTML must be UTF-8"))?);
                 }
+                // Ids replace the selection and --clear-attachments sends an empty
+                // list; with neither, the saved selection is kept.
                 if *clear_attachments && !attachment.is_empty() {
                     return Err(invalid("Choose attachments or --clear-attachments"));
                 }
@@ -2925,6 +3423,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client.call("draft_save", scope, params).await?
             }
         },
+        // Calendar range read: one account, or every account with --combined.
         Command::Calendar {
             from,
             to,
@@ -2950,6 +3449,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 )
                 .await?
         }
+        // Attachments, links, the image proxy and raw protocol calls.
         Command::Attachment { id, output } => {
             let reply = client.call("attachment", scope, json!({"id":id})).await?;
             if let Some(output) = output {
@@ -2970,6 +3470,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             };
             client.call(method, scope, params).await?
         }
+        // Watch: an explicit session that can outlive the GUI. Poll every
+        // 500 ms and print status only when the store revision changes.
         Command::Watch { seconds } => {
             let start = tokio::time::Instant::now();
             let mut revision = Value::Null;
@@ -2988,14 +3490,19 @@ async fn run(args: &Args) -> Result<(), Failure> {
             return Ok(());
         }
     };
+    // An engine error reply becomes a failure here, before anything is printed.
     result(reply.clone())?;
     emit(args, &reply)
 }
 
+/// Wraps a result the CLI assembled itself in a success envelope, so `emit`
+/// prints it like an engine reply.
 fn ok(value: Value) -> Value {
     json!({"ok":true,"result":value})
 }
 
+/// A request ID for a change the CLI makes on its own (blocklist and proxy
+/// saves), made from the kind, process id and current time in nanoseconds.
 fn cli_request_id(kind: &str) -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -3045,6 +3552,9 @@ fn block_pattern(input: &str) -> String {
     }
 }
 
+/// Runs a `links` subcommand. The blocklist is the `blocked_hosts` preference:
+/// block and unblock rewrite the whole list against the revision just read,
+/// and fail with `invalid_request` when there is nothing to change.
 async fn links(
     client: &mut Client,
     scope: Option<&str>,
@@ -3113,6 +3623,9 @@ async fn links(
     }
 }
 
+/// Runs a `proxy` subcommand. Host, port and user name live in the
+/// `remote_proxy` preference; the password is handed to the engine for the
+/// system keychain and never printed.
 async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Failure> {
     match command {
         ProxyCommand::Show => {
@@ -3131,6 +3644,7 @@ async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Fai
             username,
             password_stdin,
         } => {
+            // A trailing all-digit `:port` sets the port; otherwise use 443.
             let (name, port) = match host.rsplit_once(':') {
                 Some((name, port))
                     if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) =>
@@ -3143,6 +3657,8 @@ async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Fai
                 }
                 _ => (host.clone(), 443),
             };
+            // At most 4 KiB, read before anything is saved, without the trailing
+            // line ending.
             let password = if *password_stdin {
                 let mut value = String::new();
                 io::stdin().take(4096).read_to_string(&mut value)?;
@@ -3158,6 +3674,7 @@ async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Fai
             )
             .await?;
             result(reply.clone())?;
+            // An empty password leaves any saved one in place.
             if let Some(password) = password.filter(|p| !p.is_empty()) {
                 result(
                     client
@@ -3187,6 +3704,7 @@ async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Fai
             )?;
             Ok(reply)
         }
+        // A test request can take longer than the ordinary 15 s reply limit.
         ProxyCommand::Test => Ok(client
             .call_within(
                 "remote_proxy_test",
@@ -3243,12 +3761,21 @@ async fn message_images(
     ))
 }
 
+/// Prints a successful reply to stdout.
+///
+/// With `--json` this is the whole reply envelope on one line, which is the
+/// stable output for scripts. Otherwise accounts, conversation lists and
+/// conversations get a short text form and everything else is pretty-printed
+/// JSON of the `result`. A closed stdout is either ignored or returned as
+/// `broken_pipe`, which `main` treats as a quiet exit.
 fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
     let mut out = io::stdout().lock();
     let result = &reply["result"];
     let write = if args.json {
         writeln!(out, "{reply}")
     } else if result["configured"].is_boolean() && result["accounts"].is_array() {
+        // Sync status also has an `accounts` array; print it whole rather than
+        // as an account list.
         writeln!(
             out,
             "{}",
@@ -3424,9 +3951,17 @@ mod tests {
         );
         assert!(notification_request(&args.command).unwrap().is_none());
         assert!(args.account.is_none());
+        let around =
+            Args::try_parse_from(["fm", "calendar", "search", "with:maya", "--around", "2026-09-12"])
+                .unwrap();
+        assert_eq!(
+            calendar_search_request(&around.command).unwrap(),
+            Some(json!({"query":"with:maya","around":"2026-09-12","limit":100}))
+        );
         for tail in [
             vec!["calendar", "search", "term"],
             vec!["calendar", "search", "term", "--from", "2026-09-12"],
+            vec!["calendar", "search", "term", "--around", "2026-09-12", "--from", "2026-09-12"],
             vec![
                 "calendar",
                 "--combined",

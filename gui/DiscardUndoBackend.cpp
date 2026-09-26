@@ -1,3 +1,5 @@
+// MailBackend's draft discard: discarding one draft or several, the Undo toast
+// that restores them, and check/retry when a discard or Undo result was lost.
 #include "MailBackend.h"
 #include <QJsonArray>
 
@@ -34,6 +36,8 @@ void MailBackend::discardDraft(const QVariantMap &context) {
     if (!context.isEmpty() && context != draftDiscardContext()) { fail("The draft changed. Review it before discarding."); return; }
     if (!m_connected || m_shutdown || draftLocked() || m_draft.isEmpty() || draftBusy() || attachmentImportPending()) return;
     cancelPendingGoogleSend("Send cancelled before discarding the draft.");
+    // A never-saved draft is saved first, so the discard has a revision to
+    // fence against and an Undo snapshot to keep.
     if (m_draft.value("revision").toLongLong() == 0 && m_draftDirty) {
         const auto account = m_account, selected = draftContext();
         m_afterDraftSave = [this, account, selected] { if (account == m_account && selected == draftContext()) discardDraft(); };
@@ -41,6 +45,8 @@ void MailBackend::discardDraft(const QVariantMap &context) {
     }
     m_draftTimer.stop();
     auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft.value("revision").toLongLong();
+    // The engine stores the on-screen fields, unsaved ones included, in the
+    // Undo snapshot, so Undo brings back exactly what was being edited.
     if (m_draft.value("revision").toLongLong() > 0) params["buffer"] = discardEditorBuffer();
     const auto account = m_account; const auto issued = m_actionClock.elapsed();
     startDraftDiscardRequest("draft_discard", account, params, issued, true, [this, account, issued](auto result, bool ok) {
@@ -56,6 +62,8 @@ void MailBackend::discardDraft(const QVariantMap &context) {
 void MailBackend::startDraftDiscardRequest(const QString &method, const QString &account, const QJsonObject &params, qint64 issuedAt, bool reopen, Callback done) {
     const auto id = params["draft_id"].toString(params["conversation_id"].toString()), key = account + '\n' + id;
     const auto old = m_draftDiscardUi.value(key);
+    // One unresolved action per draft. A retry must repeat the recorded
+    // request exactly; at most 64 drafts may have unresolved actions.
     if (!m_connected || (m_shutdown && !m_undoingDiscards && m_bulkDiscardTargets.isEmpty()) || id.isEmpty() || accountRemoved(account) || old.active
         || (!old.params.isEmpty() && (old.method != method || old.params != params))
         || (old.params.isEmpty() && m_draftDiscardUi.size() >= 64)) {
@@ -81,6 +89,8 @@ void MailBackend::startDraftDiscardRequest(const QString &method, const QString 
                 emit presentationChanged();
             }
         } else {
+            // A definite refusal ends the action. Anything else leaves it
+            // unresolved, to be checked or retried with the same request.
             const bool refused = !ok && QStringList{"invalid_request", "invalid_draft", "stale_revision", "draft_read_only", "account_removed", "not_found", "scope_mismatch", "permission_denied"}.contains(result["code"].toString());
             if (refused) m_draftDiscardUi.remove(key);
             else { auto &pending = m_draftDiscardUi[key]; pending.active = false;
@@ -153,6 +163,8 @@ void MailBackend::undoDraftDiscards(const QVariantList &tokens) {
     }
     m_undoingDiscards = true; emit draftChanged(); runDiscardUndo();
 }
+// Restores queued drafts one request at a time and stops at the first failure,
+// so the toast can say exactly how many were confirmed restored.
 void MailBackend::runDiscardUndo() {
     if (m_undoDiscardCommands.isEmpty()) {
         m_undoingDiscards = false; emit draftChanged();

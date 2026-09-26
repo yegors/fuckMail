@@ -1,14 +1,24 @@
+//! Permanent deletion of a Gmail draft. Each request is journaled before it is
+//! sent and sent at most once; one without a definite answer is kept as unknown.
 use super::*;
 
+/// The Google connection a deletion runs under. Writes need the connection to
+/// be current with a mail-write grant; read-only reconciliation needs only
+/// mail read.
 #[derive(Clone)]
 pub struct GoogleDraftDeleteScope {
     pub account: String,
     pub connection_generation: i64,
 }
+/// Result of [`Store::google_draft_delete_begin`].
 pub enum GoogleDraftDeleteStep {
+    /// The request is already past `prepared`; carries its status JSON.
     Reply(Value),
+    /// Fetch the Gmail draft fresh and verify it with
+    /// [`prepare_google_draft_delete`].
     Prepare(GoogleDraftDeletePlan),
 }
+/// Frozen source revision and local owners for one deletion request.
 pub struct GoogleDraftDeletePlan {
     context: Box<ActionContext>,
     scope: GoogleDraftDeleteScope,
@@ -16,15 +26,20 @@ pub struct GoogleDraftDeletePlan {
     operation: Option<Box<DeleteOperation>>,
 }
 impl GoogleDraftDeletePlan {
+    /// Gmail draft to fetch fresh and then delete.
     pub fn provider_draft_id(&self) -> &str {
         &self.context.source.provider_draft_id
     }
 }
+/// A deletion plan whose retained source was re-read and compared with a fresh
+/// fetch, ready for [`Store::google_draft_delete_finish`].
 pub struct PreparedGoogleDraftDelete {
     plan: GoogleDraftDeletePlan,
     cancel: CancellationToken,
     changed_source: Option<PreparedGoogleDraftImport>,
 }
+/// Claim on the single `drafts.delete` attempt of one deletion, returned by
+/// [`Store::google_draft_delete_claim`]. Exactly one outcome must be reported.
 #[derive(Clone)]
 pub struct GoogleDraftDeleteLease {
     profile: PathBuf,
@@ -34,26 +49,44 @@ impl GoogleDraftDeleteLease {
     pub fn account(&self) -> &str {
         &self.operation.account
     }
+    /// Local draft the deletion was requested from.
     pub fn draft_id(&self) -> &str {
         &self.operation.draft_id
     }
     pub fn request_id(&self) -> &str {
         &self.operation.request_id
     }
+    /// Gmail draft to delete.
     pub fn provider_draft_id(&self) -> &str {
         &self.operation.source.provider_draft_id
     }
+    /// Operation revision this claim holds; only its immediate successor can
+    /// record the outcome.
     pub fn revision(&self) -> i64 {
         self.operation.revision
     }
 }
+/// Transport result of one claimed deletion, reported to
+/// [`Store::google_draft_delete_outcome`]. Codes are 1-96 lowercase ASCII
+/// letters, digits or underscores.
 pub enum GoogleDraftDeleteOutcome {
+    /// Gmail confirmed the deletion.
     Deleted,
+    /// Gmail reported the draft already gone. Recorded as `rejected` with
+    /// `remote_absent`: something else removed it, so this deletion is not
+    /// proven.
     Absent,
+    /// Gmail refused the deletion.
     Rejected { code: String },
+    /// The request provably never reached Gmail; the deletion returns to
+    /// `prepared`.
     Undispatched { code: String },
+    /// The request may have reached Gmail; the deletion becomes
+    /// `acceptance_unknown` and is never retried automatically.
     Unknown { code: String },
 }
+/// Plan for a read-only Gmail check of a deletion's target, built by
+/// [`Store::google_draft_delete_reconcile_begin`].
 pub struct GoogleDraftDeleteObservationPlan {
     profile: PathBuf,
     blobs: BlobStore,
@@ -61,22 +94,35 @@ pub struct GoogleDraftDeleteObservationPlan {
     operation: DeleteOperation,
 }
 impl GoogleDraftDeleteObservationPlan {
+    /// Gmail draft to look up.
     pub fn provider_draft_id(&self) -> &str {
         &self.operation.source.provider_draft_id
     }
 }
+/// Staged read-only observation of a deletion's target, ready for
+/// [`Store::google_draft_delete_reconcile_finish`].
 pub struct PreparedGoogleDraftDeleteObservation {
     plan: GoogleDraftDeleteObservationPlan,
     observation: Option<ObservedTarget>,
     retained: PreparedGoogleDraftImport,
     cancel: CancellationToken,
 }
+/// Twin record that a deletion owns a draft's Gmail target. `blocks_target`
+/// is set while the deletion is pending or once it succeeded; it stops draft
+/// sync and sends from touching that target.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct DeletionGuard {
     pub request_id: String,
     pub state: String,
     pub blocks_target: bool,
 }
+/// One journaled Gmail draft deletion in `capture_operations`, with the target
+/// RAW's hash as `blob_hash`.
+///
+/// It moves `prepared` -> `in_flight` -> `deleted`, `rejected`,
+/// `acceptance_unknown`, or back to `prepared`; a `prepared` one can instead
+/// be `abandoned`. `affected_draft_ids` are the local drafts whose twins carry
+/// its guard.
 #[derive(Clone, Serialize, Deserialize)]
 struct DeleteOperation {
     kind: String,
@@ -111,6 +157,12 @@ fn code(value: String) -> Result<String> {
     }
 }
 
+/// Verifies off the writer that the retained source is intact and that a fresh
+/// fetch of the Gmail draft still matches it.
+///
+/// A mismatch is not an error here: the newer version is prepared for
+/// retention, and [`Store::google_draft_delete_finish`] then refuses the
+/// deletion, so a draft that changed since it was inspected is never deleted.
 pub fn prepare_google_draft_delete(
     plan: GoogleDraftDeletePlan,
     remote: GoogleDraftActionRemote,
@@ -139,6 +191,8 @@ pub fn prepare_google_draft_delete(
         changed_source,
     })
 }
+/// Stages a read-only observation of a deletion's target off the writer.
+/// `remote: None` means Gmail reported the draft missing.
 pub fn prepare_google_draft_delete_observation(
     plan: GoogleDraftDeleteObservationPlan,
     remote: Option<GoogleDraftActionRemote>,
@@ -206,6 +260,8 @@ impl Store {
     fn delete_scope(&self, scope: &GoogleDraftDeleteScope) -> Result<()> {
         self.draft_connection(&scope.account, scope.connection_generation)
     }
+    /// Loads and validates a deletion row; the stored hash must match the
+    /// operation's source.
     fn delete_operation(&self, account: &str, request: &str) -> Result<Option<DeleteOperation>> {
         identifier(account)?;
         identifier(request)?;
@@ -227,6 +283,15 @@ impl Store {
         })
         .transpose()
     }
+    /// Plans permanently deleting the Gmail draft behind the current source
+    /// revision of a local draft.
+    ///
+    /// `p` holds `draft_id`, `source_revision` and `request_id`. A known
+    /// request ID replays; different parameters are `request_id_conflict`.
+    /// Fails with `stale_source_revision` unless the revision is current and
+    /// unchanged, `google_send_consumed` or `google_draft_deleted` when the
+    /// target is already gone, and `google_draft_pending` or
+    /// `google_draft_delete_pending` while other work owns it.
     pub fn google_draft_delete_begin(
         &self,
         scope: &GoogleDraftDeleteScope,
@@ -281,6 +346,12 @@ impl Store {
             operation: operation.map(Box::new),
         }))
     }
+    /// Journals a verified deletion as `prepared` and puts its guard on every
+    /// tied local draft, in one transaction. Nothing is sent to Gmail.
+    ///
+    /// Re-verifying an existing `prepared` request re-journals it under the
+    /// current connection. If the fresh fetch showed a changed draft, the new
+    /// version is retained and this fails with `stale_source_revision`.
     pub fn google_draft_delete_finish(
         &mut self,
         proof: PreparedGoogleDraftDelete,
@@ -348,6 +419,13 @@ impl Store {
         self.persist_delete(&op, insert)?;
         self.delete_reply(&op)
     }
+    /// Moves a `prepared` deletion to `in_flight` and returns the lease for its
+    /// one `drafts.delete` attempt.
+    ///
+    /// The deletion must have been verified under this connection generation
+    /// at `revision`, and the source and local owners must be unchanged
+    /// (`stale_source_revision`). An `in_flight` deletion found at startup
+    /// becomes `acceptance_unknown`.
     pub fn google_draft_delete_claim(
         &mut self,
         scope: &GoogleDraftDeleteScope,
@@ -388,6 +466,8 @@ impl Store {
             operation: op,
         })
     }
+    /// Records the transport result of a claimed deletion. Repeating the
+    /// recorded outcome replays it; any other is `stale_google_work`.
     pub fn google_draft_delete_outcome(
         &mut self,
         lease: &GoogleDraftDeleteLease,
@@ -439,6 +519,8 @@ impl Store {
         self.persist_delete(&op, false)?;
         self.delete_reply(&op)
     }
+    /// Returns a deletion's status JSON: state, revisions, target identity,
+    /// related drafts, error and read evidence.
     pub fn google_draft_delete_status(&self, account: &str, request: &str) -> Result<Value> {
         self.delete_reply(
             &self
@@ -446,6 +528,9 @@ impl Store {
                 .ok_or_else(|| err("not_found", "Deletion request is not recorded"))?,
         )
     }
+    /// Abandons a deletion that provably never left, releasing its guard.
+    /// `p` holds `request_id` and `expected_revision`; only a `prepared`
+    /// deletion at that revision qualifies.
     pub fn google_draft_delete_abandon(&mut self, account: &str, p: &Value) -> Result<Value> {
         self.require_active_account(account)?;
         crate::fields(p, &["request_id", "expected_revision"])?;
@@ -465,6 +550,9 @@ impl Store {
         self.persist_delete(&op, false)?;
         self.delete_reply(&op)
     }
+    /// Plans a read-only Gmail lookup of a deletion's target. Needs only a
+    /// mail-read grant; fails with `google_draft_pending` while the deletion
+    /// is in flight.
     pub fn google_draft_delete_reconcile_begin(
         &self,
         scope: &GoogleDraftDeleteScope,
@@ -490,6 +578,11 @@ impl Store {
             operation: op,
         })
     }
+    /// Retains the observed draft version and records whether the target still
+    /// exists as read evidence.
+    ///
+    /// The deletion's state never changes: a missing draft does not prove this
+    /// request deleted it, so `deletion_proven` is always false.
     pub fn google_draft_delete_reconcile_finish(
         &mut self,
         proof: PreparedGoogleDraftDeleteObservation,
@@ -524,6 +617,8 @@ impl Store {
         }
         self.delete_reply(&op)
     }
+    /// Refuses work on a Gmail draft that a pending deletion (other than
+    /// `except`) owns.
     pub(crate) fn check_google_draft_deletion_target(
         &self,
         account: &str,
@@ -540,6 +635,7 @@ impl Store {
             Ok(())
         }
     }
+    /// Refuses work on a Gmail draft that a deletion already removed.
     pub(crate) fn check_google_draft_deleted_target(
         &self,
         account: &str,
@@ -555,6 +651,8 @@ impl Store {
             Ok(())
         }
     }
+    /// Refuses Google writes for a local draft whose twin carries a blocking
+    /// deletion guard.
     pub(crate) fn check_google_draft_deletion_write(
         &self,
         account: &str,
@@ -573,6 +671,9 @@ impl Store {
         }
         Ok(())
     }
+    /// Writes the deletion row and refreshes its guard on each affected draft
+    /// in one transaction. After the first write, only drafts whose guard
+    /// still names this request are updated.
     fn persist_delete(&mut self, op: &DeleteOperation, insert: bool) -> Result<()> {
         let raw = encode(op)?;
         let mut updates = Vec::new();
@@ -612,6 +713,7 @@ impl Store {
             json!({"account":op.account,"draft_id":op.draft_id,"request_id":op.request_id,"request":op.request,"revision":op.revision,"current_google_revision":google,"operation_is_current":current.as_deref()==Some(&op.request_id),"state":op.state,"connection_generation":op.connection_generation,"related_draft_ids":op.affected_draft_ids,"source_revision":op.source_revision,"source_sha256":op.source.sha256,"provider_draft_id":op.source.provider_draft_id,"message_id":op.source.message_id,"thread_id":op.source.thread_id,"size":op.source.size,"error":op.error,"read_evidence":op.read_evidence}),
         )
     }
+    /// Status of the deletion currently guarding a draft, or JSON `null`.
     pub(crate) fn google_delete_for_draft(&self, account: &str, draft: &str) -> Result<Value> {
         let request:Option<String>=self.db.query_row("SELECT json_extract(google_json,'$.deletion.request_id') FROM drafts WHERE account=?1 AND draft_id=?2",params![account,draft],|r|r.get(0)).optional()?.flatten();
         request
@@ -619,6 +721,8 @@ impl Store {
             .transpose()
             .map(|v| v.unwrap_or(Value::Null))
     }
+    /// A page of deletion requests that targeted any Gmail draft this local
+    /// draft has sourced, in request-ID order.
     pub(crate) fn google_delete_history(
         &self,
         account: &str,
@@ -646,6 +750,8 @@ impl Store {
             json!({"delete_operations":refs,"delete_total":total,"delete_next_offset":if next<total{Some(next)}else{None}}),
         )
     }
+    /// Marks every deletion left `in_flight` by an earlier engine run as
+    /// `acceptance_unknown`. Runs when the store opens.
     pub(crate) fn recover_google_draft_deletions(&mut self) -> Result<()> {
         let ids = {
             let mut stmt=self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='google' AND json_extract(json,'$.kind')='draft_delete' AND json_extract(json,'$.state')='in_flight'")?;

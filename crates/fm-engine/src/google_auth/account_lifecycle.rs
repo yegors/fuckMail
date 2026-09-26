@@ -1,8 +1,15 @@
+//! Engine side of account removal and restore: cancelling the account's sign-in
+//! attempts, deleting its keychain credentials under the per-account lock, and
+//! binding a fresh grant when a removed account is restored.
 use super::*;
 use fm_core::account_lifecycle::{AccountCleanupLease, AccountCleanupOutcome, AccountRemovalStep};
 use fm_google::desktop_auth::VerifiedGrant;
 
 impl Runtime {
+    /// Handles `account_remove`: journals the removal in the store, stops the
+    /// account's sign-in attempts and provider work, and deletes its keychain
+    /// credentials. A replayed request returns its recorded result. Google
+    /// data is never touched.
     pub(super) async fn remove_account(
         &self,
         account: &str,
@@ -35,6 +42,9 @@ impl Runtime {
         self.cleanup_account(lease, cancel).await
     }
 
+    /// Deletes the account's vault entry under the per-account credential lock
+    /// and records the outcome. If cancelled while waiting for the lock, it
+    /// returns the current removal status instead of failing.
     pub(super) async fn cleanup_account(
         &self,
         lease: AccountCleanupLease,
@@ -88,6 +98,9 @@ impl Runtime {
             .await
     }
 
+    /// Restores an archived account with a fresh grant: admits the restore
+    /// at `revision`, stores the tokens under the credential lock, then binds
+    /// the account. A failure after admission is recorded on the archive.
     pub(super) async fn complete_restore(
         &self,
         id: &str,

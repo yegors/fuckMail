@@ -1,6 +1,17 @@
-//! Google Calendar feasibility boundary, P0-06 / Calendar draft revision 5.
-//! No network, database, feed or notification sender. Core owns persistence.
-//! Input source is retained separately from permission-filtered projections.
+//! Google Calendar event model: normalizing Google event resources, expanding
+//! recurrence into bounded windows and projecting permission-filtered rows for
+//! the calendar views and the CLI.
+//!
+//! [`normalize`] turns a cached Google event into an [`Event`] and keeps the
+//! original source beside it. [`expand`] and [`project_google_events_in_window`]
+//! produce the occurrences inside a [`Window`], dropping the fields that the
+//! calendar's [`Access`] does not permit. [`edits`] builds ETag-guarded write
+//! requests, [`recurring`] validates and splits the small supported subset of
+//! recurrence rules, [`sync`] stages paged incremental sync, and [`google_api`]
+//! calls the Calendar API through an `fm-google` HTTP transport.
+//!
+//! There is no database here: `fm-core` stores sources, sync cursors and
+//! pending writes.
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, TimeZone, Utc};
 use rrule::{RRuleSet, Tz as RuleTz};
@@ -17,14 +28,23 @@ pub use chrono_tz::Tz;
 pub use edits::*;
 pub use sync::*;
 
+/// Calendar fixture revision, reported as `fixture_revision` by [`capabilities`].
 pub const FIXTURE_REVISION: u32 = 1;
+/// Most occurrences one expansion or projection returns, and most exceptions
+/// one series may bring. Exceeding it is an error, never a truncated result.
 pub const MAX_OCCURRENCES: u16 = 1000;
+/// Longest projection window in displayed days: a six-week month grid.
 pub const MAX_WINDOW_DAYS: i64 = 42;
+/// Version of the IANA time zone database bundled by `chrono-tz`.
 pub const TZDB_VERSION: &str = chrono_tz::IANA_TZDB_VERSION;
 
+/// A failure from normalization, projection or write planning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CalendarError {
+    /// Stable snake_case identifier such as `invalid_event`, `unsupported_rule`,
+    /// `limit_exceeded`, `stale_revision` or `permission_denied`.
     pub code: &'static str,
+    /// English detail for logs and display; not stable.
     pub message: String,
 }
 impl std::fmt::Display for CalendarError {
@@ -39,26 +59,42 @@ pub(crate) fn error(code: &'static str, message: impl Into<String>) -> CalendarE
         message: message.into(),
     }
 }
+/// Result of the event model; [`google_api`] has its own error type.
 pub type Result<T> = std::result::Result<T, CalendarError>;
 
+/// A Google event boundary: an all-day date or a zoned instant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EventTime {
-    Date {
-        date: NaiveDate,
-    },
+    /// An all-day boundary. As in Google, an end date is exclusive: a one-day
+    /// event on the 12th ends on the 13th.
+    Date { date: NaiveDate },
+    /// A timed boundary.
     Zoned {
+        /// The instant with the offset Google sent.
         instant: DateTime<FixedOffset>,
+        /// IANA zone from Google's `timeZone`, or the calendar's zone when
+        /// absent. Recurrence repeats wall-clock time in this zone.
         time_zone: String,
     },
 }
 impl EventTime {
+    /// Returns the stable text key for this boundary: the ISO date for all-day
+    /// values, the RFC 3339 UTC instant for timed ones.
+    ///
+    /// Zone and offset do not change the key, so it matches a recurring
+    /// exception to its series slot however the exception was written.
     pub fn identity(&self) -> String {
         match self {
             Self::Date { date } => date.to_string(),
             Self::Zoned { instant, .. } => instant.with_timezone(&Utc).to_rfc3339(),
         }
     }
+    /// Returns the UTC instant this boundary falls on.
+    ///
+    /// A date means local midnight in `calendar_zone`, the earlier one if it
+    /// repeats; `invalid_time` when a DST gap skips midnight there. A timed value
+    /// ignores `calendar_zone`.
     pub fn utc(&self, calendar_zone: Tz) -> Result<DateTime<Utc>> {
         match self {
             Self::Zoned { instant, .. } => Ok(instant.with_timezone(&Utc)),
@@ -76,39 +112,59 @@ impl EventTime {
     }
 }
 
+/// Identity of one Google event resource: account, calendar and event ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventKey {
     pub account: String,
     pub calendar: String,
+    /// Google's event ID; a recurring instance has its own ID.
     pub event: String,
 }
+/// Identity of one displayed occurrence. It stays the same when a recurring
+/// instance is moved, and is serialized as the projected row's `id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OccurrenceKey {
     pub account: String,
     pub calendar: String,
+    /// The recurring master's event ID, or the event's own ID for a single event.
     pub series: String,
     /// Original local date or UTC instant; preserved when the instance moves.
+    /// `None` for an event that neither recurs nor belongs to a series.
     pub original_start: Option<String>,
 }
+/// A normalized Google Calendar event, keeping its provider source beside it.
 #[derive(Debug, Clone)]
 pub struct Event {
     pub key: EventKey,
+    /// Google's ETag, empty when the source has none. Writes require it.
     pub etag: String,
+    /// `status` is `cancelled`. A cancelled instance removes its occurrence
+    /// from the series.
     pub cancelled: bool,
+    /// `(Untitled)` when the source has no summary.
     pub summary: String,
     pub description: String,
     pub location: String,
+    /// The first video entry point, else the first meeting link found in the
+    /// location or description (see [`meeting_link`]).
     pub conference_url: Option<String>,
+    /// The organizer's email address.
     pub organizer: Option<String>,
+    /// Google's attendee objects, unchanged.
     pub attendees: Vec<Value>,
+    /// `visibility` is `private`.
     pub private: bool,
     /// None on an unresolved instance; resolved only against its retained master.
     /// This context never changes the original provider source.
     pub series_private: Option<bool>,
+    /// The master's ID (`recurringEventId`); set only on instances.
     pub series_id: Option<String>,
+    /// The slot the instance fills in its series; set exactly when `series_id` is.
     pub original_start: Option<EventTime>,
+    /// `None` only on a cancelled event, whose source may be sparse.
     pub start: Option<EventTime>,
     pub end: Option<EventTime>,
+    /// The master's raw `RRULE`, `RDATE` and `EXDATE` lines; empty on instances.
     pub recurrence: Vec<String>,
     /// Retained provider source. Never serialize this into a busy-only projection.
     pub source: Value,
@@ -123,24 +179,36 @@ pub struct RecurringMasterContext {
     cancelled: bool,
 }
 impl RecurringMasterContext {
+    /// Returns the recurring master's event key.
     pub fn key(&self) -> &EventKey {
         &self.key
     }
+    /// Whether the master is private; its instances then show as busy only to
+    /// readers and limited writers.
     pub fn private(&self) -> bool {
         self.private
     }
+    /// Whether the master is cancelled, which cancels every instance bound to it.
     pub fn cancelled(&self) -> bool {
         self.cancelled
     }
 }
 
+/// What the account may see and do on a calendar, or on one event once
+/// [`Access::for_event`] has applied the event's privacy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Access {
+    /// Nothing is projected.
     None,
+    /// Times only, titled "Busy"; no other fields.
     FreeBusy,
+    /// Full details, read-only; private events show as busy only.
     Reader,
+    /// Editable, but private events show as busy only.
     WriterWithoutPrivateAccess,
+    /// Editable with full details.
     Writer,
+    /// Editable with full details; projected the same as `Writer`.
     Owner,
 }
 impl Access {
@@ -159,6 +227,12 @@ impl Access {
     }
 }
 impl Event {
+    /// Captures this recurring master's key, privacy and cancellation, so its
+    /// source can be released before instances are resolved against it.
+    ///
+    /// Fails with `scope_mismatch` for an instance, or for a live event without
+    /// recurrence. A cancelled master is accepted without recurrence because
+    /// Google's cancelled resources can be sparse.
     pub fn recurring_master_context(&self) -> Result<RecurringMasterContext> {
         if self.series_id.is_some() || (!self.cancelled && self.recurrence.is_empty()) {
             return Err(error("scope_mismatch", "A recurring master is required"));
@@ -194,13 +268,19 @@ impl Event {
         Ok(resolved)
     }
 }
+/// One occurrence inside a window, carrying only the fields its resolved
+/// access permits. Detail fields are `None`, and omitted from JSON, when
+/// `busy_only` is set.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Occurrence {
     pub key: OccurrenceKey,
     pub start: EventTime,
     pub end: EventTime,
+    /// The summary, or `Busy` for a busy-only occurrence.
     pub title: String,
+    /// Access resolved to free/busy: only times are shown.
     pub busy_only: bool,
+    /// Access is not `Writer` or `Owner`.
     pub read_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -214,10 +294,17 @@ pub struct Occurrence {
     pub attendees: Option<Vec<Value>>,
 }
 
+/// A projection range: the half-open UTC interval `[from, to)` and the zone
+/// its dates are displayed in.
+///
+/// Fields are public, so functions that take a window check it again with
+/// [`Window::new`].
 #[derive(Debug, Clone, Copy)]
 pub struct Window {
     pub from: DateTime<Utc>,
     pub to: DateTime<Utc>,
+    /// Display zone. It turns all-day dates into instants for overlap tests and
+    /// bounds the window's length in civil days.
     pub calendar_zone: Tz,
 }
 impl Window {
@@ -233,6 +320,9 @@ impl Window {
             zone,
         )
     }
+    /// Checks and builds a window. Fails with `invalid_window` unless `from`
+    /// precedes `to` and the span is at most [`MAX_WINDOW_DAYS`] civil days in
+    /// `calendar_zone`.
     pub fn new(from: DateTime<Utc>, to: DateTime<Utc>, calendar_zone: Tz) -> Result<Self> {
         // Bounds describe displayed civil dates. A six-week month crossing the
         // autumn offset change legitimately lasts 42 days plus one hour.
@@ -265,6 +355,9 @@ fn string<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
         .filter(|s| !s.is_empty() && s.len() <= 1024)
         .ok_or_else(|| error("invalid_event", format!("Missing or invalid {name}")))
 }
+/// Parses a Google `start`, `end` or `originalStartTime` object. Timed values
+/// must carry an offset; `fallback_zone` names their zone when `timeZone` is
+/// absent.
 fn parse_time(value: &Value, fallback_zone: &str) -> Result<EventTime> {
     match (value.get("date"), value.get("dateTime")) {
         (Some(date), None) => Ok(EventTime::Date {
@@ -298,6 +391,16 @@ fn parse_time(value: &Value, fallback_zone: &str) -> Result<EventTime> {
     }
 }
 
+/// Parses one cached Google Calendar event resource into an [`Event`],
+/// keeping `source` unchanged beside it.
+///
+/// `calendar_zone` must be an IANA zone; timed values without their own
+/// `timeZone` use it. The source must be at most 256 KiB of JSON with at most
+/// eight recurrence lines (8 KiB). Live events need a start and an end; a
+/// start and end must be the same kind, the end after the start (a timed end
+/// may equal it). Instances need both `recurringEventId` and
+/// `originalStartTime`, and no recurrence. Recurrence syntax is checked later,
+/// by [`expand`].
 pub fn normalize(
     account: &str,
     calendar: &str,
@@ -415,6 +518,8 @@ pub fn normalize(
     })
 }
 
+/// Builds the occurrence for `event`, or `None` without access. Every detail
+/// field is blank when the resolved access is free/busy.
 fn project(
     event: &Event,
     key: OccurrenceKey,
@@ -450,6 +555,18 @@ fn project(
     })
 }
 
+/// Expands `event` and its exceptions into the occurrences that overlap
+/// `window`, with fields filtered by `access`.
+///
+/// `exceptions` are instances of the same account, calendar and series, at
+/// most one per original start. Each replaces the generated occurrence at its
+/// original start; a cancelled one removes it. A moved one appears where it now
+/// falls when that overlaps the window, even if its original slot lies outside,
+/// provided the slot is not past the series' end.
+/// A private master makes every occurrence busy-only for readers and limited
+/// writers. `RRULE`, `RDATE` and `EXDATE` lines are supported; sub-daily rules
+/// are not. More than [`MAX_OCCURRENCES`] results fail with `limit_exceeded`.
+/// Occurrences come back sorted by start.
 pub fn expand(
     event: &Event,
     exceptions: &[Event],
@@ -484,6 +601,8 @@ pub fn expand(
         .as_ref()
         .ok_or_else(|| error("invalid_event", "Missing event end"))?;
     let series = event.series_id.as_ref().unwrap_or(&event.key.event);
+    // Index exceptions by original-start identity, the key a generated
+    // occurrence has for the same slot.
     let mut overrides = BTreeMap::new();
     for exception in exceptions {
         if exception.key.account != event.key.account
@@ -509,6 +628,11 @@ pub fn expand(
     }
     let mut dates = vec![start.clone()];
     if !event.recurrence.is_empty() {
+        // A timed series recurs in its own zone (`TZID`), so its wall-clock time
+        // holds across DST changes. The vendored rrule skips a nonexistent local
+        // time without consuming `COUNT` (RFC 5545); see
+        // vendor/rrule/FUCKMAIL-PATCH.md. All-day dates recur as UTC midnights,
+        // which have no DST, and are turned back into dates below.
         let dtstart = match start {
             EventTime::Zoned { instant, time_zone } => {
                 let zone: Tz = time_zone
@@ -522,6 +646,8 @@ pub fn expand(
             }
             EventTime::Date { date } => format!("DTSTART:{}T000000Z", date.format("%Y%m%d")),
         };
+        // Each line must be one property; an embedded line break could smuggle
+        // a second DTSTART or other property into the parsed text.
         for rule in &event.recurrence {
             if rule.contains('\r')
                 || rule.contains('\n')
@@ -581,6 +707,8 @@ pub fn expand(
         })?;
         let duration = end.utc(window.calendar_zone)? - start.utc(window.calendar_zone)?;
         // Include starts before the window whose duration overlaps its first instant.
+        // The extra day is margin for all-day starts, whose UTC-midnight carrier
+        // can sit up to 14 hours from local midnight in the display zone.
         let lower = window
             .from
             .checked_sub_signed(duration)
@@ -612,6 +740,8 @@ pub fn expand(
             })
             .collect();
     }
+    // Emit each generated slot, or the exception that replaces it. The slot
+    // keeps the original-start identity even when its exception moved.
     let mut seen = BTreeSet::new();
     let mut output = vec![];
     for candidate in dates {
@@ -630,6 +760,8 @@ pub fn expand(
             )?;
             continue;
         }
+        // Occurrences keep the master's length: whole days for all-day events,
+        // elapsed time for timed ones, so a DST change can shift the local end.
         let occurrence_end = match (start, end, &candidate) {
             (
                 EventTime::Date { date: a },
@@ -730,7 +862,10 @@ fn append_exception(
     Ok(())
 }
 
-/// Stable measured capabilities; no live Google behavior is implied.
+/// This crate's fixed limits and bundled time-zone database version, as JSON.
+///
+/// The `live_google` and `external_feeds` flags are constant `false`;
+/// `live_google` does not reflect the Calendar API support in [`google_api`].
 pub fn capabilities() -> Value {
     json!({"fixture_revision":FIXTURE_REVISION,"tzdb":TZDB_VERSION,"max_window_days":MAX_WINDOW_DAYS,"max_occurrences":MAX_OCCURRENCES,"live_google":false,"external_feeds":false})
 }
@@ -781,6 +916,8 @@ pub fn project_google_events_in_window(
         .iter()
         .map(|source| normalize(account, calendar, calendar_zone, source))
         .collect::<Result<Vec<_>>>()?;
+    // Instances whose master is present are projected through that master's
+    // expansion. An instance without its master is projected on its own.
     let masters = events
         .iter()
         .filter(|event| event.series_id.is_none())
@@ -844,6 +981,8 @@ pub fn project_event_in_window(
     let calendar = &event.key.calendar;
     let mut output = Vec::new();
     for occurrence in expand(event, exceptions, window, access)? {
+        // All-day rows keep their plain dates, labelled with the source zone;
+        // timed rows carry an offset timestamp and the event's own zone.
         let (start, end, all_day, time_zone) = match (&occurrence.start, &occurrence.end) {
             (EventTime::Date { date: start }, EventTime::Date { date: end }) => (
                 start.to_string(),
@@ -906,7 +1045,9 @@ pub fn meeting_link(text: &str) -> Option<String> {
     text.match_indices("https://").find_map(|(at, _)| {
         let rest = &text[at..];
         let end = rest
-            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\'' | '(' | ')' | '[' | ']'))
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\'' | '(' | ')' | '[' | ']')
+            })
             .unwrap_or(rest.len());
         let candidate = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?']);
         if candidate.len() > 2048 {
@@ -916,9 +1057,13 @@ pub fn meeting_link(text: &str) -> Option<String> {
         let host = url.host_str()?.to_ascii_lowercase();
         let path = url.path().to_ascii_lowercase();
         let on = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
-        let meeting = (on("teams.microsoft.com") && (path.starts_with("/l/meetup-join/") || path.starts_with("/meet/")))
+        let meeting = (on("teams.microsoft.com")
+            && (path.starts_with("/l/meetup-join/") || path.starts_with("/meet/")))
             || (on("teams.live.com") && path.starts_with("/meet/"))
-            || ((on("zoom.us") || on("zoomgov.com")) && ["/j/", "/my/", "/w/", "/s/"].iter().any(|p| path.starts_with(p)))
+            || ((on("zoom.us") || on("zoomgov.com"))
+                && ["/j/", "/my/", "/w/", "/s/"]
+                    .iter()
+                    .any(|p| path.starts_with(p)))
             || (host == "meet.google.com" && path.len() > 1)
             || (on("webex.com") && path.len() > 1)
             || ((on("gotomeeting.com") || host == "meet.goto.com") && path.len() > 1)

@@ -1,3 +1,5 @@
+// The app's themed ComboBox (closed field, popup list and rows), used by
+// settings pages and the event forms.
 import QtQuick
 import QtQuick.Controls
 

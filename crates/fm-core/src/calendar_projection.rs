@@ -6,15 +6,23 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Maximum retained sources loaded for one calendar projection.
 const SOURCE_BUDGET: usize = 2048;
+/// Maximum bytes of retained source JSON loaded for one projection.
 const SOURCE_BYTES: usize = 8 * 1024 * 1024;
+/// Maximum recurring series expanded for one projection.
 const SERIES_BUDGET: usize = 128;
+/// Projected rows for one calendar. `incomplete` is set whenever a budget
+/// cut something off or a source could not be used, so callers report
+/// partial coverage instead of showing free time.
 pub(crate) struct CalendarProjection {
     pub events: Vec<Value>,
     pub incomplete: bool,
+    /// Distinct sources loaded, counted against the combined view's budget.
     pub candidates: usize,
 }
 impl Store {
+    /// Returns the user's chosen Calendar display zone, if one is set.
     pub(crate) fn calendar_display_zone(&self) -> Result<Option<String>> {
         Ok(
             self.preferences()?["preferences"]["calendar_display_time_zone"]
@@ -22,6 +30,16 @@ impl Store {
                 .map(str::to_owned),
         )
     }
+    /// Projects one calendar's visible sources into `window` using the event
+    /// index, with bounded work.
+    ///
+    /// Candidates are single events overlapping the window plus recurring
+    /// masters that start before its end; each master's exceptions and
+    /// cancellations are then loaded so expansion is correct. Rows are
+    /// filtered by `access` (free/busy calendars show busy-only rows). Live
+    /// rows also carry action flags (edit, delete, RSVP, attendees, recurring
+    /// scopes), which are only offered once the calendar has a clean full
+    /// sync, and archived accounts are always read-only.
     pub(crate) fn calendar_indexed_projection(
         &self,
         account: &str,
@@ -64,6 +82,9 @@ impl Store {
         let ended_before = (window.from - chrono::Duration::days(2))
             .format("%Y%m%d")
             .to_string();
+        // Three candidate queries: timed events by UTC milliseconds, all-day
+        // events by calendar-zone date, and recurring masters. Each asks for one
+        // row past its budget so an overflow is detected, not silently dropped.
         for sql in [
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_timed_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_ms>?3 AND i.start_ms<?4 ORDER BY i.end_ms,i.event_id LIMIT 2049",
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_dates_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_date>?3 AND i.start_date<?4 ORDER BY i.end_date,i.event_id LIMIT 2049",
@@ -133,6 +154,8 @@ impl Store {
                     |r| r.get::<_, String>(0),
                 )?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
+            // A series is shown whole or not at all: expanding it without all of
+            // its exceptions would show moved or cancelled occurrences wrongly.
             if child_ids.len() > remaining || child_ids.len() > 1000 {
                 incomplete = true;
                 blocked_series.insert(master.clone());
@@ -181,6 +204,8 @@ impl Store {
             {
                 continue;
             }
+            // Exceptions whose master is loaded are projected through the
+            // master's expansion; only orphaned instances project on their own.
             if event
                 .series_id
                 .as_ref()
@@ -207,6 +232,8 @@ impl Store {
             ) {
                 Ok(rows) => {
                     for mut row in rows {
+                        // The stored exception for this occurrence, if any,
+                        // supplies its own organizer, options and attendees.
                         let occurrence_source = children
                             .get(&event.key.event)
                             .and_then(|items| {
@@ -272,6 +299,8 @@ impl Store {
                                             &actor,
                                         )
                                         .is_ok();
+                                    // "This and following" rewrites the rule, so it
+                                    // needs a rule shape the split supports.
                                     let following = organizer
                                         && fm_calendar::recurring::validate_rule_shape(
                                             &event.recurrence,
@@ -357,6 +386,10 @@ impl Store {
         })
     }
     // These bounded accumulators share a single query budget across parent/child loads.
+    /// Loads and normalizes one source into `events`, returning false (and
+    /// marking the projection incomplete) when it is missing, over budget,
+    /// invalid, or not a child of `master` when one is given. Children may be
+    /// cancellation tombstones; top-level loads use only visible sources.
     #[allow(clippy::too_many_arguments)]
     fn load_calendar_candidate(
         &self,
@@ -388,6 +421,8 @@ impl Store {
             *incomplete = true;
             return Ok(false);
         };
+        // SQLite withheld a source larger than the remaining byte budget;
+        // treat the budget as spent.
         let Some(raw) = raw else {
             *bytes = SOURCE_BYTES;
             *incomplete = true;
@@ -411,6 +446,10 @@ impl Store {
             }
         }
     }
+    /// Projects busy-only rows for a free/busy calendar from the newest stored
+    /// snapshot that covers `window` under the current permission epoch.
+    /// Returns `(rows, covered)`; no usable snapshot, a provider-unavailable
+    /// one, or reaching the 1,000-row cap means not covered.
     pub(crate) fn calendar_busy_projection(
         &self,
         account: &str,

@@ -1,3 +1,6 @@
+// Shared test fixture: a scripted stand-in engine on a private local socket with
+// an owner-only engine.json, so backend tests can hold, answer or corrupt IPC
+// replies. Also the require()/await() helpers those tests use.
 #pragma once
 #include "GoogleOperation.h"
 #include "IpcTrust.h"

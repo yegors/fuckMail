@@ -6,8 +6,13 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+/// Local content work that reads or writes message files: draft saves and
+/// captures, attachment imports, message sources, invitations, Sent copies,
+/// retained Google draft sources and draft transfers. Each request is a short
+/// store "begin", preparation on a blocking worker, and a short "finish".
 pub(crate) struct Runtime {
     core: CoreBridge,
+    /// Blocking workers for file reading and MIME work (two at a time).
     preparation: Arc<Semaphore>,
     #[cfg(test)]
     before_prepare: Option<PreparationHook>,
@@ -26,6 +31,7 @@ impl Runtime {
         }
     }
 
+    /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
@@ -42,6 +48,9 @@ impl Runtime {
         )
     }
 
+    /// Handles one local content request for `account`. `cancel` stops
+    /// preparation, but a finish call that has started always completes, so
+    /// its receipt is recorded.
     pub(crate) async fn handle(
         &self,
         cancel: CancellationToken,
@@ -66,6 +75,7 @@ impl Runtime {
             })?
             .to_owned();
         let method = method.to_owned();
+        // Move a draft to another account (a From change).
         if method == "draft_transfer" {
             use fm_core::draft_transfer::TransferStep;
             let begin_cancel = cancel.clone();
@@ -100,6 +110,8 @@ impl Runtime {
             drop(permit);
             return result;
         }
+        // Read-only exports: a sent message's frozen outgoing copy, or a
+        // received message's raw source.
         if method == "google_sent_message" {
             let plan = self
                 .core
@@ -144,6 +156,9 @@ impl Runtime {
                 })
                 .await;
         }
+        // Edit a retained Google draft locally, or copy it into a new local
+        // draft. Errors before the commit carry the "finished without commit"
+        // marker.
         if matches!(
             method.as_str(),
             "google_draft_authoring" | "google_draft_copy"
@@ -187,6 +202,7 @@ impl Runtime {
                 })
                 .await;
         }
+        // Export a retained Google draft's source.
         if method == "google_draft_source" {
             let begin_cancel = cancel.clone();
             let plan = self
@@ -204,6 +220,9 @@ impl Runtime {
                 })
                 .await;
         }
+        // Draft save, capture and attachment import. If the draft changes
+        // while its content is prepared, the store asks for one more pass; a
+        // second change is reported as `stale_revision`.
         let begin_cancel = cancel.clone();
         // Begin resolves matching durable replies before any source-file access.
         // It snapshots only bounded metadata/authored text and never reads blobs.
@@ -250,6 +269,7 @@ impl Runtime {
         }
     }
 
+    /// Runs `operation` on a preparation worker and returns its result.
     async fn prepare<T, F>(&self, cancel: CancellationToken, operation: F) -> Result<T>
     where
         T: Send + 'static,
@@ -260,6 +280,8 @@ impl Runtime {
             .map(|(value, _permit)| value)
     }
 
+    /// Like [`Runtime::prepare`], but also returns the worker permit, so the
+    /// caller can keep the slot until its finish call has used the result.
     async fn prepare_held<T, F>(
         &self,
         cancel: CancellationToken,

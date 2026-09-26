@@ -17,10 +17,13 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{Notify, Semaphore};
+/// An explicit request from `assist_start`, visible only to the session that
+/// started it.
 struct Job {
     owner: String,
     account: Option<String>,
     cancel: CancellationToken,
+    /// The reply for `assist_job`: status, progress, and items or error.
     state: Value,
 }
 #[derive(Default)]
@@ -34,8 +37,12 @@ struct Worker {
     /// The account and message being analysed now.
     current: Option<(String, String)>,
 }
+/// The local-model runtime: a background queue that analyses mail while a
+/// session watches it, plus explicit single-email and settings-test requests.
+/// At most one inference runs at a time.
 pub struct Runtime {
     core: CoreBridge,
+    /// Explicit jobs by id; at most 32 are kept.
     jobs: Mutex<BTreeMap<String, Job>>,
     /// Explicit requests admitted at once; more are refused as busy.
     slots: Arc<Semaphore>,
@@ -73,6 +80,7 @@ fn transient(code: &str) -> bool {
     matches!(code, "assistance_canceled" | "assistance_stale")
 }
 impl Runtime {
+    /// Creates the runtime. The queue worker starts on the first `assist_watch`.
     pub fn new(core: CoreBridge) -> Self {
         Self {
             core,
@@ -86,14 +94,18 @@ impl Runtime {
             qualified: Mutex::new(None),
         }
     }
+    /// Pauses queue work for `account`, as when its sync is released.
+    /// Explicit requests for the account still run.
     pub fn hold(&self, account: &str) {
         self.held.lock().unwrap().insert(account.to_owned());
     }
+    /// Resumes queue work for `account` and wakes the queue if it was held.
     pub async fn release(&self, account: &str) {
         if self.held.lock().unwrap().remove(account) {
             self.wake.notify_one();
         }
     }
+    /// Folds one message's time into the account's moving average.
     fn record_speed(&self, account: &str, seconds: f64) {
         let mut speeds = self.speeds.lock().unwrap();
         let average = speeds.entry(account.to_owned()).or_insert(seconds);
@@ -118,13 +130,21 @@ impl Runtime {
         job: &str,
         cancel: &CancellationToken,
     ) -> Result<Value> {
+        // Skip inference if the email, its labels or manual choices changed
+        // since the plan was prepared; the store checks again on commit.
         let check = plan.clone();
-        self.core.call(move |s| s.local_model_validate(&check)).await?;
+        self.core
+            .call(move |s| s.local_model_validate(&check))
+            .await?;
         let started = Instant::now();
         let model = plan.settings.model.clone();
-        diagnostics::event("Model","started",json!({"job_ref":&job[..8],"account_ref":diagnostics::reference("account",&plan.account),"target_ref":diagnostics::reference("message",&plan.target),"task":"message","origin":origin,
+        diagnostics::event(
+            "Model",
+            "started",
+            json!({"job_ref":&job[..8],"account_ref":diagnostics::reference("account",&plan.account),"target_ref":diagnostics::reference("message",&plan.target),"task":"message","origin":origin,
             "input_chars":plan.email["text"].as_str().map_or(0,|t|t.chars().count()),"partial":plan.partial,"label_choices":plan.label_ids().len(),
-            "provider":plan.settings.provider.as_str(),"model":model.as_ref().map(|m|m.name.as_str()),"model_digest":model.as_ref().map(|m|m.digest.as_str())}));
+            "provider":plan.settings.provider.as_str(),"model":model.as_ref().map(|m|m.name.as_str()),"model_digest":model.as_ref().map(|m|m.digest.as_str())}),
+        );
         let result = async {
             self.qualify(&plan.settings, cancel).await?;
             let measure = Mutex::new(Value::Null);
@@ -137,12 +157,24 @@ impl Runtime {
                 if runner_failure(&e.code) || e.code == "model_changed" {
                     *self.qualified.lock().unwrap() = None;
                 }
-                diagnostics::event("Model","failed",json!({"job_ref":&job[..8],"origin":origin,"code":e.code,"elapsed_ms":started.elapsed().as_millis()}));
+                diagnostics::event(
+                    "Model",
+                    "failed",
+                    json!({"job_ref":&job[..8],"origin":origin,"code":e.code,"elapsed_ms":started.elapsed().as_millis()}),
+                );
                 return Err(e);
             }
         };
         self.record_speed(&plan.account, started.elapsed().as_secs_f64());
-        let mut facts = analysis_fields(job, &plan.account, &plan.target, origin, &output, plan.partial, started);
+        let mut facts = analysis_fields(
+            job,
+            &plan.account,
+            &plan.target,
+            origin,
+            &output,
+            plan.partial,
+            started,
+        );
         let stop = cancel.clone();
         let saved = self
             .core
@@ -182,6 +214,7 @@ impl Runtime {
         }
         Ok(progress)
     }
+    /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub fn handles(method: &str) -> bool {
         matches!(
             method,
@@ -197,6 +230,11 @@ impl Runtime {
                 | "assist_progress"
         )
     }
+    /// Handles one local-model request for the session `owner`.
+    ///
+    /// `cancel` fires when that session ends: it cancels the session's
+    /// explicit jobs, and once every watching session has ended the queue
+    /// worker stops. Other `assist_*` methods are answered by the store.
     pub async fn handle(
         self: &Arc<Self>,
         owner: &str,
@@ -351,8 +389,14 @@ impl Runtime {
     /// cancels it after each email, which also ends its watcher task.
     fn owners_token(&self) -> CancellationToken {
         let token = CancellationToken::new();
-        let owners: Vec<CancellationToken> =
-            self.worker.lock().unwrap().owners.values().cloned().collect();
+        let owners: Vec<CancellationToken> = self
+            .worker
+            .lock()
+            .unwrap()
+            .owners
+            .values()
+            .cloned()
+            .collect();
         let watch = token.clone();
         tokio::spawn(async move {
             let closed = async {
@@ -367,6 +411,9 @@ impl Runtime {
         });
         token
     }
+    /// The queue worker. It runs while at least one session watches, pulls
+    /// batches of up to 32 emails from the store, and starts again from the
+    /// top when new mail arrives or something wakes it.
     async fn run(self: Arc<Self>) {
         // Mail dated from here on is an arrival, eligible for label Auto-read.
         let since = chrono::Utc::now();
@@ -419,9 +466,13 @@ impl Runtime {
                         delay = Duration::from_secs(5);
                         continue;
                     }
+                    // Remember where this account and class stopped, so the
+                    // next batch continues after it.
                     Ok(rows) => {
                         let end = rows.last().unwrap().clone();
-                        cursors.retain(|c| !(c["account"] == end["account"] && c["class"] == end["class"]));
+                        cursors.retain(|c| {
+                            !(c["account"] == end["account"] && c["class"] == end["class"])
+                        });
                         cursors.push(end);
                         batch.extend(rows);
                     }
@@ -433,7 +484,10 @@ impl Runtime {
             }
             let next = batch.pop_front().unwrap();
             let account = next["account"].as_str().unwrap_or_default().to_owned();
-            let conversation = next["conversation_id"].as_str().unwrap_or_default().to_owned();
+            let conversation = next["conversation_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned();
             let target = next["id"].as_str().unwrap_or_default().to_owned();
             last = Some(account.clone());
             // A paused sync, or an explicit request that already did this email.
@@ -452,6 +506,7 @@ impl Runtime {
                     .is_ok_and(|date| {
                         date >= since && date <= chrono::Utc::now() + chrono::Duration::minutes(1)
                     });
+            // Wait for the single inference seat; give up if every watcher leaves.
             let token = self.owners_token();
             let seat = tokio::select! {biased;_=token.cancelled()=>None,p=self.active.clone().acquire_owned()=>p.ok()};
             let Some(_seat) = seat else {
@@ -467,8 +522,13 @@ impl Runtime {
                 Ok(mut plan) => {
                     plan.arrival = arrival;
                     let job = fm_ipc::random_token();
-                    self.analyse(plan, if arrival { "arrival" } else { "queue" }, &job, &token)
-                        .await
+                    self.analyse(
+                        plan,
+                        if arrival { "arrival" } else { "queue" },
+                        &job,
+                        &token,
+                    )
+                    .await
                 }
                 Err(e) => Err(e),
             };
@@ -485,6 +545,7 @@ impl Runtime {
                     delay = Duration::from_secs(30);
                 }
                 Err(e) if transient(&e.code) => {}
+                // Anything else is about this email: record it and move on.
                 Err(e) => {
                     let _ = self
                         .core
@@ -494,6 +555,8 @@ impl Runtime {
             }
         }
     }
+    /// Cancels the explicit jobs whose account is `account`. With `None` that
+    /// means the jobs started without an account (settings tests).
     pub fn cancel_account(&self, account: Option<&str>) {
         for job in self.jobs.lock().unwrap().values() {
             if job.account.as_deref() == account {
@@ -501,6 +564,8 @@ impl Runtime {
             }
         }
     }
+    /// Stores a job's new state, reporting `canceled` instead of `queued` or
+    /// `running` once the job has been cancelled.
     fn state(&self, id: &str, mut state: Value) {
         if let Some(job) = self.jobs.lock().unwrap().get_mut(id) {
             if job.cancel.is_cancelled()
@@ -520,11 +585,13 @@ impl Runtime {
         account: Option<&str>,
         p: Value,
     ) -> Result<Value> {
-        if p.get("task")
-            .is_some_and(|t| !["message", "summary", "classification"].contains(&t.as_str().unwrap_or_default()))
-        {
+        if p.get("task").is_some_and(|t| {
+            !["message", "summary", "classification"].contains(&t.as_str().unwrap_or_default())
+        }) {
             return Err(failure("invalid_request", "Unknown local model task"));
         }
+        // Admission is immediate or `assistance_busy`; admitted jobs then
+        // queue for the inference seat in arrival order.
         let sample = p["sample"].as_bool().unwrap_or(false);
         let permit = self
             .slots
@@ -599,13 +666,23 @@ impl Runtime {
             if jobs.len() >= 32 {
                 if let Some(key) = jobs
                     .iter()
-                    .find(|(_, j)| !matches!(j.state["status"].as_str(), Some("running" | "queued")))
+                    .find(|(_, j)| {
+                        !matches!(j.state["status"].as_str(), Some("running" | "queued"))
+                    })
                     .map(|(k, _)| k.clone())
                 {
                     jobs.remove(&key);
                 }
             }
-            jobs.insert(id.clone(),Job{owner:owner.into(),account:account.map(str::to_owned),cancel:token.clone(),state:json!({"job_id":id,"status":"queued","completed":0,"total":1})});
+            jobs.insert(
+                id.clone(),
+                Job {
+                    owner: owner.into(),
+                    account: account.map(str::to_owned),
+                    cancel: token.clone(),
+                    state: json!({"job_id":id,"status":"queued","completed":0,"total":1}),
+                },
+            );
         }
         let runtime = self.clone();
         let job_id = id.clone();
@@ -616,7 +693,10 @@ impl Runtime {
                 runtime.state(&job_id, json!({"job_id":job_id,"status":"canceled"}));
                 return;
             };
-            runtime.state(&job_id, json!({"job_id":job_id,"status":"running","completed":0,"total":1}));
+            runtime.state(
+                &job_id,
+                json!({"job_id":job_id,"status":"running","completed":0,"total":1}),
+            );
             let result: Result<Value> = match work {
                 Work::Sample(settings, email, labels) => {
                     let started = Instant::now();
@@ -635,9 +715,15 @@ impl Runtime {
                         metrics = json!({});
                     }
                     metrics["total_ms"] = json!(started.elapsed().as_millis() as u64);
-                    metrics["tokens_per_second"] = json!(metrics["output_tokens"].as_f64().zip(metrics["generation_ms"].as_f64()).filter(|(_,ms)|*ms>0.0).map(|(t,ms)|(t*10000.0/ms).round()/10.0));
+                    metrics["tokens_per_second"] = json!(metrics["output_tokens"]
+                        .as_f64()
+                        .zip(metrics["generation_ms"].as_f64())
+                        .filter(|(_, ms)| *ms > 0.0)
+                        .map(|(t, ms)| (t * 10000.0 / ms).round() / 10.0));
                     match result {
-                        Ok(output) => Ok(json!({"task":"message","output":output,"sample":true,"metrics":metrics,"raw":raw})),
+                        Ok(output) => Ok(
+                            json!({"task":"message","output":output,"sample":true,"metrics":metrics,"raw":raw}),
+                        ),
                         Err(mut e) => {
                             e.details = json!({"metrics":metrics,"raw":raw});
                             Err(e)
@@ -652,7 +738,9 @@ impl Runtime {
                             let (code, message) = (e.code.clone(), e.message.clone());
                             let _ = runtime
                                 .core
-                                .call(move |s| s.local_model_fail(&account, &target, &code, &message))
+                                .call(move |s| {
+                                    s.local_model_fail(&account, &target, &code, &message)
+                                })
                                 .await;
                         }
                     }
@@ -684,7 +772,17 @@ impl Runtime {
     }
 }
 
-fn analysis_fields(job_id: &str, account: &str, target: &str, origin: &str, output: &Value, partial: bool, started: Instant) -> Value {
+/// Diagnostics facts for a finished analysis: sizes, hashed references and
+/// the classification, never mail text.
+fn analysis_fields(
+    job_id: &str,
+    account: &str,
+    target: &str,
+    origin: &str,
+    output: &Value,
+    partial: bool,
+    started: Instant,
+) -> Value {
     json!({"job_ref":&job_id[..8],"account_ref":diagnostics::reference("account",account),"target_ref":diagnostics::reference("message",target),"task":"message","origin":origin,"elapsed_ms":started.elapsed().as_millis(),
         "summary_chars":output["summary"].as_str().map(|s|s.chars().count()),
         "sender_kind":output["sender_kind"],"category_ids":output["category_ids"],"partial":partial})
@@ -696,7 +794,15 @@ mod diagnostic_tests {
     #[test]
     fn records_classification_and_unicode_summary_length_without_mail_text() {
         let output = json!({"summary":"Hi 🌍", "sender_kind":"human", "category_ids":["work"]});
-        let facts = analysis_fields("abcdefgh-more", "private-account", "private-message", "arrival", &output, true, Instant::now());
+        let facts = analysis_fields(
+            "abcdefgh-more",
+            "private-account",
+            "private-message",
+            "arrival",
+            &output,
+            true,
+            Instant::now(),
+        );
         assert_eq!(facts["summary_chars"], 4);
         assert_eq!(facts["sender_kind"], "human");
         assert_eq!(facts["category_ids"], json!(["work"]));
@@ -706,10 +812,19 @@ mod diagnostic_tests {
     }
     #[test]
     fn model_problems_hold_the_queue_and_email_problems_count_against_the_email() {
-        for code in ["assistance_unavailable", "model_unavailable", "model_changed"] {
+        for code in [
+            "assistance_unavailable",
+            "model_unavailable",
+            "model_changed",
+        ] {
             assert!(runner_failure(code));
         }
-        for code in ["invalid_assistance_result", "assistance_timeout", "assistance_output_limit", "assistance_limit"] {
+        for code in [
+            "invalid_assistance_result",
+            "assistance_timeout",
+            "assistance_output_limit",
+            "assistance_limit",
+        ] {
             assert!(!runner_failure(code) && !transient(code), "{code}");
         }
         assert!(transient("assistance_stale"));

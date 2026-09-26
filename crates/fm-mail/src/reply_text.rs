@@ -9,10 +9,31 @@ pub fn reply_contribution(body: &str) -> String {
 /// Endings of a reply attribution such as "On Tue, Alex wrote:", in the
 /// languages Gmail, Outlook and Apple Mail commonly write.
 const ATTRIBUTION_ENDINGS: &[&str] = &[
-    "wrote:", "a écrit :", "a écrit:", "schrieb:", "escribió:", "scrisse:", "escreveu:",
-    "napisał(a):", "napisał:", "schreef:", "skrev:", "kirjoitti:", "írta:", "yazdı:",
-    "пишет:", "написал:", "написала:", "написал(а):", "napsal:", "写道：", "寫道：",
-    "写道:", "寫道:", "のメッセージ:", "님이 작성:",
+    "wrote:",
+    "a écrit :",
+    "a écrit:",
+    "schrieb:",
+    "escribió:",
+    "scrisse:",
+    "escreveu:",
+    "napisał(a):",
+    "napisał:",
+    "schreef:",
+    "skrev:",
+    "kirjoitti:",
+    "írta:",
+    "yazdı:",
+    "пишет:",
+    "написал:",
+    "написала:",
+    "написал(а):",
+    "napsal:",
+    "写道：",
+    "寫道：",
+    "写道:",
+    "寫道:",
+    "のメッセージ:",
+    "님이 작성:",
 ];
 
 /// Header field of a quoted message block ("From:", "Von:", "De :"...).
@@ -31,8 +52,20 @@ fn header_field(line: &str) -> Option<Field> {
         "to" | "an" | "à" | "a" | "para" | "aan" | "do" | "till" | "кому" => Field::To,
         "subject" | "betreff" | "objet" | "asunto" | "oggetto" | "assunto" | "onderwerp"
         | "temat" | "ämne" | "тема" => Field::Subject,
-        "date" | "sent" | "datum" | "gesendet" | "envoyé" | "fecha" | "enviado" | "inviato"
-        | "data" | "verzonden" | "wysłano" | "skickat" | "дата" | "отправлено" => Field::Date,
+        "date"
+        | "sent"
+        | "datum"
+        | "gesendet"
+        | "envoyé"
+        | "fecha"
+        | "enviado"
+        | "inviato"
+        | "data"
+        | "verzonden"
+        | "wysłano"
+        | "skickat"
+        | "дата"
+        | "отправлено" => Field::Date,
         _ => return None,
     })
 }
@@ -45,7 +78,12 @@ fn attribution_end(lines: &[&str], i: usize) -> Option<usize> {
         return None;
     }
     let mut joined = String::new();
-    for (end, line) in lines.iter().enumerate().take(lines.len().min(i + 5)).skip(i) {
+    for (end, line) in lines
+        .iter()
+        .enumerate()
+        .take(lines.len().min(i + 5))
+        .skip(i)
+    {
         joined.push(' ');
         joined.push_str(line.trim());
         let text = joined.trim_end();
@@ -59,6 +97,12 @@ fn attribution_end(lines: &[&str], i: usize) -> Option<usize> {
     None
 }
 
+/// Drops `>` quotes, reply attributions and quoted header blocks from `body`.
+///
+/// An attribution followed by `>` lines is skipped and the answers between
+/// quotes are kept. One with no quotes after it ends the new text, unless
+/// `html_quotes_removed` says its quotes were HTML blockquotes that the caller
+/// already dropped; then only the attribution is skipped.
 pub(crate) fn project(body: &str, html_quotes_removed: bool) -> String {
     let lines: Vec<&str> = body.lines().collect();
     let mut kept = Vec::new();
@@ -78,6 +122,9 @@ pub(crate) fn project(body: &str, html_quotes_removed: bool) -> String {
             i += 1;
             continue;
         }
+        // An "-----Original Message-----" separator or a quoted header block
+        // ends the new text. A block needs From followed by To, Subject and
+        // Date within nine lines, so prose that starts with "From:" survives.
         let original = line.starts_with(['-', '_', '—'])
             && lower.trim_matches(['-', '_', '—', ' ', '\t']) == "original message";
         let headers = header_field(line) == Some(Field::From) && {
@@ -109,6 +156,7 @@ pub(crate) fn project(body: &str, html_quotes_removed: bool) -> String {
         kept.push(lines[i]);
         i += 1;
     }
+    // Unchanged input comes back byte for byte, keeping any CRLF line endings.
     if changed {
         kept.join("\n").trim().to_owned()
     } else {

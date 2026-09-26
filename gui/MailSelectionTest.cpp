@@ -1,3 +1,6 @@
+// Mail workspace UI test on a real MailBackend over the scripted engine: selection
+// and read-on-open, review/Done/Delay, keyboard navigation, search highlights,
+// sender cards, attachments, Spam, remote search and the Accounts settings rows.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"
@@ -19,6 +22,8 @@
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextLayout>
+#include <QClipboard>
+#include <QTest>
 using namespace GoogleOperationFixture;
 
 class MailSelectionTest {
@@ -259,7 +264,7 @@ class MailSelectionTest {
         press(Qt::Key_Down);
         await([&]{return h.backend.selectedId()=="h1";},"Down after Delay continues from the conversation's old place");
         settle();
-        // Search matches are tinted where Core's phrase rules find them (Search 10).
+        // Search matches are tinted where Core's phrase rules find them.
         require(h.backend.matchRanges("Bill\nC-22's, bill c-225 and xbill c-22",{"bill c-22"})==QVariantList{QVariant(QVariantList{0,9}),QVariant(QVariantList{13,22})},"highlights follow the phrase rules: case, line breaks and word starts");
         require(h.backend.matchRanges(QString::fromUtf8("Caf\u00e9  \u00c9lan"),{"cafe elan"})==QVariantList{QVariant(QVariantList{0,10})},"highlights ignore accents and spacing");
         require(h.backend.matchRanges("Sep 22",{"c-22"}).isEmpty(),"no highlight without the phrase");
@@ -551,6 +556,35 @@ class MailSelectionTest {
             QMetaObject::invokeMethod(popup(),"close"); move({5,5});
         }
         require(!find(window->contentItem(),"messageBody_self") || !find(window->contentItem(),"messageBody_self")->isVisible(),"hovering own name leaves sent row folded");
+        require(find(window->contentItem(),"recipientName_last_team@example.test")->property("tip").toString().isEmpty(),"recipient names have no address tooltip beside the contact card");
+        {
+            // The card's text can be selected and copied; while it holds a selection
+            // the card stays open after the pointer leaves.
+            auto *name=find(window->contentItem(),"participantName_first");
+            move(name->mapToScene(name->boundingRect().center()));
+            await([&]{return popup() && popup()->property("email")=="priya@example.test" && popup()->property("opened").toBool();},"card opens for copying");
+            auto *cardItem=qvariant_cast<QQuickItem *>(popup()->property("contentItem"));
+            QQuickItem *address=nullptr;
+            await([&]{address=find(cardItem,"senderCardEmail");return address && address->isVisible() && address->width()>0;},"card address shows");
+            require(address->property("selectByMouse").toBool() && address->property("readOnly").toBool() && find(cardItem,"senderCardName")->property("selectByMouse").toBool()
+                && find(cardItem,"senderCardStatus")->property("selectByMouse").toBool(),"card name, address and status are selectable");
+            const qreal end=qMin(address->property("contentWidth").toReal(),address->width())-1;
+            const auto from=address->mapToScene({1,address->height()/2}), to=address->mapToScene({end,address->height()/2});
+            auto mouse=[&](QEvent::Type type,const QPointF &p,Qt::MouseButton button,Qt::MouseButtons buttons){QMouseEvent event(type,p,window->mapToGlobal(p.toPoint()),button,buttons,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);};
+            mouse(QEvent::MouseButtonPress,from,Qt::LeftButton,Qt::LeftButton);
+            for(int step=1;step<=8;++step) mouse(QEvent::MouseMove,from+(to-from)*step/8.,Qt::NoButton,Qt::LeftButton);
+            mouse(QEvent::MouseButtonRelease,to,Qt::LeftButton,Qt::NoButton);
+            await([&]{return address->property("selectedText").toString()=="priya@example.test";},"dragging selects the whole address");
+            move({5,5});
+            layout.restart();while(layout.elapsed()<500)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(popup() && popup()->property("holding").toBool(),"the card stays open while it holds a selection");
+            QGuiApplication::clipboard()->clear();
+            QTest::keyClick(window,Qt::Key_C,Qt::ControlModifier);
+            await([&]{return QGuiApplication::clipboard()->text()=="priya@example.test";},"Ctrl+C copies the card's selection");
+            QMetaObject::invokeMethod(popup(),"close");
+            await([&]{return !popup();},"the card closes");
+            require(address->property("selectedText").toString().isEmpty(),"closing the card clears its selection");
+        }
         auto heading=find(window->contentItem(),"messageHeading_first");
         move(heading->mapToScene({heading->width()/2,heading->height()/2}));
         layout.restart();while(layout.elapsed()<260)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
@@ -834,6 +868,27 @@ public:
         require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400 of 1k","processed of eligible mail displayed");
         require(find(window->contentItem(),"accountAnalysisStatus_personal")->property("text")=="600 not processed","unprocessed mail is named on the model row");
         {auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");require(status->width()+0.5>=status->property("implicitWidth").toReal() && !status->property("truncated").toBool(),"a meter's status shows in full, not elided");}
+        {
+            // While Google's list is counted the mail row says how many so
+            // far over a shimmering bar; once counted it has a real total.
+            const auto original=h.backend.m_allAccounts;
+            auto setSync=[&](const QVariantMap &sync){auto row=original[0].toMap();auto google=row["google"].toMap();google["sync"]=sync;row["google"]=google;h.backend.m_allAccounts={row};h.backend.publishAccounts(h.backend.m_allAccounts);emit h.backend.accountsChanged();};
+            auto text=[&](const QString &name){auto *item=find(window->contentItem(),name);return item?item->property("text").toString():QString();};
+            setSync({{"inventory_complete",false},{"retained_sources",13204},{"observed_messages",13204},{"inventory_counting",8512}});
+            await([&]{return text("accountMailCount_personal")=="13.2k" && text("accountMailStatus_personal")==QString::fromUtf8("Counting · 8.5k found");},"counting shows what is local and how many Google has so far");
+            setSync({{"inventory_complete",false},{"retained_sources",13204},{"observed_messages",13204},{"inventory_total",21388}});
+            await([&]{return text("accountMailCount_personal")=="13.2k of 21.4k" && text("accountMailStatus_personal").startsWith("61%");},"a counted total gives the real share");
+            {
+                // The top bar's account ring reads the same view: the same share.
+                QVariant view;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,view),Q_ARG(QVariant,QString("personal")));
+                require(qAbs(view.toMap()["ring"].toDouble()-13204./21388)<0.01,"the account tab's ring shows the download's real share");
+            }
+            setSync({{"inventory_complete",false},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});
+            await([&]{return text("accountMailStatus_personal").startsWith("99%");},"mail arriving during the download never shows 100% early");
+            setSync({{"inventory_complete",true},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});
+            await([&]{return text("accountMailStatus_personal")=="Complete";},"a finished inventory is complete");
+            h.backend.m_allAccounts=original;h.backend.publishAccounts(original);emit h.backend.accountsChanged();
+        }
         const auto captureDir=qEnvironmentVariable("FM_BACKLOG_CAPTURE_DIR");
         auto capture=[&](const QString &name) {
             bool painted=false;const auto connection=QObject::connect(window,&QQuickWindow::frameSwapped,[&]{painted=true;});window->requestUpdate();await([&]{return painted;},"account frame");QObject::disconnect(connection);

@@ -3,6 +3,9 @@ use mail_parser::{Address, MessageParser, MimeHeaders, PartType};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// Reduces a message to its authored content. Boundaries, charsets, transfer
+/// encodings and trailing newlines of inline text are dropped; binary parts
+/// compare by SHA-256.
 fn normalized(bytes: &[u8]) -> Option<Value> {
     let mail = MessageParser::default().parse(bytes)?;
     let mut routing = Vec::new();
@@ -88,6 +91,10 @@ fn normalized(bytes: &[u8]) -> Option<Value> {
         parts
     ]))
 }
+/// Reports whether the uploaded and observed messages carry the same routing,
+/// subject, reply threading and parts. Returns `None` when either cannot be
+/// compared: unparseable, group addresses, encoding problems or an embedded
+/// message.
 pub(super) fn equivalent(upload: &[u8], observed: &[u8]) -> Option<bool> {
     if upload == observed {
         return Some(true);

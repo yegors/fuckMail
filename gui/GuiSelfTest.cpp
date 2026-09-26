@@ -1,3 +1,6 @@
+// Developer harness behind `fuckmail-gui --self-test` (CTest gui-integration): drives
+// the real app on a disposable demo profile, runs the Settings, search, composition
+// and calendar stages, and checks results with the `fm` CLI and fresh GUI processes.
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
 #include "GuiCompositionSelfTest.h"

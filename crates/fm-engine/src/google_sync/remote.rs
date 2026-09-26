@@ -15,14 +15,19 @@ use std::collections::HashMap;
 
 /// Messages listed per search; results are grouped into threads.
 const SEARCH_PAGE: u16 = 50;
+/// Remote-only threads returned per search.
 const MAX_THREADS: usize = 25;
+/// Metadata reads in flight at once while building search rows.
 const CONCURRENT_READS: usize = 8;
 /// The newest messages of a long thread are shown.
 const MAX_THREAD_MESSAGES: usize = 50;
+/// Per-message caps, in bytes, on text and HTML in a remote thread.
 const MAX_TEXT: usize = 64 * 1024;
 const MAX_HTML: usize = 256 * 1024;
 /// Leave room for the IPC envelope.
 const MAX_REPLY: usize = 900 * 1024;
+/// Id prefixes that mark conversations, messages and attachments read live
+/// from Gmail, so they are never confused with stored ones.
 pub(crate) const THREAD_PREFIX: &str = "remote:";
 const MESSAGE_PREFIX: &str = "remote-";
 const ATTACHMENT_PREFIX: &str = "remote-att:";
@@ -318,6 +323,8 @@ pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, mut params: Value) -> Re
             "The unsubscribe email could not be written",
         )
     })?;
+    // Sent at most once: a lost reply is reported as possibly sent, never
+    // retried here, so a list cannot receive two unsubscribe emails.
     let (api, _permit, _dispatched) = ctx.gmail_send_request(GmailMethod::MessageSend).await?;
     let call = GmailCall::send_message(&ctx.account, &mail.raw, None).map_err(provider)?;
     let reply = api
@@ -523,6 +530,7 @@ fn rfc3339(ms: i64) -> Option<String> {
         .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
+/// Truncates to at most `limit` bytes without splitting a character.
 fn bounded(value: &str, limit: usize) -> String {
     let mut end = value.len().min(limit);
     while !value.is_char_boundary(end) {
@@ -531,10 +539,13 @@ fn bounded(value: &str, limit: usize) -> String {
     value[..end].to_owned()
 }
 
+/// Gmail message and thread ids are short ASCII alphanumerics. Anything else
+/// is refused before it can reach a request URL.
 fn valid_provider_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 256 && id.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
+/// Reads a Gmail id parameter, failing with `invalid_request` and `message`.
 pub(super) fn provider_id(value: Option<&Value>, message: &str) -> Result<String> {
     value
         .and_then(Value::as_str)
@@ -543,6 +554,8 @@ pub(super) fn provider_id(value: Option<&Value>, message: &str) -> Result<String
         .ok_or_else(|| failure("invalid_request", message))
 }
 
+/// Returns the parameters as an object, refusing any field not in `allowed`.
+/// Listed fields may be absent.
 pub(super) fn object<'a>(
     params: &'a Value,
     allowed: &[&str],
@@ -556,6 +569,7 @@ pub(super) fn object<'a>(
     Ok(fields)
 }
 
+/// Requires the Gmail modify/send grant (`capability_unavailable` otherwise).
 pub(super) async fn require_mail_write(ctx: &SyncContext) -> Result<()> {
     require_scope(
         ctx,
@@ -589,6 +603,7 @@ pub(super) async fn require_scope(
     .await
 }
 
+/// Maps a Gmail error to an engine error code, keeping any retry-after hint.
 pub(super) fn provider(error: GoogleError) -> CoreError {
     let code = match &error {
         GoogleError::ReauthorizationRequired => "google_reauthorization_required",

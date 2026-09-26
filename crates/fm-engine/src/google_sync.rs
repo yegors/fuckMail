@@ -1,4 +1,12 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
+//!
+//! Each connected account gets at most one sync job, kept alive by the
+//! clients that started it and running one worker per granted service (mail,
+//! labels, remote drafts, mail mutations, draft uploads, Calendar). Explicit
+//! operations such as send, draft and Calendar writes, and remote reads run on
+//! the requesting session with the job's [`SyncContext`]. Every request passes
+//! the one engine-wide quota gate, and HTTP never runs on the store writer.
+mod bin;
 pub(crate) mod calendar;
 pub(crate) mod calendar_occurrences;
 pub(crate) mod calendar_writes;
@@ -9,7 +17,6 @@ pub(crate) mod labels;
 pub(crate) mod mail;
 pub(crate) mod mail_mutations;
 mod quota;
-mod bin;
 pub(crate) mod remote;
 pub(crate) mod remote_drafts;
 #[cfg(test)]
@@ -41,6 +48,7 @@ use std::{
 };
 use tokio::sync::{watch, Notify, OwnedSemaphorePermit, Semaphore};
 
+/// Where a job's transport gets access tokens.
 #[derive(Clone)]
 enum TokenSource {
     Native(Arc<google_auth::Runtime>),
@@ -57,25 +65,41 @@ impl TokenSource {
     }
 }
 
+/// Everything a worker or explicit operation needs for one account
+/// connection. Clones share the quota gate, preparation slots and signals.
 #[derive(Clone)]
 pub(crate) struct SyncContext {
     pub(crate) account: AccountId,
+    /// The binding generation this context was created for. Store calls made
+    /// through [`SyncContext::core_call`] fail once the account reconnects or
+    /// disconnects.
     pub(crate) connection_generation: i64,
     pub(crate) cancel: CancellationToken,
     core: CoreBridge,
     http: Arc<dyn HttpTransport>,
     tokens: TokenSource,
     quota: Arc<quota::QuotaGate>,
+    /// Engine-wide slot bounding decoded Gmail payloads held in memory.
     preparation: Arc<Semaphore>,
+    /// Engine-wide slots bounding decoded Calendar pages held in memory.
     calendar_preparation: Arc<Semaphore>,
     calendar_reads: calendar::ReadGrants,
     remote_drafts_wake: Arc<Notify>,
+    /// Bumped to cut every worker's current wait short.
     refresh: watch::Sender<u64>,
+    /// Set when the credential vault refused a token read; workers park until
+    /// a client's start or refresh clears it.
     credential_blocked: Arc<AtomicBool>,
     mail_refresh_requested: Arc<AtomicBool>,
     calendar_refresh_requested: Arc<AtomicBool>,
 }
 impl SyncContext {
+    /// Runs `operation` on the store writer after re-checking, on the writer
+    /// itself, that this work is not cancelled and the account is still
+    /// connected with this context's generation.
+    ///
+    /// Fails with `cancelled` or `stale_google_work` without running
+    /// `operation`, so work from an old connection never writes.
     pub(crate) async fn core_call<T, F>(&self, operation: F) -> Result<T>
     where
         T: Send + 'static,
@@ -95,12 +119,16 @@ impl SyncContext {
             })=>result,
         }
     }
+    /// Waits for the shared Gmail preparation slot. Hold it while decoding or
+    /// parsing a large provider payload.
     pub(crate) async fn prepare_permit(&self) -> Result<OwnedSemaphorePermit> {
         tokio::select! {
             _=self.cancel.cancelled()=>Err(failure("cancelled","Google work stopped")),
             permit=self.preparation.clone().acquire_owned()=>permit.map_err(|_|failure("cancelled","Google work stopped")),
         }
     }
+    /// Runs a Gmail read for this account, acquiring quota at dispatch.
+    /// Mutations and calls for another account fail with `PermissionDenied`.
     pub(crate) async fn gmail(
         &self,
         call: GmailCall,
@@ -114,6 +142,9 @@ impl SyncContext {
             .execute(call, "engine-managed", &self.cancel)
             .await
     }
+    /// Runs one Gmail state mutation for this account: message modify, trash,
+    /// untrash or batch delete, or label create. Other methods fail with
+    /// `PermissionDenied`.
     pub(crate) async fn gmail_mutation(
         &self,
         call: GmailCall,
@@ -136,6 +167,12 @@ impl SyncContext {
             .execute(call, "engine-managed", &self.cancel)
             .await
     }
+    /// Runs a large Gmail read (raw message, labels list, draft get or list)
+    /// and returns the reply with the preparation permit; the caller holds the
+    /// permit while decoding.
+    ///
+    /// Quota is admitted before the permit is taken, so an account waiting
+    /// on quota never holds the slot another account needs.
     pub(crate) async fn gmail_prepared(
         &self,
         call: GmailCall,
@@ -169,6 +206,9 @@ impl SyncContext {
             .await?;
         Ok((reply, memory))
     }
+    /// Admits one draft create or update and returns a single-use client, the
+    /// preparation permit, and a flag that turns true once the request is
+    /// dispatched. The flag separates "never sent" from "outcome unknown".
     pub(crate) async fn gmail_draft_request(
         &self,
         method: fm_google::gmail_api::GmailMethod,
@@ -187,6 +227,8 @@ impl SyncContext {
         self.gmail_upload_request(method, WorkClass::DraftMutation)
             .await
     }
+    /// Admits one `messages.send` or `drafts.send`, returning the same triple
+    /// as [`SyncContext::gmail_draft_request`].
     pub(crate) async fn gmail_send_request(
         &self,
         method: fm_google::gmail_api::GmailMethod,
@@ -205,6 +247,8 @@ impl SyncContext {
         self.gmail_upload_request(method, WorkClass::Submission)
             .await
     }
+    /// Admits one `drafts.delete` for exactly `target`, returning the same
+    /// triple as [`SyncContext::gmail_draft_request`].
     pub(crate) async fn gmail_delete_request(
         &self,
         target: &str,
@@ -268,6 +312,8 @@ impl SyncContext {
             dispatched,
         ))
     }
+    /// Admits one Calendar read of `class` and returns a single-use client with
+    /// a Calendar preparation permit for decoding the page.
     pub(crate) async fn calendar_request(
         &self,
         class: WorkClass,
@@ -300,12 +346,15 @@ impl SyncContext {
             memory,
         ))
     }
+    /// Waits for one of the shared Calendar preparation slots.
     pub(crate) async fn calendar_prepare_permit(&self) -> Result<OwnedSemaphorePermit> {
         tokio::select! {
             _=self.cancel.cancelled()=>Err(failure("cancelled","Calendar preparation stopped")),
             permit=self.calendar_preparation.clone().acquire_owned()=>permit.map_err(|_|failure("cancelled","Calendar preparation stopped")),
         }
     }
+    /// Admits one Calendar event mutation costing `units` (3 for a patch, 1
+    /// for insert, update or delete) and returns a single-use client.
     pub(crate) async fn calendar_mutation_request(
         &self,
         units: u32,
@@ -329,6 +378,8 @@ impl SyncContext {
         http.permit = Mutex::new(Some(quota));
         Ok(GoogleCalendarApi::new(self.account.clone(), Arc::new(http)))
     }
+    /// Builds a single-use transport for `work`. Unless the caller marks it
+    /// admitted and supplies a lease, it acquires quota itself at execute time.
     fn transport(&self, work: Work) -> QuotaTransport {
         QuotaTransport {
             context: self.clone(),
@@ -374,13 +425,20 @@ impl SyncContext {
     }
 }
 
+/// A single-use HTTP transport bound to one quota `Work`. It refuses requests
+/// that don't match the work's class and cost, adds the access token, charges
+/// quota at dispatch, and turns rate-limit replies into cooldowns.
 pub(crate) struct QuotaTransport {
     context: SyncContext,
     work: Work,
+    /// Quota was admitted before the request was built; `permit` holds the lease.
     admitted: bool,
     permit: Mutex<Option<quota::Lease>>,
     used: AtomicBool,
+    /// Set just before the HTTP call, for callers that must tell "never sent"
+    /// from "outcome unknown".
     dispatched: Option<Arc<AtomicBool>>,
+    /// Restricts a draft-delete lease to this exact URL.
     exact_delete_url: Option<String>,
 }
 impl HttpTransport for QuotaTransport {
@@ -390,6 +448,7 @@ impl HttpTransport for QuotaTransport {
         cancel: &'a CancellationToken,
     ) -> HttpFuture<'a> {
         Box::pin(async move {
+            // One request per transport: a retry needs a fresh admission.
             if self.used.swap(true, Ordering::AcqRel) {
                 return Err(TransportError::InvalidRequest);
             }
@@ -430,6 +489,8 @@ impl HttpTransport for QuotaTransport {
                     .acquire(self.work.clone(), cancel)
                     .await?
             };
+            // The token is read after admission. A vault refusal parks this
+            // account's workers until a client starts or refreshes sync.
             let token = self
                 .context
                 .tokens
@@ -444,6 +505,8 @@ impl HttpTransport for QuotaTransport {
                     TransportError::Cancelled
                 })?;
             let request = request.header("authorization", &format!("Bearer {token}"))?;
+            // Quota is charged here, not at admission. Past this point the
+            // provider may act on the request, so `dispatched` is set first.
             permit.dispatch(cancel)?;
             if let Some(dispatched) = &self.dispatched {
                 dispatched.store(true, Ordering::Release);
@@ -474,6 +537,9 @@ impl HttpTransport for QuotaTransport {
     }
 }
 
+/// Checks that a mutation's method, URL shape and quota cost match one of the
+/// Gmail or Calendar writes this engine sends, so a lease admitted for one
+/// kind of write cannot be spent on another.
 fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
     let path = request.url().split('?').next().unwrap_or("");
     match work.service {
@@ -504,7 +570,9 @@ fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
                 return request.method() == HttpMethod::Post && work.units == 5;
             }
             // Deleting Spam or Trash for good (bin.rs).
-            if request.url() == "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete" {
+            if request.url()
+                == "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete"
+            {
                 return request.method() == HttpMethod::Post && work.units == 50;
             }
             let Some(tail) =
@@ -549,6 +617,7 @@ fn failure(code: &str, message: &str) -> CoreError {
     }
 }
 
+/// Parses the four per-minute quota limits (Gmail and Calendar, project and account).
 fn confirmed_limits(params: &Value) -> Result<SchedulerConfig> {
     SchedulerConfig::from_confirmed_json(params).map_err(|_| {
         failure(
@@ -558,13 +627,20 @@ fn confirmed_limits(params: &Value) -> Result<SchedulerConfig> {
     })
 }
 
+/// One account's running sync job. Its supervisor task stops the job once no
+/// owner token is left uncancelled.
 struct Job {
     context: SyncContext,
+    /// Sessions keeping the job alive, keyed by owner id, plus in-flight
+    /// explicit operations under `operation:` keys.
     owners: Arc<std::sync::Mutex<std::collections::BTreeMap<String, CancellationToken>>>,
     cancel: CancellationToken,
     task: tokio::task::JoinHandle<()>,
+    /// Per-service state reported by `google_sync_status`.
     progress: Arc<std::sync::Mutex<Value>>,
 }
+/// Keeps a job alive for the duration of one explicit operation; dropping it
+/// removes that owner entry.
 struct OperationOwner {
     owners: Arc<Mutex<std::collections::BTreeMap<String, CancellationToken>>>,
     key: String,
@@ -575,11 +651,17 @@ impl Drop for OperationOwner {
     }
 }
 struct RuntimeState {
+    /// The shared gate and the limits it was built with. Created by the first
+    /// sync start; later starts must use the same limits until restart.
     quota: Option<(Value, Arc<quota::QuotaGate>)>,
+    /// Sync jobs keyed by account id.
     jobs: std::collections::BTreeMap<String, Job>,
+    /// Label-name sync jobs keyed by job id.
     label_jobs: std::collections::BTreeMap<String, labels::SyncJob>,
     stopping: bool,
 }
+/// The Google sync runtime: per-account sync jobs, explicit Google operations
+/// and the shared quota gate.
 pub(crate) struct Runtime {
     core: CoreBridge,
     auth: Arc<google_auth::Runtime>,
@@ -589,6 +671,8 @@ pub(crate) struct Runtime {
     state: tokio::sync::Mutex<RuntimeState>,
 }
 impl Runtime {
+    /// Wakes every running job after sync preferences change, asking each for
+    /// a mail and Calendar refresh so the new settings apply at once.
     pub(crate) async fn cadence_changed(&self) {
         let state = self.state.lock().await;
         for job in state.jobs.values() {
@@ -606,6 +690,8 @@ impl Runtime {
                 .send_modify(|generation| *generation = generation.wrapping_add(1));
         }
     }
+    /// Creates the runtime with one Gmail and two Calendar preparation slots
+    /// shared by all accounts. `cancel` is the engine's shutdown token.
     pub(crate) fn new(
         core: CoreBridge,
         auth: Arc<google_auth::Runtime>,
@@ -625,6 +711,7 @@ impl Runtime {
             }),
         })
     }
+    /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
@@ -670,6 +757,9 @@ impl Runtime {
                 | "google_empty"
         )
     }
+    /// Joins the account's running job for one explicit operation and returns
+    /// its context. Explicit operations never start sync themselves: without a
+    /// running job this fails with `sync_not_running`.
     async fn operation_context(
         &self,
         account: &str,
@@ -714,6 +804,12 @@ impl Runtime {
             },
         ))
     }
+    /// Handles one Google sync or operation request for the session `owner_id`.
+    ///
+    /// `owner_cancel` fires when that session ends. Sync start and refresh
+    /// make the session an owner of the account's job; explicit operations
+    /// need a running job and stop when their session ends, except that an
+    /// admitted provider mutation still records its outcome.
     pub(crate) async fn handle(
         &self,
         owner_id: &str,
@@ -722,6 +818,8 @@ impl Runtime {
         account: Option<&str>,
         params: Value,
     ) -> Result<Value> {
+        // Status: every job, plus accounts that synced before but have no job
+        // now. Needs no account and makes no provider request.
         if method == "google_sync_status" {
             if params.as_object().is_none_or(|p| !p.is_empty()) {
                 return Err(failure(
@@ -760,6 +858,9 @@ impl Runtime {
                 json!({"accounts":accounts,"configured":state.quota.is_some(),"limits":state.quota.as_ref().map(|(limits,_)|limits)}),
             );
         }
+        // Everything else is per account. Errors raised before dispatch for
+        // send, draft delete and adopt carry markers that nothing was sent
+        // or committed, so the client can retry safely.
         let account = account
             .filter(|id| !id.is_empty())
             .ok_or_else(|| {
@@ -775,6 +876,7 @@ impl Runtime {
                 }
             })?
             .to_owned();
+        // Label-name sync jobs are visible only to the session that started them.
         if matches!(
             method,
             "google_labels_sync_status" | "google_labels_sync_cancel"
@@ -796,6 +898,9 @@ impl Runtime {
             }
             return Ok(job.snapshot(job_id));
         }
+        // Start a label-name sync, or return the existing job for the same
+        // owner and request id so a retried request doesn't start a second
+        // one. One running job per account, eight engine-wide.
         if method == "google_labels_sync" {
             let request = labels::request_parameter(&params, "request_id")?.to_owned();
             let (context, operation_owner) = self
@@ -853,6 +958,7 @@ impl Runtime {
             state.label_jobs.insert(job_id, job);
             return Ok(reply);
         }
+        // Ask the remote-drafts worker for a fresh inventory pass.
         if method == "google_drafts_refresh" {
             if params.as_object().is_none_or(|object| !object.is_empty()) {
                 return Err(failure(
@@ -881,6 +987,9 @@ impl Runtime {
                 .await?;
             return Ok(reply);
         }
+        // Validate draft, send and Calendar-operation requests before joining
+        // a job. Status and abandon only read or update the local journal, so
+        // they are answered here without a running job.
         if matches!(
             method,
             "google_draft_adopt"
@@ -1010,6 +1119,10 @@ impl Runtime {
                 })
                 .await;
         }
+        // Explicit provider operations. They run on this session with the
+        // job's context, under a child token that also fires when this
+        // session ends; the operation's owner entry keeps the job alive
+        // until it returns.
         if matches!(
             method,
             "google_calendar_write"
@@ -1122,6 +1235,8 @@ impl Runtime {
             relay.abort();
             return result;
         }
+        // Release drops this session's ownership; the job stops when no owner
+        // is left. Other sessions' ownership is unaffected.
         if method == "google_sync_release" {
             if params.as_object().is_none_or(|p| !p.is_empty()) {
                 return Err(failure(
@@ -1142,6 +1257,8 @@ impl Runtime {
             }
             return Ok(json!({"account":account,"session_stopped":true,"active":active}));
         }
+        // Free/busy is fetched on demand, for at most 42 days at a time, using
+        // the running job's context without joining it.
         if method == "google_sync_busy" {
             if params.as_object().is_none_or(|p| {
                 p.len() != 3
@@ -1192,6 +1309,7 @@ impl Runtime {
                 json!({"account":account,"calendars":count,"from":params["from"],"to":params["to"],"time_zone":zone}),
             );
         }
+        // Stop ends the job for every owner and waits for its workers to exit.
         if method == "google_sync_stop" {
             if params.as_object().is_none_or(|p| !p.is_empty()) {
                 return Err(failure("invalid_request", "Sync stop takes no parameters"));
@@ -1203,6 +1321,7 @@ impl Runtime {
             }
             return Ok(json!({"account":account,"stopped":true}));
         }
+        // Start or refresh sync for the account.
         if method != "google_sync_start" && method != "google_sync_refresh" {
             return Err(failure("unknown_method", "Unknown Google sync method"));
         }
@@ -1235,6 +1354,8 @@ impl Runtime {
         if owner_cancel.is_cancelled() || self.cancel.is_cancelled() {
             return Err(failure("cancelled", "Google work stopped"));
         }
+        // Resolve the binding and its grants: which workers run depends on
+        // the scopes the user actually granted.
         let id = account.clone();
         let binding = self
             .core
@@ -1263,6 +1384,9 @@ impl Runtime {
                 "Grant access to mail or Calendar before syncing",
             ));
         }
+        // Job work hangs off the auth runtime's per-connection token, so a
+        // disconnect or reconnect cancels it. Starting sync also clears a
+        // remembered keychain denial so the OS is asked again.
         let account_cancel = self.auth.account_work_cancel(&account).await?;
         self.auth.retry_credential_access(&account).await?;
         let mut state = self.state.lock().await;
@@ -1273,6 +1397,7 @@ impl Runtime {
         {
             return Err(failure("cancelled", "Google work stopped"));
         }
+        // The gate is shared by every account, so its limits are fixed once set.
         if let Some((limits, _)) = &state.quota {
             if limits != &params {
                 return Err(failure(
@@ -1281,6 +1406,9 @@ impl Runtime {
                 ));
             }
         }
+        // Join a live job for the same connection generation instead of
+        // starting a second one. A refresh, or a start after a vault refusal,
+        // also wakes its workers. A job from an older generation is replaced.
         if let Some(job) = state.jobs.get(&account) {
             if !job.task.is_finished()
                 && !job.cancel.is_cancelled()
@@ -1309,6 +1437,8 @@ impl Runtime {
                 }
             }
         }
+        // Start a new job: create the gate on first use, then one worker per
+        // granted service.
         let quota = match &state.quota {
             Some((_, gate)) => gate.clone(),
             None => {
@@ -1374,6 +1504,9 @@ impl Runtime {
         let job_context = context.clone();
         let engine_cancel = self.cancel.clone();
         let job_cancel = cancel.clone();
+        // The supervisor ends the job when its last owner has gone (checked
+        // every 50 ms), on engine shutdown, on explicit stop, or once every
+        // worker has exited.
         let task = tokio::spawn(async move {
             let mut owner_tick = tokio::time::interval(Duration::from_millis(50));
             owner_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1415,6 +1548,8 @@ impl Runtime {
         );
         Ok(json!({"account":account,"started":true,"active":true}))
     }
+    /// Refuses new work, cancels every sync and label job, and waits for their
+    /// tasks to finish.
     pub(crate) async fn shutdown(&self) {
         let (jobs, label_jobs) = {
             let mut state = self.state.lock().await;
@@ -1438,6 +1573,8 @@ impl Runtime {
         }
     }
 }
+/// Records `service`'s state and error code in the job's progress, logging a
+/// diagnostics event when either changes.
 fn progress_state(
     progress: &std::sync::Mutex<Value>,
     service: &str,
@@ -1449,9 +1586,15 @@ fn progress_state(
     value[service] = json!(state);
     value[format!("{service}_error")] = json!(error);
     if changed {
-        crate::diagnostics::event("Sync", "state_changed", json!({"service":service,"state":state,"code":error}));
+        crate::diagnostics::event(
+            "Sync",
+            "state_changed",
+            json!({"service":service,"state":state,"code":error}),
+        );
     }
 }
+/// Sleeps for `delay` in steps of at most a minute. Returns `false` if
+/// cancelled.
 async fn pause(cancel: &CancellationToken, delay: Duration) -> bool {
     let mut remaining = delay;
     while !remaining.is_zero() {
@@ -1461,6 +1604,9 @@ async fn pause(cancel: &CancellationToken, delay: Duration) -> bool {
     }
     !cancel.is_cancelled()
 }
+/// A worker's wait between steps: returns early on a refresh signal, waits
+/// indefinitely when `delay` is `None`, and returns `false` once the job is
+/// cancelled.
 async fn wait_sync(
     ctx: &SyncContext,
     refresh: &mut watch::Receiver<u64>,
@@ -1474,6 +1620,13 @@ async fn wait_sync(
     }
 }
 
+/// The backoff before retrying a worker step that failed with a transient
+/// error (rate limit, transport, server unavailable), or `None` if the error
+/// is not transient.
+///
+/// For `attempt` 0 to 5 the wait is 2^`attempt` seconds; from 6 on it is a
+/// 300 s poll. It is never shorter than the provider's `Retry-After` and gets
+/// up to a second of jitter.
 fn retry_wait(error: &CoreError, attempt: u32) -> Option<Duration> {
     if !(error.code.contains("rate_limited")
         || error.code.contains("transport")
@@ -1496,6 +1649,9 @@ fn retry_wait(error: &CoreError, attempt: u32) -> Option<Duration> {
         .subsec_millis();
     Some(Duration::from_secs(provider.max(base)) + Duration::from_millis(u64::from(jitter)))
 }
+/// Checks that sync for `service` is enabled for the account. If not, marks
+/// the worker paused and waits up to 30 s (or until a refresh) before the
+/// caller checks again.
 async fn service_ready(
     ctx: &SyncContext,
     progress: &Arc<Mutex<Value>>,
@@ -1522,8 +1678,14 @@ async fn service_ready(
     }
 }
 
+/// Drives the mail acquisition worker until the job is cancelled or a step
+/// fails with an error that is not transient.
 async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = mail::MailWorker::new(ctx.account.clone());
+    // `mail_backfill` lets the app show new-mail checks as syncing and leave
+    // the older-mail download to its progress view.
+    let lanes = progress.clone();
+    worker.observe_lanes(move |backfill| lanes.lock().unwrap()["mail_backfill"] = json!(backfill));
     let clock = std::time::Instant::now();
     let mut failures = 0;
     let mut refresh = ctx.refresh.subscribe();
@@ -1539,7 +1701,9 @@ async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
             continue;
         }
         if ctx.mail_refresh_requested.swap(false, Ordering::AcqRel) {
+            // The next step checks for new mail.
             worker.request_refresh();
+            progress.lock().unwrap()["mail_backfill"] = json!(false);
         }
         progress_state(&progress, "mail", "running", None);
         match worker
@@ -1582,6 +1746,7 @@ async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     }
     progress_state(&progress, "mail", "stopped", None);
 }
+/// Requires `params` to hold exactly one key, `request_id`.
 fn operation_params(params: &Value) -> Result<()> {
     if params
         .as_object()
@@ -1591,12 +1756,15 @@ fn operation_params(params: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// Returns `params.request_id` if it is 1 to 256 bytes with no control characters.
 fn operation_id(params: &Value) -> Result<&str> {
     params["request_id"]
         .as_str()
         .filter(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
         .ok_or_else(|| failure("invalid_request", "Choose a Calendar operation"))
 }
+/// Refreshes the Gmail label catalog every ten minutes
+/// (`labels::REFRESH_INTERVAL_MS`).
 async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = labels::LabelsWorker::default();
     let clock = std::time::Instant::now();
@@ -1623,6 +1791,8 @@ async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
             Ok(mail::Step::Idle(delay)) => delay,
             Err(error) => {
                 progress_state(&progress, "labels", "paused", Some(&error.code));
+                // These errors won't clear on a quick retry; try again at the
+                // next regular refresh instead of stopping the worker.
                 let delay = retry_wait(&error, failures).or_else(|| {
                     matches!(
                         error.code.as_str(),
@@ -1643,6 +1813,8 @@ async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     }
     progress_state(&progress, "labels", "stopped", None);
 }
+/// Delivers queued local mail actions (label changes, trash, restore) to
+/// Gmail, one message per step.
 async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = mail_mutations::MailMutationWorker::new(ctx.account.clone());
     let mut failures = 0;
@@ -1691,6 +1863,8 @@ async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Val
     }
     progress_state(&progress, "mail_mutations", "stopped", None);
 }
+/// Keeps Gmail's copies of local drafts current (uploads, deletes of
+/// discarded drafts, conflict resolution, transfer cleanup), one item per step.
 async fn draft_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut failures: u32 = 0;
     let mut refresh = ctx.refresh.subscribe();
@@ -1713,6 +1887,8 @@ async fn draft_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
             }
             Err(error) => {
                 progress_state(&progress, "drafts", "paused", Some(&error.code));
+                // Stop on cancellation, or on a stale connection confirmed by
+                // a second, empty store call. Everything else is retried.
                 if error.code == "cancelled"
                     || (error.code == "stale_google_work"
                         && ctx.core_call(|_| Ok(())).await.is_err())
@@ -1731,6 +1907,9 @@ async fn draft_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     }
     progress_state(&progress, "drafts", "stopped", None);
 }
+/// Runs Calendar passes, repeating at once while event pages remain and
+/// otherwise waiting for the account's sync interval. A pass refreshes the
+/// catalog at most once a minute unless a refresh was requested.
 async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut refresh = std::time::Instant::now() - Duration::from_secs(60);
     let mut failures = 0;

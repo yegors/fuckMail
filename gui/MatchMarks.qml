@@ -1,7 +1,7 @@
 import QtQuick
 
-// Tinted boxes behind the parts of a one-line Text that match the search
-// (Search 10). Put it inside the Text; it clips to what the Text shows.
+// Tinted boxes behind the parts of a one-line Text that match the search.
+// Put it inside the Text; it clips to what the Text shows.
 Item {
     id: marks
     property var phrases: []

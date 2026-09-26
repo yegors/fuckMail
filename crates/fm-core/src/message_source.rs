@@ -4,6 +4,7 @@ use fm_google::transport::CancellationToken;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
+/// A message's retained source to read off the writer with [`read`].
 pub struct ReadPlan {
     blobs: BlobStore,
     account: String,
@@ -12,6 +13,11 @@ pub struct ReadPlan {
 }
 
 impl Store {
+    /// Plans reading a message's retained source. `request` holds `id` and the
+    /// `source_version` (source hash) the reader last saw.
+    ///
+    /// Fails with `stale_source` if the message's source changed since. Does
+    /// not mark the message read.
     pub fn message_source_begin(&self, account: &str, request: &Value) -> Result<ReadPlan> {
         fields(request, &["id", "source_version"])?;
         let mid = id(string(request, "id")?)?;
@@ -46,6 +52,13 @@ fn bounded_at(value: &str, limit: usize) -> (String, bool) {
     (value[..end].into(), end < value.len())
 }
 
+/// Verifies and parses the source off the writer and returns reader content:
+/// address metadata, unsubscribe options, whether it has an invitation, the
+/// HTML part and the raw source.
+///
+/// HTML and raw text are each cut at 256 KiB, then halved further until the
+/// reply fits in about 900 KiB of JSON; the `*_truncated` flags say so. Fails
+/// with `content_unavailable` if the blob is missing, altered or unparseable.
 pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));

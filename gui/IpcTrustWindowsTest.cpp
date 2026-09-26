@@ -1,3 +1,5 @@
+// IpcTrust test for Windows (gui-ipc-trust): owner-private discovery ACLs,
+// rejection of broader ACLs, and the named-pipe server's PID and user.
 #include "IpcTrust.h"
 #include <QCoreApplication>
 #include <QDebug>

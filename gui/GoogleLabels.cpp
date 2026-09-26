@@ -1,3 +1,5 @@
+// MailBackend's Gmail label setup: the cached label catalog for an account, its
+// refresh, and binding a local category to an existing or new Gmail label.
 #include "MailBackend.h"
 #include <QJsonArray>
 #include <QUuid>
@@ -129,6 +131,9 @@ void MailBackend::submitGoogleLabelBinding(const QString &account) {
             || result["category"].toObject()["provider_label_id"] != params["provider_label_id"])) {
             ok = false; result = {{"code", "invalid_response"}, {"message", "The label response did not match this link. Retry checks the same recorded request."}};
         }
+        // Only a success or a definite refusal ends the attempt. Anything else
+        // (timeouts, disconnects, odd responses) keeps the recorded params, so
+        // Retry resends the same request id for the engine to match.
         const auto code = result["code"].toString();
         const bool definite = QStringList{"invalid_request", "stale_revision", "label_catalog_required", "label_unavailable", "label_already_mapped",
             "capability_unavailable", "already_exists", "not_found", "profile_kind_mismatch", "request_id_conflict"}.contains(code);

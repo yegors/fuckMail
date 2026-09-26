@@ -1475,3 +1475,89 @@ Decided:
 - **Labels** read alphabetically, ignoring case, in the rail and the All labels menu. When there are more than seven, the rail keeps the seven most used and shows them in name order.
 
 Search 11, Mail UI95; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D131 — copy from the contact card; no address tooltip (2026-09-26T00:30:00Z)
+
+The founder reported two things:
+- hovering a contact showed the contact card and also a tooltip with the email address, which is redundant;
+- the card's name and address could not be selected or copied.
+
+Decided:
+- Recipient names lose their address tooltip.
+- The card's name, address and status line can be selected with the mouse and copied with Ctrl+C.
+- While something in the card is selected, the card stays open until Esc or a click outside, so the pointer can leave it and the copy still works.
+- Its conversation rows stay clickable.
+
+Mail UI96; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D132 — app icon; native title bar follows the theme (2026-09-26T05:20:00Z)
+
+The founder supplied a yellow character as the app icon and asked for it on the installer and the running app. They then asked about replacing the default window title bar. Of the three mocked-up options (tint the native bar, merge the app header into the title bar with native controls, or draw fully custom window buttons), they chose to keep it native and match the themes.
+
+Decided:
+- **Icon.** `gui/app-icon/app-icon.png` is the source. It is the Windows exe icon (also the window, taskbar and Start menu icon), the macOS bundle icon, the Linux window icon and the installer's icon and wizard image. `scripts/make_app_icons.py` regenerates the committed `.ico` and `.icns`; only that script needs Pillow. The source is 128 px, so the largest sizes are upscaled.
+- **Title bar.** The system title bar stays, with its own buttons, snapping and dragging. Its background is the window colour (`Theme.canvas`) and its controls switch between dark and light with the theme, including when the theme changes while the app is open. Windows 11 sets the caption colour; Windows 10 only switches dark or light. macOS shows the window background through a transparent title bar. Linux keeps its window manager's bar.
+
+Platform 21. Engine, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D133 — the engine CLI in the developer console (2026-09-26T06:30:00Z)
+
+The founder asked to make the console more powerful by exposing the engine CLI there, so the engine can be used directly.
+
+Decided:
+- The console's `fm <args>` command runs the bundled `fm` against the same profile and running engine as the app. For account commands it passes the selected account. Output appears as console lines, with `--json` replies as one expandable line.
+- One command runs at a time. Ctrl+C or `stop` ends it.
+- `fm` output never goes to the log file, because it can contain mail content; copy and export take it like any visible line, as a deliberate user action. D082's metadata-only rule for persisted logs is unchanged.
+- The CLI remains a separate process with its own lifetime; nothing new runs in the background once a command ends.
+
+Mail UI97, CLI55. Engine, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D134 — fm pauses the live console log (2026-09-26T07:10:00Z)
+
+Trying D133, the founder typed bare `fm` and got clap's missing-command error, with sync events burying the output. Decided: bare `fm` shows `fm --help`, and running any `fm` command pauses live events in the console (the log file keeps recording) until the user resumes. Mail UI97 updated in place; nothing else changes.
+
+## D135 — full-window console with a quick slide (2026-09-26T07:40:00Z)
+
+The founder asked for the developer console to fill the whole screen rather than part of it, and to slide down and up on `~` very quickly, under 300 ms. Decided: it fills the window and slides in 200 ms and out in 160 ms, without the fade. Mail UI97 updated in place.
+
+## D136 — command output scrolls the console to the bottom (2026-09-26T08:30:00Z)
+
+The founder reported not seeing output after running a command unless they scrolled down. Decided: any typed command or reply, including `fm` output that arrives later, brings the view to the bottom and resumes following. While fixing it: `~` now reverses a slide in progress instead of being lost, and `--json` output still pending when `fm` exits joins the JSON reply rather than printing as plain lines. Mail UI97 updated in place.
+
+## D137 — mail download progress with a real total (2026-09-26T09:00:00Z)
+
+The founder changed both accounts from one year of mail to two. The Accounts page then showed "13.2k of 13.2k+" with a full bar and "Counting mail…" for the whole download. They asked for the amount actually being synced and a more useful bar.
+
+Cause: while the inventory runs, the only total was the messages Google had listed so far. The inventory lists 100 IDs and downloads them before listing the next 100, so "listed" and "downloaded" grow together, and the real size is known only at the end. Gmail's `resultSizeEstimate` is not reliable enough to show.
+
+Decided:
+- **The engine counts the inventory separately.** Each inventory step also lists one page of 500 IDs with the same query and scope (the account's window, Spam left out, Trash included). The total arrives about five times faster than the download: for 27k messages, about 55 list calls of 5 quota units each. The count is best effort: a failed page is tried again next step and never stops the download. It belongs to the account's mail generation, so a new retention window counts again, and it is not repeated once complete. The engine does not save its place, so a restart counts again from the start.
+- **The Accounts mail row:**
+  - while counting: what is on this machine, "Counting… · 8.5k found", and a shimmering bar;
+  - once counted: "13.2k of 21.4k", the share as a bar, the percentage and the time left at the current rate;
+  - 99% at most until the inventory finishes, since mail arriving meanwhile can reach the total early; then "Complete".
+- No schema change: the count uses Core's existing `meta` table.
+
+Gmail34, Core72, Mail UI98; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D138 — the count finishes quickly on slow downloads (2026-09-26T09:30:00Z)
+
+On the founder's accounts, Windscribe showed "17k found" while 27.2k were already downloaded. D137 counted one 500-ID page per inventory step, so on a slow download the count crawled too. Decided:
+- Each inventory step now counts page after page for up to 2 seconds, so the total arrives in about a minute however slowly the mail downloads.
+- The status reads "Counting · 26k found" ("Counting…" before the first page).
+
+Gmail34 and Mail UI98 updated in place; nothing else changes.
+
+## D139 — the account tab's ring shows the same share (2026-09-26T10:00:00Z)
+
+The founder saw the account tab's ring at a sliver while its hover card said 47%. The ring stayed at 8% until the inventory finished, a leftover from before D137 gave it a total. Decided: the ring shows the download's share once the count is known, and the sliver only while counting. Mail UI98 updated in place.
+
+## D140 — the contact card counts To and Cc (2026-09-26T11:00:00Z)
+
+The founder hovered a person Cc'd on the open thread and the card said "0 conversations": `sender_summary` counted only conversations the person sent. Decided:
+- The card counts conversations the person is on as sender, or on To or Cc. Core's `conversations` gains `exact_person` beside `exact_sender`; the two cannot be combined.
+- To/Cc come from the link index's people rows, plus the first To of messages it has not read yet. On the founder's largest account the count takes about 17 ms, against 10 ms for the sender alone.
+- The card's link reads "All N with …" and searches the bare address, which matches the same roles.
+
+Core and Mail UI98 updated in place; schema37 (no change), fixtures0/3 and protocol1 unchanged.

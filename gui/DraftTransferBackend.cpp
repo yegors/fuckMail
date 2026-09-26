@@ -1,3 +1,6 @@
+// MailBackend's "change From account" for a draft: save first, move the draft to
+// the other account, retry an unconfirmed move, open the result there, and retry
+// cleanup of the original Google draft.
 #include "MailBackend.h"
 
 namespace {
@@ -40,6 +43,8 @@ void MailBackend::changeDraftAccount(const QString &target) {
         saveDraft(); return;
     }
     cancelPendingGoogleSend("Send cancelled by From account change.");
+    // The intent (request id and both expected revisions) is kept until a
+    // definite answer, so a retry after a lost reply repeats the same move.
     auto intent = mutation();
     intent["account"] = m_account; intent["draft_id"] = m_draft.value("draft_id").toString();
     intent["target_account"] = target; intent["expected_revision"] = m_draft.value("revision").toLongLong();
@@ -73,6 +78,8 @@ void MailBackend::startDraftTransfer(const QString &key) {
             || draft["account"] != intent["target_account"])) {
             ok = false; result = {{"code", "invalid_response"}, {"message", "The account change result was incomplete. Check it again."}};
         }
+        // Only touch the editor if it still shows this draft and neither
+        // account was removed or restored while the move ran.
         const bool current = source == m_account && intent["draft_id"].toString() == m_draft.value("draft_id").toString()
             && generation == m_generation && !accountRemoved(source) && !accountRemoved(target) && !m_unsavedAccountBuffer
             && sourceLife == lifecycleAccount(source).value("lifecycle").toMap().value("revision")
@@ -91,6 +98,8 @@ void MailBackend::startDraftTransfer(const QString &key) {
             return;
         }
         m_draftTransferIntents.remove(key); m_draftTransferMessages.remove(key);
+        // The source copy becomes a read-only record of the move; editing
+        // continues on the new draft in the target account.
         if (current) {
             m_draft["discarded"] = true; m_draft["transferred"] = true; m_draft["read_only"] = true;
             m_draft["account_transfer"] = result.toVariantMap(); m_draftDirty = false;

@@ -1,3 +1,6 @@
+// Developer harness: the Settings stage of `fuckmail-gui --self-test`. Changes
+// appearance, calendar and account settings through the native controls, checks
+// validation and viewport restoration, and reads the results back with `fm`.
 #include "GuiSettingsSelfTest.h"
 #include <QCoreApplication>
 #include <QDir>

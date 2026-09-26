@@ -1,3 +1,6 @@
+// MailBackend's Google connection: sign-in through the browser, disconnect,
+// starting, pausing and polling sync, account capabilities, and running
+// GoogleOperation requests (including cancellable conversation reads).
 #include "MailBackend.h"
 #include "GoogleOperation.h"
 #include <QDesktopServices>
@@ -25,6 +28,9 @@ QVariantMap MailBackend::googleSyncState(const QString &account) const {
 }
 
 void MailBackend::googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
+    // A refusal here happens before anything reaches the engine. The details
+    // flags let send, delete and authoring callers tell "never dispatched"
+    // apart from an unknown provider outcome.
     const auto refuseBeforeRequest = [&](const QString &code, const QString &message) {
         emit debugEvent("WARN", "operation", message, {{"method", method}, {"code", code}});
         QJsonObject error{{"code", code}, {"message", message}};
@@ -88,6 +94,8 @@ void MailBackend::cancelGoogleOperations(bool notify) {
         auto operation = m_readerOperation; m_readerOperation = nullptr;
         operation->cancel(false); operation->deleteLater();
     }
+    // Iterate a copy: notified callbacks remove themselves from the set. Silent
+    // cancellation drops the callbacks, so nothing else will delete these.
     const auto operations = m_googleOperations;
     for (auto operation : operations) operation->cancel(notify);
     if (!notify) { m_googleOperations.clear(); for (auto operation : operations) delete operation; }
@@ -117,6 +125,8 @@ void MailBackend::requestReader(const QString &account, const QJsonObject &param
         });
 }
 
+// Local draft work (attachment imports, source reads and local authoring) does
+// not depend on the account's sync, so it survives pausing it.
 void MailBackend::cancelGoogleProviderOperations(const QString &account) {
     const auto operations = m_googleOperations;
     for (auto operation : operations)
@@ -264,6 +274,8 @@ void MailBackend::beginGoogleAuth(const QString &method, const QString &email, c
         m_googleAuthAttempt = result["attempt_id"].toString();
         if (m_shutdown || !m_connected) return;
         if (m_googleAuthCancelRequested) { cancelGoogleAuth(); return; }
+        // Open only Google's OAuth endpoint, exactly, so a faulty engine
+        // response cannot make the GUI launch an arbitrary URL.
         const QUrl authorization(result["authorization_url"].toString());
         if (authorization.scheme() != "https" || authorization.host() != "accounts.google.com" || authorization.path() != "/o/oauth2/v2/auth"
             || !authorization.userInfo().isEmpty() || authorization.port(-1) != -1 || authorization.hasFragment()

@@ -548,6 +548,65 @@ fn only_a_newly_added_account_waits_for_its_first_label_import() {
     assert!(!pending(&store), "reconnecting never repeats the import");
 }
 
+// The inventory's count gives the account's download a total. It
+// belongs to one mail generation, so a new retention window counts again.
+#[test]
+fn inventory_count_follows_the_mail_generation() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let account = store
+        .bind_google_account("count-owner", "count@example.test", &scopes(), None)
+        .unwrap();
+    let sync = |store: &Store| store.accounts().unwrap()["accounts"][0]["google"]["sync"].clone();
+    assert_eq!(
+        (
+            sync(&store)["inventory_total"].clone(),
+            sync(&store)["inventory_counting"].clone()
+        ),
+        (Value::Null, Value::Null)
+    );
+    let generation = store.google_live_coverage(&account).unwrap().generation;
+    assert!(store
+        .google_mail_count_record(&account, generation, 500, false)
+        .unwrap());
+    assert_eq!(
+        (
+            sync(&store)["inventory_total"].clone(),
+            sync(&store)["inventory_counting"].clone()
+        ),
+        (Value::Null, json!(500))
+    );
+    assert!(store
+        .google_mail_count_record(&account, generation, 812, true)
+        .unwrap());
+    assert_eq!(
+        (
+            sync(&store)["inventory_total"].clone(),
+            sync(&store)["inventory_counting"].clone()
+        ),
+        (json!(812), Value::Null)
+    );
+    // Keeping two years instead of one starts a new generation and a new count.
+    let row = store.accounts().unwrap()["accounts"][0].clone();
+    store
+        .handle(
+            "account_update",
+            Some(&account),
+            json!({"name":"Count","signature_text":"","mail_retention":"2_years",
+                "expected_revision":row["metadata_revision"],"request_id":"two-years"}),
+        )
+        .unwrap();
+    assert_eq!(store.google_mail_count(&account).unwrap(), None);
+    assert_eq!(sync(&store)["inventory_total"], Value::Null);
+    assert!(
+        !store
+            .google_mail_count_record(&account, generation, 900, true)
+            .unwrap(),
+        "a count for the old window is refused"
+    );
+    assert_eq!(store.google_mail_count(&account).unwrap(), None);
+}
+
 #[test]
 fn a_new_account_leaves_its_existing_mail_to_the_backlog_unless_chosen() {
     let dir = tempfile::tempdir().unwrap();

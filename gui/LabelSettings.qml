@@ -1,3 +1,6 @@
+// One account's label table: name, description (read by the local model),
+// automatic Read / Spam, remove, add and Sync with Google. Hosted by
+// LabelsDialog; requests go through backend.labelRequest() and return on labelReply.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

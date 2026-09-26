@@ -81,6 +81,12 @@ impl Store {
         Ok(checkpoint)
     }
 
+    /// Returns a calendar's sync state: query fingerprint, time zone, access
+    /// role, sync token, revision, permission epoch, published and full
+    /// generations, and retained item errors.
+    ///
+    /// The sync token is internal; this value must not be logged or projected
+    /// to the GUI or CLI. Fails with `not_found` for an unconfigured calendar.
     pub fn calendar_checkpoint(&self, account: &str, calendar: &str) -> Result<Value> {
         crate::id(account)?;
         crate::live_calendar::provider_id(calendar)?;
@@ -245,6 +251,9 @@ impl Store {
         })
     }
 
+    /// Journals a local (fake-provider) self-RSVP for `target`, the RSVP
+    /// counterpart of [`Store::calendar_prepare_edit`]. Only the signed-in
+    /// attendee's response can be set, and the stored ETag must still match.
     pub fn calendar_prepare_rsvp(
         &mut self,
         target: &fm_calendar::EventKey,

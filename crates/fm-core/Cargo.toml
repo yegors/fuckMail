@@ -1,9 +1,11 @@
 [package]
 name = "fm-core"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.88"
-license = "MIT"
+description = "SQLite store and single-writer domain logic shared by the fuckMail GUI and CLI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [dependencies]
 base64 = "0.22.1"

@@ -89,23 +89,32 @@ QtObject {
         const paused = !err && !backend.syntheticProfile && !state.active
         const mailShown = serviceOn(account, "mail") && caps.mail_read !== false
         const calShown = serviceOn(account, "calendar") && caps.calendar_read !== false
-        // Download: mail
-        const local = Number(sync.retained_sources || 0), remote = Math.max(local, Number(sync.observed_messages || 0))
+        // Download: mail. While the inventory downloads, the engine counts
+        // what Google lists for the account's window; until that count
+        // is done there is no honest total, so the bar shimmers.
+        const local = Number(sync.retained_sources || 0)
         const listing = sync.inventory_complete !== true
+        const total = sync.inventory_total === undefined || sync.inventory_total === null ? -1 : Number(sync.inventory_total)
+        const counted = sync.inventory_counting === undefined || sync.inventory_counting === null ? -1 : Number(sync.inventory_counting)
+        const counting = listing && total < 0
+        const remote = Math.max(local, listing ? Math.max(total, 0) : Number(sync.observed_messages || 0))
         const dlLeft = Math.max(0, remote - local), dlDone = !listing && dlLeft === 0
         const dlOn = mailShown && !dlDone && !paused && !err
-        const dlPct = remote ? Math.floor(local / remote * 100) : 100
-        const rate = mailRate(account), dlEta = rate > 0 && !listing ? dlLeft / rate : -1
+        // Mail arriving while it downloads can reach the total early; only a
+        // finished inventory shows 100%.
+        const dlPct = remote ? Math.min(listing ? 99 : 100, Math.floor(local / remote * 100)) : (listing ? 0 : 100)
+        const rate = mailRate(account), dlEta = rate > 0 && !counting ? dlLeft / rate : -1
+        const soFar = counted > 0 ? " · " + fmtN(counted) + " found" : ""
         const mail = {
-            count: fmtN(local) + " of " + fmtN(remote) + (listing ? "+" : ""),
-            countTitle: full(local) + " of " + full(remote) + (listing ? " or more" : "") + " messages are on this machine",
-            frac: remote ? local / remote : (dlDone ? 1 : 0),
-            // Until Google's list is counted there is no honest percentage.
-            short: err ? (listing ? "Stopped" : "Stopped at " + dlPct + "%") : paused && !dlDone ? (listing ? "Paused" : "Paused at " + dlPct + "%")
-                : dlOn ? (listing ? "Counting mail…" : dlPct + "%" + (dlEta >= 0 ? " · " + shortEta(dlEta) : "")) : "Complete",
-            status: err ? (listing ? "Stopped · reconnect" : "Stopped at " + dlPct + "% · reconnect")
-                : paused && !dlDone ? (listing ? "Paused · still counting mail in Google" : "Paused at " + dlPct + "% · " + fmtN(dlLeft) + " to go")
-                : dlOn ? (listing ? "Counting mail in Google…" : dlPct + "% · " + fmtN(dlLeft) + " to go" + (dlEta >= 0 ? " · " + eta(dlEta) + " left" : ""))
+            count: counting ? fmtN(local) : fmtN(local) + " of " + fmtN(remote),
+            countTitle: counting ? full(local) + " messages are on this machine · counting what Google has" + (counted > 0 ? ": " + full(counted) + " so far" : "")
+                : full(local) + " of " + full(remote) + " messages are on this machine",
+            frac: counting ? 0 : remote ? Math.min(dlPct / 100, local / remote) : (dlDone ? 1 : 0),
+            short: err ? (counting ? "Stopped" : "Stopped at " + dlPct + "%") : paused && !dlDone ? (counting ? "Paused" : "Paused at " + dlPct + "%")
+                : dlOn ? (counting ? (counted > 0 ? "Counting" + soFar : "Counting…") : dlPct + "%" + (dlEta >= 0 ? " · " + shortEta(dlEta) : "")) : "Complete",
+            status: err ? (counting ? "Stopped · reconnect" : "Stopped at " + dlPct + "% · reconnect")
+                : paused && !dlDone ? (counting ? "Paused while counting mail in Google" : "Paused at " + dlPct + "% · " + fmtN(dlLeft) + " to go")
+                : dlOn ? (counting ? "Counting mail in Google" + soFar : dlPct + "% · " + fmtN(dlLeft) + " to go" + (dlEta >= 0 ? " · " + eta(dlEta) + " left" : ""))
                 : "All mail is on this machine",
             label: dlOn ? "Downloading" : "Mail",
             fill: err ? Theme.error : dlOn ? amber : Theme.inkAlpha(.35),
@@ -166,7 +175,7 @@ QtObject {
             : "Up to date" + (lastSync > 0 ? " · " + ago(lastSync * 1000) : "")
         return {phase: phase, status: status, err: err, paused: paused, mail: mail, cal: cal, ai: ai, mailShown: mailShown, calShown: calShown,
             // While Google's list is still being counted the ring shows only a sliver.
-            ring: phase === "dl" ? (listing ? .08 : mail.frac) : phase === "ai" ? ai.frac : 0, ringColor: phase === "dl" ? amber : aiColor,
+            ring: phase === "dl" ? (counting ? .08 : mail.frac) : phase === "ai" ? ai.frac : 0, ringColor: phase === "dl" ? amber : aiColor,
             ringShown: phase === "dl" || phase === "ai"}
     }
 

@@ -11,27 +11,56 @@ use sha2::{Digest, Sha256};
 mod fidelity;
 pub mod mirror;
 
+/// Largest RAW MIME, in bytes, that is uploaded as a Google draft or retained
+/// from an observed one; this is Gmail's 35 MB message upload limit.
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
+// Selects local, non-discarded drafts that no send or deletion blocks and whose
+// twin needs work: a resumable prepared/acknowledged operation, or a local
+// revision newer than its baseline, adoption or recorded failure. A retry
+// deferral for the same revision and the quiet period both hold a draft back.
 // A draft with nothing written (no subject, recipients, attachments or text
 // beyond the signature) is not sent to Gmail until something is, unless it
 // already has a Gmail draft to update.
 const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR json_extract(google_json,'$.baseline.draft_id') IS NOT NULL OR json_extract(google_json,'$.adoption.target.provider_draft_id') IS NOT NULL OR trim(COALESCE(json_extract(routing_json,'$.subject'),''))<>'' OR COALESCE(json_array_length(json_extract(routing_json,'$.to_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.cc_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.bcc_recipients')),0)>0 OR COALESCE(json_array_length(attachments_json),0)>0 OR trim(replace(body,COALESCE(signature_text,''),''),' '||char(9,10,13))<>'') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR updated_at*1000<=?3-?4) ORDER BY updated_at,draft_id LIMIT ?2";
 
+/// The verified Google connection a draft or send operation runs under.
+///
+/// Every store call re-checks it: the account must be active in a live profile
+/// with mail writes enabled, and this connection generation must still be
+/// connected with a mail-write grant. Otherwise the call fails with
+/// `stale_google_work`.
 #[derive(Clone)]
 pub struct GoogleDraftScope {
+    /// Local account ID.
     pub account: String,
+    /// Generation of the Google connection the caller verified; a reconnect
+    /// starts a new generation.
     pub connection_generation: i64,
+    /// Primary address Gmail reported for this connection. A draft's From must
+    /// equal it, ignoring case.
     pub primary_email: String,
 }
+/// Result of [`Store::google_draft_begin`].
 pub enum GoogleDraftStep {
+    /// No upload is needed; carries the draft status JSON.
     Reply(Value),
+    /// MIME must be built off the writer with [`prepare_google_draft`].
     Prepare(GoogleDraftPlan),
 }
+/// Metadata-only decision from [`Store::google_draft_intent`].
 pub enum GoogleDraftIntent {
+    /// No upload is needed; carries the draft status JSON.
     Reply(Value),
+    /// An upload is needed. `Some` updates that Gmail draft; `None` creates a
+    /// new one.
     Upload { provider_draft_id: Option<String> },
 }
+/// Frozen inputs for building one draft upload's MIME off the writer.
+///
+/// It captures the saved local draft at the requested revision and the twin
+/// revision it was planned against; [`Store::google_draft_finish`] refuses it
+/// if either changed meanwhile.
 pub struct GoogleDraftPlan(Box<GoogleDraftPlanContents>);
 struct GoogleDraftPlanContents {
     scope: GoogleDraftScope,
@@ -43,10 +72,13 @@ struct GoogleDraftPlanContents {
     expected_remote: Option<Observation>,
 }
 impl GoogleDraftPlan {
+    /// Gmail draft the upload will update, or `None` when it creates one.
     pub fn provider_draft_id(&self) -> Option<&str> {
         self.0.target.as_deref()
     }
 }
+/// Staged MIME blob built by [`prepare_google_draft`], ready for
+/// [`Store::google_draft_finish`] to freeze as an operation.
 pub struct PreparedGoogleDraft {
     plan: Box<GoogleDraftPlanContents>,
     hash: String,
@@ -68,6 +100,9 @@ struct Observation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thread_id: Option<String>,
 }
+/// The Gmail copy last confirmed to hold one local revision's upload. The
+/// observed hash is what later observations compare against, because Gmail
+/// adds headers and may re-encode what was uploaded.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Baseline {
     draft_id: String,
@@ -97,6 +132,11 @@ struct Retry {
     until_ms: i64,
     code: String,
 }
+/// A local draft's Google state, stored as JSON in `drafts.google_json`.
+///
+/// `state` is `local`, `adopted`, `synced`, `prepared`, `in_flight`,
+/// `acknowledged`, `acceptance_unknown`, `failed` or `conflict`. `revision`
+/// increases on every write, so work planned against an older twin is refused.
 #[derive(Clone, Serialize, Deserialize)]
 struct Twin {
     version: u32,
@@ -119,7 +159,7 @@ struct Twin {
     derivation: Option<crate::google_draft_actions::Derivation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deletion: Option<crate::google_draft_actions::DeletionGuard>,
-    /// A discarded or vanished draft's Gmail copy is gone (D121).
+    /// A discarded or vanished draft's Gmail copy is gone.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     remote_deleted: bool,
 }
@@ -143,6 +183,8 @@ impl Default for Twin {
         }
     }
 }
+/// The Gmail copy the twin currently targets: its upload baseline, else the
+/// draft it adopted from Gmail.
 fn effective_observation(twin: &Twin) -> Option<Observation> {
     twin.baseline
         .as_ref()
@@ -166,6 +208,13 @@ fn effective_observation(twin: &Twin) -> Option<Observation> {
 fn effective_target(twin: &Twin) -> Value {
     effective_observation(twin).map(|o|json!({"provider_draft_id":o.draft_id,"message_id":o.message_id,"sha256":o.sha256,"size":o.size,"thread_id":o.thread_id})).unwrap_or(Value::Null)
 }
+/// One frozen draft upload, stored in `capture_operations` under its request ID
+/// with the staged MIME's hash as `blob_hash`.
+///
+/// It moves `prepared` -> `in_flight` -> `acknowledged`, `acceptance_unknown`,
+/// `failed`, or back to `prepared` when the request provably never left.
+/// Observation then settles an `acknowledged` operation as `synced` or
+/// `conflict`, and marks a `prepared` one `conflict` if Gmail's copy changed.
 #[derive(Clone, Serialize, Deserialize)]
 struct Operation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,6 +239,9 @@ struct Operation {
     expected_remote: Option<Observation>,
 }
 
+/// Claim on the single upload attempt of one operation, returned by
+/// [`Store::google_draft_claim`].
+///
 /// The lease is an unforgeable identity/revision fence. Cloning it cannot claim
 /// another attempt; a repeated late outcome must match the durable winner.
 #[derive(Clone)]
@@ -197,6 +249,8 @@ pub struct GoogleDraftLease {
     blobs: BlobStore,
     operation: Operation,
 }
+/// Handle to a claimed upload's frozen MIME blob; read it off the writer with
+/// [`load_google_draft_upload`].
 #[derive(Clone)]
 pub struct GoogleDraftUploadPlan {
     blobs: BlobStore,
@@ -213,24 +267,33 @@ impl GoogleDraftLease {
     pub fn draft_id(&self) -> &str {
         &self.operation.draft_id
     }
+    /// From address frozen into the MIME.
     pub fn from(&self) -> &str {
         &self.operation.from
     }
+    /// Gmail draft to update, or `None` to create a new draft.
     pub fn provider_draft_id(&self) -> Option<&str> {
         self.operation.target.as_deref()
     }
+    /// Gmail thread the draft belongs to, when it replies in one or was adopted
+    /// from one.
     pub fn thread_id(&self) -> Option<&str> {
         self.operation.thread_id.as_deref()
     }
+    /// Lowercase hex SHA-256 of the frozen MIME.
     pub fn upload_sha256(&self) -> &str {
         &self.operation.upload_sha256
     }
+    /// Size of the frozen MIME in bytes.
     pub fn size(&self) -> u64 {
         self.operation.size
     }
+    /// Operation revision this claim holds; only its immediate successor can
+    /// record the outcome.
     pub fn revision(&self) -> i64 {
         self.operation.revision
     }
+    /// Returns a handle for reading the frozen MIME off the writer.
     pub fn take_upload(&self) -> GoogleDraftUploadPlan {
         GoogleDraftUploadPlan {
             blobs: self.blobs.clone(),
@@ -239,27 +302,38 @@ impl GoogleDraftLease {
         }
     }
 }
+/// Transport result of one claimed upload, reported to
+/// [`Store::google_draft_outcome`]. Codes are 1-128 ASCII letters, digits or
+/// underscores.
 pub enum GoogleDraftOutcome {
+    /// Gmail returned the draft; the IDs are recorded, but only a later RAW
+    /// observation publishes a baseline.
     Acknowledged {
         draft_id: String,
         message_id: String,
     },
-    Undispatched {
-        code: String,
-    },
-    Unknown {
-        code: String,
-    },
-    Rejected {
-        code: String,
-    },
+    /// The request provably never reached Gmail. The operation returns to
+    /// `prepared` and may be claimed again.
+    Undispatched { code: String },
+    /// The request may have reached Gmail. The operation becomes
+    /// `acceptance_unknown` and is never retried blindly, since a repeated
+    /// create could leave two Gmail drafts.
+    Unknown { code: String },
+    /// Gmail refused the request. The operation fails; a newer local save
+    /// uploads again.
+    Rejected { code: String },
 }
+/// A Gmail draft fetched in RAW format, as input to
+/// [`prepare_google_draft_observation`].
 pub struct GoogleDraftRemote {
     pub draft_id: String,
     pub message_id: String,
+    /// Decoded RFC 5322 bytes, at most [`MAX_GOOGLE_DRAFT_BYTES`].
     pub raw: Vec<u8>,
     pub thread_id: String,
 }
+/// Frozen inputs for reading one Gmail draft and comparing it with the local
+/// twin, built by [`Store::google_draft_observe_begin`].
 pub struct GoogleDraftObservationPlan {
     blobs: BlobStore,
     scope: GoogleDraftScope,
@@ -270,10 +344,14 @@ pub struct GoogleDraftObservationPlan {
     adopted_message: Option<String>,
 }
 impl GoogleDraftObservationPlan {
+    /// Gmail draft to fetch. Always `Some`; planning fails when no Gmail
+    /// identity is known.
     pub fn provider_draft_id(&self) -> Option<&str> {
         Some(&self.target)
     }
 }
+/// Staged RAW observation built by [`prepare_google_draft_observation`], ready
+/// for [`Store::google_draft_observe_finish`].
 pub struct PreparedGoogleDraftObservation {
     plan: GoogleDraftObservationPlan,
     observation: Option<Observation>,
@@ -281,15 +359,24 @@ pub struct PreparedGoogleDraftObservation {
     cancel: CancellationToken,
     retained_source: Option<crate::google_draft_inventory::PreparedGoogleDraftImport>,
 }
+/// A draft with Google work to do, from [`Store::google_draft_due_after`].
+///
+/// The operation fields are set only when a `prepared` or `acknowledged`
+/// operation is resuming; otherwise the caller starts a new request.
 pub struct GoogleDraftDue {
     pub draft_id: String,
+    /// Local revision to upload. When resuming, the revision the operation froze.
     pub revision: i64,
+    /// Current twin state.
     pub state: String,
     pub request_id: Option<String>,
     pub operation_revision: Option<i64>,
+    /// The resuming operation's original request parameters, to replay as-is.
     pub request: Option<Value>,
 }
 
+/// Refuses a request ID that `capture_operations` already holds for another
+/// execution kind, so one ID can never name two kinds of work.
 pub(crate) fn check_execution_kind(
     db: &Connection,
     account: &str,
@@ -313,6 +400,23 @@ pub(crate) fn check_execution_kind(
 }
 
 impl Store {
+    /// Decides from metadata alone whether a draft request needs an upload and
+    /// which Gmail draft it targets.
+    ///
+    /// `p` holds `draft_id`, `expected_revision` and `request_id`; replacing a
+    /// conflicted Gmail copy also needs `action: "replace_local"` and
+    /// `expected_google_revision`. It reads no body or attachment, so the
+    /// engine can call it again after waiting for quota.
+    ///
+    /// A known `request_id` replays: different parameters are
+    /// `request_id_conflict`, a still-`prepared` operation on an active account
+    /// resumes as an upload, and anything else replies with its status. A draft
+    /// already synced or adopted at this revision replies without uploading.
+    /// Errors include `stale_revision` (the local draft moved),
+    /// `google_draft_conflict` (inspect the changed Gmail copy first),
+    /// `stale_google_revision` (the conflict changed), `google_draft_pending`
+    /// (an earlier operation is unresolved) and `identity_mismatch` (From is
+    /// not the verified primary address).
     pub fn google_draft_intent(
         &self,
         scope: &GoogleDraftScope,
@@ -331,6 +435,7 @@ impl Store {
         let draft_id = string(p, "draft_id")?;
         let request = request_id(p)?;
         let revision = positive(p, "expected_revision")?;
+        // `expected_google_revision` is only meaningful with `replace_local`.
         let resolving =
             match p.get("action") {
                 None if p.get("expected_google_revision").is_none() => false,
@@ -343,6 +448,8 @@ impl Store {
                     "Conflict replacement requires action replace_local and its Google revision",
                 )),
             };
+        // A known request ID replays its frozen operation, whatever the draft
+        // looks like now.
         if let Some(op) = self.google_draft_operation(&scope.account, request)? {
             if op.params != *p {
                 return Err(err(
@@ -382,6 +489,8 @@ impl Store {
                 .map(|id| self.google_draft_operation(&scope.account, id))
                 .transpose()?
                 .flatten();
+            // After an unknown outcome, only an update of the draft just observed
+            // is safe: re-creating could duplicate a draft Gmail did accept.
             if let Some(op) = previous.filter(|op| op.state == "acceptance_unknown") {
                 let observed = twin.conflict.as_ref().and_then(|c| c.observed.as_ref());
                 if op
@@ -429,6 +538,8 @@ impl Store {
                 self.google_draft_status(&scope.account, draft_id)?,
             ));
         }
+        // A replacement overwrites the conflicting copy it observed; otherwise
+        // update the baseline or adopted draft, or create when there is none.
         let target = if resolving {
             twin.conflict
                 .as_ref()
@@ -442,6 +553,11 @@ impl Store {
         })
     }
 
+    /// Repeats the intent check and, when an upload is needed, freezes the
+    /// saved draft into a [`GoogleDraftPlan`] for off-writer MIME preparation.
+    ///
+    /// A reply joins its source message's Gmail thread; an adopted draft keeps
+    /// the thread it was adopted from. Writes nothing.
     pub fn google_draft_begin(
         &self,
         scope: &GoogleDraftScope,
@@ -486,6 +602,13 @@ impl Store {
         ))))
     }
 
+    /// Freezes prepared MIME as a new `prepared` operation and makes it the
+    /// twin's current operation.
+    ///
+    /// Replays an existing request ID instead. Fails with `stale_revision` if
+    /// the saved draft or its attachments changed during preparation, and
+    /// `stale_google_revision` if the twin did. The operation row and twin are
+    /// written in one transaction; nothing is sent to Gmail.
     pub fn google_draft_finish(&mut self, proof: PreparedGoogleDraft) -> Result<Value> {
         cancelled(&proof.cancel)?;
         let plan = proof.plan;
@@ -544,6 +667,15 @@ impl Store {
         self.google_operation_reply(&op)
     }
 
+    /// Moves a `prepared` operation to `in_flight` and returns the lease for its
+    /// one upload attempt.
+    ///
+    /// `expected_operation_revision` must be current, and the operation must
+    /// still be the twin's current one on an undiscarded draft; otherwise this
+    /// fails with `stale_google_work`. The caller must report exactly one
+    /// [`GoogleDraftOutcome`] for the lease, including for failures before
+    /// dispatch. An `in_flight` operation found at startup becomes
+    /// `acceptance_unknown`.
     pub fn google_draft_claim(
         &mut self,
         scope: &GoogleDraftScope,
@@ -588,6 +720,13 @@ impl Store {
         })
     }
 
+    /// Records the transport result of a claimed upload and returns the
+    /// operation's status.
+    ///
+    /// Reporting the same outcome again for the same lease returns the stored
+    /// result; any other late or mismatched outcome is `stale_google_work`. The
+    /// result is recorded even after a disconnect, but the twin follows it only
+    /// while this operation is still current.
     pub fn google_draft_outcome(
         &mut self,
         lease: &GoogleDraftLease,
@@ -626,6 +765,8 @@ impl Store {
             }
             GoogleDraftOutcome::Rejected { code } => ("failed", None, Some(error_code(code)?)),
         };
+        // Accept only the claimed attempt's first outcome. A repeat of exactly
+        // the recorded outcome is a replay; anything else is stale.
         if op.revision != lease.operation.revision || op.state != "in_flight" {
             if op.revision == lease.operation.revision + 1
                 && op.state == state
@@ -657,6 +798,9 @@ impl Store {
         self.google_operation_reply(&op)
     }
 
+    /// Returns the twin's status JSON: state, twin and local revisions, current
+    /// operation, baseline, conflict, adoption, deletion and any failure or
+    /// retry marker. `effective_target` names the Gmail draft it points at.
     pub fn google_draft_status(&self, account: &str, draft_id: &str) -> Result<Value> {
         let (local_revision, twin) = self.google_twin(account, draft_id)?;
         let operation = twin
@@ -671,6 +815,14 @@ impl Store {
         )
     }
 
+    /// Plans a RAW read of the Gmail draft the twin targets, to reconcile it
+    /// with local state.
+    ///
+    /// The target is the current operation's acknowledged ID, else its frozen
+    /// target, else the baseline or adopted draft. Fails with
+    /// `google_draft_pending` while an upload is in flight, and with
+    /// `reconciliation_unavailable` when no Gmail ID is known: an unconfirmed
+    /// create cannot be looked up or retried.
     pub fn google_draft_observe_begin(
         &self,
         scope: &GoogleDraftScope,
@@ -705,6 +857,14 @@ impl Store {
         })
     }
 
+    /// Compares an observed Gmail copy with the twin and records the result as
+    /// `synced`, `adopted` or `conflict`.
+    ///
+    /// Only an acknowledged upload from the same connection generation whose
+    /// IDs match the observed draft becomes a new baseline. Every other
+    /// difference, including a missing draft or an unknown earlier outcome, is
+    /// recorded as a conflict with a reason and the observed copy. Fails with
+    /// `stale_google_work` if the twin changed while the RAW was read.
     pub fn google_draft_observe_finish(
         &mut self,
         proof: PreparedGoogleDraftObservation,
@@ -731,6 +891,7 @@ impl Store {
         }
         let mut operation = plan.operation;
         let observation = proof.observation;
+        // Seeing the same conflicting copy again changes nothing.
         if twin.state == "conflict"
             && twin
                 .conflict
@@ -740,6 +901,8 @@ impl Store {
             return self.google_draft_status(&plan.scope.account, &plan.draft_id);
         }
         let mut baseline = twin.baseline.clone();
+        // A failed draft whose Gmail copy still matches its baseline stays
+        // failed until a newer local save.
         if twin.state == "failed"
             && baseline
                 .as_ref()
@@ -752,6 +915,9 @@ impl Store {
         {
             return self.google_draft_status(&plan.scope.account, &plan.draft_id);
         }
+        // Choose the reference the observation must match, in priority order:
+        // a known-unsent upload's expected copy, an existing conflict, an
+        // acknowledged upload, an unknown outcome, an adoption, the baseline.
         let conflict = if let Some(op) = operation.as_ref().filter(|op| op.state == "prepared") {
             if same_observation(op.expected_remote.as_ref(), observation.as_ref()) {
                 return self.google_draft_status(&plan.scope.account, &plan.draft_id);
@@ -766,6 +932,8 @@ impl Store {
                 observed: observation.clone(),
             })
         } else if let Some(op) = operation.as_ref().filter(|op| op.state == "acknowledged") {
+            // An ACK from an earlier connection may belong to another Google
+            // account, so it never becomes a baseline under this one.
             if op.connection_generation != plan.scope.connection_generation {
                 Some(Conflict {
                     reason: "connection_changed".into(),
@@ -802,6 +970,7 @@ impl Store {
             .as_ref()
             .is_some_and(|op| op.state == "acceptance_unknown")
         {
+            // Even a matching copy cannot prove which attempt produced it.
             Some(Conflict {
                 reason: "acceptance_unknown".into(),
                 observed: observation.clone(),
@@ -851,6 +1020,8 @@ impl Store {
                 }),
             }
         };
+        // Refresh the content-fidelity flag only for the upload that produced
+        // this baseline.
         if conflict.is_none() {
             if let (Some(old), Some(op), Some(matches)) =
                 (&mut baseline, &operation, proof.content_matches)
@@ -867,6 +1038,7 @@ impl Store {
         } else {
             "synced"
         };
+        // Unchanged: skip the write so repeated reads don't advance revisions.
         if twin.state == state && twin.baseline == baseline && twin.conflict == conflict {
             return self.google_draft_status(&plan.scope.account, &plan.draft_id);
         }
@@ -874,6 +1046,9 @@ impl Store {
         twin.baseline = baseline;
         twin.conflict = conflict;
         if let Some(op) = &mut operation {
+            // Keep the first observation as the operation's record. Only a
+            // `prepared` or `acknowledged` operation takes the new state; a
+            // failed or unknown one keeps its state for inspection.
             if op.observed.is_none() {
                 op.observed = observation;
             }
@@ -890,8 +1065,14 @@ impl Store {
         self.google_draft_status(&plan.scope.account, &plan.draft_id)
     }
 
+    /// Marks the draft `failed` after MIME preparation failed for a reason that
+    /// retrying the same revision cannot fix.
+    ///
     /// Record only deterministic local preparation failure for this exact
     /// authored/twin/connection version. This does not manufacture an upload.
+    /// `code` must be `invalid_draft`, `invalid_identity`, `identity_mismatch`
+    /// or `limit_exceeded`. During a conflict replacement the failure is noted
+    /// but the draft stays in conflict. A newer local save makes it due again.
     pub fn google_draft_prepare_failed(
         &mut self,
         scope: &GoogleDraftScope,
@@ -949,8 +1130,13 @@ impl Store {
         self.google_draft_status(&scope.account, draft_id)
     }
 
+    /// Holds a draft out of the due queue for `delay_seconds` (1-300) after a
+    /// retryable local failure.
+    ///
     /// Retryable per-draft local I/O must not occupy the oldest due position
     /// forever. Deferral does not alter a frozen operation or claim acceptance.
+    /// The hold applies only to the current local revision; a newer save is not
+    /// held by it.
     pub fn google_draft_defer(
         &mut self,
         scope: &GoogleDraftScope,
@@ -1003,6 +1189,8 @@ impl Store {
         self.google_draft_status(&scope.account, draft_id)
     }
 
+    /// Writes a twin change that has no operation row, bumping the twin and
+    /// store revisions together.
     fn persist_google_twin(
         &mut self,
         account: &str,
@@ -1025,6 +1213,8 @@ impl Store {
         Ok(())
     }
 
+    /// Lists drafts with Google work to do, with no quiet period; see
+    /// [`Store::google_draft_due_after`].
     pub fn google_draft_due(
         &self,
         account: &str,
@@ -1037,6 +1227,10 @@ impl Store {
     /// Drafts due for upload once their text has rested `quiet_ms` since the
     /// last local save, so typing never uploads every few keystrokes. Work
     /// already under way (prepared, acknowledged) resumes at once.
+    ///
+    /// Returns at most `limit` (1-100) drafts, least recently saved first.
+    /// Fails with `stale_google_work` if `generation` is no longer the
+    /// connected, mail-write-enabled connection.
     pub fn google_draft_due_after(
         &self,
         account: &str,
@@ -1111,6 +1305,9 @@ impl Store {
             .collect()
     }
 
+    /// Marks every draft upload left `in_flight` by an earlier engine run as
+    /// `acceptance_unknown`, since it may have reached Gmail before the process
+    /// stopped. Runs when the store opens.
     pub(crate) fn recover_google_drafts(&mut self) -> Result<()> {
         let rows = {
             let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.state')='in_flight'")?;
@@ -1136,6 +1333,9 @@ impl Store {
         Ok(())
     }
 
+    /// Checks that the account is active in a live profile, has Google mail
+    /// writes enabled, and that `generation` is still its connected binding
+    /// with a mail-write grant. Fails with `stale_google_work` otherwise.
     pub(crate) fn draft_connection(&self, account: &str, generation: i64) -> Result<()> {
         self.require_active_account(account)?;
         id(account)?;
@@ -1160,6 +1360,8 @@ impl Store {
         }
         Ok(())
     }
+    /// Runs [`Store::draft_connection`] and also requires the account's stored
+    /// address to match the scope's verified primary address.
     pub(crate) fn draft_scope(&self, scope: &GoogleDraftScope) -> Result<()> {
         self.draft_connection(&scope.account, scope.connection_generation)?;
         let from: String = self.db.query_row(
@@ -1210,6 +1412,8 @@ impl Store {
         })
         .transpose()
     }
+    /// Draft status as seen by one operation: its own state and details, with
+    /// `operation_is_current` false once a newer operation has replaced it.
     fn google_operation_reply(&self, op: &Operation) -> Result<Value> {
         let mut status = self.google_draft_status(&op.account, &op.draft_id)?;
         status["operation_is_current"] = json!(status["operation"]["request_id"] == op.request_id);
@@ -1217,6 +1421,8 @@ impl Store {
         status["state"] = json!(op.state);
         Ok(status)
     }
+    /// Inserts or updates the operation row and, when given, the twin in one
+    /// transaction, so the journal and the draft never disagree after a crash.
     fn persist_google_draft(
         &mut self,
         op: &Operation,
@@ -1248,6 +1454,8 @@ impl Store {
         Ok(())
     }
 
+    /// Returns the twin JSON with its send guard replaced and its revision
+    /// bumped, for the caller to write inside its own transaction.
     pub(crate) fn google_send_twin_raw(
         &self,
         account: &str,
@@ -1259,6 +1467,8 @@ impl Store {
         twin.revision += 1;
         encode(&twin)
     }
+    /// Builds the initial twin JSON for a local draft made from a Gmail draft.
+    /// An adoption starts `adopted`, targeting the observed Gmail copy.
     pub(crate) fn google_source_twin_raw(
         &self,
         adoption: Option<crate::google_draft_actions::Adoption>,
@@ -1275,6 +1485,9 @@ impl Store {
         }
         encode(&twin)
     }
+    /// Reports whether an undiscarded draft in the `adopted`, `synced` or
+    /// `local` state still targets exactly this observed Gmail copy, so a
+    /// repeated adoption can reuse it.
     pub(crate) fn compatible_google_adoption(
         &self,
         account: &str,
@@ -1296,6 +1509,8 @@ impl Store {
                     && o.size == target.size
             }))
     }
+    /// Returns the twin JSON with its deletion guard replaced and its revision
+    /// bumped, for the caller to write inside its own transaction.
     pub(crate) fn google_delete_twin_raw(
         &self,
         account: &str,
@@ -1334,6 +1549,9 @@ impl Store {
     }
 }
 
+/// Refuses a request ID used by another execution kind, or by another Google
+/// operation kind (`draft`, `send`, `draft_delete`, ...). Rows without a kind
+/// are drafts.
 pub(crate) fn check_google_operation_kind(
     db: &Connection,
     account: &str,
@@ -1351,6 +1569,13 @@ pub(crate) fn check_google_operation_kind(
     Ok(())
 }
 
+/// Builds a draft upload's MIME and stages it as a content blob. Runs off the
+/// writer, on a blocking worker.
+///
+/// Verifies the retained source and attachments first. Fails with
+/// `invalid_draft` when no bounded MIME can be formed, `limit_exceeded` above
+/// [`MAX_GOOGLE_DRAFT_BYTES`], `content_unavailable` when retained content is
+/// missing or corrupt, and `cancelled`.
 pub fn prepare_google_draft(
     plan: GoogleDraftPlan,
     cancel: &CancellationToken,
@@ -1362,6 +1587,8 @@ pub fn prepare_google_draft(
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| invalid())?
         .as_secs();
+    // The Message-ID derives from the account and request ID, so every
+    // preparation of one request carries the same Message-ID.
     let digest = format!(
         "{:x}",
         Sha256::digest(format!("{}\0{}", plan.scope.account, request_id(&plan.params)?).as_bytes())
@@ -1391,6 +1618,8 @@ pub fn prepare_google_draft(
         cancel: cancel.clone(),
     })
 }
+/// Reads a claimed upload's frozen MIME, verifying its size and SHA-256. Runs
+/// off the writer. Fails with `content_unavailable` if the blob changed.
 pub fn load_google_draft_upload(
     plan: GoogleDraftUploadPlan,
     cancel: &CancellationToken,
@@ -1403,6 +1632,12 @@ pub fn load_google_draft_upload(
     cancelled(cancel)?;
     Ok(bytes)
 }
+/// Stages a fetched Gmail draft's RAW and compares its content with the frozen
+/// upload. Runs off the writer.
+///
+/// `remote` is `None` when Gmail reported the draft missing. The comparison
+/// ignores transport headers and MIME encoding; for an adopted draft this also
+/// prepares the observed source for retention.
 pub fn prepare_google_draft_observation(
     plan: GoogleDraftObservationPlan,
     remote: Option<GoogleDraftRemote>,
@@ -1480,6 +1715,7 @@ fn operation_status(op: &Operation) -> Value {
         "upload_sha256":op.upload_sha256,"size":op.size,"ack":op.ack,"error":op.error,"provider_draft_id":op.target})
 }
 
+/// Current wall-clock time in Unix milliseconds.
 pub(crate) fn unix_ms() -> Result<i64> {
     let ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1510,6 +1746,8 @@ fn provider_id(value: &str) -> Result<()> {
         Ok(())
     }
 }
+/// Checks that both addresses are valid and equal ignoring case and outer
+/// whitespace. Fails with `invalid_identity` or `identity_mismatch`.
 pub(crate) fn same_from(a: &str, b: &str) -> Result<()> {
     for value in [a, b] {
         fm_mail::validate_address(&fm_mail::Address {

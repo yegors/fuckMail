@@ -1,3 +1,6 @@
+// Unit test for GoogleOperation against the scripted engine: discovery and peer
+// checks before the token is sent, cancellation, malformed, oversized or duplicate
+// replies, one-shot callbacks and the allow-listed methods.
 #include "GoogleOperationTestFixture.h"
 using namespace GoogleOperationFixture;
 namespace {

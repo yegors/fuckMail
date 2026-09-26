@@ -110,8 +110,19 @@ impl HttpTransport for FixtureHttp {
                         .find_map(|part| part.strip_prefix("pageToken=page-"))
                         .map(|page| page.parse().unwrap())
                         .unwrap_or(0);
-                    let first = page.saturating_mul(state.list_page_size);
-                    let end = first.saturating_add(state.list_page_size).min(ids.len());
+                    // Pages scale with the requested size: the 500-ID count
+                    // pages hold five inventory pages, as in Gmail.
+                    let requested: usize = suffix
+                        .split('&')
+                        .find_map(|part| {
+                            part.strip_prefix("messages?maxResults=")
+                                .or_else(|| part.strip_prefix("maxResults="))
+                        })
+                        .map(|size| size.parse().unwrap())
+                        .unwrap_or(100);
+                    let size = (state.list_page_size.saturating_mul(requested) / 100).max(1);
+                    let first = page.saturating_mul(size);
+                    let end = first.saturating_add(size).min(ids.len());
                     let next = (end < ids.len()).then(|| format!("page-{}", page + 1));
                     (
                         200,
@@ -324,6 +335,68 @@ async fn recent_first_full_inventory_and_final_catchup_have_exact_coverage() {
     h.close();
 }
 
+// While the inventory downloads, each of its steps also counts IDs for
+// up to two seconds, so progress has a total long before the download ends.
+#[tokio::test]
+async fn inventory_count_gives_progress_a_total_before_the_download_ends() {
+    let h = Harness::new(14, 0, 0);
+    h.http.0.lock().unwrap().list_page_size = 2;
+    let mut worker = MailWorker::new(h.account.clone());
+    worker.step(&h.ctx, 0).await.unwrap();
+    let before = h.coverage().await;
+    assert_eq!((before.listed, before.listing), (None, None));
+    let mut seen = Vec::new();
+    while !h.coverage().await.inventory_complete {
+        worker.step(&h.ctx, 0).await.unwrap();
+        let coverage = h.coverage().await;
+        seen.push((coverage.listing, coverage.listed, coverage.retained_sources));
+    }
+    // A fast list finishes the count within the first inventory step, while
+    // most of the mail is still to download.
+    let first_total = seen.iter().position(|s| s.1 == Some(14)).expect("counted");
+    assert!(
+        seen[first_total].2 <= 2 && seen.iter().all(|s| s.0.is_none()),
+        "the whole count arrives in one step: {seen:?}"
+    );
+    let requests = h.http.0.lock().unwrap().requests.clone();
+    // The count lists exactly what the inventory lists.
+    let query = |url: &String| {
+        url.split('&')
+            .find(|part| part.starts_with("q="))
+            .map(str::to_owned)
+    };
+    // The last 100-ID page is the inventory's (the first is the recent lane's).
+    let inventory = requests
+        .iter()
+        .rev()
+        .find(|url| url.contains("maxResults=100"))
+        .and_then(query);
+    assert!(inventory.is_some());
+    assert!(requests
+        .iter()
+        .filter(|url| url.contains("maxResults=500"))
+        .all(|url| url.contains("includeSpamTrash=true") && query(url) == inventory));
+    // Complete counts are not repeated.
+    let counts = requests
+        .iter()
+        .filter(|url| url.contains("maxResults=500"))
+        .count();
+    h.idle(&mut worker).await;
+    assert_eq!(
+        h.http
+            .0
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|url| url.contains("maxResults=500"))
+            .count(),
+        counts
+    );
+    assert_eq!(h.coverage().await.listed, Some(14));
+    h.close();
+}
+
 #[tokio::test]
 async fn interrupted_part_resumes_saved_ids_and_verified_manifests_without_relisting() {
     let h = Harness::new(12, 12, 0);
@@ -411,20 +484,15 @@ async fn saved_inventory_continuation_advances_only_after_all_page_items_commit(
     assert!(h.coverage().await.offline_complete);
     assert_eq!(h.coverage().await.observed, 9);
     let requests = h.http.0.lock().unwrap().requests.clone();
-    assert_eq!(
+    // The inventory's own pages; its count lists 500 IDs a page.
+    let listed = |token: &str| {
         requests
             .iter()
-            .filter(|url| url.contains("pageToken=page-1"))
-            .count(),
-        1
-    );
-    assert_eq!(
-        requests
-            .iter()
-            .filter(|url| url.contains("pageToken=page-2"))
-            .count(),
-        1
-    );
+            .filter(|url| url.contains(token) && url.contains("maxResults=100"))
+            .count()
+    };
+    assert_eq!(listed("pageToken=page-1"), 1);
+    assert_eq!(listed("pageToken=page-2"), 1);
     assert_eq!(
         h.http.raw_count("m003"),
         1,
@@ -453,6 +521,30 @@ async fn pending_delta_gets_a_turn_after_four_recent_parts() {
         40
     );
     assert_eq!(h.http.raw_count("m040"), 0);
+    h.close();
+}
+
+// Each step says whether it downloads older mail, so the app can show only
+// new-mail checks as syncing while a long download runs.
+#[tokio::test]
+async fn steps_report_whether_they_download_older_mail() {
+    let h = Harness::new(60, 60, 0);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let record = seen.clone();
+    let mut worker = MailWorker::new(h.account.clone());
+    worker.observe_lanes(move |backfill| record.lock().unwrap().push(backfill));
+    // The baseline step picks no lane.
+    worker.step(&h.ctx, 0).await.unwrap();
+    for _ in 0..5 {
+        worker.step(&h.ctx, 0).await.unwrap();
+    }
+    // Four recent-mail parts, then the pending history check.
+    assert_eq!(*seen.lock().unwrap(), [true, true, true, true, false]);
+    // A refresh during the download checks for new mail next.
+    worker.step(&h.ctx, 0).await.unwrap();
+    worker.request_refresh();
+    worker.step(&h.ctx, 0).await.unwrap();
+    assert_eq!(seen.lock().unwrap()[5..], [true, false]);
     h.close();
 }
 

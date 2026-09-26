@@ -1,5 +1,5 @@
-# google-p2-auth-v1
+# OAuth test key
 
-The RSA DER private key in this directory was newly generated solely to sign synthetic local JWT fixtures. It is intentionally public test material, has no Google/account access, and must never be used outside tests. `jwks.json` is its public key. Tests create fixed synthetic claims in memory; no real ID/access/refresh token is present.
+The RSA DER private key in this directory was generated solely to sign synthetic JWTs in tests. It is intentionally public test material, has no Google or account access, and must never be used outside tests. `jwks.json` is its public key. Tests build fixed synthetic claims in memory; no real ID, access or refresh token is present.
 
-The corpus verifies signatures, nonce/state/PKCE, subject/audience/issuer/time, callback handling, scope reporting, refresh coordination and native-vault namespace isolation. Live provider consent/refresh and physical locked-keyring behavior remain separate gates.
+The tests cover signatures, nonce/state/PKCE, subject/audience/issuer/time checks, callback handling, scope reporting, refresh coordination and keychain namespace isolation. They do not exercise live Google consent or refresh, or a locked OS keychain.

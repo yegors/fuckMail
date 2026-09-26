@@ -123,6 +123,9 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY calendarSourcesChanged)
     Q_PROPERTY(QString calendarSearchQuery READ calendarSearchQuery WRITE setCalendarSearchQuery NOTIFY calendarSearchChanged)
     Q_PROPERTY(QVariantMap calendarSearch READ calendarSearch NOTIFY calendarSearchChanged)
+    // Core's reading of the Calendar query; it filters the Calendar views while set.
+    Q_PROPERTY(QVariantMap calendarSearchTerms READ calendarSearchTerms NOTIFY calendarSearchChanged)
+    Q_PROPERTY(QStringList calendarRecentSearches READ calendarRecentSearches NOTIFY preferencesChanged)
     Q_PROPERTY(QVariantMap calendarMailActivity READ calendarMailActivity NOTIFY calendarMailActivityChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
@@ -237,7 +240,17 @@ public:
     QVariantList calendarSources() const { return m_calendarSources; }
     QString calendarSearchQuery() const { return m_calendarSearchQuery; }
     QVariantMap calendarSearch() const;
+    QVariantMap calendarSearchTerms() const;
+    QStringList calendarRecentSearches() const { return m_preferences.value("calendar_recent_searches").toStringList(); }
     void setCalendarSearchQuery(const QString &query);
+    // The rows that match Calendar search's reading, laid out again when some drop.
+    Q_INVOKABLE QVariantList filterCalendarEvents(const QVariantList &rows, const QVariantMap &terms) const;
+    // Enter: keep the search, remember it, and follow its date: or with:.
+    Q_INVOKABLE void commitCalendarSearch(const QString &text);
+    Q_INVOKABLE void rememberCalendarSearch(const QString &text);
+    Q_INVOKABLE void removeCalendarRecentSearch(const QString &text);
+    // date:'s value as YYYY-MM-DD, or empty when it is not a day.
+    Q_INVOKABLE QString calendarQueryDate(const QString &value) const;
     Q_INVOKABLE void setCalendarSearchContext(bool active, bool combined);
     Q_INVOKABLE void setCalendarMailActivityContext(bool active, bool combined);
     QVariantMap calendarMailActivity() const { return m_calendarMailActivity; }
@@ -923,7 +936,10 @@ private:
     int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group) const;
     QVariantList m_calendarSources, m_captures;
     QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;
-    QVariantMap m_calendarSearchResult;
+    QVariantMap m_calendarSearchResult, m_calendarSearchTerms;
+    // A committed search waiting for Core's reading of its text.
+    QString m_calendarSearchCommit;
+    void applyCalendarSearchCommit(const QVariantMap &terms);
     bool m_calendarSearchActive = false, m_calendarSearchCombined = true, m_calendarSearchBusy = false;
     int m_calendarSearchGeneration = 0;
     QTimer m_calendarSearchTimer;

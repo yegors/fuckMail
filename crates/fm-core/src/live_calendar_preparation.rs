@@ -1,13 +1,30 @@
 //! Pure bounded Calendar preparation. Objects are opaque and cannot be deserialized.
+//!
+//! Sync staging is split so the SQLite writer never parses or hashes provider
+//! JSON. The writer hands out a small snapshot (a `*Input` type), a blocking
+//! worker turns it into a `Prepared*` object with the free functions here, and
+//! the writer then rechecks every stamp in the snapshot before committing.
+//! Because the prepared types have private fields and no deserializer, they
+//! can only come from these functions.
 use super::*;
 use fm_google::transport::CancellationToken;
 use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::sync::Arc;
 
+/// Maximum serialized size of one provider page, in bytes, counted as the
+/// compact JSON array of its items.
 pub const CALENDAR_PAGE_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum size, in bytes, of one retained event source, including a
+/// cancellation merged over its previous source.
 pub const CALENDAR_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 
+/// One Calendar `events.list` or `calendarList.list` response, serialized,
+/// hashed and bound to the run that requested it.
+///
+/// `page_id` identifies the page by run and input cursor, and the manifest
+/// hashes the exact item bytes plus both continuation tokens, so a replay of
+/// the same cursor that returns different content is rejected as `stale_page`.
 pub struct PreparedCalendarPage {
     pub(super) lease: CalendarSyncLease,
     pub(super) page_id: String,
@@ -19,12 +36,16 @@ pub struct PreparedCalendarPage {
     bytes: usize,
 }
 impl PreparedCalendarPage {
+    /// Returns the number of provider items on the page.
     pub fn len(&self) -> usize {
         self.items.len()
     }
+    /// Returns true when the provider page carried no items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+    /// Returns the compact JSON size of the page's items in bytes, which is
+    /// at most `CALENDAR_PAGE_BYTES` (16 MiB).
     pub fn serialized_bytes(&self) -> usize {
         self.bytes
     }
@@ -45,6 +66,8 @@ pub(super) struct CatalogFields {
     pub deleted: bool,
 }
 impl CatalogFields {
+    /// Extracts the fields staging needs from a calendar-list entry, or
+    /// `None` when it has no valid ID or (unless deleted) no valid zone.
     pub fn from_source(source: &Value) -> Option<Self> {
         valid_catalog(source).then(|| Self {
             id: source["id"].as_str().unwrap().into(),
@@ -55,6 +78,9 @@ impl CatalogFields {
     }
 }
 
+/// Policy stamps captured by the writer before preparation. Staging compares a
+/// fresh copy, so a permission, connection, profile or time-zone change during
+/// preparation fails with `stale_preparation` instead of committing stale work.
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Context {
     pub profile: String,
@@ -78,6 +104,12 @@ pub(super) struct Previous {
     pub stamp: SourceStamp,
     pub raw: Option<String>,
 }
+/// Writer-side snapshot for preparing up to [`CALENDAR_STAGE_CHUNK`] items of
+/// a [`PreparedCalendarPage`], produced by [`Store::calendar_prepare_chunk`].
+///
+/// For each cancelled event it carries the retained prior source and its
+/// generation stamp, because Google's incremental responses omit most fields
+/// of cancelled events and normalization needs the earlier times and series.
 pub struct CalendarChunkInput {
     pub(super) context: Context,
     pub(super) page_id: String,
@@ -88,13 +120,17 @@ pub struct CalendarChunkInput {
     pub(super) bytes: usize,
 }
 impl CalendarChunkInput {
+    /// Returns the bytes of page items plus copied prior sources in this chunk.
     pub fn input_bytes(&self) -> usize {
         self.bytes
     }
+    /// Returns the number of page items the chunk covers.
     pub fn item_count(&self) -> usize {
         self.end - self.start
     }
 }
+/// Normalized events and per-item validation results for one chunk, ready for
+/// [`Store::calendar_stage_prepared_chunk`].
 pub struct PreparedCalendarChunk {
     pub(super) context: Context,
     pub(super) page_id: String,
@@ -103,6 +139,8 @@ pub struct PreparedCalendarChunk {
     pub(super) end: usize,
     pub(super) items: Vec<Item>,
 }
+/// Staged catalog entries from a sealed catalog run that are not yet applied,
+/// read by [`Store::calendar_catalog_prepare_finalization`].
 pub struct CalendarCatalogChunkInput {
     context: Context,
     lease: CalendarSyncLease,
@@ -114,15 +152,24 @@ struct CatalogRow {
     hash: String,
     raw: String,
 }
+/// Re-verified and parsed catalog entries, ready for
+/// [`Store::calendar_catalog_finalize_prepared`].
 pub struct PreparedCalendarCatalogChunk {
     context: Context,
     lease: CalendarSyncLease,
     rows: Vec<PreparedCatalogRow>,
 }
+/// One validated `calendarList.get` entry, ready for
+/// [`Store::calendar_observe_prepared_catalog_entry`].
 pub struct PreparedCalendarCatalogEntry {
     fields: CatalogFields,
     raw: String,
 }
+/// Validates and serializes a single calendar-list entry off the writer.
+///
+/// Fails with `invalid_response` when the entry lacks a valid ID and time zone
+/// (deleted entries may omit the zone) or exceeds 2 MiB, and with `cancelled`
+/// when `cancel` fires.
 pub fn prepare_calendar_catalog_entry(
     source: Value,
     cancel: &CancellationToken,
@@ -144,6 +191,11 @@ struct PreparedCatalogRow {
     source: CatalogRow,
     fields: CatalogFields,
 }
+/// Re-hashes and parses retained catalog entries off the writer.
+///
+/// Fails with `stale_page` when retained bytes no longer match the fingerprint
+/// recorded at staging, and with `invalid_response` when an entry no longer
+/// validates.
 pub fn prepare_calendar_catalog_chunk(
     input: CalendarCatalogChunkInput,
     cancel: &CancellationToken,
@@ -151,6 +203,7 @@ pub fn prepare_calendar_catalog_chunk(
     let mut rows = Vec::with_capacity(input.rows.len());
     for source in input.rows {
         check_cancel(cancel)?;
+        // The staged receipt is the only proof these bytes came from the sealed page.
         if format!("{:x}", Sha256::digest(source.raw.as_bytes())) != source.hash {
             return Err(err(
                 "stale_page",
@@ -182,6 +235,8 @@ pub(super) struct PreparedEvent {
     pub source: Arc<str>,
     pub index: EventIndex,
 }
+/// Row of `calendar_event_index`, the range-query index over retained sources.
+/// Timed bounds are UTC epoch milliseconds; all-day bounds are ISO dates.
 pub(super) struct EventIndex {
     pub start_ms: Option<i64>,
     pub end_ms: Option<i64>,
@@ -194,6 +249,7 @@ pub(super) struct EventIndex {
     pub cancelled: bool,
 }
 impl EventIndex {
+    /// Extracts the indexed start, end, original-start and series fields.
     pub fn from_event(event: &Event) -> Self {
         let bounds = |time: &Option<EventTime>| match time {
             Some(EventTime::Date { date }) => (None, Some(date.to_string())),
@@ -215,6 +271,10 @@ impl EventIndex {
             cancelled: event.cancelled,
         }
     }
+    /// Upserts the index row for `(account, calendar, event)` in `slot`.
+    ///
+    /// Slot 0 indexes the published source and slot 1 a pending source staged
+    /// over it by a later run; consolidation moves slot 1 into slot 0.
     pub fn write(
         &self,
         db: &rusqlite::Connection,
@@ -227,6 +287,13 @@ impl EventIndex {
     }
 }
 
+/// Serializes, bounds and fingerprints one provider page off the writer.
+///
+/// The page must hold at most 250 items and exactly one of `next_page_token`
+/// or `next_sync_token` (intermediate pages carry the former, the final page
+/// the latter). Fails with `invalid_request` for oversized pages, ambiguous
+/// continuation or malformed cursors, and with `cancelled` when `cancel` fires.
+/// Items with invalid IDs are kept and rejected per item later.
 pub fn prepare_calendar_page(
     lease: CalendarSyncLease,
     page: CalendarPage,
@@ -249,6 +316,9 @@ pub fn prepare_calendar_page(
     {
         token(value)?;
     }
+    // The page ID is stable for a cursor within a run; the manifest streams the
+    // exact bytes of `[[items...],next_page_token,next_sync_token]` so replays
+    // can be compared without retaining a second copy of the page.
     let page_id = fingerprint(&json!([lease.run, page.input_cursor]))?;
     let mut manifest = Sha256::new();
     manifest.update(b"[[");
@@ -256,6 +326,8 @@ pub fn prepare_calendar_page(
     let mut bytes = 2;
     for source in page.items {
         check_cancel(cancel)?;
+        // Each item may only use what remains of the page budget, including
+        // its separating comma, so an oversized item stops serializing early.
         let allowance = CALENDAR_PAGE_BYTES
             .checked_sub(bytes + usize::from(!items.is_empty()))
             .ok_or_else(|| err("invalid_request", "Calendar page exceeds byte bounds"))?;
@@ -280,6 +352,7 @@ pub fn prepare_calendar_page(
             .filter(|id| provider_id(id).is_ok())
             .map(str::to_owned);
         let cancelled = source["status"] == "cancelled";
+        // Catalog runs use an empty calendar ID; only they parse list entries.
         let catalog = if lease.calendar.is_empty() {
             CatalogFields::from_source(&source)
         } else {
@@ -312,6 +385,14 @@ pub fn prepare_calendar_page(
     })
 }
 
+/// Normalizes the events in one chunk of `page` off the writer.
+///
+/// Items that fail identity or normalization are not errors; they become
+/// per-item error codes (`invalid_identity`, `invalid_event`,
+/// `invalid_calendar`) that staging records and counts against the run's
+/// completeness. Fails with `scope_mismatch` when `input` was taken for a
+/// different page, and with `calendar_preparation_limit` when a merged
+/// cancellation exceeds `CALENDAR_SOURCE_BYTES` (32 MiB).
 pub fn prepare_calendar_chunk(
     page: &PreparedCalendarPage,
     input: CalendarChunkInput,
@@ -376,6 +457,10 @@ fn prepare_event(
 ) -> Result<Option<PreparedEvent>> {
     let observed: Value = serde_json::from_str(&source.raw)?;
     let mut merged = observed;
+    // Incremental sync returns cancelled events with little more than ID and
+    // status. Overlay those fields on the retained source so the tombstone
+    // keeps its times and series identity; the exact observation is still
+    // stored separately as `observed_json`.
     let merged_previous = source.cancelled && previous.is_some();
     if let Some(previous) = previous.filter(|_| source.cancelled) {
         if previous.len() > CALENDAR_SOURCE_BYTES {
@@ -397,6 +482,7 @@ fn prepare_event(
     } else {
         source.raw.clone()
     };
+    // A source that does not normalize is an item error, not a page failure.
     let event = match fm_calendar::normalize(&lease.account, &lease.calendar, zone, &merged) {
         Ok(event) => event,
         Err(_) => return Ok(None),
@@ -420,6 +506,8 @@ fn check_cancel(cancel: &CancellationToken) -> Result<()> {
     }
 }
 
+/// Serializes `value` as compact JSON, aborting as soon as the output would
+/// exceed `limit` bytes so an oversized source never fully allocates.
 fn serialize_bounded(value: &Value, limit: usize) -> Result<String> {
     struct Buffer {
         bytes: Vec<u8>,
@@ -468,6 +556,13 @@ fn serialize_bounded(value: &Value, limit: usize) -> Result<String> {
 }
 
 impl Store {
+    /// Records a fresh `calendarList.get` observation for one calendar and
+    /// returns the new permission epoch.
+    ///
+    /// Applies the entry's role and time zone through
+    /// [`Store::calendar_observe_permission`] (same staleness rules), then
+    /// replaces the retained catalog JSON. A deleted entry that omits its zone
+    /// keeps the previously stored zone.
     pub fn calendar_observe_prepared_catalog_entry(
         &mut self,
         account: &str,
@@ -497,6 +592,12 @@ impl Store {
         )?;
         Ok(epoch)
     }
+    /// Reads the next bounded chunk of valid, unapplied entries from a sealed
+    /// catalog run (at most 32 rows and about 1 MiB).
+    ///
+    /// An empty chunk means every entry is applied and the run can be
+    /// published. Fails with `page_incomplete` until the final page is sealed,
+    /// and with `stale_revision` when the run no longer holds its lease.
     pub fn calendar_catalog_prepare_finalization(
         &self,
         lease: &CalendarSyncLease,
@@ -506,6 +607,7 @@ impl Store {
         if run.kind != "catalog" || run.final_token.is_none() {
             return Err(err("page_incomplete", "Catalog final page is not sealed"));
         }
+        // Sizes are read first so the JSON is only loaded for rows that fit.
         let mut statement=self.db.prepare("SELECT page_id,ordinal,fingerprint,length(CAST(json AS BLOB)) FROM calendar_sync_items WHERE run=?1 AND error_code IS NULL AND catalog_applied=0 ORDER BY page_id,ordinal LIMIT 32")?;
         let mut query = statement.query([lease.run])?;
         let mut rows = Vec::new();
@@ -540,6 +642,12 @@ impl Store {
             rows,
         })
     }
+    /// Applies one prepared catalog chunk to `calendar_sync_state` and
+    /// `calendar_catalog` in a single transaction, returning the rows covered.
+    ///
+    /// Idempotent per row: entries already marked applied are skipped. Fails
+    /// with `stale_preparation` if the run's policy context changed and with
+    /// `stale_page` if a staged fingerprint changed since preparation.
     pub fn calendar_catalog_finalize_prepared(
         &mut self,
         prepared: &PreparedCalendarCatalogChunk,
@@ -596,6 +704,9 @@ impl Store {
             zone,
         })
     }
+    /// Checks that `page` belongs to the live run and is the page the run
+    /// expects next. Returns true when the page was already sealed, so replays
+    /// after a crash or retry become no-ops.
     fn check_prepared_page(
         &self,
         lease: &CalendarSyncLease,
@@ -630,6 +741,8 @@ impl Store {
                 return Ok(true);
             }
         }
+        // Pages are staged strictly in cursor order: only the page whose input
+        // cursor is the run's current `next_page_token` may be staged.
         if run.final_token.is_some() || page.input_cursor != run.next || start > page.items.len() {
             return Err(err(
                 "stale_page",
@@ -638,7 +751,13 @@ impl Store {
         }
         Ok(false)
     }
+    /// Snapshots the next chunk of `page` starting at item `start` for
+    /// [`prepare_calendar_chunk`].
+    ///
     /// Copy only bounded prior cancellation sources. No JSON parsing or hashes.
+    /// A chunk holds at most [`CALENDAR_STAGE_CHUNK`] items and about 1 MiB,
+    /// but always at least one item. For an already sealed page it returns an
+    /// empty chunk positioned at the end.
     pub fn calendar_prepare_chunk(
         &self,
         lease: &CalendarSyncLease,
@@ -662,6 +781,8 @@ impl Store {
         let mut previous = Vec::new();
         let mut bytes = 0;
         for source in page.items.iter().skip(start).take(CALENDAR_STAGE_CHUNK) {
+            // Only cancellations need the prior source. Prefer this run's own
+            // pending copy so a repeated cancellation merges over the newest data.
             let candidate = if run.kind == "events" && source.cancelled {
                 if let Some(id) = &source.id {
                     self.db.query_row("SELECT source_generation,pending_generation,length(CAST(COALESCE(CASE WHEN pending_generation=?4 THEN pending_json END,json) AS BLOB)) FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id,lease.run],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,Option<i64>>(1)?,r.get::<_,usize>(2)?))).optional()?
@@ -709,8 +830,14 @@ impl Store {
             bytes,
         })
     }
+    /// Stages one prepared chunk durably and returns the next item index.
+    ///
     /// The prepared object proves its source/normalization provenance; current
     /// profile, run, policy and cancellation-source stamps are rechecked here.
+    /// Fails with `stale_preparation` when any of them moved (callers retry by
+    /// preparing again) and with `stale_page` when a replayed item differs from
+    /// what was staged before. Already-staged items are skipped, so replaying a
+    /// chunk is safe.
     pub fn calendar_stage_prepared_chunk(
         &mut self,
         lease: &CalendarSyncLease,
@@ -731,6 +858,8 @@ impl Store {
         if sealed {
             return Ok(page.len());
         }
+        // A cancellation was merged over a specific prior source; if that source
+        // changed since the snapshot, the merge is stale and must be redone.
         for item in &chunk.items {
             if let Some(expected) = &item.previous {
                 let source = &page.items[item.ordinal];
@@ -754,6 +883,8 @@ impl Store {
                 }
                 continue;
             }
+            // The same event ID twice in one run is ambiguous; keep the first
+            // and mark later copies as item errors.
             let duplicate = if let Some(id) = &source.id {
                 tx.query_row(
                     "SELECT EXISTS(SELECT 1 FROM calendar_sync_items WHERE run=?1 AND event_id=?2)",
@@ -772,11 +903,15 @@ impl Store {
             if let (Some(id), Some(event), None) = (&source.id, &item.event, error) {
                 stage_event(&tx, lease, &run, id, &source.raw, event)?;
             }
+            // Role downgrades take effect at staging; upgrades wait for
+            // catalog finalization so an unfinished run never widens access.
             if run.kind == "catalog" {
                 if let Some(id) = &source.id {
                     restrict_catalog_role(&tx, lease, id, source.catalog_role)?;
                 }
             }
+            // Any item error makes the run incomplete, which blocks it from
+            // counting as a full inventory at publication.
             if error.is_some() {
                 tx.execute("UPDATE calendar_sync_runs SET errors=errors+1,identity_complete=MIN(identity_complete,?2) WHERE id=?1",params![lease.run,i64::from(source.id.is_some())])?;
             }
@@ -784,6 +919,12 @@ impl Store {
         tx.commit()?;
         Ok(chunk.end)
     }
+    /// Seals a fully staged page and advances the run's cursor to the page's
+    /// continuation token.
+    ///
+    /// Idempotent for an already sealed page. Fails with `page_incomplete`
+    /// unless every item is durable, and with `stale_page` when the next page
+    /// token has already been used as an input cursor in this run (a cycle).
     pub fn calendar_seal_prepared_page(
         &mut self,
         lease: &CalendarSyncLease,

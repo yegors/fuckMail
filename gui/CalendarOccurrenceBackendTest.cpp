@@ -1,3 +1,6 @@
+// Backend test for resolving a recurring event's occurrence before an edit, on a
+// real MailBackend over the scripted engine: exact identity, stale-result fences
+// after account or source changes, permission checks and archived accounts.
 #include "GoogleOperationTestFixture.h"
 #include "MailBackend.h"
 #include <QGuiApplication>

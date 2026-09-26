@@ -1,4 +1,4 @@
-//! Drafts are Gmail drafts (D121). A draft seen in Gmail becomes an ordinary
+//! Drafts are Gmail drafts. A draft seen in Gmail becomes an ordinary
 //! editable draft here; a change made in Gmail replaces an unchanged local
 //! copy; a draft gone from Gmail leaves; a draft discarded here is deleted in
 //! Gmail once its Undo has passed. Local edits always win: they upload over

@@ -12,13 +12,19 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Google's favicon service, asked for a root domain's brand icon.
 pub(super) const BRAND_BASE: &str = "https://www.google.com";
+/// Gravatar, asked by the SHA-256 of the address, so the address itself is
+/// not sent. `d=404` turns "no photo" into a 404.
 pub(super) const PHOTO_BASE: &str = "https://gravatar.com";
 /// How long a missing picture is not asked for again.
 pub(super) const MISS_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Google answers an unknown domain with a 16px globe; real icons are larger.
 const MIN_BRAND_WIDTH: u32 = 32;
+/// Bound on the in-memory miss map; it is cleared when full (the on-disk
+/// record remains).
 const MAX_REMEMBERED_MISSES: usize = 50_000;
+/// Label for the GUI's initials fallback.
 const NO_PICTURE: &str = "No photo \u{b7} initials";
 
 /// Second-level labels under which a two-letter country code registers names,
@@ -52,6 +58,7 @@ const PERSONAL_FAMILIES: &[&str] = &[
     "yahoo", "hotmail", "outlook", "live", "aol", "gmx", "yandex",
 ];
 
+/// The sender kind the client reports; it decides which sources are tried.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
     People,
@@ -59,12 +66,14 @@ enum Kind {
     Unknown,
 }
 
+/// Where a picture comes from.
 #[derive(Clone, Copy)]
 enum Source {
     Brand,
     Photo,
 }
 
+/// A validated `sender_avatar` request.
 pub(super) struct Sender {
     /// Trimmed and lowercased, as given.
     pub(super) address: String,
@@ -73,6 +82,7 @@ pub(super) struct Sender {
     kind: Kind,
 }
 
+/// The result of trying one source.
 enum Outcome {
     Ready(Value),
     Missing,
@@ -178,6 +188,9 @@ impl Runtime {
         if !settings.sender_pictures {
             return Ok(json!({"state":"none","label":NO_PICTURE,"off":true}));
         }
+        // People get a profile photo and automated senders a brand icon, but
+        // never the icon of a personal mail provider; unknown senders try the
+        // photo first.
         let root = root_domain(&sender.domain);
         let brand = !personal(root);
         let sources: &[Source] = match sender.kind {
@@ -211,6 +224,9 @@ impl Runtime {
         })
     }
 
+    /// Tries one source: the cache and remembered misses first, then a single
+    /// fetch per picture under the fetch policy. A brand icon narrower than
+    /// `MIN_BRAND_WIDTH` counts as missing.
     async fn sender_picture(
         &self,
         cancel: &CancellationToken,
@@ -335,6 +351,7 @@ impl Runtime {
         None
     }
 
+    /// Records a miss in memory and on disk.
     fn remember_missing(&self, key: &str) {
         if let Ok(mut misses) = self.sender_misses.lock() {
             if misses.len() >= MAX_REMEMBERED_MISSES {
@@ -345,6 +362,8 @@ impl Runtime {
         let _ = self.cache.mark_sender_missing(key);
     }
 
+    /// The lock that lets one request fetch a picture while others for the
+    /// same key wait. Entries nobody holds are pruned on each call.
     fn sender_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self
             .sender_locks

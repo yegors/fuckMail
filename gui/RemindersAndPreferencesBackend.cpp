@@ -1,3 +1,6 @@
+// Part of MailBackend: event reminders and new-mail notifications, the clock,
+// calendar navigation and sources, preferences and account settings, mail
+// filters, sender cards, draft field edits and demo-profile send captures.
 #include "MailBackend.h"
 #include "CalendarLayout.h"
 #include "SearchMatch.h"

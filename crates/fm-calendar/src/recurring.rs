@@ -5,12 +5,19 @@ use chrono::{Duration, NaiveDate, Utc};
 use rrule::RRuleSet;
 use std::collections::BTreeMap;
 
+/// A recurrence rule split at one occurrence, for a "this and following" edit.
 pub struct RuleSplit {
+    /// The existing series' rule, now ending before the split: `COUNT`
+    /// reduced, or `UNTIL` set to the day or second before it.
     pub before: Vec<String>,
+    /// The new series' rule: the remaining `COUNT`, or the rule unchanged.
     pub after: Vec<String>,
+    /// Occurrences before the split point.
     pub preceding_count: usize,
 }
 
+/// Parses the single `RRULE` into its components, refusing anything outside
+/// the editor's subset.
 fn parts(rules: &[String], allow_empty: bool) -> Result<BTreeMap<String, String>> {
     if allow_empty && rules.is_empty() {
         return Ok(BTreeMap::new());
@@ -86,10 +93,19 @@ fn parts(rules: &[String], allow_empty: bool) -> Result<BTreeMap<String, String>
     Ok(values)
 }
 
+/// Checks that `rules` is a single `RRULE` the editor can write.
+///
+/// The subset is `FREQ` of daily, weekly, monthly or yearly; `INTERVAL` 1–99;
+/// either `COUNT` 1–1000 or `UNTIL`; distinct `BYDAY` weekdays for weekly,
+/// one `BYMONTHDAY` for monthly and one `BYMONTH` for yearly rules. With
+/// `allow_empty`, no rules (a single event) also passes. Fails with
+/// `unsupported_rule`.
 pub fn validate_rule_shape(rules: &[String], allow_empty: bool) -> Result<()> {
     parts(rules, allow_empty).map(|_| ())
 }
 
+/// Builds the rule set with the start as `DTSTART`. All-day series use a
+/// UTC-midnight carrier, so their DATE `UNTIL` becomes a UTC midnight too.
 fn rule_set(rules: &[String], start: &EventTime) -> Result<RRuleSet> {
     let values = parts(rules, false)?;
     let dtstart = match start {
@@ -133,6 +149,10 @@ fn rule_set(rules: &[String], start: &EventTime) -> Result<RRuleSet> {
     })
 }
 
+/// Checks that an authored rule is in the editor's subset, matches the
+/// start's kind and yields at least one occurrence. No rules pass.
+///
+/// All-day series need a DATE `UNTIL`, timed series a UTC date-time `UNTIL`.
 pub fn validate_rule(rules: &[String], start: &EventTime) -> Result<()> {
     if rules.is_empty() {
         return Ok(());
@@ -158,6 +178,12 @@ fn encode(values: &BTreeMap<String, String>) -> Vec<String> {
     )]
 }
 
+/// Splits `master`'s rule at the occurrence whose original start is `original`.
+///
+/// Fails with `scope_mismatch` when `master` is an instance, `original` is of
+/// the other kind or is not an occurrence, `unsupported_operation` at the first
+/// occurrence (edit the whole series instead), `limit_exceeded` past 1000
+/// preceding occurrences, and `unsupported_rule` outside the editor's subset.
 pub fn split_rule(master: &Event, original: &EventTime) -> Result<RuleSplit> {
     let start = master
         .start
@@ -172,6 +198,7 @@ pub fn split_rule(master: &Event, original: &EventTime) -> Result<RuleSplit> {
         ));
     }
     let values = parts(&master.recurrence, false)?;
+    // All-day slots compare as UTC midnights, the carrier `rule_set` uses.
     let zone: chrono_tz::Tz = match start {
         EventTime::Date { .. } => chrono_tz::UTC,
         EventTime::Zoned { time_zone, .. } => time_zone
@@ -205,6 +232,8 @@ pub fn split_rule(master: &Event, original: &EventTime) -> Result<RuleSplit> {
             "Use the entire-series action for its first occurrence",
         ));
     }
+    // A counted series splits its count; otherwise the old series ends just
+    // before the split and the new one keeps the original end.
     let mut before = values.clone();
     let mut after = values;
     if let Some(count) = before.remove("COUNT") {

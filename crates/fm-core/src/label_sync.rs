@@ -5,11 +5,16 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// `meta` key whose presence marks a new account's one-time label import as
+/// still pending.
 pub(crate) fn initial_import_key(account: &str) -> String {
     format!("labels_initial_import:{account}")
 }
 
 impl Store {
+    /// Queues Gmail delivery for category choices made before their label was
+    /// linked, at most 64 per call; returns how many were queued. Needs mail
+    /// editing permission (`capability_unavailable`).
     pub fn google_label_memberships_queue(&self, account: &str) -> Result<usize> {
         self.label_sync_authority(account)?;
         let tx = self.db.unchecked_transaction()?;
@@ -31,6 +36,15 @@ impl Store {
         }
         Ok(())
     }
+    /// Merges Gmail user labels from the cached catalog into local categories
+    /// by name.
+    ///
+    /// A linked category takes its label's current name. An unlinked label is
+    /// linked to the one unlinked category with the same name (ignoring case),
+    /// or a new category is created for it. Ambiguous or conflicting names are
+    /// skipped. Nothing is written to Gmail. Returns counts plus the categories
+    /// still without a label and the number of links whose label vanished.
+    /// Derived IDs make a repeated merge with the same `request` idempotent.
     pub fn google_labels_merge(&mut self, account: &str, request: &str) -> Result<Value> {
         self.label_sync_authority(account)?;
         id(request)?;
@@ -153,6 +167,12 @@ impl Store {
             Err(e) => Err(e),
         }
     }
+    /// Records that a Gmail label is about to be created for an unlinked
+    /// category, before the request is sent.
+    ///
+    /// Returns false, sending nothing, when the category changed, is already
+    /// linked, or has an earlier creation that was not definitively rejected:
+    /// an unanswered create is never repeated, because it may have succeeded.
     pub fn google_label_create_begin(
         &self,
         account: &str,
@@ -184,6 +204,13 @@ impl Store {
         tx.commit()?;
         Ok(true)
     }
+    /// Records the result of a label creation begun with
+    /// [`Store::google_label_create_begin`].
+    ///
+    /// `provider` is the new Gmail label ID on success; `rejected` marks a
+    /// definitive refusal; neither leaves the outcome unknown. Only the first
+    /// result for a pending creation counts. On success the label is linked
+    /// if the category still exists unchanged and unlinked.
     pub fn google_label_create_finish(
         &self,
         account: &str,

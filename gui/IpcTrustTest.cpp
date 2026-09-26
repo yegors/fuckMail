@@ -1,3 +1,6 @@
+// IpcTrust test for macOS and Linux (gui-ipc-trust): discovery file and profile
+// modes, symlink rejection, and matching the connected peer's user and PID.
+// Windows builds use IpcTrustWindowsTest.cpp instead.
 #include "IpcTrust.h"
 #include <QCoreApplication>
 #include <QDebug>

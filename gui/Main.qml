@@ -1,3 +1,6 @@
+// Root window, loaded by main.cpp from the FuckMail QML module: the top bar
+// (account tabs, search, Mail/Calendar switch), the Mail / Calendar / Settings
+// stack, global shortcuts and app-wide overlays. State comes from the `backend` context object.
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
@@ -26,7 +29,7 @@ ApplicationWindow {
     property var mailFocus: null
     property var calendarFocus: null
     readonly property bool modalReminderOpen: backend.reminders.length > 0 && !startupOverlay.visible
-    readonly property bool workspaceShortcutsAllowed: !modalReminderOpen && !debugConsole.opened && !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
+    readonly property bool workspaceShortcutsAllowed: !modalReminderOpen && !debugConsole.visible && !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
     readonly property bool singleKeysAllowed: workspaceShortcutsAllowed && !typingInField(activeFocusItem)
     readonly property bool accountKeysAllowed: singleKeysAllowed && !settingsOpen && !searchPopupOpen
         && !(workspace === "mail" ? mailView.popupOpen : calendarView.popupOpen)
@@ -34,6 +37,8 @@ ApplicationWindow {
     palette.text: Theme.text
     palette.base: Theme.surface
     palette.window: Theme.canvas
+    // Windows picks a dark or light frame by comparing these two.
+    palette.windowText: Theme.text
     palette.button: Theme.surface
     palette.buttonText: Theme.text
     palette.highlight: Theme.focusBorder
@@ -133,6 +138,10 @@ ApplicationWindow {
         target: searchBox
         function onXChanged() { if (window.searchPopupOpen) Qt.callLater(window.positionSearchPopup) }
     }
+    function commitSearch() {
+        if (workspace === "mail") searchPopup.commit()
+        else { calendarSearchPopup.commit(); leaveSearch() }
+    }
     function findMail() {
         if (settingsOpen) navigate(workspace)
         Qt.callLater(function() { search.forceActiveFocus(); search.selectAll(); window.openSearch() })
@@ -160,7 +169,7 @@ ApplicationWindow {
     Shortcut { sequence: ShortcutRegistry.sequence("search",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen && window.workspace==="mail"; onActivated: window.findMail() }
     Shortcut { sequence: ShortcutRegistry.sequence("view",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
     Shortcut { sequence: ShortcutRegistry.sequence("settings",backend.preferences); enabled: window.singleKeysAllowed; onActivated: window.navigate("settings") }
-    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && window.settingsOpen && !!settingsView && !settingsView.recordingShortcut && !settingsView.popupOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
+    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && window.settingsOpen && !!settingsView && !settingsView.recordingShortcut && !settingsView.popupOpen && !debugConsole.visible; onActivated: window.navigate(window.workspace) }
     Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && searchPopupOpen; onActivated: { searchPopup.close(); calendarSearchPopup.close(); if (search.activeFocus) window.leaveSearch() } }
     Shortcut { sequence: ShortcutRegistry.sequence("undo",backend.preferences); enabled: window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
     Shortcut { sequences: [StandardKey.Undo]; enabled: ShortcutRegistry.unassigned("Ctrl+Z",window.workspace,backend.preferences) && window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
@@ -180,12 +189,21 @@ ApplicationWindow {
         field: search
         onCommitted: window.leaveSearch()
     }
+    // Calendar search runs while its dropdown is open and, with text in the
+    // box, while Calendar is shown, so the views stay filtered.
+    readonly property bool calendarSearchLive: workspace === "calendar" && !settingsOpen
+        && (calendarSearchPopup.opened || backend.calendarSearchQuery.trim().length > 0)
+    function syncCalendarSearch() { backend.setCalendarSearchContext(calendarSearchLive, calendarView.combinedAccounts) }
+    onCalendarSearchLiveChanged: syncCalendarSearch()
     CalendarSearchPopup {
         id: calendarSearchPopup
         parent: Overlay.overlay
+        field: search
         combined: calendarView.combinedAccounts
-        onOpenedChanged: backend.setCalendarSearchContext(opened && window.workspace === "calendar" && !window.settingsOpen, combined)
-        onCombinedChanged: backend.setCalendarSearchContext(opened && window.workspace === "calendar" && !window.settingsOpen, combined)
+        // Closing fences an event still opening from the dropdown; the
+        // search itself starts again if the box keeps its text.
+        onOpenedChanged: { if (!opened) backend.setCalendarSearchContext(false, combined); window.syncCalendarSearch() }
+        onCombinedChanged: window.syncCalendarSearch()
         onEventRequested: function(event) { backend.openCalendarSearchResult(event) }
     }
     Connections {
@@ -200,16 +218,17 @@ ApplicationWindow {
         height: Theme.headerHeight
         color: Theme.canvas
         Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
+        // The current account's colour along the top edge.
+        Rectangle { objectName: "accountEdge"; width: parent.width; height: 2; color: Theme.accountTint(backend.account, .7) }
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 24
             RowLayout {
-                spacing: 16
+                spacing: 14
                 Rectangle {
                     implicitWidth: viewTabs.implicitWidth + 4; implicitHeight: 32
                     radius: 6; color: Theme.surface
                     Row {
                         id: viewTabs; anchors.centerIn: parent; spacing: 2
-                        FmButton { objectName: "settingsButton"; width: 32; height: 28; leftPadding: 0; rightPadding: 0; iconName: "settings"; iconSize: 14; radius: 4; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.6); prominent: window.settingsOpen; tip: "Settings — ,"; Accessible.name: "Settings"; onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings") }
                         FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · v"; onClicked: window.navigate("mail") }
                         FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · v"; onClicked: window.navigate("calendar") }
                     }
@@ -340,7 +359,7 @@ ApplicationWindow {
                         TextField {
                             id: search; objectName: "searchField"
                             Layout.fillWidth: true; padding: 0
-                            placeholderText: window.workspace === "calendar" ? "Search calendar" : "Search " + (backend.currentAccount.name || "mail") + (backend.folder === "sent" ? " sent" : backend.folder === "drafts" ? " drafts" : "")
+                            placeholderText: window.workspace === "calendar" ? "Search events" : "Search " + (backend.currentAccount.name || "mail") + (backend.folder === "sent" ? " sent" : backend.folder === "drafts" ? " drafts" : "")
                             color: Theme.text; placeholderTextColor: Theme.faint
                             font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); selectByMouse: true
                             text: window.workspace === "calendar" ? backend.calendarSearchQuery : backend.query
@@ -355,9 +374,9 @@ ApplicationWindow {
                                     window.openSearch()
                             }
                             Keys.onEscapePressed: { searchPopup.close(); calendarSearchPopup.close(); window.leaveSearch() }
-                            // Enter runs the Mail search, saves it to Recent and closes the dropdown.
-                            Keys.onReturnPressed: function(event) { if (window.workspace === "mail") searchPopup.commit(); else event.accepted = false }
-                            Keys.onEnterPressed: function(event) { if (window.workspace === "mail") searchPopup.commit(); else event.accepted = false }
+                            // Enter runs the search, saves it to Recent and closes the dropdown.
+                            Keys.onReturnPressed: window.commitSearch()
+                            Keys.onEnterPressed: window.commitSearch()
                             TapHandler { onTapped: { if (window.settingsOpen) window.findMail(); else window.openSearch() } }
                             background: Item { }
                             Accessible.name: window.workspace === "calendar" ? "Search saved calendar events" : "Search current mailbox"
@@ -368,6 +387,21 @@ ApplicationWindow {
                             Text { id: shortcutLabel; anchors.centerIn: parent; text: window.commandKey + "K"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); color: Theme.faint }
                         }
                     }
+                }
+                FmButton {
+                    id: settingsButton
+                    objectName: "settingsButton"
+                    implicitWidth: 30; implicitHeight: 30; leftPadding: 0; rightPadding: 0; iconName: "settings"; iconSize: 14; radius: 6
+                    prominent: window.settingsOpen; hoverBrightness: 1
+                    foreground: prominent ? Theme.canvas : hovered ? Theme.text : Theme.muted
+                    tip: "Settings — ,"; Accessible.name: "Settings"
+                    background: Rectangle {
+                        radius: 6
+                        color: settingsButton.prominent ? Theme.text : "transparent"
+                        border.width: 1
+                        border.color: settingsButton.activeFocus ? Theme.focusBorder : settingsButton.prominent ? Theme.text : settingsButton.hovered ? Theme.line3 : Theme.line2
+                    }
+                    onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings")
                 }
             }
         }

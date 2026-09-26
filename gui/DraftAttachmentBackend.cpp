@@ -1,3 +1,5 @@
+// MailBackend's attachments: importing local files into a draft (queued, one at a
+// time, with exact retry), and previewing, downloading or saving a message's attachments.
 #include "MailBackend.h"
 #include <QDir>
 #include <QJsonArray>
@@ -62,6 +64,8 @@ void MailBackend::importDraftAttachments(const QList<QUrl> &files, const QString
     advanceDraftAttachments();
 }
 
+// Imports the next queued file. Files go one at a time because each import
+// advances the draft revision that the next one must name.
 void MailBackend::advanceDraftAttachments() {
     const auto key = attachmentImportKey();
     if (m_attachmentQueues.value(key).isEmpty() || m_attachmentQueuePaused.contains(key)
@@ -133,6 +137,8 @@ void MailBackend::startDraftAttachmentImport(const QString &key) {
         }
         if (!ok) {
             m_attachmentQueuePaused.insert(key);
+            // For transport-level failures the import may or may not have been
+            // recorded; keep the exact request so Retry asks about the same one.
             const auto code = result["code"].toString();
             const bool uncertain = code == "timeout" || code == "engine_disconnected" || code == "cancelled"
                 || code == "invalid_response" || code == "busy" || code == "engine_untrusted";
@@ -222,6 +228,9 @@ QString MailBackend::downloadAttachment(const QString &account, const QString &i
     if (!directory.exists() && !QDir().mkpath(directory.absolutePath())) {
         showActionToast("Could not open Downloads.", {}, {}, 6000); return {};
     }
+    // Claim a free name by creating the file exclusively (NewOnly), so an
+    // existing download is never overwritten and two saves cannot pick the
+    // same name. Stop early if creation fails for any reason but a clash.
     QString destination;
     for (int n = 0; n < 10000; ++n) {
         const auto filename = n == 0 ? original.fileName() : original.completeBaseName() + " (" + QString::number(n) + ")" + (original.suffix().isEmpty() ? "" : "." + original.suffix());
@@ -256,6 +265,10 @@ QString MailBackend::saveAttachment(const QString &account, const QString &id, c
                 emit attachmentSaved(ticket, "This attachment could not be saved. Its local copy is unavailable."); return;
             }
             if (m_shutdown || findChildren<QTimer *>("attachmentCopy").size() >= 4) { emit attachmentSaved(ticket, "Wait for another attachment to finish saving."); return; }
+            // Copy 256 KiB per event-loop turn so large files never freeze the
+            // GUI, check size and SHA-256 against the engine's record, and write
+            // through QSaveFile so a failed copy leaves the destination as it was.
+            // The named timers double as the count of concurrent copies (max 4).
             struct Copy {
                 QFile source; QSaveFile output; QCryptographicHash hash{QCryptographicHash::Sha256};
                 qint64 bytes = 0, expected = 0; QByteArray digest;

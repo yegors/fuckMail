@@ -1,3 +1,6 @@
+// The event card popover opened from an event in CalendarView or the Mail
+// timeline (TodayStrip): time, place, guests, notes, the Going? answer and
+// Edit / View / Delete. View shows the event full-screen through ReminderPopup.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -68,7 +71,7 @@ Popup {
         }
         onFailed: function(message) { details.feedback = message }
     }
-    // "1 h", "1 h 30 min" or "45 min", as in the reference popover.
+    // Durations read "1 h", "1 h 30 min" or "45 min".
     function duration(minutes) { const m = Math.round(minutes); return m >= 60 ? Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min" }
     function relative(hours) { const m = Math.round(hours * 60); return m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min" }
     function conferenceLabel(url) {

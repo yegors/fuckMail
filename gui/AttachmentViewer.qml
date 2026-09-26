@@ -1,3 +1,6 @@
+// Full-window viewer for a message's image and video attachments, opened by
+// MailView with show(account, items, index); step() moves between them.
+// Previews come from backend.requestAttachmentPreview().
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

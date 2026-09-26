@@ -18,6 +18,14 @@ use std::{
     sync::{atomic::Ordering, Arc},
 };
 
+/// Handles `google_send`: submits a saved draft once, from a frozen MIME
+/// snapshot, with `drafts.send` when it has a linked Gmail draft and
+/// `messages.send` otherwise.
+///
+/// Returns the journaled receipt: accepted, rejected, undispatched, or
+/// unknown when Google's answer was lost (`google_send_reconcile` settles it;
+/// nothing re-sends automatically). Errors before the attempt is claimed carry
+/// `send_invocation_finished_before_dispatch`.
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {
     let mut claimed = false;
     let mut result = execute_inner(ctx, request, &mut claimed).await;
@@ -32,6 +40,7 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
     result
 }
 
+/// Marks `error` as raised before this invocation dispatched anything.
 pub(super) fn predispatch_error(mut error: CoreError) -> CoreError {
     mark_predispatch(&mut error);
     error
@@ -43,6 +52,9 @@ fn mark_predispatch(error: &mut CoreError) {
     error.details["send_invocation_finished_before_dispatch"] = Value::Bool(true);
 }
 
+/// The send itself. The store re-evaluates the intent after every wait (the
+/// read-back, quota admission) and a changed target aborts before dispatch.
+/// `claimed` is set once the attempt is journaled and will get an outcome.
 async fn execute_inner(ctx: &SyncContext, request: Value, claimed: &mut bool) -> Result<Value> {
     validate("google_send", &request)?;
     let scope = drafts::verified_scope(ctx).await?;
@@ -141,6 +153,9 @@ async fn execute_inner(ctx: &SyncContext, request: Value, claimed: &mut bool) ->
         }
         Err(error) => Err(error),
     };
+    // Classify: anything that failed before the request left the engine is
+    // `Undispatched`; after dispatch, only a definite answer is accepted or
+    // rejected, and everything else is `Unknown`.
     let reached_http = dispatched.load(Ordering::Acquire);
     let outcome = match response {
         Ok(GmailReply::Submission(submission)) => match submission.result {
@@ -190,6 +205,8 @@ async fn execute_inner(ctx: &SyncContext, request: Value, claimed: &mut bool) ->
     receipt
 }
 
+/// Asks the store what the send request means now: a recorded reply, or a
+/// submission through a linked Gmail draft or as a new message.
 async fn intent(
     ctx: &SyncContext,
     scope: &GoogleSendScope,
@@ -201,6 +218,9 @@ async fn intent(
         .await
 }
 
+/// Handles `google_send_reconcile`: searches Sent for the frozen Message-ID
+/// (at most ten candidates), reads their labels, and hands the evidence to
+/// the store, which decides the outcome. It never sends again.
 pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Value> {
     let scope = drafts::verified_scope(ctx).await?;
     let request_id = request_id.to_owned();
@@ -283,6 +303,8 @@ fn copy_observation(message: &GoogleSendObservedMessage) -> GoogleSendObservedMe
     }
 }
 
+/// Reads one message's thread, labels and history id, charging its size to
+/// the 24 KiB evidence budget in `total`. `None` means the message is gone.
 async fn observed(
     ctx: &SyncContext,
     id: &str,
@@ -333,6 +355,8 @@ async fn observed(
     }))
 }
 
+/// Checks a send request has exactly its method's fields: bounded ids, and
+/// revisions of at least 1 (`expected_google_revision` may be 0).
 pub(crate) fn validate(method: &str, params: &Value) -> Result<()> {
     let fields: &[&str] = match method {
         "google_send" => &[

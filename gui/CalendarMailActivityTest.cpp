@@ -1,3 +1,6 @@
+// Backend test for the calendar grid's per-day mail counts on a real MailBackend
+// over the scripted engine: account and date scoping, refresh throttling on
+// revision changes, and discarding stale replies once the counts are hidden.
 #include "GoogleOperationTestFixture.h"
 #include "MailBackend.h"
 #include <QGuiApplication>

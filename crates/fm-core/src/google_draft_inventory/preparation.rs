@@ -1,3 +1,6 @@
+//! Off-writer work for observed Gmail drafts: parsing RAW into a bounded
+//! preview and staging its parts as blobs before the store records the import,
+//! and exporting a stored draft attachment.
 use super::*;
 use mail_parser::MimeHeaders;
 

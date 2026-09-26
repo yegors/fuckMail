@@ -1,3 +1,6 @@
+// Panel that links an existing Google user label to a local label for one
+// account, using the cached Google label catalog. No screen places it at
+// present; only CalendarControlsTest instantiates it.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

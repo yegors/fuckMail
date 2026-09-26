@@ -1,3 +1,5 @@
+// Reader formatting for received message bodies: plain text becomes paragraph
+// HTML with links, and a body is split into new text and quoted reply history.
 #pragma once
 #include <QFont>
 #include <QFontMetricsF>
@@ -10,9 +12,14 @@
 #include <algorithm>
 
 // Display-only projection. Source bytes and authored/composer text never change.
+// Header-only; the functions are pure apart from building QTextDocuments, so
+// they run on the GUI thread or MailBackend's reader workers.
 namespace ReceivedBody {
-// Qt's proportional line height scales the font's natural line height; the
-// design's plain-text reader uses CSS line-height 1.65 (a font-size multiple).
+/// The QTextDocument proportional line height, in percent, that matches the
+/// design's CSS line-height of 1.65 for the Geist font. Computed once.
+///
+/// Qt's proportional line height scales the font's natural line height; the
+/// design's plain-text reader uses CSS line-height 1.65 (a font-size multiple).
 inline int readerLeadingPercent() {
     static const int percent = [] {
         QFont font(QStringLiteral("Geist")); font.setPixelSize(100);
@@ -21,6 +28,9 @@ inline int readerLeadingPercent() {
     }();
     return percent;
 }
+/// Converts plain text to reader HTML: one `<p>` per blank-line-separated
+/// paragraph, single newlines as `<br>`, repeated spaces kept, text escaped,
+/// and strictly valid `http(s)://` URLs turned into `<a href>` links.
 inline QString plainHtml(QString text) {
     text.replace("\r\n","\n"); text.replace('\r','\n');
     const auto paragraphs=text.trimmed().split(QRegularExpression("\\n[\\t ]*\\n(?:[\\t ]*\\n)*"));
@@ -39,14 +49,30 @@ inline QString plainHtml(QString text) {
     }
     return html;
 }
+/// Splits a received body into the sender's new text, dropping quoted reply
+/// history. Uses `html` when non-empty, else `plain`.
+///
+/// History is recognised by `>` lines, "On ... wrote:" attributions,
+/// "Original Message" separators, Outlook-style From/To/Date/Subject header
+/// blocks, `<blockquote>`, Gmail, Yahoo and Proton quote containers, and
+/// Outlook's `divRplyFwdMsg`. Inline answers between quoted lines are kept,
+/// and a forwarded message is kept whole. `sanitize` turns a rich HTML
+/// fragment into display HTML; plain fragments go through plainHtml().
+///
+/// Returns rows of {html, parents, quote}. Only new-text rows are emitted,
+/// so `parents` is always empty and `quote` false. Rows whose visible text
+/// is blank are omitted. Nesting is followed at most 32 levels deep.
 inline QVariantList sections(const QString &html,const QString &plain,const std::function<QString(const QString &)> &sanitize) {
     QVariantList rows; int serial=0;
     auto append=[&](const QString &body,const QVariantList &parents,bool rich) {
         if(!parents.isEmpty() || body.trimmed().isEmpty())return;
         const auto rendered=rich?sanitize(body):plainHtml(body);
+        // Markup-only fragments (empty divs, spacer tables) have no visible text.
         QTextDocument check; check.setHtml(rendered);
         if(!check.toPlainText().trimmed().isEmpty())rows.append(QVariantMap{{"html",rendered},{"parents",parents},{"quote",false}});
     };
+    // Callers discard the returned list, so quoted history is never emitted;
+    // what matters is `serial`, which counts reply boundaries for htmlFragment.
     auto quote=[&](QVariantList parents) {
         const int id=++serial;
         parents.append(QString::number(id)); return parents;
@@ -109,6 +135,9 @@ inline QVariantList sections(const QString &html,const QString &plain,const std:
     parseHtml=[&](QString body,QVariantList parents,int depth) {
         if (!parents.isEmpty()) return;
         if(depth>=32){append(body,parents,true);return;}
+        // A tag scan, not a DOM: find each quote container's matching close
+        // tag by counting nested tags of the same name, emit the text before
+        // it, and skip the container. Outlook's divRplyFwdMsg ends the reply.
         static const QRegularExpression tag("<\\s*(/?)\\s*([a-zA-Z0-9]+)\\b[^>]*>");
         auto tokens=tag.globalMatch(body);qsizetype consumed=0;
         while(tokens.hasNext()) {

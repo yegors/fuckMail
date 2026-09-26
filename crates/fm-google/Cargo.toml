@@ -1,8 +1,10 @@
 [package]
 name = "fm-google"
+description = "Google OAuth, Gmail and Calendar HTTP clients and OS keychain storage for fuckMail"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

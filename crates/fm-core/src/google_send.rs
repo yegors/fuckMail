@@ -11,6 +11,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 pub use google_drafts::GoogleDraftScope as GoogleSendScope;
+/// Largest RAW MIME, in bytes, that is submitted to Gmail; this is Gmail's
+/// 35 MB message upload limit.
 pub const MAX_GOOGLE_SEND_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 512 * 1024;
 const MAX_EVIDENCE: usize = 32 * 1024;
@@ -27,14 +29,22 @@ pub(crate) struct SendGuard {
     blocks_drafts: bool,
 }
 
+/// Metadata-only decision from [`Store::google_send_intent`].
 pub enum GoogleSendIntent {
+    /// Nothing to submit; carries the existing submission's status JSON.
     Reply(Value),
+    /// A submission is needed. `Some` sends that Gmail draft (`drafts.send`);
+    /// `None` sends a new message (`messages.send`).
     Submit { provider_draft_id: Option<String> },
 }
+/// Result of [`Store::google_send_begin`].
 pub enum GoogleSendStep {
+    /// Nothing to submit; carries the existing submission's status JSON.
     Reply(Value),
+    /// MIME must be built off the writer with [`prepare_google_send`].
     Prepare(GoogleSendPlan),
 }
+/// Frozen inputs for building one submission's MIME off the writer.
 pub struct GoogleSendPlan(Box<Plan>);
 struct Plan {
     scope: GoogleSendScope,
@@ -46,10 +56,13 @@ struct Plan {
     expected_target: Option<Value>,
 }
 impl GoogleSendPlan {
+    /// Gmail draft that will be sent, or `None` for a new message.
     pub fn provider_draft_id(&self) -> Option<&str> {
         self.0.target.as_deref()
     }
 }
+/// Staged submission MIME built by [`prepare_google_send`], ready for
+/// [`Store::google_send_finish`] to freeze.
 pub struct PreparedGoogleSend {
     plan: Box<Plan>,
     hash: String,
@@ -64,6 +77,13 @@ struct AcceptedIds {
     message_id: String,
     thread_id: String,
 }
+/// One frozen submission in `capture_operations`, keyed by request ID with the
+/// staged MIME's hash as `blob_hash`.
+///
+/// It moves `prepared` -> `in_flight` -> `accepted`, `rejected`,
+/// `acceptance_unknown`, or back to `prepared` when the request provably never
+/// left; a `prepared` one can instead be `abandoned`. `read_evidence` holds the
+/// latest read-only reconciliation and never changes the state.
 #[derive(Clone, Serialize, Deserialize)]
 struct Operation {
     version: u32,
@@ -92,11 +112,15 @@ struct Operation {
     read_evidence: Option<Value>,
 }
 
+/// Claim on the single HTTP attempt of one submission, returned by
+/// [`Store::google_send_claim`]. Cloning it cannot claim another attempt.
 #[derive(Clone)]
 pub struct GoogleSendLease {
     blobs: BlobStore,
     operation: Operation,
 }
+/// Handle to a claimed submission's frozen MIME blob; read it off the writer
+/// with [`load_google_send_upload`].
 #[derive(Clone)]
 pub struct GoogleSendUploadPlan {
     blobs: BlobStore,
@@ -113,27 +137,38 @@ impl GoogleSendLease {
     pub fn draft_id(&self) -> &str {
         &self.operation.draft_id
     }
+    /// From address frozen into the MIME.
     pub fn from(&self) -> &str {
         self.operation.headers["from"].as_str().unwrap()
     }
+    /// Gmail draft to send, or `None` to send a new message.
     pub fn provider_draft_id(&self) -> Option<&str> {
         self.operation.provider_draft_id.as_deref()
     }
+    /// Gmail thread the message joins, when it replies in one or sends an
+    /// adopted draft.
     pub fn thread_id(&self) -> Option<&str> {
         self.operation.thread_id.as_deref()
     }
+    /// RFC 5322 Message-ID written into the MIME, angle brackets included. It
+    /// is what read reconciliation searches Sent for.
     pub fn message_id(&self) -> &str {
         &self.operation.message_id
     }
+    /// Lowercase hex SHA-256 of the frozen MIME.
     pub fn upload_sha256(&self) -> &str {
         &self.operation.upload_sha256
     }
+    /// Size of the frozen MIME in bytes.
     pub fn size(&self) -> u64 {
         self.operation.size
     }
+    /// Operation revision this claim holds; only its immediate successor can
+    /// record the outcome.
     pub fn revision(&self) -> i64 {
         self.operation.revision
     }
+    /// Returns a handle for reading the frozen MIME off the writer.
     pub fn take_upload(&self) -> GoogleSendUploadPlan {
         GoogleSendUploadPlan {
             blobs: self.blobs.clone(),
@@ -142,58 +177,95 @@ impl GoogleSendLease {
         }
     }
 }
+/// Transport result of one claimed submission, reported to
+/// [`Store::google_send_outcome`]. Codes are 1-128 ASCII letters, digits or
+/// underscores.
 pub enum GoogleSendOutcome {
+    /// Gmail accepted the message and returned its Gmail IDs.
     Accepted {
         message_id: String,
         thread_id: String,
     },
-    Rejected {
-        code: String,
-    },
-    Undispatched {
-        code: String,
-    },
-    Unknown {
-        code: String,
-    },
+    /// Gmail definitively refused the message.
+    Rejected { code: String },
+    /// The request provably never reached Gmail. The submission returns to
+    /// `prepared` and may be claimed again or abandoned.
+    Undispatched { code: String },
+    /// The request may have reached Gmail. The submission becomes
+    /// `acceptance_unknown` and is never resent automatically.
+    Unknown { code: String },
 }
 
+/// Label and history metadata of one Gmail message seen during read
+/// reconciliation.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GoogleSendObservedMessage {
     pub message_id: String,
     pub thread_id: String,
+    /// Decimal Gmail history ID, at most 64 digits.
     pub history_id: Option<String>,
+    /// Gmail label IDs, at most 100.
     pub labels: Vec<String>,
 }
+/// Bounded, read-only evidence about a submission gathered from Gmail, passed
+/// to [`Store::google_send_reconcile_finish`].
+///
+/// It is retained for inspection only: matches, `SENT` labels or absence never
+/// change the submission's state, so an unknown outcome stays unknown.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GoogleSendEvidence {
+    /// Must be `sent_message_id`: Sent was searched by the frozen Message-ID.
     pub query: String,
+    /// Must be `not_checked`; the Gmail draft is not inspected.
     pub draft_observation: String,
+    /// True when the search had more results than were read.
     pub truncated: bool,
+    /// Up to 10 distinct messages the search returned.
     pub matches: Vec<GoogleSendObservedMessage>,
+    /// The message Gmail acknowledged, when there is an ACK and it still exists.
     pub acknowledged_message: Option<GoogleSendObservedMessage>,
+    /// Up to 11 IDs (search results plus the ACK) that Gmail reported missing.
     pub missing_ids: Vec<String>,
 }
+/// Frozen inputs for a read-only Gmail reconciliation of one submission, built
+/// by [`Store::google_send_reconcile_begin`].
 pub struct GoogleSendReconcilePlan {
     profile: std::path::PathBuf,
     scope: GoogleSendScope,
     operation: Operation,
 }
 impl GoogleSendReconcilePlan {
+    /// RFC 5322 Message-ID frozen into the submitted MIME, angle brackets
+    /// included.
     pub fn message_id(&self) -> &str {
         &self.operation.message_id
     }
+    /// Gmail message ID from an acceptance ACK, if one was received.
     pub fn accepted_message_id(&self) -> Option<&str> {
         self.operation.ack.as_ref().map(|a| a.message_id.as_str())
     }
+    /// Gmail draft the submission sent, if it sent one.
     pub fn provider_draft_id(&self) -> Option<&str> {
         self.operation.provider_draft_id.as_deref()
     }
 }
 
 impl Store {
+    /// Decides whether a Send request needs a submission and whether it sends
+    /// the draft's Gmail copy or a new message.
+    ///
     /// Metadata-only admission: no retained body, MIME, attachment or open file
     /// escapes this call while the engine waits for submission quota.
+    ///
+    /// `p` holds exactly `draft_id`, `expected_revision`,
+    /// `expected_google_revision` and `request_id`. A known `request_id`
+    /// replays its submission (different parameters are `request_id_conflict`).
+    /// Errors include `stale_revision` and `stale_google_revision`, with
+    /// `send_request_obsolete_without_dispatch` in the details when a newer
+    /// revision proves this request was never sent; `google_send_pending`
+    /// while an earlier submission is unresolved; `google_send_consumed` when
+    /// this saved version was already accepted; and `google_draft_pending`
+    /// while draft upload work is unresolved.
     pub fn google_send_intent(
         &self,
         scope: &GoogleSendScope,
@@ -272,6 +344,8 @@ impl Store {
             ));
         }
         self.check_send_identity(scope, draft_id)?;
+        // Once a version was accepted, its Gmail draft was consumed by the
+        // send, so newer work goes out as a new message.
         let target = if accepted.is_some() {
             None
         } else {
@@ -284,6 +358,9 @@ impl Store {
         })
     }
 
+    /// Repeats the intent check and, when a submission is needed, freezes the
+    /// saved draft, its thread and the Gmail copy it expects to send into a
+    /// [`GoogleSendPlan`]. Writes nothing.
     pub fn google_send_begin(&self, scope: &GoogleSendScope, p: &Value) -> Result<GoogleSendStep> {
         let target = match self.google_send_intent(scope, p)? {
             GoogleSendIntent::Reply(value) => return Ok(GoogleSendStep::Reply(value)),
@@ -306,6 +383,8 @@ impl Store {
                 .as_str()
                 .map(str::to_owned)
         };
+        // Freeze the Gmail copy this send expects; the claim refuses to send a
+        // draft that changed since, because Gmail has no conditional send.
         let baseline = if target.is_some() {
             self.google_draft_status(&scope.account, draft_id)?["baseline"].clone()
         } else {
@@ -323,9 +402,18 @@ impl Store {
         }))))
     }
 
+    /// Freezes prepared MIME as a new `prepared` submission and makes it the
+    /// draft's current send guard, which blocks draft sync on that draft.
+    ///
+    /// Replays an existing request ID. Fails with `stale_google_work` if the
+    /// target changed during preparation and `stale_revision` if the saved
+    /// draft did. The journal keeps the routing headers and a 320-character
+    /// body preview; nothing is sent to Gmail.
     pub fn google_send_finish(&mut self, proof: PreparedGoogleSend) -> Result<Value> {
         cancelled(&proof.cancel)?;
         let plan = proof.plan;
+        // Re-admit on the writer: the draft may have changed or another caller
+        // may have finished this request while MIME was being built.
         match self.google_send_intent(&plan.scope, &plan.request)? {
             GoogleSendIntent::Reply(value) => return Ok(value),
             GoogleSendIntent::Submit { provider_draft_id } if provider_draft_id == plan.target => {}
@@ -395,6 +483,13 @@ impl Store {
         self.send_reply(&op)
     }
 
+    /// Moves a `prepared` submission to `in_flight` and returns the lease for
+    /// its one HTTP attempt.
+    ///
+    /// Re-checks identity, that the submission still owns the draft, and that
+    /// the frozen Gmail draft has not changed (`google_draft_conflict`). The
+    /// caller must report exactly one [`GoogleSendOutcome`] for the lease. An
+    /// `in_flight` submission found at startup becomes `acceptance_unknown`.
     pub fn google_send_claim(
         &mut self,
         scope: &GoogleSendScope,
@@ -423,8 +518,13 @@ impl Store {
         })
     }
 
+    /// Records the transport result of a claimed submission and returns its
+    /// status.
+    ///
     /// Exact late outcomes remain durable after cancellation or reconnect. The
     /// lease fences one claim; reconnect cannot fabricate a second HTTP attempt.
+    /// Repeating the recorded outcome replays it; any other is
+    /// `stale_google_work`. Acceptance marks the draft revision consumed.
     pub fn google_send_outcome(
         &mut self,
         lease: &GoogleSendLease,
@@ -482,6 +582,8 @@ impl Store {
         self.send_reply(&op)
     }
 
+    /// Returns a submission's status JSON: state, revisions, ACK or error, the
+    /// frozen routing headers and any retained read evidence.
     pub fn google_send_status(&self, account: &str, request: &str) -> Result<Value> {
         id(account)?;
         id(request)?;
@@ -490,12 +592,19 @@ impl Store {
             .ok_or_else(not_found)?;
         self.send_reply(&op)
     }
+    /// Status of the draft's latest submission, or JSON `null` if it has none.
     pub(crate) fn google_send_for_draft(&self, account: &str, draft_id: &str) -> Result<Value> {
         match self.send_guard(account, draft_id)? {
             Some(guard) => self.google_send_status(account, &guard.request_id),
             None => Ok(Value::Null),
         }
     }
+    /// Abandons a submission that provably never left, so a later Send, and
+    /// draft sync if no earlier version was accepted, can proceed.
+    ///
+    /// `p` holds `request_id` and `expected_revision`. Only the draft's current
+    /// submission in `prepared` at that revision can be abandoned; anything
+    /// else is `stale_google_work`, so an uncertain send can never be erased.
     pub fn google_send_abandon(&mut self, account: &str, p: &Value) -> Result<Value> {
         self.require_active_account(account)?;
         fields(p, &["request_id", "expected_revision"])?;
@@ -522,6 +631,8 @@ impl Store {
         self.send_reply(&op)
     }
 
+    /// Plans a read-only Gmail lookup of a submission. Fails with
+    /// `google_send_pending` while its HTTP attempt is still in flight.
     pub fn google_send_reconcile_begin(
         &self,
         scope: &GoogleSendScope,
@@ -543,6 +654,13 @@ impl Store {
             operation,
         })
     }
+    /// Validates and retains read evidence on the submission, stamped with the
+    /// check time in Unix seconds.
+    ///
+    /// Only `read_evidence` and the revision change; state, ACK and error stay
+    /// as they were. Fails with `stale_google_work` if the submission changed
+    /// during the lookup and `invalid_google_response` if the evidence is out
+    /// of bounds or self-contradictory.
     pub fn google_send_reconcile_finish(
         &mut self,
         plan: GoogleSendReconcilePlan,
@@ -574,6 +692,9 @@ impl Store {
         self.send_reply(&op)
     }
 
+    /// Marks every submission left `in_flight` by an earlier engine run as
+    /// `acceptance_unknown`: it may have been sent, so it must never be resent
+    /// automatically. Runs when the store opens.
     pub(crate) fn recover_google_sends(&mut self) -> Result<()> {
         let rows=self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.state')='in_flight'")?.query_map([],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;
         for (account, request) in rows {
@@ -617,6 +738,8 @@ impl Store {
         raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
             .transpose()
     }
+    /// Refuses draft-sync writes to a draft that a pending or accepted
+    /// submission owns, or that a Gmail deletion guards.
     pub(crate) fn check_google_send_draft_write(
         &self,
         account: &str,
@@ -632,6 +755,8 @@ impl Store {
         }
         Ok(())
     }
+    /// Refuses observing a draft's Gmail copy once a send may have consumed it
+    /// (in flight, unknown, or any accepted version).
     pub(crate) fn check_google_send_draft_observation(
         &self,
         account: &str,
@@ -660,6 +785,9 @@ impl Store {
         }
         Ok(())
     }
+    /// Checks that a `prepared` submission may still be dispatched: same
+    /// identity, still the draft's current guard, and, when it sends a Gmail
+    /// draft, that draft's target unchanged and not in conflict.
     fn check_send_resume(&self, scope: &GoogleSendScope, op: &Operation) -> Result<()> {
         google_drafts::same_from(
             op.headers["from"].as_str().ok_or_else(invalid)?,
@@ -707,6 +835,12 @@ impl Store {
         }
         Ok(value)
     }
+    /// Writes the submission row and, while it is the draft's current one, the
+    /// draft's send guard in one transaction.
+    ///
+    /// The guard blocks draft sync while the submission is pending or once any
+    /// version was accepted. `last_accepted_draft_revision` only ever grows, so
+    /// a later rejection cannot forget that a Gmail draft was consumed.
     fn persist_send(&mut self, op: &Operation, insert: bool) -> Result<()> {
         let raw = serde_json::to_string(op)?;
         if raw.len() > MAX_METADATA {
@@ -759,6 +893,12 @@ impl Store {
     }
 }
 
+/// Builds a submission's MIME with a fresh Message-ID and stages it as a
+/// content blob. Runs off the writer, on a blocking worker.
+///
+/// Unlike a draft upload, this requires valid recipients and strict MIME.
+/// Fails with `invalid_draft`, `identity_mismatch`, `limit_exceeded` above
+/// [`MAX_GOOGLE_SEND_BYTES`], `content_unavailable` or `cancelled`.
 pub fn prepare_google_send(
     plan: GoogleSendPlan,
     cancel: &CancellationToken,
@@ -766,6 +906,8 @@ pub fn prepare_google_send(
     cancelled(cancel)?;
     let plan = plan.0;
     let parts = plan.retained.prepare(cancel)?;
+    // Unlike drafts, each preparation gets a unique Message-ID (the time is
+    // mixed in); once frozen, reconciliation searches Sent for exactly it.
     let (created_at, nanos) = now()?;
     let digest = format!(
         "{:x}",
@@ -811,6 +953,8 @@ pub fn prepare_google_send(
         cancel: cancel.clone(),
     })
 }
+/// Reads a claimed submission's frozen MIME, verifying its size and SHA-256.
+/// Runs off the writer. Fails with `content_unavailable` if the blob changed.
 pub fn load_google_send_upload(
     plan: GoogleSendUploadPlan,
     cancel: &CancellationToken,
@@ -839,6 +983,9 @@ fn validate_request(p: &Value) -> Result<()> {
     nonnegative(p, "expected_google_revision")?;
     Ok(())
 }
+/// Rejects evidence outside the bounded read scope, with malformed IDs, or
+/// that contradicts itself (a repeated candidate, an ID both seen and missing,
+/// or an acknowledged message that is not the ACK's).
 fn validate_evidence(e: &GoogleSendEvidence, op: &Operation) -> Result<()> {
     if e.query != "sent_message_id"
         || e.draft_observation != "not_checked"
@@ -903,6 +1050,7 @@ fn validate_evidence(e: &GoogleSendEvidence, op: &Operation) -> Result<()> {
     }
     Ok(())
 }
+/// States in which the submission may still send, or may already have sent.
 fn pending(state: &str) -> bool {
     matches!(state, "prepared" | "in_flight" | "acceptance_unknown")
 }

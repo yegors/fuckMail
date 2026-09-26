@@ -9,10 +9,19 @@ use sha2::{Digest, Sha256};
 #[path = "draft_transfer_tests.rs"]
 mod tests;
 
+/// Result of [`Store::draft_transfer_begin`].
 pub enum TransferStep {
+    /// The request ID already completed; carries its stored reply.
     Reply(Value),
+    /// Read the draft's attachments off the writer with [`prepare`].
     Prepare(Box<TransferPlan>),
 }
+/// Frozen source draft, its Google state and the destination account's
+/// identity for moving a draft to another account.
+///
+/// A transfer row moves `waiting_target` -> `cleanup_pending` -> `complete`,
+/// or to `blocked` when cleanup cannot safely continue. It starts `complete`
+/// when the original is kept or never reached Gmail.
 pub struct TransferPlan {
     account: String,
     params: Value,
@@ -23,17 +32,26 @@ pub struct TransferPlan {
     target: String,
     target_stamp: Value,
 }
+/// A transfer plan with its attachments verified, ready for
+/// [`Store::draft_transfer_finish`].
 pub struct PreparedTransfer {
     plan: Box<TransferPlan>,
     files: Vec<fm_mail::StagedAttachment>,
     cancel: CancellationToken,
 }
+/// Next Gmail cleanup step for a moved draft, from
+/// [`Store::draft_transfer_cleanup_due`].
 pub struct TransferCleanup {
+    /// Transfer the cleanup belongs to.
     pub transfer_request_id: String,
+    /// Parameters of the Gmail draft deletion that removes the original.
     pub params: Value,
+    /// True when an earlier deletion attempt has an unknown outcome: only a
+    /// read-only check may follow, never a second delete.
     pub reconcile: bool,
 }
 
+/// Verifies and loads the draft's retained attachments off the writer.
 pub fn prepare(plan: Box<TransferPlan>, cancel: CancellationToken) -> Result<PreparedTransfer> {
     let files = plan.retained.prepare(&cancel)?;
     Ok(PreparedTransfer {
@@ -116,6 +134,9 @@ impl Store {
             json!({"account":target,"lifecycle":lifecycle,"name":name,"email":email,"revision":revision}),
         )
     }
+    /// Snapshot of the source draft's Google, send and deletion state. A move
+    /// needs a settled twin at `expected` and no pending or accepted send or
+    /// deletion, since those still own the Gmail draft.
     fn transfer_google_stamp(&self, account: &str, draft: &str, expected: i64) -> Result<Value> {
         self.check_google_send_draft_write(account, draft)?;
         let google = self.google_draft_status(account, draft)?;
@@ -156,6 +177,15 @@ impl Store {
         }
         Ok(json!({"draft":google,"send":send,"deletion":deletion}))
     }
+    /// Plans moving (or, with `keep_original`, copying) a saved draft to
+    /// another account.
+    ///
+    /// `p` holds `request_id`, `draft_id`, `expected_revision`,
+    /// `expected_google_revision`, `target_account` and optional
+    /// `keep_original`. Fails with `draft_transfer_pending` while the draft is
+    /// part of an unfinished move, `limit_exceeded` with 32 moves pending, and
+    /// `google_draft_pending` or `google_send_pending` while Google work owns
+    /// the draft.
     pub fn draft_transfer_begin(&self, account: &str, p: &Value) -> Result<TransferStep> {
         if let Some(reply) = self.transfer_receipt(account, p)? {
             return Ok(TransferStep::Reply(reply));
@@ -213,6 +243,15 @@ impl Store {
             target_stamp: self.transfer_target_stamp(target)?,
         })))
     }
+    /// Creates the destination draft and, unless the original is kept,
+    /// discards the source, all in one transaction with the receipt.
+    ///
+    /// The destination gets From set to its own address and copies of the
+    /// attachments; source conversation and Gmail IDs are not carried over.
+    /// When the source has a Gmail draft, the transfer waits for the
+    /// destination's upload before that Gmail draft is deleted. Fails with
+    /// `stale_revision` or `stale_google_revision` if either side changed
+    /// during preparation.
     pub fn draft_transfer_finish(&mut self, proof: PreparedTransfer) -> Result<Value> {
         cancelled(&proof.cancel)?;
         let plan = proof.plan;
@@ -251,6 +290,8 @@ impl Store {
         }
         let request = string(&plan.params, "request_id")?;
         let keep = plan.params["keep_original"].as_bool().unwrap_or(false);
+        // Derived from the request, so a retried transfer names the same
+        // destination draft.
         let target_id = format!(
             "draft-{:x}",
             Sha256::digest(
@@ -280,6 +321,7 @@ impl Store {
         if !keep {
             tx.execute("UPDATE drafts SET discarded=1,revision=revision+1,updated_at=?3 WHERE account=?1 AND draft_id=?2",params![plan.account,source,now])?;
         }
+        // Only a moved draft with a Gmail copy has cleanup left to do.
         let remote = plan.source_google["draft"]["effective_target"]["provider_draft_id"].as_str();
         let state = if keep || remote.is_none() {
             "complete"
@@ -295,6 +337,8 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
+    /// Returns a transfer's status JSON: source and destination drafts, state,
+    /// copy policy and any blocking error.
     pub fn draft_transfer_status(&self, account: &str, request: &str) -> Result<Value> {
         id(request)?;
         let row:Option<Value>=self.db.query_row("SELECT source_draft_id,target_account,target_draft_id,state,keep_original,error_json FROM draft_transfers WHERE account=?1 AND request_id=?2",params![account,request],|r|Ok(json!({"account":account,"request_id":request,"source_draft_id":r.get::<_,String>(0)?,"target_account":r.get::<_,String>(1)?,"target_draft_id":r.get::<_,String>(2)?,"state":r.get::<_,String>(3)?,"keep_original":r.get::<_,bool>(4)?,"error":r.get::<_,Option<String>>(5)?}))).optional()?;
@@ -305,12 +349,20 @@ impl Store {
         }
         Ok(row)
     }
+    /// Status of the latest transfer that moved this draft away or created it,
+    /// or JSON `null`.
     pub(crate) fn draft_account_transfer(&self, account: &str, draft: &str) -> Result<Value> {
         let row:Option<(String,String)>=self.db.query_row("SELECT account,request_id FROM draft_transfers WHERE (target_account=?1 AND target_draft_id=?2) OR (account=?1 AND source_draft_id=?2 AND keep_original=0) ORDER BY created_at DESC,request_id DESC LIMIT 1",params![account,draft],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         row.map(|(source, request)| self.draft_transfer_status(&source, &request))
             .transpose()
             .map(|row| row.unwrap_or(Value::Null))
     }
+    /// Returns a `blocked` transfer to `waiting_target` so cleanup resumes.
+    ///
+    /// `p` holds `request_id` (this retry's own ID) and `transfer_request_id`.
+    /// A fresh Gmail deletion is allowed only if the earlier one was
+    /// definitively rejected or abandoned; after an unknown outcome the retry
+    /// keeps the same deletion so it can only be reconciled.
     pub fn draft_transfer_retry(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["request_id", "transfer_request_id"])?;
         let request = string(p, "request_id")?;
@@ -373,10 +425,15 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
+    /// Reports whether this draft was moved (not copied) to another account.
     pub(crate) fn draft_transferred(&self, account: &str, draft: &str) -> Result<bool> {
         Ok(self.db.query_row("SELECT EXISTS(SELECT 1 FROM draft_transfers WHERE account=?1 AND source_draft_id=?2 AND keep_original=0)",params![account,draft],|r|r.get(0))?)
     }
 
+    /// Reports whether the destination draft is safely in Gmail (synced, or
+    /// sent and accepted), which must hold before the original Gmail draft is
+    /// deleted. Fails if either account changed lifecycle or the destination
+    /// was discarded.
     fn transfer_destination_saved(&self, account: &str, request: &str) -> Result<bool> {
         let (target,draft,source_life,target_life):(String,String,i64,i64)=self.db.query_row("SELECT target_account,target_draft_id,source_lifecycle,target_lifecycle FROM draft_transfers WHERE account=?1 AND request_id=?2",params![account,request],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
         self.check_active_account_revision(account, source_life)?;
@@ -415,6 +472,13 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Advances pending transfers and returns the next Gmail deletion to run,
+    /// if any.
+    ///
+    /// Transfers whose deletion already succeeded, or whose original is
+    /// observed gone, complete here. Transfers whose destination is not yet
+    /// saved wait. Failures that need the user's attention block the transfer.
+    /// The returned cleanup is marked `cleanup_pending` first.
     pub fn draft_transfer_cleanup_due(&mut self, account: &str) -> Result<Option<TransferCleanup>> {
         self.require_active_account(account)?;
         let mut statement=self.db.prepare("SELECT request_id,source_draft_id,source_google_json,cleanup_request_id,cleanup_generation FROM draft_transfers WHERE account=?1 AND state IN ('waiting_target','cleanup_pending') ORDER BY created_at,request_id LIMIT 32")?;
@@ -456,6 +520,8 @@ impl Store {
                     continue;
                 }
             }
+            // The deletion ID is derived from the transfer and its cleanup
+            // generation, so re-deriving it finds the existing journal entry.
             let cleanup = cleanup.unwrap_or_else(|| {
                 format!(
                     "transfer-delete-{:x}",
@@ -504,6 +570,8 @@ impl Store {
         }
         Ok(None)
     }
+    /// Refuses a deletion that belongs to a transfer unless that transfer is
+    /// `cleanup_pending` with its destination confirmed saved.
     pub(crate) fn check_transfer_cleanup_authority(
         &self,
         account: &str,
@@ -520,6 +588,12 @@ impl Store {
         }
         Ok(())
     }
+    /// Records the result of a transfer's Gmail cleanup and returns the
+    /// transfer status.
+    ///
+    /// `status` is the deletion's status JSON; `error` is a failure before any
+    /// status. A confirmed deletion or an observed-absent draft completes the
+    /// transfer; anything else blocks it for the user to check.
     pub fn draft_transfer_cleanup_result(
         &mut self,
         account: &str,

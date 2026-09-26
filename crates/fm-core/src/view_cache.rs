@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+/// Size budget for all cached images, in bytes. Crossing it evicts the
+/// oldest files down to 90% of the limit.
 pub const IMAGE_CACHE_LIMIT: u64 = 256 * 1024 * 1024;
 const HTML_FILES_KEPT: usize = 16;
 /// Account directories are 32 hex digits, so this name never collides.
@@ -31,6 +33,9 @@ pub struct ViewCache {
     eviction: Arc<Mutex<()>>,
 }
 
+/// Derives a cache file key: the hex SHA-256 of `parts`, each terminated by a
+/// NUL byte so different splits of the same text cannot collide. Keys are
+/// safe to use as file names.
 pub fn key(parts: &[&str]) -> String {
     let mut digest = Sha256::new();
     for part in parts {
@@ -46,6 +51,8 @@ pub fn sha256_hex(text: &str) -> String {
 }
 
 impl ViewCache {
+    /// Creates the cache handle for a profile directory. Nothing is created on
+    /// disk until the first store, and the size is scanned lazily.
     pub fn new(profile: impl Into<PathBuf>) -> Self {
         Self {
             profile: profile.into(),
@@ -72,6 +79,9 @@ impl ViewCache {
         cached_in(&self.account_dir(account, false).ok()?, key)
     }
 
+    /// Atomically writes a normalized PNG under the account's directory and
+    /// returns its path, evicting old images if the cache grows past
+    /// [`IMAGE_CACHE_LIMIT`]. `key` should come from [`key`].
     pub fn store_image(&self, account: &str, key: &str, png: &[u8]) -> Result<PathBuf> {
         self.store_in(&self.account_dir(account, true)?, key, png)
     }
@@ -81,6 +91,8 @@ impl ViewCache {
         cached_in(&self.senders_dir(false).ok()?, key)
     }
 
+    /// Stores a sender picture shared by all accounts and clears any
+    /// "missing" marker for it.
     pub fn store_sender(&self, key: &str, png: &[u8]) -> Result<PathBuf> {
         let directory = self.senders_dir(true)?;
         let stored = self.store_in(&directory, key, png)?;
@@ -128,6 +140,9 @@ impl ViewCache {
         Ok(destination)
     }
 
+    /// Adds to the running total (left unknown until the first scan) and
+    /// evicts to 90% of the limit once it is exceeded, so eviction does not
+    /// run on every store near the boundary.
     fn account_bytes(&self, added: u64) {
         let _ = self
             .bytes
@@ -223,6 +238,9 @@ impl ViewCache {
 
     /// An attachment of a message read live from Google, written so it can be
     /// previewed or saved. Keeps only the newest few files.
+    ///
+    /// `name` is used as the file name as-is, so callers pass digest-derived
+    /// names; an existing file with that name is reused.
     pub fn remote_file(&self, name: &str, bytes: &[u8]) -> Result<PathBuf> {
         let cache = private_directory(&self.profile, "cache", true)?;
         let directory = private_directory(&cache, "remote", true)?;

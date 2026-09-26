@@ -1,3 +1,6 @@
+// Developer benchmark for `--benchmark-search-output <report.json> --profile <dir>`
+// (used by scripts/verify_search_ingestion.py): times typing into the real search
+// field to the first painted results page on a large generated profile.
 #include "GuiSearchBenchmark.h"
 #include <QCoreApplication>
 #include <QDateTime>

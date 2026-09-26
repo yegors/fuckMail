@@ -1,7 +1,7 @@
-"""Independent public-limit oracle for functional GUI sync checks (D050).
+"""Google's published API limits, as an independent reference for GUI sync checks.
 
 The navigation benchmark retains its original explicit budgets. These values
-verify ordinary no-setup Starts against the September 14 Google documentation.
+verify ordinary no-setup Starts against Google's published quota documentation.
 """
 LIMITS = {
     "gmail_project_units_per_minute": 1_200_000,

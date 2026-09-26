@@ -1,3 +1,6 @@
+// ReplyComposer UI test for Gmail draft sync status, on a real MailBackend over the
+// scripted engine: normal sync stays silent, problems show a plain hint, stale or
+// foreign status is refused, and authored text is never overwritten.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"
@@ -121,7 +124,7 @@ ApplicationWindow { width: 900; height: 1000; visible: true
         startRead(); auto foreign = projection(20, status("synced", 30, 20)); foreign["account"] = "another-account";
         finishRead(foreign); require(authored(backend.m_draft) == edited && backend.m_draft["google"].toMap()["revision"].toLongLong() == 10, "foreign cached projection is refused");
 
-        // Drafts are Gmail drafts (D122): syncing and conflicts resolve on their
+        // Drafts are Gmail drafts: syncing and conflicts resolve on their
         // own; only a problem the person should know about reaches the hint line.
         setStatus(status("synced", 11, 6));
         require(!backend.googleDraft()["attention"].toBool() && !hint().contains("Gmail"), "normal Gmail draft sync is silent in the composer");

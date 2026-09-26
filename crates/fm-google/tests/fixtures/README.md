@@ -1,14 +1,17 @@
-# google-p0-v1
+# Gmail sync fixtures
 
-Independent expected outcomes for the fake Gmail sequence:
+Synthetic, API-shaped Gmail responses used by `tests/workflows.rs`. They
+describe one full listing followed by history catch-up, and the tests expect
+these outcomes:
 
-- `m-shared` appears on both inventory pages; a retry and a repeated ID must not duplicate it.
-- `resultSizeEstimate` deliberately changes from 900 to 2. It must not be used as an authoritative count or coverage proof.
+- `m-shared` appears on both listing pages; a retry and a repeated ID must not duplicate it.
+- `resultSizeEstimate` deliberately changes from 900 to 2. It must not be used as an authoritative count or as proof of coverage.
 - Baseline history is `100`. Listing finishes before the two history pages are drained. The only committed final cursor is `120`, after applying the final page.
-- `m-during-import` arrives while initial listing is in progress. Catch-up from `100` must discover it.
-- History explicitly removes `m-old`. Missing-from-list `local-authored-draft` and pending intent must remain; absence alone never deletes anything.
-- Label changes request a current scoped message reconciliation. Historical label changes do not directly overwrite newer user read/star intent.
+- `m-during-import` arrives while the initial listing is in progress. Catch-up from `100` must discover it.
+- History explicitly removes `m-old`. The unlisted `local-authored-draft` and pending intent must remain; absence alone never deletes anything.
+- Label changes request a fresh reconciliation of the affected message. Historical label changes do not directly overwrite newer user read/star intent.
 - The same Gmail-looking `m-shared`/`t-common` identifiers belong to a second account independently.
-- Store failure before a page commit preserves the exact old cursor/token. Expiry requests a new full-scan generation without clearing any source/user work.
+- A store failure before a page commit preserves the exact old cursor/token. Expiry requests a new full scan without clearing any source or user work.
 
-These files are synthetic API-shaped JSON. Fake stores exercise the integration contract in memory; they are not SQLite, power-loss, TLS, live-provider or quota evidence.
+The tests use in-memory stores. They exercise the sync state machine only, not
+SQLite durability, TLS, quotas or a live Gmail account.

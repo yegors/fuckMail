@@ -1,4 +1,9 @@
-//! P1-04/P1-06: one permission-filtered combined calendar and durable local writes.
+//! The combined calendar across accounts, filtered by each calendar's access,
+//! plus durable local event writes and their operation history.
+//!
+//! "Local" writes are the synthetic-profile path: they are journaled like live
+//! writes but acknowledged in-process with a generated ETag and never leave
+//! the machine. Live profiles use `live_calendar_writes` instead.
 use crate::calendar_store::{calendar_error, fingerprint, parse_access};
 use crate::{err, fields, id, string, Result, Store};
 use fm_calendar::{Access, EventKey};
@@ -10,6 +15,14 @@ impl Store {
     pub(crate) fn calendar_sources(&self) -> Result<Value> {
         self.calendar_sources_for(None)
     }
+    /// Lists up to 100 calendars from active accounts (plus `archive_account`,
+    /// when a removed account is opened explicitly) with their effective
+    /// permission, writability and coverage.
+    ///
+    /// The effective permission is the stored provider role narrowed by
+    /// catalog membership and by the account's OAuth grants. `coverage` is
+    /// `denied`, `cached` (a clean, complete sync is published) or
+    /// `incomplete`.
     pub(crate) fn calendar_sources_for(&self, archive_account: Option<&str>) -> Result<Value> {
         let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
         let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation,a.lifecycle_state,g.scopes_json,g.connection_state FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account LEFT JOIN google_accounts g ON g.account=c.account WHERE (a.lifecycle_state='active' OR a.id=?1) ORDER BY a.name,c.calendar_id LIMIT 101")?;
@@ -23,6 +36,8 @@ impl Store {
                 .map(|v| serde_json::from_str(&v))
                 .transpose()?
                 .unwrap_or(Value::Null);
+            // Deleted from the catalog, or missing from the latest clean full
+            // catalog listing: the account no longer sees this calendar.
             if live && (row.get::<_, bool>(9)? || row.get::<_, i64>(10)? < row.get::<_, i64>(11)?) {
                 permission = "none".into();
             }
@@ -44,6 +59,9 @@ impl Store {
                 .into();
             }
             let generation: i64 = row.get(13)?;
+            // Live coverage needs a complete catalog, a clean full baseline and
+            // a published run without item errors; synthetic data only needs
+            // a sync token.
             let complete = if live {
                 row.get::<_,bool>(12)? && row.get::<_,i64>(14)?==0 && row.get::<_,i64>(15)?>0 && generation>0 && self.db.query_row("SELECT errors=0 AND identity_complete=1 FROM calendar_sync_runs WHERE id=?1",[generation],|r|r.get::<_,bool>(0)).optional()?.unwrap_or(false)
             } else {
@@ -73,6 +91,16 @@ impl Store {
     pub(crate) fn calendar_combined(&self, p: &Value) -> Result<Value> {
         self.calendar_combined_for(p, None)
     }
+    /// Projects the selected calendars over a 1 to 42 day range
+    /// (`{from, to, calendars?}`, dates as `YYYY-MM-DD`) in the display zone.
+    ///
+    /// Without an explicit `calendars` list the saved selection is used, and
+    /// `null` means every calendar. Free/busy calendars contribute busy-only
+    /// rows. The result's `coverage` says whether anything was denied,
+    /// uncached or cut by the 4,096-candidate or 1,000-occurrence budgets; a
+    /// live profile truncates and reports, while a synthetic profile fails
+    /// with `limit_exceeded`. Without a display zone it returns no events and
+    /// `display_zone_required`.
     pub(crate) fn calendar_combined_for(
         &self,
         p: &Value,
@@ -119,6 +147,8 @@ impl Store {
         let sources = catalog["calendars"].as_array().unwrap();
         if let Some(selected) = &selected {
             for (account, calendar) in selected {
+                // A saved selection may still name a removed account's calendars;
+                // they are skipped rather than treated as missing.
                 if self.account_lifecycle(account)?["state"] == "removed" {
                     continue;
                 }
@@ -145,6 +175,8 @@ impl Store {
         let mut candidates = 0;
         let mut budgets = 0;
         let mut details = Vec::new();
+        // Showing "all calendars" is only complete once every connected
+        // account's calendar list has been fully listed.
         if live && selected.is_none() {
             let pending:i64=self.db.query_row("SELECT COUNT(*) FROM google_accounts g JOIN accounts a ON a.id=g.account LEFT JOIN calendar_catalog_state c ON c.account=g.account WHERE a.lifecycle_state='active' AND COALESCE(c.complete,0)=0",[],|r|r.get(0))?;
             incomplete += pending as usize;
@@ -203,6 +235,8 @@ impl Store {
                 row["calendar_name"] = source["name"].clone();
                 let recurring = !row["occurrence_key"]["original_start"].is_null();
                 row["recurring"] = recurring.into();
+                // Live rows already carry their action flags from the projection;
+                // synthetic rows derive self-RSVP from the stored attendee list.
                 if live {
                     continue;
                 }
@@ -246,6 +280,13 @@ impl Store {
             json!({"total":events.len(),"events":events,"from":from.to_string(),"to":to.to_string(),"time_zone":display_zone,"revision":self.revision()?,"coverage":{"state":if denied>0{"restricted"}else if incomplete>0{"incomplete"}else{"cached"},"complete":denied==0&&incomplete==0,"live":false,"selected_calendars":selected_count,"denied_calendars":denied,"incomplete_calendars":incomplete,"projection_limited":budgets>0,"candidates":candidates,"calendars":details},"continuation":null}),
         )
     }
+    /// Journals a local create, edit or self-RSVP and, unless `prepare_only`
+    /// is set, acknowledges it at once through [`Store::calendar_write_ack`].
+    ///
+    /// Created events get a deterministic `local-…` ID from the request, so a
+    /// retry cannot create a second event. Idempotent per request ID; a
+    /// different body under the same ID fails with `request_id_conflict`.
+    /// Recurring events cannot be changed on this path.
     pub(crate) fn calendar_write(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -292,6 +333,7 @@ impl Store {
                 .into()
             },
         };
+        // `prepare_only` is a delivery choice, not part of the request identity.
         let mut request = p.clone();
         request.as_object_mut().unwrap().remove("prepare_only");
         let hash = fingerprint(&request)?;
@@ -371,6 +413,8 @@ impl Store {
                         p.get("fields")
                             .ok_or_else(|| err("invalid_request", "Edit needs event fields"))?,
                     )?;
+                    // Guests who are already invited keep their stored entry,
+                    // including their response, instead of resetting to needsAction.
                     if let Some(attendees) = body.get_mut("attendees").and_then(Value::as_array_mut)
                     {
                         for attendee in attendees {
@@ -432,6 +476,9 @@ impl Store {
         self.calendar_write_ack(account, &json!({"request_id":request_id}))
     }
 
+    /// Acknowledges a journaled local write and returns its receipt with state
+    /// `fake_acknowledged`. Idempotent once acknowledged. A failure is kept on
+    /// the intent as `last_error` so the operation list can show it as failed.
     pub(crate) fn calendar_write_ack(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["request_id"])?;
         let request_id = id(string(p, "request_id")?)?;
@@ -460,6 +507,10 @@ impl Store {
         result
     }
 
+    /// Applies a local write to the cached source with a deterministic
+    /// `local-…` ETag. Edits and RSVPs reuse the fake-provider
+    /// acknowledgement, which rechecks the ETag and permissions; creates
+    /// insert the new source directly under a revision check.
     fn commit_local_calendar_write(
         &mut self,
         target: &EventKey,
@@ -531,6 +582,9 @@ impl Store {
         Ok(result)
     }
 
+    /// Lists an account's Calendar write operations, unfinished first and then
+    /// newest first, paged by `{limit, cursor}`. Live profiles list live
+    /// writes; synthetic profiles list local ones.
     pub(crate) fn calendar_operations(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["limit", "cursor"])?;
         let limit = p
@@ -591,6 +645,8 @@ fn parse_date(value: &str) -> Result<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map_err(|_| err("invalid_request", "Calendar needs YYYY-MM-DD dates"))
 }
+/// Marks the signed-in account's own attendee entry as `self`, the way Google
+/// returns it, so later self-RSVP can find it.
 fn mark_actor(body: &mut Value, actor: &str) {
     if let Some(attendees) = body.get_mut("attendees").and_then(Value::as_array_mut) {
         for attendee in attendees {
@@ -604,6 +660,9 @@ fn mark_actor(body: &mut Value, actor: &str) {
         }
     }
 }
+/// Validates editor fields for a local write and builds the Google-shaped
+/// event body. Title, times, time zone and kind are required; attendees are
+/// deduplicated case-insensitively and capped at 50.
 fn calendar_fields(value: &Value) -> Result<Value> {
     fields(
         value,
@@ -728,7 +787,10 @@ fn calendar_fields(value: &Value) -> Result<Value> {
     Ok(body)
 }
 
-pub(crate) fn seed_phase1_calendars(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+/// Seeds the synthetic profile's demo calendars: a primary calendar per
+/// fixture account and a free/busy-only calendar whose private details must
+/// never be shown.
+pub(crate) fn seed_fixture_calendars(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     for account in ["windscribe", "personal", "sideproject"] {
         tx.execute("UPDATE calendar_sync_state SET access='owner',sync_token='fixture-complete' WHERE account=?1 AND calendar_id='primary'",[account])?;
         tx.execute("INSERT OR IGNORE INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) VALUES(?1,'primary','fixture-calendar-v2','America/Toronto','owner','fixture-complete',1)",[account])?;
@@ -757,5 +819,5 @@ pub(crate) fn seed_phase1_calendars(tx: &rusqlite::Transaction<'_>) -> Result<()
 }
 
 #[cfg(test)]
-#[path = "phase1_calendar_tests.rs"]
+#[path = "combined_calendar_tests.rs"]
 mod tests;

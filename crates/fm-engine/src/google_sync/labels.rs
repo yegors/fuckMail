@@ -12,12 +12,17 @@ use std::{
 };
 use tokio::sync::OwnedSemaphorePermit;
 
+/// How often the labels worker re-reads the Gmail label list (ten minutes).
 pub(crate) const REFRESH_INTERVAL_MS: u64 = 600_000;
+/// Schedule for the per-account label-catalog worker.
 #[derive(Default)]
 pub(crate) struct LabelsWorker {
+    /// Job-clock time (ms) of the next refresh; zero refreshes at once.
     next_refresh_ms: u64,
 }
 impl LabelsWorker {
+    /// Refreshes the catalog when due, then tries the one-time link of an
+    /// account's existing Gmail labels. Otherwise idles until the next refresh.
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
         if now_ms < self.next_refresh_ms {
             return Ok(Step::Idle(Duration::from_millis(
@@ -43,6 +48,9 @@ async fn initial_import(ctx: &SyncContext) {
             .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }
+/// Reads the complete Gmail label list and publishes it as the account's
+/// catalog, staged in chunks. Serves `google_labels_refresh` and the worker.
+/// Requires the mail-read grant.
 pub(crate) async fn refresh(ctx: &SyncContext) -> Result<Value> {
     let account = ctx.account.as_str().to_owned();
     ctx.core_call(move |store| {
@@ -85,6 +93,8 @@ pub(crate) async fn refresh(ctx: &SyncContext) -> Result<Value> {
     })
     .await?;
     let revision = cached["catalog_revision"].as_i64().ok_or_else(invalid)?;
+    // `None` means the store cleaned up one part of an abandoned refresh;
+    // repeat with the same manifest until it grants a lease.
     let mut lease = loop {
         let account = ctx.account.as_str().to_owned();
         let generation = ctx.connection_generation;
@@ -123,6 +133,8 @@ pub(crate) async fn refresh(ctx: &SyncContext) -> Result<Value> {
     Ok(result)
 }
 
+/// Returns `params[key]` when it is the only parameter and a short identifier
+/// without control characters.
 pub(crate) fn request_parameter<'a>(params: &'a Value, key: &str) -> Result<&'a str> {
     if params
         .as_object()
@@ -138,15 +150,21 @@ pub(crate) fn request_parameter<'a>(params: &'a Value, key: &str) -> Result<&'a 
         .filter(|v| !v.is_empty() && v.len() <= 256 && !v.chars().any(char::is_control))
         .ok_or_else(|| failure("invalid_request", "Invalid label-sync identifier"))
 }
+/// A background label-name sync started by `google_labels_sync`. Clients poll
+/// it with `google_labels_sync_status`, since it can outlast one request.
 pub(crate) struct SyncJob {
+    /// Session that started the job; only it can see or cancel the job.
     pub owner: String,
     pub account: String,
+    /// The client's request id, so a retried start returns this job.
     pub request: String,
     pub cancel: fm_google::transport::CancellationToken,
     pub task: tokio::task::JoinHandle<()>,
     result: Arc<std::sync::Mutex<Value>>,
 }
 impl SyncJob {
+    /// Spawns the sync. It keeps the account's sync job alive through `owner`
+    /// and stops when the starting session ends.
     pub(super) fn start(
         ctx: SyncContext,
         owner: super::OperationOwner,
@@ -189,6 +207,9 @@ impl SyncJob {
             result,
         }
     }
+    /// Returns the job's state (`running`, `complete`, `cancelled` or
+    /// `failed`) tagged with `id`. A task that ended without recording a
+    /// result reports `failed` with `engine_stopped`.
     pub fn snapshot(&self, id: &str) -> Value {
         let mut value = self.result.lock().unwrap().clone();
         if value["state"] == "running" && self.task.is_finished() {
@@ -198,6 +219,11 @@ impl SyncJob {
         value
     }
 }
+/// Merges local label names with Gmail's: refreshes the catalog, imports and
+/// renames per the store's merge plan, creates missing labels in Gmail one at
+/// a time, then queues label memberships for upload. Stops at the first
+/// creation that is not confirmed, so an uncertain create is never repeated
+/// blindly.
 pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value> {
     let request = request_parameter(&params, "request_id")?.to_owned();
     refresh(ctx).await?;
@@ -216,6 +242,8 @@ pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value
             category.clone(),
             name.clone(),
         );
+        // Journal the create before sending it. `false` means an earlier
+        // attempt is unresolved or already succeeded, or the label changed.
         if !ctx
             .core_call(move |store| store.google_label_create_begin(&a, &c, &n))
             .await?
@@ -309,6 +337,8 @@ pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value
         json!({"pulled":pulled,"created":created,"renamed":renamed,"skipped":skipped,"missing":missing,"unresolved":unresolved,"queued_memberships":queued,"message":message}),
     )
 }
+/// [`SyncContext::core_call`] with a share of the preparation permit held by
+/// the queued call and its reply.
 async fn memory_core<T, F>(
     ctx: &SyncContext,
     memory: &Arc<OwnedSemaphorePermit>,

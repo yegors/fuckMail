@@ -2,6 +2,10 @@
 
 
 
+## D133 — run from the developer console (CLI55)
+
+The GUI's developer console runs `fm` as a child process with this profile, engine and (for account commands) the selected account filled in (Mail UI97). The CLI itself is unchanged: its arguments, output, exit codes and connection to the running engine are the same as in a terminal. No stdin is attached, so commands that wait for input see end of file.
+
 ## D127 — invitation details (CLI54)
 
 `fm --account ID mail invite MESSAGE --source-version V` prints `message_invite` (Core71) read-only: the invitation's UID, method, times, the time it moved from and the linked Calendar event.

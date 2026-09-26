@@ -13,15 +13,24 @@ use sha2::{Digest, Sha256};
 #[path = "google_store_tests.rs"]
 mod tests;
 
+/// [`PageStore`] implementation over the Core store, used by the checkpointed
+/// page-at-a-time Gmail importer.
+///
+/// Messages are staged individually, then one page commit publishes them and
+/// advances the account's checkpoint atomically. Every call is fenced by the
+/// expected checkpoint, so a stale plan fails with `StaleCheckpoint`.
 pub struct GooglePageStore<'a> {
     store: &'a mut Store,
 }
 
 impl<'a> GooglePageStore<'a> {
+    /// Wraps a store for the duration of one import.
     pub fn new(store: &'a mut Store) -> Self {
         Self { store }
     }
 
+    /// Stages one fetched message: its source and attachments become blobs
+    /// and its normalized record a staged row, not yet visible.
     fn stage(
         &mut self,
         expected: &Checkpoint,
@@ -75,6 +84,8 @@ impl<'a> GooglePageStore<'a> {
 }
 
 impl Store {
+    /// Links a local category to a Gmail user label, replacing any earlier
+    /// link. Gmail system labels (`INBOX`, `CATEGORY_*` and so on) are refused.
     pub fn google_map_category(
         &self,
         account: &str,
@@ -94,6 +105,7 @@ impl Store {
         self.db.execute("INSERT INTO google_category_labels(account,category_id,provider_label_id) VALUES(?1,?2,?3) ON CONFLICT(account,category_id) DO UPDATE SET provider_label_id=excluded.provider_label_id",params![account,category,provider_label])?;
         Ok(())
     }
+    /// The account's current page-import checkpoint, if an import was begun.
     pub fn google_checkpoint(&self, account: &str) -> Result<Option<Checkpoint>> {
         crate::id(account)?;
         let raw: Option<String> = self
@@ -138,6 +150,7 @@ impl Store {
     }
 }
 
+/// An attachment of a staged message, already published as a blob.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct StagedAttachment {
     pub(crate) name: String,
@@ -150,17 +163,23 @@ pub(crate) struct StagedAttachment {
     pub(crate) index: Option<usize>,
 }
 
+/// A fetched Gmail message normalized for publication. The full source MIME
+/// is kept separately as a blob.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct StagedMessage {
     pub(crate) remote_id: String,
     pub(crate) remote_thread_id: String,
     pub(crate) history_id: String,
+    /// Gmail label IDs at fetch time.
     pub(crate) labels: Vec<String>,
     pub(crate) sender_name: String,
     pub(crate) sender_email: String,
+    /// First To address only.
     pub(crate) recipient: String,
     pub(crate) subject: String,
+    /// Extracted reading text, cut to 256 KiB.
     pub(crate) body: String,
+    /// RFC 3339 UTC from the Date header, or empty when missing or invalid.
     pub(crate) sent_at: String,
     pub(crate) attachments: Vec<StagedAttachment>,
 }
@@ -168,6 +187,9 @@ pub(crate) struct StagedMessage {
 fn storage_error(_: impl std::fmt::Debug) -> GoogleError {
     GoogleError::StoreUnavailable
 }
+/// Reports whether a Gmail label ID is a system label (ignoring case),
+/// including the `CATEGORY_*` tabs. Local categories may link only to user
+/// labels.
 pub(crate) fn is_system_label(label: &str) -> bool {
     let label = label.to_ascii_uppercase();
     [
@@ -192,6 +214,7 @@ fn bounded_header(value: &str, maximum: usize) -> std::result::Result<String, Go
     }
     Ok(value.to_owned())
 }
+/// Stable local ID for a Gmail object, so re-importing it maps to the same row.
 fn local_id(kind: &str, account: &str, remote: &str) -> String {
     format!(
         "gmail-{kind}-{:x}",
@@ -208,6 +231,10 @@ impl PageStore for GooglePageStore<'_> {
         self.stage(expected, content)
     }
 
+    /// Publishes a page's staged messages, marks its explicitly deleted ones,
+    /// and advances the checkpoint to `plan.next`, all in one transaction.
+    /// Committing the same plan again is a no-op; a different plan for the
+    /// same checkpoint fails with `StaleCheckpoint`.
     fn commit_page(&mut self, plan: &PagePlan) -> std::result::Result<(), GoogleError> {
         let account = plan.expected.account.as_str();
         let generation =
@@ -231,6 +258,8 @@ impl PageStore for GooglePageStore<'_> {
         {
             return Err(GoogleError::StaleCheckpoint);
         }
+        // A retried commit after a lost reply must be recognisable as the
+        // same page, so each commit is recorded by a fingerprint of its plan.
         let fingerprint=format!("{:x}",Sha256::digest(serde_json::to_vec(&json!({"expected":plan.expected,"next":plan.next,
             "observed":plan.observed_message_ids,"fetch":plan.fetch_message_ids,"deleted":plan.explicitly_deleted_ids,
             "inventory_finished":plan.inventory_finished,"caught_up":plan.caught_up})).map_err(storage_error)?));
@@ -297,6 +326,7 @@ impl PageStore for GooglePageStore<'_> {
     }
 }
 
+/// Loads the staged record for one message of the page planned at `revision`.
 fn load_stage(
     db: &rusqlite::Connection,
     account: &str,
@@ -317,6 +347,12 @@ fn load_stage(
     Ok((staged, hash, u64::try_from(size).map_err(storage_error)?))
 }
 
+/// Inserts or updates a message, its conversation, search index entry, Gmail
+/// state and attachments from a staged record. Must run inside the caller's
+/// transaction.
+///
+/// Pending local choices (read, star, filing, category) override the fetched
+/// labels. The search index is rewritten only when the source changed.
 pub(crate) fn publish_message(
     db: &rusqlite::Connection,
     account: &str,
@@ -417,6 +453,12 @@ pub(crate) fn publish_message(
     Ok(())
 }
 
+/// Parses a fetched message into a [`StagedMessage`], staging each attachment
+/// through `stage` (which returns the blob hash).
+///
+/// Inline images referenced by the HTML are skipped. Fails with
+/// `InvalidResponse` when the MIME cannot be parsed, has more than 50
+/// attachments or has an oversized header.
 pub(crate) fn prepare_message(
     content: &MessageContent,
     mut stage: impl FnMut(&[u8]) -> std::result::Result<String, GoogleError>,
@@ -533,7 +575,8 @@ impl Store {
             let inline = fm_mail::html_view::inline_content_ids(&parsed);
             let mut here = 0;
             for part in parsed.attachments() {
-                if !fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
+                if !fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id))
+                {
                     continue;
                 }
                 let blob = format!("{:x}", Sha256::digest(part.contents()));

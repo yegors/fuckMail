@@ -1,3 +1,6 @@
+// Main-window UI test on a real MailBackend over the scripted engine: Calendar
+// search and its popup, calendar window caching and prefetch, the Mail timeline,
+// the mail search dropdown, sync controls and accessible calendar actions.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

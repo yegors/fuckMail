@@ -755,12 +755,22 @@ fn images_the_html_shows_are_not_attachments_and_old_rows_are_tidied() {
         .unwrap();
     let names = |store: &Store| -> Vec<String> {
         let mut stmt = store.db.prepare("SELECT a.name FROM attachments a JOIN messages m ON m.account=a.account AND m.id=a.message_id WHERE m.remote_id='notion' ORDER BY a.name").unwrap();
-        stmt.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
     };
     // An unreferenced Content-ID image still shows, as it does in Gmail.
     assert_eq!(names(&store), ["report.pdf", "unused.png"]);
     // A profile from an earlier version listed the shown image too.
-    let (mid, hash): (String, String) = store.db.query_row("SELECT id,source_hash FROM messages WHERE remote_id='notion'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    let (mid, hash): (String, String) = store
+        .db
+        .query_row(
+            "SELECT id,source_hash FROM messages WHERE remote_id='notion'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
     let snake = format!("{:x}", Sha256::digest([0u8, 1, 2, 255]));
     store.db.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES('windscribe','old-snake',?1,'userPageIcon1.png','image/png',4,'available',?2)", params![mid, snake]).unwrap();
     assert!(!hash.is_empty());

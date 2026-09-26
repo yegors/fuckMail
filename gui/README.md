@@ -1,44 +1,89 @@
-# Native GUI
+# GUI
 
-Phase 1 integration uses Mail UI 12, Calendar 11, Core 13 and CLI 7, schema 7/protocol 1/fresh fixture 3. Existing profiles retain their fixture revision without reseeding. The native shell follows the second September 12 Flight Progress v2 update with Geist typography, Graphite/Paper/Harbour palettes and shared text scaling. Mail has counted collapsible conversation groups, snapshot review/Done/Delay, actual source/kind/sender filters and exact-address sender cards. Independent New/Reply/Reply all/Forward drafts have recipient chips, editable subjects, limited formatting, saved signatures, retained attachments, discard and local capture history. Drafts stays within the selected account. Combined calendar day/week/month/agenda and the independent Mail timeline consume permitted projections. Local calendar create/edit/RSVP and durable operation recovery use the Core journal. The six Settings sections save typed preferences and account metadata, including startup view, Mail timeline placement and new-event duration; no live provider/model service is implied.
+The desktop client: a Qt Quick (QML) front end over a C++20 backend, built as the
+`fuckmail-gui` target by [CMakeLists.txt](CMakeLists.txt). It holds no mail data of its
+own; everything comes from the Rust engine (`fm-engine`), which the `fm` CLI also uses.
 
-`ReplyDocument` bridges the actual QML editor's `QTextDocument` to authoritative plain text and a restricted HTML alternative. It preserves selection/undo through unchanged autosave responses, isolates history when the account/draft identity changes, inserts clipboard text as plain text and keeps signatures separate for one-time MIME assembly. The GUI has no direct store access: `MailBackend` serializes bounded IPC and uses generation checks to prevent old queries from replacing a newer scope. Navigation and close wait for authored saves; invalid recipient input remains visible for correction.
+## Architecture
 
-See [Phase 1 evidence](../docs/research/phase-1-execution.md) for current passing checks and remaining acceptance. Source or an isolated compile does not complete the phase. `--fixture-clock` fixes the developer clock; normal runs use the actual current time. `--smoke --screenshot <absolute.png>` generates disposable data and captures a rendered window. Optional `--screenshot-view`, `--screenshot-calendar-view`, `--screenshot-date`, `--screenshot-settings-page`, `--screenshot-width`, `--screenshot-height` and `--screenshot-reply` select deterministic review states. `--benchmark-search-output <absolute.json> --profile <retained-generated-100k-profile>` measures real QML input through the first rendered result frame; use only the opt-in benchmark's generated profile.
+- **QML front end.** `main.cpp` loads `Main.qml` from the `FuckMail` QML module. Screens
+  and controls are plain `.qml` files in this folder; `Theme.qml` (palettes Graphite,
+  Paper, Terminal and Harbour, text sizes) and `ShortcutRegistry.qml` are singletons.
+- **C++ backend exposed to QML.** `MailBackend` is set as the `backend` context property
+  and `DebugConsole` as `debugDiagnostics`. QML reads their properties and calls their
+  `Q_INVOKABLE` methods. A few native items are registered as QML types: `FmIconItem`,
+  `FmHtmlView`, `HatchItem` and `ReplyDocument`.
+- **Local IPC to the engine.** `MailBackend` finds or launches `fm-engine` for the profile,
+  reads its private discovery file `engine.json` (checked by `IpcTrust`), verifies the
+  peer process and user, and talks JSON over a `QLocalSocket` (a Unix socket or Windows
+  named pipe). The main connection keeps one request in flight with a bounded queue,
+  and generation counters drop replies that belong to an older view.
+- **Separate connections for slow work.** Google operations, attachment imports, the
+  HTML reader's calls and cancellable conversation reads each use a `GoogleOperation`,
+  so they never block the main queue.
+- **No direct data access.** The GUI never opens the SQLite store or talks to Google
+  itself (the debug console only reports the store's file size). Closing the GUI ends
+  its session; it never kills an engine that a CLI session is still using.
 
-## Preserved Phase 0 feasibility notes
+## Where things live
 
-The following describes the earlier verified slice; it is historical evidence, not the current implementation inventory.
+| Area | Files |
+| --- | --- |
+| App entry and shell | `main.cpp` (command line, profile and engine choice, test modes), `Main.qml`, `StartupOverlay.qml`, `TitleBar.h` with `TitleBar.cpp` (Windows/Linux) and `TitleBar.mm` (macOS) |
+| Backend | `MailBackend.h` / `MailBackend.cpp` (connection, request queue, mail list, reader, draft saving). Its other methods are split by feature: `AccountLifecycleBackend`, `CompositionBackend`, `DraftAttachmentBackend`, `DraftTransferBackend`, `DiscardUndoBackend`, `SendUndoBackend`, `OutgoingBackend`, `RemoteMailBackend`, `GoogleBackend`, `GoogleDraft*Backend`, `GoogleSendBackend`, `GoogleLabels`, `RemindersAndPreferencesBackend`. `GoogleOperation` and `IpcTrust` handle connections |
+| List models | `ConversationListModel` (account, conversation and message lists, updated in place so delegates survive refreshes); `DebugLogModel` in `DebugConsole.h` |
+| Calendar | `CalendarLayout` (overlap columns, midnight clipping, all-day lanes), `CalendarOperations.cpp`, `CalendarSearchBackend.cpp`, `CalendarUndoBackend.cpp`; `CalendarView.qml`, `EventEditor.qml`, `EventDetails.qml`, `TodayStrip.qml` (the Mail timeline, hatched with `HatchItem`) |
+| Composer | `ReplyComposer.qml`, `RecipientField.qml`, and `ReplyDocument`, which bridges the editor's `QTextDocument` to plain text plus restricted HTML |
+| HTML messages | `FmHtmlView` (tiled QQuickItem), `HtmlDocument` (layout and painting on [litehtml](third_party/litehtml/VENDORED.md), built by `cmake/litehtml.cmake`), `HtmlContent` (engine calls for HTML, images, blocklist, proxy), `HtmlLinks.h`, `SearchMatch.h`, `ReceivedBody.h`; `HtmlMessageBody.qml`. The engine sanitises HTML and fetches images; the view loads nothing itself |
+| Icons | `FmIconItem` behind `FmIcon.qml` |
+| Notifications | `NotificationPresenter` (system tray messages); reminder logic in `RemindersAndPreferencesBackend.cpp`; `ReminderPopup.qml` |
+| Debug console | `DebugConsole.h` / `.cpp` and `DebugConsole.qml`: filtered log, `gui.log`, state view and `fm` commands |
+| Tests | `*Test.cpp`, plus `GoogleOperationTestFixture.h` (a scripted stand-in engine) |
+| Self-tests and benchmarks | `Gui*SelfTest.*`, `Gui*Benchmark.*`, `GuiPaintObserver.h`, `GuiBenchmarkSupport.h`; compiled into the app and started by `main.cpp` flags |
+| Probes | `ComposerProbe.cpp` (a small CTest), `HtmlProbe.cpp` (`fm-html-probe`, lays out a folder of saved message HTML) |
+| `third_party/` | Vendored litehtml and its gumbo parser; see `VENDORED.md` there |
+| `fonts/` | Bundled Geist fonts and their OFL license; see [fonts/README.md](fonts/README.md) |
+| `app-icon/` | App icon as PNG, ICO, ICNS and the Windows `.rc`; `scripts/make_app_icons.py` regenerates the ICO and ICNS from the PNG |
 
-P0-00/P0-01/P0-04/P0-06, Mail UI and Calendar draft revision 5, synthetic fixture revision 1. C++20, Qt Quick/QML 6.11.2. The current design follows the September 11 initial mail/calendar/settings trio. It has no Node.js toolchain, live provider connection, model, received HTML renderer or database access.
+## Tests
 
-`MailBackend` is the asynchronous private-IPC adapter. Its bounded queue sends exactly one request at a time, matching the engine session contract. QML receives bounded query results and invokes the same account-scoped engine commands used by the CLI. `IpcTrust` checks owner-private discovery metadata before reading its handshake token and checks the connected local server identity. This is an OS-user boundary, not protection from arbitrary hostile code already running as that same user.
+Run everything with `scripts/dev.py test` (or the `scripts/dev.sh` / `scripts/dev.ps1`
+wrappers). It configures and builds the preset, then runs `ctest --preset dev`
+(`--preset release` for an optimized build). See
+[docs/build-development.md](../docs/build-development.md) for setup and presets.
 
-The mail workspace has separate accounts, paged conversation results, sender/text search, explicit member-snapshot read/star/category actions, expandable readable messages, engine-verified retained attachment opening and a durable human reply. The signature is a separate account preview; the MIME builder appends it once when building outgoing source. The persisted GUI draft remains plain text. `ComposerProbe` separately exercises Qt's native formatting/selection/undo representation for the MIME feasibility boundary. Its optional `--export-dir fixtures` writes the actual Qt HTML and exact plain-text pair consumed by shared draft/MIME round-trip tests.
+- **Registration.** GUI tests live in `gui/CMakeLists.txt` under `BUILD_TESTING`: each is
+  an `add_executable(gui-…-test …)` plus `add_test(NAME gui-…)`. They run offscreen
+  (`QT_QPA_PLATFORM=offscreen`, software Quick backend; `FM_CONTROLS_TEST_ENV`).
+- **Kinds.** Unit tests cover single classes (`CalendarLayoutTest`,
+  `ConversationListModelTest`, `ReplyDocumentTest`, `IpcTrust*Test`). Backend and UI tests
+  compile the real `MailBackend` sources (`FM_NAVIGATION_TEST_SOURCES`,
+  `FM_AUTHORING_TEST_SOURCES`) against the scripted engine, or use a small stand-in
+  backend. UI tests copy the production `.qml` files (`FM_GUI_SOURCE_DIR`) into a
+  temporary module and drive them with synthetic input.
+- **Whole-app checks** are registered in the root `CMakeLists.txt` and run the built app:
+  `gui-smoke` (`--smoke`), `gui-live-empty` (`--self-test-live-empty`), `gui-integration`
+  (`--self-test`, with a real engine and `fm` CLI on a disposable profile),
+  `gui-attachments` (`--self-test --self-test-attachments`) and `gui-startup-recovery`.
+- **Benchmarks** are not part of CTest. Run the app with one of
+  `--benchmark-{search,navigation,resize,calendar}-output <report.json>` and `--profile`;
+  some are driven by `scripts/verify_*.py`.
 
-Account switching restores search, folder/category, selected conversation, pane sizes and scroll position. The category editor displays None/Some/All membership and applies or clears only the current conversation member snapshot; filter chips remain separate. Navigation waits for any pending draft save. A failed draft save keeps the editor and prevents a silent close. Settings retains the workspace underneath and only provides the general shell/navigation; the incomplete mockup switches are intentionally absent.
+## Running the GUI during development
 
-The selected account's fixture week and today's footer use the same projected calendar occurrence identities. Presentation splits midnight-spanning events, clips all-day exclusive intervals and places overlapping events in separate columns/lanes. It does not infer Busy access to another account or write calendar changes. Dates and labels explicitly identify the synthetic fixture date.
-
-## Verification
-
-Locally compiled on macOS arm64 against Qt 6.11.2. These executable checks passed:
-
-- `gui-ipc-trust`: owner/mode checks, symlink rejection and connected local process identity (macOS requires the local-socket-capable execution environment).
-- `gui-composer-probe`: authored Unicode, selection, bold/italic, undo/redo, HTML round-trip; no persisted draft format change.
-- `gui-calendar-layout`: overlapping/touching events, overnight clipping, unchanged occurrence identity, today's clipping and exclusive all-day spans/lanes.
-
-`--self-test` is the real GUI/engine/independent-CLI integration test. It creates a disposable private profile and checks bounded paging across refresh, Unicode text input, keyboard cursor/selection preservation across real mouse category actions and CLI-driven refresh, both flags, category assignment/removal readback, CLI draft recovery, account/search/selection restoration, settings state and calendar/footer isolation. This test passed on 2026-09-11 against the real Rust engine and separate CLI on macOS arm64. It initially exposed and then verified fixes for request pipelining and the first-status-poll race. Three native Metal-rendered screenshots were captured and inspected at 2880 × 1900 in `build/visual-evidence/{mail,calendar,settings}.png`; snippet overflow, short-event labels and calendar header alignment were corrected from those captures. This verifies synthetic input events, not every OS input method or accessibility workflow. Ubuntu CI later passed the Rust suite, GUI smoke and IPC/composer/calendar checks, but the new mouse-category test exposed selection loss on focus changes. An isolated Qt 6.11.2 Ubuntu 24.04 x64 container reproduced selection `6..10` becoming `10..10` with the default setting and retaining `6..10` with `persistentSelection: true`; the composer now uses that setting. The container ran under emulation on this Mac and proves that Qt behavior, not a full Linux desktop workflow. The full app rerun and Windows execution remain separate evidence. [Qt selection property](https://doc.qt.io/qt-6/qml-qtquick-textedit.html#persistentSelection-prop).
-
-For a GUI-only development compile while working on other Rust packages:
-
-```sh
-cmake -S . -B build/gui-only -G Ninja -DCMAKE_PREFIX_PATH="$FM_QT_ROOT" -DFM_GUI_ONLY=ON -DBUILD_TESTING=ON
-cmake --build build/gui-only
-```
-
-Use the normal `dev` or `release` preset for the full application and integration checks; the GUI-only option excludes the engine and packaging. `--engine` / `FM_ENGINE_PATH` selects the executable for a development build. `--profile` / `FM_PROFILE` selects a profile. With neither override, the GUI and CLI use the same platform-local `fuckMail/demo-v1` path.
-
-`--smoke` without an explicit profile creates disposable fixture data. `--screenshot file.png --screenshot-view mail|calendar|settings` captures a real rendered workspace after data arrives. Startup retries use a monotonic 30-second deadline, 1/2/4-second capped backoff and at most ten detached launches; privacy, protocol and authentication errors remain fatal. Smoke and self-test watchdogs allow 40 and 60 seconds respectively. Closing the GUI disconnects its session, allowing the engine to exit when the last client leaves; the GUI does not kill an engine still used by another CLI session. A temporary test profile is removed only after engine discovery disappears, with a bounded wait.
-
-Native CI for [ac77528](https://github.com/yegors/fuckMail/actions/runs/34651174992) passed every Qt check on macOS, Ubuntu and Windows, including the Windows ownership/pipe test and the Linux selection regression. Mac and Ubuntu also passed relocated package verification. Windows exposed a separate engine-reopen race: discovery can disappear before the previous writer releases its lock, and both clients previously launched only once. The clients now retry bounded startup. The new `gui-startup-recovery` CTest holds a real Store lock until it observes the GUI's second engine-launch attempt, then releases the lock and requires successful fixture loading and exit. That actual Qt regression passed on this Mac in 6.33 seconds; the Rust equivalent failed before the fix and passed after it. These new retry changes still require the next native CI run. Ordinary `cargo test` marks the Qt-dependent case ignored; CTest explicitly runs it with the built GUI executable.
+- `scripts/dev.py run -- <args>` builds and starts the app. `--profile` (or `FM_PROFILE`)
+  picks the profile; without one it uses the platform data folder's `fuckMail/default`,
+  or `fuckMail/demo-v1` with `--demo-profile` (`--smoke` and `--self-test` use a temporary
+  profile). `--engine` (or `FM_ENGINE_PATH`) picks the engine binary; by default it is
+  the `fm-engine` beside the app.
+- `--demo-profile` opens synthetic demo content; `--live-profile` creates or opens a real,
+  initially empty profile at `--profile`. `--fixture-clock` pins the clock to the demo
+  data's date.
+- `--screenshot <file.png>` saves the rendered window after data loads, plus
+  `<file.png>.items.json` with named item geometry. `--screenshot-view`,
+  `--screenshot-calendar-view`, `--screenshot-date`, `--screenshot-settings-page`,
+  `--screenshot-width`/`-height` and `--screenshot-set`/`-invoke`/`-click` stage the view.
+  Run `fuckmail-gui --help` for the full list.
+- For a quick compile while editing UI, configure a separate build directory with
+  `-DFM_GUI_ONLY=ON`. It builds the GUI and its own tests but not the engine, packaging
+  or whole-app checks, so the result cannot run on its own.

@@ -18,6 +18,11 @@ fn description<'a>(p: &'a Value, key: &str) -> Result<&'a str> {
 }
 
 impl Store {
+    /// Lists the account's labels with their model instructions, Auto-read
+    /// and Spam choices, and Gmail creation state.
+    ///
+    /// Auto-read defaults to on for a label named "Receipts" and off
+    /// otherwise; Spam defaults to off.
     pub fn label_catalog(&self, account: &str) -> Result<Value> {
         self.require_active_account(account)?;
         let state = self.local_model_settings()?;
@@ -57,6 +62,16 @@ impl Store {
         }
         Ok(catalog)
     }
+    /// Applies one local label change and records its receipt; replays by
+    /// `request_id`.
+    ///
+    /// `method` is `label_create` (at most 64 labels, names unique ignoring
+    /// case), `label_describe`, `label_auto_read`, `label_auto_spam` or
+    /// `label_remove`. Each edit carries the value it expects to replace and
+    /// fails with `stale_revision` if that changed. Removing a label drops its
+    /// memberships, pending intents and Gmail link but never deletes the Gmail
+    /// label. Changing instructions clears model classifications so mail is
+    /// classified again.
     pub fn label_edit(&mut self, account: &str, method: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -238,6 +253,8 @@ impl Store {
                 }
                 tx.execute("UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT m.conversation_id FROM messages m JOIN message_categories c ON c.account=m.account AND c.message_id=m.id WHERE c.account=?1 AND c.category_id=?2)",params![account,category])?;
                 tx.execute("UPDATE messages SET revision=revision+1 WHERE account=?1 AND id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?2)",params![account,category])?;
+                // Mark messages that had this label as overridden, so the model
+                // does not give them a label after this one is gone.
                 tx.execute("INSERT OR IGNORE INTO local_model_label_overrides SELECT account,message_id FROM message_categories WHERE account=?1 AND category_id=?2",params![account,category])?;
                 tx.execute(
                     "DELETE FROM message_categories WHERE account=?1 AND category_id=?2",

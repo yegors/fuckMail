@@ -31,7 +31,7 @@ fn calendar_search_matches_only_projected_fields_and_preserves_identity_without_
         .handle(
             "calendar_search",
             None,
-            params("nEEdle ÉLODIE guest@ Blue agenda"),
+            params("nEEdle with:ÉLODIE with:guest@ title:distinctive"),
         )
         .unwrap();
     assert_eq!(result["total"], 2);
@@ -56,6 +56,24 @@ fn calendar_search_matches_only_projected_fields_and_preserves_identity_without_
         .iter()
         .all(|row| row["organizer_name"] == "Élodie Organizer"));
     assert_eq!(search(&store, "Needle impossible")["total"], 0);
+    // Plain words are one phrase in the title or notes, from a word start.
+    for (query, total) in [
+        ("distinctive needle", 2),
+        ("DISTINCTIVE NEE", 2),
+        ("agenda", 2),
+        ("needle distinctive", 0),
+        ("eedle", 0),
+        ("Blue Room", 0),
+        ("guest person", 0),
+        ("with:guest", 2),
+        ("with:\"Guest Person\"", 2),
+        ("guest@example.test", 2),
+        ("with:nobody", 0),
+        ("title:agenda", 0),
+        ("title:needle agenda", 0),
+    ] {
+        assert_eq!(search(&store, query)["total"], total, "{query}");
+    }
     assert_eq!(store.db.total_changes(), before);
     assert_eq!(store.revision().unwrap(), revision);
     assert_eq!(store.db.query_row("SELECT json FROM calendar_sources WHERE account='personal' AND event_id='search-one'", [], |r| r.get::<_,String>(0)).unwrap(), source.to_string());
@@ -123,8 +141,11 @@ fn calendar_search_uses_exception_fields_and_never_exposes_private_master_detail
     child["attendees"][0]["displayName"] = "Exception Guest".into();
     insert(&store, "personal", &master);
     insert(&store, "personal", &child);
-    assert_eq!(search(&store, "Heron Quetzal Exception Guest")["total"], 1);
-    assert_eq!(search(&store, "Heron Élodie")["total"], 0);
+    assert_eq!(
+        search(&store, "quetzal title:heron with:\"Exception Guest\"")["total"],
+        1
+    );
+    assert_eq!(search(&store, "heron with:élodie")["total"], 0);
     assert_eq!(search(&store, "Zebra")["total"], 1);
     master["visibility"] = "private".into();
     store.db.execute("UPDATE calendar_sources SET json=?1 WHERE account='personal' AND event_id='search-series'", [master.to_string()]).unwrap();
@@ -197,7 +218,7 @@ fn calendar_search_live_readonly_grants_allow_details_but_catalog_and_busy_grant
     );
     store.calendar_publish_sync(&lease).unwrap();
     while store.calendar_finalize_chunk(&lease).unwrap() > 0 {}
-    let value = search(&store, "Needle Élodie");
+    let value = search(&store, "needle with:Élodie");
     assert_eq!(value["total"], 1);
     assert_eq!(value["events"][0]["can_edit"], false);
     for scope in ["calendar.calendarlist.readonly", "calendar.freebusy"] {
@@ -244,6 +265,7 @@ fn calendar_search_refuses_malformed_and_unbounded_requests_without_changes() {
         ("to", json!("2026-09-12")),
         ("extra", json!(true)),
         ("calendars", json!(false)),
+        ("around", json!("2026-09-12")),
     ] {
         let mut p = params("Needle");
         p[key] = value;
@@ -254,4 +276,90 @@ fn calendar_search_refuses_malformed_and_unbounded_requests_without_changes() {
         );
     }
     assert_eq!(store.db.total_changes(), before);
+}
+
+#[test]
+fn calendar_search_reads_title_with_date_and_bare_addresses() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let text = "project review maya@example.test title:\"Board deck\" with:\"Maya Chen\" date:tomorrow notes";
+    let value = search(&store, text);
+    assert_eq!(
+        value["terms"],
+        json!({"text":text,"words":["project review","notes"],"title":["Board deck"],
+            "with":["maya@example.test","Maya Chen"],"date":"tomorrow"})
+    );
+    // date: alone moves the Calendar; it matches nothing and is not an error.
+    insert(&store, "personal", &event("dated", "Dated"));
+    let dated = search(&store, "date:2026-10-02");
+    assert_eq!(dated["total"], 0);
+    assert_eq!(dated["terms"]["date"], "2026-10-02");
+    assert_eq!(search(&store, "title: with:")["total"], 0);
+}
+
+#[test]
+fn calendar_search_around_lists_each_event_once_upcoming_then_recent_past() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let at = |id: &str, title: &str, day: &str| {
+        let mut source = event(id, title);
+        source["start"]["dateTime"] = format!("{day}T15:00:00Z").into();
+        source["end"]["dateTime"] = format!("{day}T16:00:00Z").into();
+        source
+    };
+    let mut weekly = at("weekly", "Weekly sync", "2026-08-01");
+    weekly["recurrence"] = json!(["RRULE:FREQ=WEEKLY"]);
+    let mut kickoff = at("kickoff", "Sync kickoff", "2026-08-01");
+    kickoff["recurrence"] = json!(["RRULE:FREQ=DAILY;COUNT=10"]);
+    for source in [
+        weekly,
+        kickoff,
+        at("retro", "Sync retro", "2026-10-20"),
+        at("ancient", "Sync ancient", "2026-06-01"),
+        at("far", "Sync far", "2027-12-01"),
+        at("other", "Unrelated", "2026-09-13"),
+    ] {
+        insert(&store, "personal", &source);
+    }
+    let around = |query: &str, limit: u64| {
+        store
+            .calendar_search(&json!({"query":query,"around":"2026-09-12","limit":limit}))
+            .unwrap()
+    };
+    let value = around("sync", 7);
+    let rows = value["events"].as_array().unwrap();
+    let seen: Vec<_> = rows
+        .iter()
+        .map(|row| (row["title"].as_str().unwrap(), row["past"].as_bool().unwrap(), row["start"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("Weekly sync", false, "2026-09-12T15:00:00+00:00"),
+            ("Sync retro", false, "2026-10-20T15:00:00+00:00"),
+            ("Sync kickoff", true, "2026-08-10T15:00:00+00:00"),
+        ],
+        "the next time of each event, then the latest past time within 60 days"
+    );
+    assert_eq!(value["has_more"], false);
+    assert_eq!(value["around"], "2026-09-12");
+    assert_eq!(value["from"], "2026-07-14");
+    assert_eq!(value["to"], "2027-09-13");
+    assert_eq!(value["terms"]["words"], json!(["sync"]));
+    let limited = around("sync", 2);
+    assert_eq!(limited["total"], 2);
+    assert_eq!(limited["has_more"], true);
+    assert_eq!(around("date:today", 7)["total"], 0);
+    let before = store.db.total_changes();
+    assert_eq!(around("nothing matches", 7)["total"], 0);
+    assert_eq!(store.db.total_changes(), before);
+    for bad in [json!("2026-9-12"), json!(null), json!(12)] {
+        assert_eq!(
+            store
+                .calendar_search(&json!({"query":"sync","around":bad}))
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
 }

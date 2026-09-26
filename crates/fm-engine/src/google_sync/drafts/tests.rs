@@ -916,7 +916,7 @@ async fn changed_remote_message_or_missing_twin_is_resolved_with_the_local_text(
             h.draft().await["body"],
             "Newer local text remains authoritative"
         );
-        // D121: the local edit wins. A changed Gmail draft is replaced; a
+        // The local edit wins. A changed Gmail draft is replaced; a
         // vanished one is created again.
         let mut idle = false;
         for _ in 0..8 {

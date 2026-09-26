@@ -1,3 +1,6 @@
+//! OAuth scopes, desktop authorization requests and access-token refresh.
+//! [`TokenCoordinator`] serializes refreshes per account and keeps tokens in a
+//! [`CredentialVault`].
 use crate::transport::CancellationToken;
 use crate::{AccountId, GoogleError};
 use oauth2::{
@@ -9,6 +12,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
+/// The scopes a default sign-in requests: OpenID identity, full Gmail access,
+/// Calendar events, the calendar list and free/busy. Equal to
+/// `RequestedAccess::default().scopes()`.
 pub const GOOGLE_SCOPES: [&str; 6] = [
     "openid",
     "email",
@@ -18,14 +24,22 @@ pub const GOOGLE_SCOPES: [&str; 6] = [
     "https://www.googleapis.com/auth/calendar.events.freebusy",
 ];
 
+/// How much access to request for one product.
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RequestedMode {
+    /// Not requested.
     None,
+    /// Read-only scopes.
     Read,
+    /// Read-write scopes; for mail, full `https://mail.google.com/` access.
     #[default]
     Write,
 }
+/// The access a sign-in asks for, per product.
+///
+/// Deserializes from `{"mail": ..., "calendar": ...}` with `none`, `read` or
+/// `write`; a missing field means `write` and unknown fields are refused.
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestedAccess {
@@ -35,6 +49,11 @@ pub struct RequestedAccess {
     pub calendar: RequestedMode,
 }
 impl RequestedAccess {
+    /// Returns the OAuth scopes to request.
+    ///
+    /// `openid` and `email` are always included, and any Calendar access also
+    /// asks for the calendar list and free/busy. Errors when both products are
+    /// `None`.
     pub fn scopes(self) -> Result<Vec<&'static str>, GoogleError> {
         use RequestedMode::*;
         let mut scopes = vec!["openid", "email"];
@@ -66,17 +85,23 @@ impl RequestedAccess {
 }
 
 /// Shared interpretation of granted scopes for cached and live mail workflows.
+///
+/// Works on the scopes Google actually granted, which can be narrower than
+/// those requested because people may decline some on the consent screen.
+/// Broader scopes imply narrower ones, such as `calendar` implying event reads.
 pub struct ScopeSet<'a>(&'a BTreeSet<String>);
 impl<'a> ScopeSet<'a> {
     pub fn new(scopes: &'a BTreeSet<String>) -> Self {
         Self(scopes)
     }
+    /// Whether messages can be read.
     pub fn mail_read(&self) -> bool {
         self.mail_write()
             || self
                 .0
                 .contains("https://www.googleapis.com/auth/gmail.readonly")
     }
+    /// Whether mail can be changed and sent (`gmail.modify` or full access).
     pub fn mail_write(&self) -> bool {
         self.0
             .contains("https://www.googleapis.com/auth/gmail.modify")
@@ -86,6 +111,7 @@ impl<'a> ScopeSet<'a> {
     pub fn mail_full(&self) -> bool {
         self.0.contains("https://mail.google.com/")
     }
+    /// Whether the calendar list can be read.
     pub fn calendar_catalog_read(&self) -> bool {
         self.calendar_all_read()
             || self
@@ -95,6 +121,7 @@ impl<'a> ScopeSet<'a> {
                 .0
                 .contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly")
     }
+    /// Whether event details can be read.
     pub fn calendar_events_read(&self) -> bool {
         self.calendar_all_read()
             || self
@@ -104,6 +131,7 @@ impl<'a> ScopeSet<'a> {
                 .0
                 .contains("https://www.googleapis.com/auth/calendar.events.readonly")
     }
+    /// Whether free/busy can be queried.
     pub fn calendar_free_busy(&self) -> bool {
         self.calendar_all_read()
             || self
@@ -113,6 +141,7 @@ impl<'a> ScopeSet<'a> {
                 .0
                 .contains("https://www.googleapis.com/auth/calendar.freebusy")
     }
+    /// Whether events can be created, changed and deleted.
     pub fn calendar_events_write(&self) -> bool {
         self.0.contains("https://www.googleapis.com/auth/calendar")
             || self
@@ -251,9 +280,16 @@ mod scope_tests {
     }
 }
 
+/// One OAuth authorization-code request for a loopback redirect, with PKCE
+/// (S256), a CSRF `state` and an OpenID `nonce`.
+///
 /// Held in the engine only for one system-browser attempt. Deliberately no Debug.
 pub struct DesktopAuthorization {
+    /// The Google consent URL to open in the system browser. It carries the
+    /// state and code challenge; never log it.
     pub url: String,
+    /// `http://127.0.0.1:<port>/oauth2/callback`; the token exchange must send
+    /// exactly this value.
     pub redirect_uri: String,
     csrf: CsrfToken,
     verifier: PkceCodeVerifier,
@@ -289,6 +325,12 @@ impl DesktopAuthorization {
         )
     }
 
+    /// Builds the consent URL for `access`.
+    ///
+    /// It asks for offline access (a refresh token) and always shows the
+    /// account chooser; `reconsent` also forces the consent screen. Errors
+    /// with `InvalidResponse` for no requested product, an invalid login hint,
+    /// an empty, oversized or control-character client ID, or port 0.
     pub fn with_access(
         client_id: String,
         loopback_port: u16,
@@ -324,6 +366,10 @@ impl DesktopAuthorization {
             client.authorize_url(CsrfToken::new_random),
             |request, scope| request.add_scope(Scope::new((*scope).to_owned())),
         );
+        // The nonce comes back inside the ID token, binding that token to this
+        // attempt. `select_account` makes the person pick the Google account
+        // every time; `consent` re-shows the grant, which is how a lost
+        // refresh token is reissued.
         let nonce = CsrfToken::new_random();
         let request = request
             .set_pkce_challenge(challenge)
@@ -354,6 +400,9 @@ impl DesktopAuthorization {
     }
 
     /// Consume the attempt so a callback cannot reuse its PKCE verifier.
+    ///
+    /// Errors with `PermissionDenied` if `state` is not this attempt's or the
+    /// code is empty or over 4096 bytes.
     pub fn accept_callback(
         self,
         state: &str,
@@ -392,6 +441,11 @@ pub fn validate_login_hint(email: &str) -> Result<(), GoogleError> {
     }
 }
 
+/// An authorization code from a verified callback, bound to the PKCE
+/// verifier, redirect URI, nonce and client ID of the attempt that produced it.
+///
+/// Redeem it once with [`crate::desktop_auth::GoogleOAuth::exchange`]; Google
+/// codes are single-use and short-lived. No `Debug`.
 pub struct AuthorizationCode {
     pub code: String,
     pub verifier: PkceCodeVerifier,
@@ -400,27 +454,50 @@ pub struct AuthorizationCode {
     pub(crate) client_id: String,
 }
 
+/// The credentials kept per account in a [`CredentialVault`]. No `Debug`.
 #[derive(Clone)]
 pub struct StoredToken {
+    /// Bearer token for API calls, valid until `expires_at_secs`.
     pub access_token: String,
+    /// Long-lived token for new access tokens. It changes only when Google
+    /// rotates it or the person signs in again.
     pub refresh_token: String,
+    /// Access-token expiry in Unix seconds, computed from the grant's
+    /// `expires_in` when it was received.
     pub expires_at_secs: u64,
 }
 
+/// The outcome of one refresh-token grant.
 pub struct RefreshResult {
     pub access_token: String,
+    /// A replacement refresh token, if Google issued one; otherwise the stored
+    /// refresh token stays in use.
     pub rotated_refresh_token: Option<String>,
+    /// Access-token expiry in Unix seconds.
     pub expires_at_secs: u64,
 }
 
+/// Per-account storage for [`StoredToken`]s, normally the OS credential store.
+///
+/// Implementations must keep one entry per account, replace the whole entry on
+/// `store`, and never fall back to another store. Calls may block (for
+/// example on a keychain prompt), so async callers run them on the blocking
+/// pool. [`TokenCoordinator`] serializes its own operations per account, but
+/// different accounts can call concurrently.
 pub trait CredentialVault: Send + Sync {
+    /// Clears a remembered access denial for `account`; the default does
+    /// nothing (see [`crate::vault::SessionCredentialVault`]).
+    ///
     /// Explicit user retry only; ordinary reads must never clear a denial.
     fn retry_access(&self, _: &AccountId) -> Result<(), GoogleError> {
         Ok(())
     }
+    /// Returns the account's credentials, or `Ok(None)` when no entry exists.
+    ///
     /// Locked/unavailable storage returns StoreUnavailable, not Ok(None).
     /// The coordinator propagates that failure without another credential source.
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError>;
+    /// Saves `token` for `account`, replacing any previous entry.
     fn store(&self, account: &AccountId, token: StoredToken) -> Result<(), GoogleError>;
     /// Explicit local cleanup. Unsupported vaults fail rather than pretend that
     /// credentials were removed. An already absent exact entry is success.
@@ -429,6 +506,8 @@ pub trait CredentialVault: Send + Sync {
     }
 }
 
+/// Blocking refresh-token grant used by [`TokenCoordinator::access_token`].
+/// Implementations must not retry.
 pub trait RefreshTransport: Send + Sync {
     fn refresh(
         &self,
@@ -437,7 +516,12 @@ pub trait RefreshTransport: Send + Sync {
     ) -> Result<RefreshResult, GoogleError>;
 }
 
+/// Exchanges a refresh token for a new access token.
+///
 /// Production transport path. The future must honor the caller's cancellation.
+/// It must not retry. `now_secs` is the current Unix time, used to compute the
+/// new expiry and to check any ID token. The production implementation is
+/// [`crate::desktop_auth::GoogleOAuth`].
 pub trait AsyncRefreshTransport: Send + Sync {
     fn refresh_async<'a>(
         &'a self,
@@ -448,8 +532,12 @@ pub trait AsyncRefreshTransport: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<RefreshResult, GoogleError>> + Send + 'a>>;
 }
 
+/// Hands out access tokens, refreshing any that expire within 60 seconds.
+///
 /// One short-lived refresh lock per account, shared by Gmail and Calendar in one engine.
 /// Secrets remain with the vault/transport; no token type derives Debug/Serialize.
+/// The same lock also guards sign-in persistence and credential removal (see
+/// [`CredentialAccountGuard`]), so none of them can interleave with a refresh.
 #[derive(Default)]
 pub struct TokenCoordinator {
     accounts: Mutex<BTreeMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
@@ -463,6 +551,9 @@ pub struct CredentialAccountGuard {
     guard: tokio::sync::OwnedMutexGuard<()>,
 }
 impl CredentialAccountGuard {
+    /// Removes the account's credentials from `vault` on the blocking pool.
+    /// The lock is released only when the native call returns, even if this
+    /// future is dropped first.
     pub async fn remove<V: CredentialVault + 'static>(
         self,
         vault: Arc<V>,
@@ -476,6 +567,7 @@ impl CredentialAccountGuard {
         .map_err(|_| GoogleError::StoreUnavailable)?
     }
 
+    /// Stores a verified grant's tokens for this account, then releases the lock.
     pub async fn persist<V: CredentialVault + 'static>(
         self,
         grant: crate::desktop_auth::VerifiedGrant,
@@ -502,6 +594,8 @@ impl CredentialAccountGuard {
 }
 
 impl TokenCoordinator {
+    /// Waits for the account's credential lock, the same one refresh uses.
+    /// Errors with `TransportInterrupted` if `cancel` fires first.
     pub async fn account_guard(
         &self,
         account: &AccountId,
@@ -542,6 +636,12 @@ impl TokenCoordinator {
             .await
     }
 
+    /// Blocking form of [`TokenCoordinator::access_token_async`] for
+    /// synchronous callers; it must not run on an async runtime thread.
+    ///
+    /// Errors with `ReauthorizationRequired` if the account has no complete
+    /// credential, and `InvalidResponse` if a refresh returns an unusable
+    /// lifetime. Vault and transport errors pass through.
     pub fn access_token<V: CredentialVault, T: RefreshTransport>(
         &self,
         account: &AccountId,
@@ -589,8 +689,15 @@ impl TokenCoordinator {
         Ok(access)
     }
 
+    /// Returns a usable access token for `account`, refreshing and storing a
+    /// new one if the current one expires within 60 seconds of `now_secs`.
+    ///
     /// Native vault calls run on Tokio's blocking pool; provider waits never block it.
     /// The same account mutex also serializes the legacy synchronous worker path.
+    /// Errors with `ReauthorizationRequired` if the account has no complete
+    /// credential, `InvalidResponse` if a refresh returns an unusable lifetime,
+    /// and `TransportInterrupted` on cancellation. Vault and transport errors
+    /// pass through.
     pub async fn access_token_async<
         V: CredentialVault + 'static,
         T: AsyncRefreshTransport + ?Sized,
@@ -625,12 +732,18 @@ impl TokenCoordinator {
         if token.refresh_token.is_empty() || token.access_token.is_empty() {
             return Err(GoogleError::ReauthorizationRequired);
         }
+        // Refresh a minute early so a token cannot expire while a request is
+        // in flight. Callers that waited on the lock usually find the token a
+        // concurrent caller just refreshed.
         if token.expires_at_secs > now_secs.saturating_add(60) {
             return Ok(token.access_token);
         }
         let result = transport
             .refresh_async(account, &token.refresh_token, now_secs, cancel)
             .await?;
+        // A token already inside the refresh margin would be refreshed again
+        // on the next call, so treat it as malformed. Google usually keeps the
+        // refresh token; the stored one stays unless a new one arrives.
         if result.access_token.is_empty()
             || result.expires_at_secs <= now_secs.saturating_add(60)
             || result

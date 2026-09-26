@@ -5,9 +5,14 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+/// Quotes an SQL identifier read from `sqlite_master`.
 fn quote(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
+/// Every ordinary table and whether it has an `account` column. Reading the
+/// schema instead of keeping a list means a newly added account-scoped table is
+/// purged and scanned without changes here. The FTS tables and this module's
+/// own bookkeeping tables are left out.
 fn tables(db: &Connection) -> Result<Vec<(String, bool)>> {
     let names=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'message_fts%' AND name NOT IN ('deleted_account_archives','archive_blob_cleanup')")?
         .query_map([],|r|r.get::<_,String>(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -24,12 +29,17 @@ fn tables(db: &Connection) -> Result<Vec<(String, bool)>> {
         })
         .collect()
 }
+/// Every run of exactly 64 hex digits in `bytes`, lowercased. Blob names are
+/// SHA-256 hex digests, and they appear in plain columns and inside JSON alike,
+/// so a textual scan finds them all. False positives only keep a blob longer.
 fn hashes(bytes: &[u8]) -> impl Iterator<Item = String> + '_ {
     bytes
         .split(|c| !c.is_ascii_hexdigit())
         .filter(|part| part.len() == 64)
         .map(|part| String::from_utf8_lossy(part).to_ascii_lowercase())
 }
+/// Calls `visit` with every blob-like hash in the text columns of `table`,
+/// limited to `account`'s rows when given.
 fn scan(
     db: &Connection,
     table: &str,
@@ -60,6 +70,18 @@ fn scan(
     Ok(())
 }
 impl Store {
+    /// Permanently deletes a removed account's local archive: every row in an
+    /// account-scoped table, its search index entries and its preferences.
+    /// Nothing changes in Google.
+    ///
+    /// `p` holds `expected_revision` (the archive's lifecycle revision) and
+    /// `request_id`. Repeating the same request returns the first result; a
+    /// different request for a deleted archive fails with
+    /// `request_id_conflict`. Fails with `stale_account_revision` unless the
+    /// account is removed at that revision, `account_cleanup_busy` while
+    /// credential cleanup is unfinished, and `archive_transfer_pending` while
+    /// a draft transfer involving it is open. Blob files are unlinked at the
+    /// next startup, once nothing else refers to them.
     pub fn account_archive_delete(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["expected_revision", "request_id"])?;
         id(account)?;
@@ -100,6 +122,9 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
+        // The deleted ID stays reserved by the receipt row below. Signing in
+        // again with the same Google identity binds to this derived
+        // replacement ID instead (see `validate_google_binding`).
         let base = subject
             .as_deref()
             .map(crate::live_profile::google_account_id)
@@ -118,7 +143,11 @@ impl Store {
         }
         let layout = tables(&self.db)?;
         let tx = self.db.unchecked_transaction()?;
+        // Rows go table by table in no dependency order, so foreign keys are
+        // checked only at commit, when every dependent row is gone.
         tx.execute_batch("PRAGMA defer_foreign_keys=ON")?;
+        // Queue every blob the account refers to before its rows go. Files are
+        // not touched here: another account or a later import may share them.
         for (table, scoped) in &layout {
             if *scoped {
                 let mut candidates = BTreeSet::new();
@@ -133,6 +162,8 @@ impl Store {
                 }
             }
         }
+        // Tables without an `account` column are keyed through a parent row
+        // and must go before it.
         tx.execute(
             "DELETE FROM message_fts WHERE rowid IN (SELECT rowid FROM messages WHERE account=?1)",
             [account],
@@ -156,9 +187,14 @@ impl Store {
         for key in [
             crate::local_model::history_cutoff_key(account),
             crate::local_model::catch_up_key(account),
-        ] {
+        ]
+        .into_iter()
+        .chain(crate::google_live_mail::mail_count_keys(account))
+        {
             tx.execute("DELETE FROM meta WHERE key=?1", [key])?;
         }
+        // Local model settings keep per-account entries inside JSON, including
+        // their history, so the account's key is removed from each copy.
         for table in ["local_model_settings", "local_model_settings_history"] {
             let rows = tx
                 .prepare(&format!("SELECT rowid,settings_json FROM {table}"))?
@@ -198,8 +234,13 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
-    // Startup has no provider/content workers. Imports made after a purge can
-    // reuse content, so recheck every retained reference before unlinking it.
+    /// Unlinks queued blob files that no row in any table still names, and
+    /// dequeues them. A file that cannot be removed stays queued for the next
+    /// startup. Deleted archives and locally purged messages, such as those
+    /// outside a shortened retention window, both queue here.
+    ///
+    /// Startup has no provider/content workers. Imports made after a purge can
+    /// reuse content, so recheck every retained reference before unlinking it.
     pub(crate) fn cleanup_deleted_archive_blobs(&self) -> Result<()> {
         let queued = self
             .db

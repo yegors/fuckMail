@@ -113,7 +113,7 @@ fn live_mail_pages_keep_the_order_after_head_insertion_and_deleted_anchor() {
 }
 
 #[test]
-fn phase1_fixture_counts_filters_groups_and_cursor_agree() {
+fn fixture_counts_filters_groups_and_cursor_agree() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let accounts = store.handle("accounts", None, json!({})).unwrap();
@@ -195,7 +195,7 @@ fn phase1_fixture_counts_filters_groups_and_cursor_agree() {
 }
 
 #[test]
-fn phase1_preferences_validate_replay_and_keep_none_distinct_from_all() {
+fn preferences_validate_replay_and_keep_none_distinct_from_all() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     assert!(store.preferences().unwrap()["preferences"]["selected_calendars"].is_null());
@@ -235,7 +235,7 @@ fn phase1_preferences_validate_replay_and_keep_none_distinct_from_all() {
 }
 
 #[test]
-fn phase1_signature_snapshot_capture_discard_and_history_are_durable() {
+fn signature_snapshot_capture_discard_and_history_are_durable() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let draft=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Human reply — こんにちは","body_html":"<p>Human reply — こんにちは</p>","attachment_ids":["windscribe-attachment-0"],"expected_revision":0,"request_id":"save"})).unwrap();
@@ -312,7 +312,7 @@ fn phase1_signature_snapshot_capture_discard_and_history_are_durable() {
 }
 
 #[test]
-fn phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targets_recipient() {
+fn discarded_reply_restarts_with_current_identity_and_outgoing_reply_targets_recipient() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let first=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Old draft","expected_revision":0,"request_id":"old"})).unwrap();
@@ -345,7 +345,7 @@ fn phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targ
 }
 
 #[test]
-fn phase1_authored_signature_override_captures_once_after_preference_change() {
+fn authored_signature_override_captures_once_after_preference_change() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let signature = "Personally edited signature — exact-marker";
@@ -367,7 +367,7 @@ fn phase1_authored_signature_override_captures_once_after_preference_change() {
 }
 
 #[test]
-fn phase1_cached_counts_invalidate_after_source_and_flag_changes() {
+fn cached_counts_invalidate_after_source_and_flag_changes() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let before = store
@@ -401,7 +401,7 @@ fn phase1_cached_counts_invalidate_after_source_and_flag_changes() {
 }
 
 #[test]
-fn phase1_status_filters_use_entire_conversation_and_source_filters_share_one_member() {
+fn status_filters_use_entire_conversation_and_source_filters_share_one_member() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     // Only the latest member has the attachment; an earlier own outgoing member
@@ -454,7 +454,7 @@ fn phase1_status_filters_use_entire_conversation_and_source_filters_share_one_me
         .any(|row| row["id"] == THREAD && row["group"] == "done"));
 }
 
-// Search 10: words typed together are one phrase that must appear as written,
+// Words typed together are one phrase that must appear as written,
 // from the start of a word; the last word may be partial.
 #[test]
 fn search_phrases_match_as_written() {
@@ -469,15 +469,24 @@ fn search_phrases_match_as_written() {
         .collect::<std::result::Result<_, _>>()
         .unwrap();
     assert_eq!(picked.len(), 4);
-    let long = format!("Cover note. {}The C-22 draft is attached.", "Some words here. ".repeat(30));
+    let long = format!(
+        "Cover note. {}The C-22 draft is attached.",
+        "Some words here. ".repeat(30)
+    );
     for ((rowid, _), (subject, body)) in picked.iter().zip([
         ("Bill C-22 Option Illustrations", long.as_str()),
-        ("Invitation: Standup @ Tue Sep 22, 2026", "Calendar call details"),
+        (
+            "Invitation: Standup @ Tue Sep 22, 2026",
+            "Calendar call details",
+        ),
         ("Weekly", "Thanks for the Bill\r\nC-22 update, Café Élan"),
         ("Re: c22", "Nothing here"),
     ]) {
         store.db.execute("UPDATE messages SET subject=?2,body=?3,sender_name='Sender',sender_email='sender@fixture.example' WHERE rowid=?1", params![rowid, subject, body]).unwrap();
-        store.db.execute("DELETE FROM message_fts WHERE rowid=?1", [rowid]).unwrap();
+        store
+            .db
+            .execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .unwrap();
         store
             .db
             .execute(
@@ -489,7 +498,11 @@ fn search_phrases_match_as_written() {
     let [a, b, c, d] = [&picked[0].1, &picked[1].1, &picked[2].1, &picked[3].1].map(String::clone);
     let ids = |store: &mut Store, query: &str| -> Vec<String> {
         let result = store
-            .handle("conversations", Some(ACCOUNT), json!({"query":query,"folder":"inbox","limit":100}))
+            .handle(
+                "conversations",
+                Some(ACCOUNT),
+                json!({"query":query,"folder":"inbox","limit":100}),
+            )
             .unwrap();
         let mut ids: Vec<String> = result["conversations"]
             .as_array()
@@ -509,11 +522,20 @@ fn search_phrases_match_as_written() {
     assert_eq!(ids(&mut store, "c-22"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "C-2"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "subject:c-22"), vec![a.clone()]);
-    assert_eq!(ids(&mut store, "body:c-22"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(
+        ids(&mut store, "body:c-22"),
+        sorted(vec![a.clone(), c.clone()])
+    );
     assert_eq!(ids(&mut store, "body:bill c-22"), vec![c.clone()]);
     // Case, accents and line breaks do not matter; order and punctuation do.
-    assert_eq!(ids(&mut store, "bill c-22"), sorted(vec![a.clone(), c.clone()]));
-    assert_eq!(ids(&mut store, "\"BILL C-22\""), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(
+        ids(&mut store, "bill c-22"),
+        sorted(vec![a.clone(), c.clone()])
+    );
+    assert_eq!(
+        ids(&mut store, "\"BILL C-22\""),
+        sorted(vec![a.clone(), c.clone()])
+    );
     assert_eq!(ids(&mut store, "cafe elan"), vec![c.clone()]);
     assert!(ids(&mut store, "c-22 bill").is_empty());
     assert!(ids(&mut store, "c 22").is_empty());
@@ -524,18 +546,38 @@ fn search_phrases_match_as_written() {
     let twenty_two = ids(&mut store, "22");
     assert!([&a, &b, &c].iter().all(|id| twenty_two.contains(id)) && !twenty_two.contains(&d));
     // Separate phrases each need to appear.
-    assert_eq!(ids(&mut store, "c-22 from:sender@fixture.example"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(
+        ids(&mut store, "c-22 from:sender@fixture.example"),
+        sorted(vec![a.clone(), c.clone()])
+    );
     assert_eq!(ids(&mut store, "c-22 subject:weekly"), vec![c.clone()]);
     assert!(ids(&mut store, "bill option subject:weekly").is_empty());
     // The preview starts near the phrase, not at the first word starting with c.
-    let result = store.handle("conversations", Some(ACCOUNT), json!({"query":"c-22","folder":"inbox","limit":100})).unwrap();
-    let row = result["conversations"].as_array().unwrap().iter().find(|r| r["id"] == a.as_str()).unwrap();
+    let result = store
+        .handle(
+            "conversations",
+            Some(ACCOUNT),
+            json!({"query":"c-22","folder":"inbox","limit":100}),
+        )
+        .unwrap();
+    let row = result["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == a.as_str())
+        .unwrap();
     let snippet = row["snippet"].as_str().unwrap();
-    assert!(snippet.starts_with("… ") && snippet.contains("The C-22 draft"), "{snippet}");
-    assert_eq!(result["search_terms"]["phrases"], json!([{"text":"c-22","field":"any"}]));
+    assert!(
+        snippet.starts_with("… ") && snippet.contains("The C-22 draft"),
+        "{snippet}"
+    );
+    assert_eq!(
+        result["search_terms"]["phrases"],
+        json!([{"text":"c-22","field":"any"}])
+    );
 }
 
-// Search 7: the search box grammar GUI and CLI share.
+// The search box grammar that the GUI and CLI share.
 #[test]
 fn search_grammar_scopes_fields_labels_state_and_recipients() {
     let dir = tempfile::tempdir().unwrap();
@@ -616,7 +658,7 @@ fn search_grammar_scopes_fields_labels_state_and_recipients() {
         vec![a.clone()]
     );
     assert_eq!(ids(&mut store, "body:zeppelin", "inbox"), vec![c.clone()]);
-    // Words typed together are one phrase (Search 10).
+    // Words typed together are one phrase.
     assert_eq!(ids(&mut store, "zeppelin orchid", "inbox"), vec![c.clone()]);
     assert!(ids(&mut store, "orchid zeppelin", "inbox").is_empty());
     assert_eq!(
@@ -688,17 +730,39 @@ fn search_grammar_scopes_fields_labels_state_and_recipients() {
     assert!(ids(&mut store, "to:zed", "inbox").is_empty());
     // Cc people come from the link index's people rows; the sender is not a recipient.
     let (row, conversation, sender): (i64, String, String) = store.db.query_row("SELECT rowid,conversation_id,sender_email FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY rowid LIMIT 1", rusqlite::params![ACCOUNT, b], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
-    for (email, name) in [("yara@fixture.example", "Yara Cc"), (sender.to_lowercase().as_str(), "")] {
-        store.db.execute("INSERT INTO people(email,name) VALUES(?1,?2) ON CONFLICT(email) DO NOTHING", [email, name]).unwrap();
+    for (email, name) in [
+        ("yara@fixture.example", "Yara Cc"),
+        (sender.to_lowercase().as_str(), ""),
+    ] {
+        store
+            .db
+            .execute(
+                "INSERT INTO people(email,name) VALUES(?1,?2) ON CONFLICT(email) DO NOTHING",
+                [email, name],
+            )
+            .unwrap();
         store.db.execute("INSERT OR IGNORE INTO message_people(message_rowid,person) SELECT ?1,id FROM people WHERE email=?2", rusqlite::params![row, email]).unwrap();
     }
-    assert_eq!(ids(&mut store, "to:yara@fixture.example", "inbox"), vec![conversation.clone()]);
-    assert_eq!(ids(&mut store, "to:\"Yara Cc\"", "inbox"), vec![conversation.clone()]);
+    assert_eq!(
+        ids(&mut store, "to:yara@fixture.example", "inbox"),
+        vec![conversation.clone()]
+    );
+    assert_eq!(
+        ids(&mut store, "to:\"Yara Cc\"", "inbox"),
+        vec![conversation.clone()]
+    );
     assert!(ids(&mut store, "from:yara", "inbox").is_empty());
-    assert_eq!(ids(&mut store, "yara@fixture.example", "inbox"), vec![conversation.clone()]);
+    assert_eq!(
+        ids(&mut store, "yara@fixture.example", "inbox"),
+        vec![conversation.clone()]
+    );
     assert!(!ids(&mut store, &format!("to:{sender}"), "inbox").contains(&conversation));
     let terms = store
-        .handle("conversations", Some(ACCOUNT), json!({"query":"zed@fixture.example to:yara from:orchid"}))
+        .handle(
+            "conversations",
+            Some(ACCOUNT),
+            json!({"query":"zed@fixture.example to:yara from:orchid"}),
+        )
         .unwrap()["search_terms"]
         .clone();
     assert_eq!(terms["to"], json!(["yara"]));

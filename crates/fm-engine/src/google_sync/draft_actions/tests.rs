@@ -432,7 +432,7 @@ async fn local_assessment_copy_and_replay_need_no_provider_owner_and_preserve_so
         .call(move |store| store.handle("draft_get", Some(&account), json!({"draft_id":id})))
         .await
         .unwrap();
-    // D121: the Gmail draft stays an editable mirror beside its copy.
+    // The Gmail draft stays an editable mirror beside its copy.
     assert_eq!(retained["origin"], "local");
     assert_eq!(retained["body"], original["body"]);
     assert_eq!(h.http.states[0].lock().unwrap().reads, before);

@@ -1,3 +1,5 @@
+// Unit test for ConversationListModel: data-only and no-op updates keep row
+// identity, structural changes keep surviving rows, and group labels stay notified.
 #include "ConversationListModel.h"
 #include <QAbstractItemModelTester>
 #include <QCoreApplication>

@@ -1,3 +1,6 @@
+// One attachment card under an expanded message in MailView: an image
+// thumbnail, a video poster frame or a file-type badge, plus Download. Images
+// and videos emit openMedia() for AttachmentViewer; other files go to backend.openAttachment().
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

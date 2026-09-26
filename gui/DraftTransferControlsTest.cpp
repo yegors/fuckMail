@@ -1,3 +1,6 @@
+// Backend test for moving a draft to another From account, on a real MailBackend
+// over the scripted engine: save before transfer, editor lock, exact retry of an
+// unconfirmed transfer and opening the destination draft.
 #include "GoogleOperationTestFixture.h"
 #include "MailBackend.h"
 #include <QGuiApplication>

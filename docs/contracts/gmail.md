@@ -2,6 +2,16 @@
 
 
 
+## D137 — the inventory counts what it will download (Gmail34)
+
+- While the inventory lane is incomplete, each of its steps first lists `messages.list` pages with `maxResults=500`, IDs only, one after another for up to 2 s (D138), then runs its own page. It uses the inventory's own query (`after:<mail_since> -in:spam`, or `-in:spam` for all mail) and `includeSpamTrash=true`, at the backfill read class.
+- The running and final counts go to Core72's `google_mail_count_record` for the lane's mail generation.
+- Counting is best effort: a failed page is logged (`mail_count_failed`) and retried next step, and the inventory page still runs. A finished count for the current generation is not repeated.
+- The count lives in memory, so a restart counts from the start. A generation change (a new retention window or a resync) starts a new count.
+- Cost: 5 units per 500 messages, while the inventory is incomplete.
+
+Consumers: Core72, Mail UI98.
+
 ## D126 — uploads wait for the text to rest (Gmail33)
 
 - The drafts worker uploads a draft only after its text has been unchanged for 30 s (`google_draft_due_after`, Core70), or when it resumes an operation already under way. Leaving the composer and Send still save at once, and Send waits for the upload.

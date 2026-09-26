@@ -6,8 +6,15 @@ use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
 
+/// Wraps a vault and remembers its failures per account, so one refused
+/// keychain prompt is not shown again by every worker.
+///
 /// A native refusal is shared by every worker until an explicit user retry.
 /// The lock remains inside the blocking operation, including caller cancellation.
+/// After any failed call for an account, its loads fail with
+/// `StoreUnavailable` without reaching the inner vault, until
+/// [`CredentialVault::retry_access`] or a successful `store` or `remove`.
+/// All calls, for every account, are serialized through one lock.
 pub struct SessionCredentialVault<V: ?Sized> {
     inner: std::sync::Arc<V>,
     denied: Mutex<std::collections::BTreeSet<AccountId>>,
@@ -72,8 +79,15 @@ impl<V: CredentialVault + ?Sized> CredentialVault for SessionCredentialVault<V> 
     }
 }
 
+/// Stores tokens in the OS credential store: Windows Credential Manager, the
+/// macOS Keychain or the Linux Secret Service.
+///
 /// Core supplies a random, persistent per-profile namespace. It is not a token.
 /// Native errors are deliberately collapsed before reaching diagnostics.
+/// Entries use the service `fuckmail.google.v1.<sha256 of namespace>` and the
+/// SHA-256 of the account ID as the user, so neither email nor account ID is
+/// visible in the store. Operations are serialized; on other platforms every
+/// call fails with `StoreUnavailable`.
 pub struct NativeCredentialVault {
     service: String,
     operations: Mutex<()>,
@@ -89,6 +103,8 @@ struct VaultRecord {
 }
 
 impl NativeCredentialVault {
+    /// Errors with `InvalidResponse` unless the namespace is 16–256 ASCII
+    /// letters, digits, `-` or `_`.
     pub fn new(profile_namespace: &str) -> Result<Self, GoogleError> {
         if !(16..=256).contains(&profile_namespace.len())
             || !profile_namespace
@@ -168,6 +184,8 @@ impl CredentialVault for NativeCredentialVault {
                 Err(keyring::Error::NoEntry) => return Ok(None),
                 Err(_) => return Err(GoogleError::StoreUnavailable),
             };
+            // An oversized, corrupt or unknown-version record is reported as
+            // unavailable, not absent: absence would read as signed out.
             if bytes.len() > 32 * 1024 {
                 return Err(GoogleError::StoreUnavailable);
             }
@@ -236,6 +254,8 @@ pub struct NativeSecret {
 }
 
 impl NativeSecret {
+    /// The remote-content proxy password entry for this profile namespace,
+    /// which is validated as in [`NativeCredentialVault::new`].
     pub fn proxy_password(profile_namespace: &str) -> Result<Self, GoogleError> {
         if !(16..=256).contains(&profile_namespace.len())
             || !profile_namespace
@@ -270,6 +290,8 @@ impl NativeSecret {
             .map_err(|_| GoogleError::StoreUnavailable)
     }
 
+    /// Returns the secret, or `None` if no entry exists. `StoreUnavailable`
+    /// if the store fails or the entry is over 4 KiB or not UTF-8.
     pub fn load(&self) -> Result<Option<Zeroizing<String>>, GoogleError> {
         let _guard = self
             .operations
@@ -293,6 +315,7 @@ impl NativeSecret {
         Err(GoogleError::StoreUnavailable)
     }
 
+    /// Saves a secret of 1–1024 bytes, replacing any previous one.
     pub fn store(&self, secret: &str) -> Result<(), GoogleError> {
         let _guard = self
             .operations
@@ -311,6 +334,7 @@ impl NativeSecret {
         Err(GoogleError::StoreUnavailable)
     }
 
+    /// Deletes the entry; an absent entry is success.
     pub fn remove(&self) -> Result<(), GoogleError> {
         let _guard = self
             .operations

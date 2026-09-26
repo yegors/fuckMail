@@ -25,6 +25,8 @@ pub fn reversed(host: &str) -> String {
     host.rsplit('.').collect::<Vec<_>>().join(".")
 }
 
+/// A batch of messages to index, from [`Store::link_index_begin`]; process it
+/// off the writer with [`link_index_prepare`].
 pub struct IndexPlan {
     blobs: BlobStore,
     items: Vec<IndexItem>,
@@ -38,6 +40,8 @@ struct IndexItem {
     stored_people: Vec<(String, String)>,
 }
 
+/// Hosts and people extracted from a batch, ready for
+/// [`Store::link_index_finish`]. `through` is the batch's last message rowid.
 pub struct IndexedBatch {
     rows: Vec<IndexedMessage>,
     through: i64,
@@ -92,6 +96,11 @@ impl Store {
         }))
     }
 
+    /// Writes a prepared batch's host and people rows and advances the index
+    /// cursor, in one transaction; returns how many messages were indexed.
+    ///
+    /// Messages deleted while the batch was prepared are skipped. The cursor
+    /// only moves forward, so a late or repeated batch cannot rewind it.
     pub fn link_index_finish(&self, batch: IndexedBatch) -> Result<usize> {
         let tx = self.db.unchecked_transaction()?;
         let mut indexed = 0;

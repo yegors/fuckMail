@@ -1,3 +1,6 @@
+// MailBackend's messages on their way out: queued and in-flight sends shown in
+// Sent before Gmail's copy arrives, their preview in the reader, and Undo or
+// status actions on them. Defines the conversations()/conversation() getters.
 #include "MailBackend.h"
 #include <QDateTime>
 #include <QJsonArray>
@@ -30,6 +33,9 @@ QVariantMap MailBackend::queuedOutgoing(const QJsonObject &params) const {
         {"attachments",m_draft.value("attachments",QVariantList{})},{"created_at",QDateTime::currentSecsSinceEpoch()}};
 }
 
+// Every pending send for the current account, one row per request id. Later
+// sources override earlier ones: stored previews, this thread's previews,
+// in-memory states from recent callbacks, then sends still in their Undo window.
 QVariantList MailBackend::outgoingMessages() const {
     QMap<QString,QVariantMap> messages;
     for (const auto &value : m_outgoingPreviews.value(m_account)) { const auto row=value.toMap(); messages[row.value("request_id").toString()]=row; }
@@ -206,6 +212,8 @@ void MailBackend::loadOutgoingMessage(const QVariantMap &value) {
             if (account == m_account) refreshOutgoingPresentation();
             return;
         }
+        // Gmail's own copy has arrived: retire the preview everywhere, and move
+        // the reader to the real conversation if the user is just viewing it.
         const auto observed=result["observed_conversation_id"].toString();
         if (!observed.isEmpty()) {
             m_transientOutgoing.remove(key);

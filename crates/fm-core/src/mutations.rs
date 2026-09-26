@@ -6,6 +6,9 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 impl Store {
+    /// Validates a mutation's parameters and returns the stored reply if its
+    /// `request_id` already completed. The same ID with different parameters
+    /// is `request_id_conflict`.
     pub(crate) fn mutation_receipt(
         &self,
         method: &str,
@@ -121,10 +124,21 @@ impl Store {
         Ok(None)
     }
 
+    /// Applies a local mutation that needs no off-writer content preparation.
     pub(crate) fn mutate(&self, method: &str, account: &str, p: &Value) -> Result<Value> {
         self.mutate_prepared(method, account, p, None)
     }
 
+    /// Applies one explicit local change (flags, category, filing, undo,
+    /// draft create/save/discard, view) and returns its reply.
+    ///
+    /// The change, its idempotency receipt and, on live profiles, the queued
+    /// Gmail delivery commit in one transaction; replaying a `request_id`
+    /// returns the stored reply. `expected_revision` must match the
+    /// conversation, draft or view revision (`stale_revision`). Mail changes
+    /// also record human intents that later Gmail syncs will not overwrite
+    /// until delivery is confirmed. `prepared_draft` carries a draft save's
+    /// content verified off the writer.
     pub(crate) fn mutate_prepared(
         &self,
         method: &str,
@@ -201,6 +215,8 @@ impl Store {
                         }
                     }
                 } else if method == "set_category" {
+                    // A human label choice replaces any model suggestion and
+                    // stops the model labelling these messages again.
                     for message in &targets {
                         tx.execute("INSERT OR IGNORE INTO local_model_label_overrides(account,message_id) VALUES(?1,?2)",params![account,message])?;
                         tx.execute("DELETE FROM assist_category_intents WHERE account=?1 AND message_id=?2",params![account,message])?;
@@ -300,6 +316,8 @@ impl Store {
             }
             _ => unreachable!(),
         };
+        // The receipt and the delivery queue rows are written in this same
+        // transaction, so a replay can never observe one without the other.
         if matches!(
             method,
             "flag" | "set_category" | "mail_filing" | "mail_undo"
@@ -320,6 +338,8 @@ impl Store {
 }
 
 impl Store {
+    /// Each target's flags and categories before a mail action, stored in its
+    /// receipt so the action can be undone.
     fn mail_undo_snapshot(&self, account: &str, targets: &[&str]) -> Result<Vec<Value>> {
         targets.iter().map(|message| {
             let mut row = self.db.query_row("SELECT unread,starred,inbox,trashed FROM messages WHERE account=?1 AND id=?2",params![account,message],|r| Ok(json!({"id":message,"unread":r.get::<_,bool>(0)?,"starred":r.get::<_,bool>(1)?,"inbox":r.get::<_,bool>(2)?,"trashed":r.get::<_,bool>(3)?})))?;
@@ -328,6 +348,9 @@ impl Store {
             Ok(row)
         }).collect()
     }
+    /// Restores the flags and categories an earlier mail action's receipt
+    /// captured. The conversation must still be at the revision that action
+    /// produced, so any later change blocks the undo.
     fn restore_mail_snapshot(&self, account: &str, p: &Value, expected: i64) -> Result<Value> {
         let conversation = string(p, "id")?;
         let original = string(p, "undo_request_id")?;
@@ -445,6 +468,8 @@ impl Store {
     }
 }
 
+/// SHA-256 of a request's method and parameters; a replayed request ID must
+/// match it.
 pub(crate) fn fingerprint(method: &str, p: &Value) -> Result<String> {
     Ok(format!(
         "{:x}",
@@ -475,6 +500,9 @@ fn record_manual_intent(
     )?;
     Ok(())
 }
+/// Fails with `stale_revision` (carrying both revisions in `details`) unless
+/// `expected` equals `actual`, or with `storage_error` if `actual` cannot be
+/// incremented.
 pub(crate) fn check_revision(expected: i64, actual: i64) -> Result<()> {
     if expected != actual {
         Err(CoreError {

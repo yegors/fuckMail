@@ -85,8 +85,33 @@ install(PROGRAMS
 if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
     install(FILES "${FM_GOOGLE_CLIENT_CONFIG}" DESTINATION "${FM_INSTALL_BIN}" RENAME "google-oauth-client.json")
 endif()
-install(FILES "${CMAKE_SOURCE_DIR}/gui/fonts/LICENSE-Geist.txt"
+# License texts for fuckMail and everything it redistributes; THIRD_PARTY_NOTICES.md
+# explains which text covers which component.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(FM_RUST_NOTICES "${CMAKE_BINARY_DIR}/THIRD-PARTY-RUST.txt")
+add_custom_command(OUTPUT "${FM_RUST_NOTICES}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/third_party_notices.py"
+        --cargo "${FM_CARGO}" --output "${FM_RUST_NOTICES}"
+    DEPENDS "${CMAKE_SOURCE_DIR}/Cargo.lock" "${CMAKE_SOURCE_DIR}/scripts/third_party_notices.py"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Collect Rust crate license notices")
+add_custom_target(fm-third-party-notices DEPENDS "${FM_RUST_NOTICES}")
+add_dependencies(fm-client-runtime fm-third-party-notices)
+install(FILES
+    "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    "${CMAKE_SOURCE_DIR}/gui/fonts/LICENSE-Geist.txt"
+    "${FM_RUST_NOTICES}"
     DESTINATION "${FM_INSTALL_LICENSES}")
+# Qt and FFmpeg ship as separate shared libraries; redistributing them requires their texts.
+foreach(FM_LICENSE_TEXT Qt-LGPL-3.0 Qt-GPL-3.0 FFmpeg-LGPL-2.1)
+    install(FILES "${CMAKE_SOURCE_DIR}/gui/third_party/qt/${FM_LICENSE_TEXT}.txt"
+        DESTINATION "${FM_INSTALL_LICENSES}" RENAME "LICENSE-${FM_LICENSE_TEXT}.txt")
+endforeach()
+install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" DESTINATION "${FM_INSTALL_LICENSES}" RENAME "LICENSE-fuckMail.txt")
+install(FILES "${CMAKE_SOURCE_DIR}/gui/third_party/litehtml/LICENSE"
+    DESTINATION "${FM_INSTALL_LICENSES}" RENAME "LICENSE-litehtml.txt")
+install(FILES "${CMAKE_SOURCE_DIR}/gui/third_party/litehtml/src/gumbo/LICENSE"
+    DESTINATION "${FM_INSTALL_LICENSES}" RENAME "LICENSE-gumbo.txt")
 # The normal OS plugin remains selected by Qt. Ship offscreen too so the exact
 # relocated development artifact can run its headless integration checks in CI.
 if(APPLE)
@@ -122,7 +147,7 @@ if(BUILD_TESTING)
     add_test(NAME rust-workspace COMMAND "${FM_CARGO}" test --workspace --locked
         ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target")
     set_tests_properties(rust-workspace PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        # The Phase 2 durable-profile suite exceeds ten minutes on hosted Windows.
+        # The durable-profile suite exceeds ten minutes on hosted Windows runners.
         # Individual operation watchdogs and application latency targets remain.
         TIMEOUT 1800 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
     # --smoke exercises a disposable profile and must exit nonzero on load/IPC errors.

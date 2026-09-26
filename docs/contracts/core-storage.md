@@ -2,6 +2,15 @@
 
 
 
+## D137 — the inventory's count (Core72)
+
+- `google_mail_count(account) → Option<(counted, complete)>` and `google_mail_count_record(account, generation, counted, complete) → bool`. They use three `meta` keys: `mail_count_generation:`, `mail_count_messages:` and `mail_count_complete:` plus the account ID. There is no schema change.
+- A count belongs to the account's `mail_generation`. It is not reported once the generation moves on, and a record for an older generation writes nothing and returns false. Each record advances the store revision.
+- `GoogleMailCoverage` gains `listed` (the finished count) and `listing` (the count so far). The account's `google.sync` gains `inventory_total` and `inventory_counting` (numbers, or null).
+- Deleting an archived account removes the three keys with its other per-account `meta` keys.
+
+Consumers: Gmail34, Mail UI98.
+
 ## D127 — invitation emails, optional proxy credentials (Core71)
 
 - **`message_invite {id, source_version}`**: account-scoped and read-only in synthetic and live profiles. It makes no provider calls and no writes. Errors are the same as `message_source` (`not_found`, `stale_source`), plus `invalid_request` for unknown fields.

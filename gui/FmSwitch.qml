@@ -1,3 +1,4 @@
+// Small on/off toggle switch, exposed to accessibility as a checkbox.
 import QtQuick
 import QtQuick.Controls
 

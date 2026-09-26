@@ -1,3 +1,5 @@
+// The app's themed ScrollBar, attached to ScrollViews and ListViews
+// throughout the UI.
 import QtQuick
 import QtQuick.Controls
 

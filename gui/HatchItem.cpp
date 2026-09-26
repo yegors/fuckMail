@@ -1,3 +1,5 @@
+// HatchItem: diagonal hatching for overlapping blocks in the Mail timeline, built
+// as one scenegraph geometry node; returns no node on the software renderer.
 #include "HatchItem.h"
 #include <QQuickWindow>
 #include <QSGGeometryNode>
@@ -27,6 +29,9 @@ public:
     QColor color;
 };
 
+// Writes one line as three quads: a solid core of half-width `inner` and a
+// band on each side that fades to transparent at `outer`. Vertex colours
+// interpolate across the bands, which antialiases without MSAA.
 void stripe(QSGGeometry::ColoredPoint2D *vertices, qreal intercept, qreal height,
     qreal inner, qreal outer, QRgb color) {
     int at = 0;
@@ -77,6 +82,7 @@ QSGNode *HatchItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) {
         return node;
     }
     const qreal dpr = std::max(qreal(.25), window()->effectiveDevicePixelRatio());
+    // The fade is one device pixel wide, whatever the scale factor.
     const qreal feather = 1 / dpr;
     const qreal outer = (strokeWidth + feather) / 2;
     const qreal inner = std::abs(strokeWidth - feather) / 2;
@@ -89,6 +95,10 @@ QSGNode *HatchItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) {
         mesh->setVertexCount(0); node->markDirty(QSGNode::DirtyGeometry); return node;
     }
     const int stripes = int(needed);
+    // A stripe's vertices depend on height, scale and colour but not width.
+    // When only the width changes, existing stripes stay valid and just the
+    // new ones are written. allocate() discards the vertex data, so growing
+    // the capacity (in steps of 32 stripes) forces a full rebuild.
     bool regenerate = node->height != h || node->dpr != dpr || node->color != m_color;
     if (stripes > node->capacity) {
         node->capacity = ((stripes + 31) / 32) * 32;
@@ -97,6 +107,8 @@ QSGNode *HatchItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) {
     }
     const int first = regenerate ? 0 : std::min(node->generated, stripes);
     if (first < stripes) {
+        // When the stroke is thinner than the one-device-pixel fade (scale
+        // below 1), its alpha drops in proportion to keep the apparent weight.
         QColor covered = m_color;
         covered.setAlphaF(covered.alphaF() * std::min(qreal(1), strokeWidth / feather));
         const QRgb premultiplied = qPremultiply(covered.rgba());

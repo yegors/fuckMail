@@ -4,7 +4,7 @@ import QtQuick.Templates as T
 
 // Lists, grids and dialogs repeat this button hundreds of times, so a plain
 // label builds only its text and background; the icon, shortcut hint and
-// hover help are created when used. Geometry is that of the former Row:
+// hover help are created when used. The layout is a row of
 // [icon][label][hint], centred as a group unless aligned left.
 T.ToolButton {
     id: control
@@ -22,6 +22,11 @@ T.ToolButton {
     property color foreground: !enabled ? (prominent ? Theme.muted : Theme.subtle) : prominent ? Theme.canvas : selected || outlined ? Theme.text : Theme.muted
     property int textAlignment: Text.AlignHCenter
     property real radius: 5
+    // Hover lifts the whole button: main (prominent) actions a little, the
+    // rest more. 1 turns it off.
+    property real hoverBrightness: prominent ? 1.12 : 1.3
+    readonly property bool brightened: hovered && enabled && hoverBrightness !== 1
+    function lit(value) { return brightened ? Theme.brighten(value, hoverBrightness) : value }
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     // The Basic style's ToolButton defaults.
@@ -37,7 +42,7 @@ T.ToolButton {
         id: content
         implicitWidth: label.implicitWidth + (row.item ? row.item.extraWidth : 0)
         implicitHeight: Math.max(label.implicitHeight, control.iconSize)
-        // The Row was centred by anchors, which land on whole pixels.
+        // Centre on whole pixels, the way anchors.centerIn does.
         function centred(outer, inner) {
             const half = function(size) { return Math.trunc(size) % 2 ? (size + 1) / 2 : size / 2 }
             return Math.round(half(outer) - half(inner))
@@ -51,7 +56,7 @@ T.ToolButton {
             width: row.item ? row.item.labelWidth : Math.min(implicitWidth, content.width)
             text: control.text
             font: control.font
-            color: control.foreground
+            color: control.lit(control.foreground)
             verticalAlignment: Text.AlignVCenter
             textFormat: Text.PlainText
             elide: Text.ElideRight
@@ -79,7 +84,7 @@ T.ToolButton {
                 FmIcon {
                     visible: parent.hasIcon
                     x: parent.placed(0, width); anchors.verticalCenter: parent.verticalCenter
-                    name: control.iconName; size: control.iconSize; color: control.iconColor
+                    name: control.iconName; size: control.iconSize; color: control.lit(control.iconColor)
                 }
                 Loader {
                     id: hint
@@ -96,7 +101,7 @@ T.ToolButton {
     }
     background: Rectangle {
         radius: control.radius
-        color: control.prominent ? (control.enabled ? Theme.text : Theme.controlBorder) : control.down || control.selected ? Theme.selected : control.hovered ? Theme.surface : "transparent"
+        color: control.prominent ? (control.enabled ? control.lit(Theme.text) : Theme.controlBorder) : control.down || control.selected ? control.lit(Theme.selected) : control.hovered ? Theme.surface : "transparent"
         border.width: control.activeFocus || control.outlined ? 1 : 0
         border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder
     }

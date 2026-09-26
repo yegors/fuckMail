@@ -1,3 +1,5 @@
+//! Request cancellation for the engine: a disconnected client's read can stop
+//! inside SQLite, while a mutation that has started always finishes.
 use crate::{err, Result, Store};
 use serde_json::Value;
 use std::sync::{

@@ -1,10 +1,17 @@
 //! Typed local presentation preferences and account domain metadata.
+//!
+//! Preferences are one JSON document shared by the GUI and CLI, stored as a
+//! singleton row with a revision. Reads merge the saved keys over current
+//! defaults, so keys added later appear without a migration. Saves are
+//! patches: they must name the revision they started from (`stale_revision`
+//! otherwise), are validated as a whole, and are idempotent per request ID
+//! through `preference_operations`.
 use crate::*;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","mail_date_grouping":"grouped","message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","show_draft_chips":true,"calendar_recent_searches":[],"message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
 }
@@ -15,6 +22,9 @@ pub const ACCOUNT_COLORS: [&str; 16] = [
     "#8AA9D6", "#6FA3C7", "#6FB5B2", "#7FC4A4", "#8FB39A", "#B9C77A", "#C9A58F", "#A3AAB3",
 ];
 impl Store {
+    /// Returns whether the user left Google sync for `service` (`mail` or
+    /// `calendar`) enabled on `account`. Accounts without a saved choice sync
+    /// both services.
     pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
         if !matches!(service, "mail" | "calendar") {
             return Err(err("invalid_request", "Choose Mail or Calendar sync"));
@@ -25,6 +35,8 @@ impl Store {
                 .unwrap_or(true),
         )
     }
+    /// Returns the background sync cadence in milliseconds (1, 5 or 15
+    /// minutes); any other stored value fails with `invalid_request`.
     pub fn google_sync_interval_ms(&self) -> Result<u64> {
         let value = self.preferences()?["preferences"]["sync_every_minutes"].as_u64();
         match value {
@@ -43,8 +55,12 @@ impl Store {
             |r| r.get(0),
         )?)
     }
+    /// Returns `{revision, preferences}` with saved keys merged over the
+    /// defaults. Revision 0 means nothing was ever saved.
     pub(crate) fn preferences(&self) -> Result<Value> {
         let mut profile_defaults = defaults();
+        // The demo fixture's events are in Toronto; give it a zone so the
+        // calendar renders without setup.
         if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {
             profile_defaults["calendar_display_time_zone"] = "America/Toronto".into();
         }
@@ -64,7 +80,10 @@ impl Store {
                     .as_object()
                     .ok_or_else(|| err("storage_error", "Stored preferences are not an object"))?
                 {
-                    merged[key] = value.clone();
+                    // Retired: Sent and Drafts are always grouped by date.
+                    if key != "mail_date_grouping" {
+                        merged[key] = value.clone();
+                    }
                 }
                 (r, merged)
             }
@@ -72,6 +91,14 @@ impl Store {
         };
         Ok(json!({"revision":revision,"preferences":preferences}))
     }
+    /// Applies a preferences patch `{preferences, expected_revision,
+    /// request_id}` and returns the new `{revision, preferences}`.
+    ///
+    /// Only known keys are accepted and the merged document is validated as a
+    /// whole, so a rejected save changes nothing. Replaying a request ID
+    /// returns its original result even if defaults have grown since. A
+    /// change to the display zone or calendar selection also bumps the
+    /// calendar publication revision so Calendar views reload.
     pub(crate) fn preferences_save(&self, p: &Value) -> Result<Value> {
         fields(p, &["preferences", "expected_revision", "request_id"])?;
         let request = string(p, "request_id")?;
@@ -93,6 +120,8 @@ impl Store {
             }
             return Ok(serde_json::from_str(&response)?);
         }
+        // Optimistic concurrency: a GUI and CLI saving at once cannot silently
+        // overwrite each other; the loser reloads and reapplies.
         let current = self.preferences()?;
         crate::mutations::check_revision(
             required_revision(p)?,
@@ -103,7 +132,8 @@ impl Store {
             patch,
             &[
                 "density",
-                "mail_date_grouping",
+                "show_draft_chips",
+                "calendar_recent_searches",
                 "message_format",
                 "sync_every_minutes",
                 "week_start",
@@ -136,6 +166,8 @@ impl Store {
                 "sender_pictures",
             ],
         )?;
+        // Validate the merged result, not just the patch: some rules span keys
+        // (visible hours, shortcut conflicts).
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
@@ -226,7 +258,6 @@ impl Store {
                 .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
-            ("mail_date_grouping", &["grouped", "plain"][..]),
             ("message_format", &["html", "text"][..]),
             ("calendar_account_visibility", &["all", "current"][..]),
             ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
@@ -248,6 +279,34 @@ impl Store {
                 "invalid_request",
                 "Show declined events must be true or false",
             ));
+        }
+        if !preferences["show_draft_chips"].is_boolean() {
+            return Err(err(
+                "invalid_request",
+                "Show drafts in the corner must be true or false",
+            ));
+        }
+        // Calendar search's Recent: up to six distinct one-line searches.
+        let recent = preferences["calendar_recent_searches"]
+            .as_array()
+            .filter(|v| v.len() <= 6)
+            .ok_or_else(|| {
+                err(
+                    "invalid_request",
+                    "Recent calendar searches must be a list of at most six",
+                )
+            })?;
+        let mut seen = std::collections::HashSet::new();
+        for search in recent {
+            if !search.as_str().is_some_and(|v| {
+                !v.trim().is_empty() && v.len() <= 512 && !v.chars().any(char::is_control)
+            }) || !seen.insert(search.as_str())
+            {
+                return Err(err(
+                    "invalid_request",
+                    "Each recent calendar search is distinct one-line text of at most 512 bytes",
+                ));
+            }
         }
         if !matches!(
             preferences["default_event_duration_minutes"].as_i64(),
@@ -361,6 +420,15 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
+    /// Updates an account's local metadata: display name, signature, mail
+    /// retention, per-service sync and access choices, colour and history
+    /// analysis. Returns the account row.
+    ///
+    /// Revision-checked against the account metadata and idempotent per
+    /// request ID. Changing retention restarts mail acquisition and purges
+    /// local mail older than the new window in the same transaction (never
+    /// Google's copy). Sync choices are written into the
+    /// shared preferences, bumping their revision.
     pub(crate) fn account_update(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -572,6 +640,8 @@ pub(crate) fn account_color(db: &rusqlite::Connection, account: &str) -> Result<
     };
     Ok(ACCOUNT_COLORS[index.rem_euclid(ACCOUNT_COLORS.len() as i64) as usize])
 }
+/// Saves an explicit palette choice for the account; only [`ACCOUNT_COLORS`]
+/// entries are accepted (case-insensitively).
 pub(crate) fn set_account_color(
     db: &rusqlite::Connection,
     account: &str,
@@ -591,6 +661,10 @@ pub(crate) fn forget_account_color(db: &rusqlite::Connection, account: &str) -> 
     db.execute("DELETE FROM meta WHERE key=?1", [color_key(account)])?;
     Ok(())
 }
+/// Returns whether the user allows provider writes for `service` on
+/// `account`: the service is not switched off and its access is not set to
+/// read-only. Absent choices allow writes; the OAuth grant is checked
+/// separately.
 pub(crate) fn google_write_enabled(
     db: &rusqlite::Connection,
     account: &str,
@@ -609,6 +683,10 @@ pub(crate) fn google_write_enabled(
     Ok(choice[service] != false && choice[format!("{service}_access")] != "read")
 }
 
+/// Validates the `shortcuts` override map (action to key, `null` to unbind).
+/// Keys must be one supported key or modifier combination, fixed system
+/// bindings cannot be reassigned, and no two actions whose scopes overlap
+/// (`all` overlaps everything) may share a key, counting defaults.
 fn validate_shortcuts(value: &Value) -> Result<()> {
     let choices = value
         .as_object()
@@ -729,6 +807,8 @@ fn validate_shortcuts(value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Converts a retention choice into its cutoff as Unix seconds from now, or
+/// `None` for `all`.
 pub(crate) fn mail_retention_since(retention: &str) -> Result<Option<i64>> {
     let months = match retention {
         "1_month" => 1,
@@ -754,6 +834,7 @@ pub(crate) fn mail_retention_since(retention: &str) -> Result<Option<i64>> {
     ))
 }
 
+/// Reads the mandatory, nonnegative `expected_revision` from a request.
 pub(crate) fn required_revision(p: &Value) -> Result<i64> {
     p["expected_revision"]
         .as_i64()
@@ -1029,18 +1110,40 @@ mod appearance_tests {
     }
 
     #[test]
-    fn mail_date_grouping_is_shared_durable_and_validated() {
+    fn draft_chips_and_calendar_recent_are_shared_durable_and_validated() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path()).unwrap();
+        // A profile saved while Sent and Drafts could be ungrouped reads without it.
+        store.db.execute("INSERT INTO preferences VALUES(1,1,?1)", [r#"{"mail_date_grouping":"plain"}"#]).unwrap();
         let before = store.preferences().unwrap();
-        assert_eq!(before["preferences"]["mail_date_grouping"], "grouped");
-        let request = json!({"request_id":"date-groups","expected_revision":before["revision"],"preferences":{"mail_date_grouping":"plain"}});
+        assert!(before["preferences"].get("mail_date_grouping").is_none());
+        assert_eq!(before["preferences"]["show_draft_chips"], true);
+        assert_eq!(before["preferences"]["calendar_recent_searches"], json!([]));
+        let request = json!({"request_id":"corner","expected_revision":before["revision"],
+            "preferences":{"show_draft_chips":false,"calendar_recent_searches":["with:maya@example.test","title:standup"]}});
         store.handle("preferences_save", None, request).unwrap();
         drop(store);
         let mut reopened = Store::open(dir.path()).unwrap();
         let saved = reopened.preferences().unwrap();
-        assert_eq!(saved["preferences"]["mail_date_grouping"], "plain");
-        assert!(reopened.handle("preferences_save", None, json!({"request_id":"bad-date-group","expected_revision":saved["revision"],"preferences":{"mail_date_grouping":true}})).is_err());
+        assert_eq!(saved["preferences"]["show_draft_chips"], false);
+        assert_eq!(saved["preferences"]["calendar_recent_searches"], json!(["with:maya@example.test","title:standup"]));
+        assert!(saved["preferences"].get("mail_date_grouping").is_none());
+        let stored: String = reopened.db.query_row("SELECT json FROM preferences", [], |r| r.get(0)).unwrap();
+        assert!(!stored.contains("mail_date_grouping"), "the next save drops the retired key");
+        for (index, patch) in [
+            json!({"show_draft_chips":"yes"}),
+            json!({"mail_date_grouping":"plain"}),
+            json!({"calendar_recent_searches":"standup"}),
+            json!({"calendar_recent_searches":["a","b","c","d","e","f","g"]}),
+            json!({"calendar_recent_searches":["same","same"]}),
+            json!({"calendar_recent_searches":["two
+lines"]}),
+            json!({"calendar_recent_searches":[" "]}),
+            json!({"calendar_recent_searches":["x".repeat(513)]}),
+            json!({"calendar_recent_searches":[7]}),
+        ].into_iter().enumerate() {
+            assert!(reopened.handle("preferences_save", None, json!({"request_id":format!("bad-{index}"),"expected_revision":saved["revision"],"preferences":patch})).is_err(), "{patch}");
+        }
     }
 
     #[test]

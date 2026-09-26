@@ -1,3 +1,6 @@
+// The Calendar workspace: Day, Week, Month and Agenda views, the header with
+// navigation and date picker, and the event card, editor and activity popups.
+// Driven by `backend` (events, calendarView, calendarDate, preferences).
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
@@ -75,7 +78,9 @@ Item {
         cancelRange(); details.close()
         return true
     }
-    property var visibleEvents: combinedAccounts ? backend.events : backend.events.filter(function(e) { return e.account === backend.account })
+    readonly property var accountEvents: combinedAccounts ? backend.events : backend.events.filter(function(e) { return e.account === backend.account })
+    // Text in the search box filters every view to its matches.
+    property var visibleEvents: backend.filterCalendarEvents === undefined ? accountEvents : backend.filterCalendarEvents(accountEvents, backend.calendarSearchTerms)
     readonly property real workingStart: backend.preferences.timeline_start_hour === undefined ? 0 : backend.preferences.timeline_start_hour
     readonly property real workingEnd: backend.preferences.timeline_end_hour === undefined ? 24 : backend.preferences.timeline_end_hour
     property var rangeDrag: ({})

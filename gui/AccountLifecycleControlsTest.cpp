@@ -1,3 +1,6 @@
+// Account removal UI test: production dialogs, composer and Accounts settings on a
+// real MailBackend over the scripted engine (GoogleOperationTestFixture.h). Covers
+// archive guards, confirmation, cleanup retry and unsaved edits on close/navigation.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

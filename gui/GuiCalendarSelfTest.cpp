@@ -1,3 +1,6 @@
+// Developer harness: the calendar stage of `fuckmail-gui --self-test`. Creates,
+// edits (including a stale-save conflict) and RSVPs to an event through the real
+// controls, then checks views and the Mail timeline; see verifyRestartProjection.
 #include "GuiCalendarSelfTest.h"
 #include <QCoreApplication>
 #include <QInputMethodEvent>

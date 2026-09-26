@@ -1,3 +1,6 @@
+// MailBackend's read-only view of Gmail's own drafts: the account's remote draft
+// inventory and its refresh, parsed headers of a read-only draft copy, and its
+// retained source versions, which can be exported to a file.
 #include "MailBackend.h"
 #include <QDesktopServices>
 #include <QDir>
@@ -53,6 +56,8 @@ void MailBackend::loadGoogleDraftInventory() {
         if (account != m_account || account != m_draftInventoryAccount || generation != m_draftInventoryGeneration) return;
         m_draftInventoryLoading = false;
         if (ok && result["account"] == account) {
+            // Refresh results arrive on their own connection; accept a cached
+            // status only if it is not older (by generation, then revision).
             const auto next = result.toVariantMap();
             if (next.value("generation").toLongLong() > m_draftInventory.value("generation").toLongLong()
                 || (next.value("generation") == m_draftInventory.value("generation")
@@ -112,6 +117,8 @@ QVariantList MailBackend::draftSnapshotHeaders() const {
     }
     return rows;
 }
+// Identifies the source history being shown. It includes the latest source
+// revision, so a newly observed Gmail version resets the list and any export.
 QString MailBackend::draftSourcesKey() const {
     if (m_draft.value("remote_source").toMap().value("source_revision").toLongLong() <= 0) return {};
     return m_account + '\n' + m_draft.value("draft_id").toString() + '\n'

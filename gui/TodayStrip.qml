@@ -1,3 +1,6 @@
+// The Mail workspace's timeline strip of the day's events across accounts,
+// docked above or below the mail view (preferences.timeline_position). Drag
+// sideways to change day; an event opens EventDetails, and Edit opens EventEditor.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

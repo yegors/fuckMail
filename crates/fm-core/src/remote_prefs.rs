@@ -9,6 +9,9 @@ use std::collections::HashSet;
 pub(crate) const MAX_BLOCKED_HOSTS: usize = 1_000;
 const MAX_IMAGE_SENDERS: usize = 2_000;
 
+/// Validates the remote-content keys of a merged preferences document before
+/// it is saved. Blocked hosts must already be in normalized form, and
+/// image-sender addresses must be lowercase.
 pub(crate) fn validate(preferences: &Value) -> Result<()> {
     let blocked = preferences["blocked_hosts"]
         .as_array()
@@ -106,7 +109,10 @@ pub(crate) fn validate(preferences: &Value) -> Result<()> {
 
 /// What the engine's remote-content path needs from preferences.
 pub struct RemoteSettings {
+    /// Preferences revision these settings were read at, so callers can
+    /// cache them until it changes.
     pub revision: i64,
+    /// Blocked link-host patterns, such as `tracker.io` or `*.tracker.io`.
     pub blocked: Vec<String>,
     /// Enabled proxy only.
     pub proxy: Option<ProxySettings>,
@@ -114,14 +120,19 @@ pub struct RemoteSettings {
     pub sender_pictures: bool,
 }
 
+/// The user's HTTPS proxy for remote content. The password is not here; it is
+/// read from the OS vault.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ProxySettings {
+    /// ASCII host name, as normalized by [`proxy_host`].
     pub host: String,
     pub port: u16,
     pub username: String,
 }
 
 impl crate::Store {
+    /// Reads the remote-content preferences for the engine. The proxy is
+    /// `None` unless it is enabled and its stored host still parses.
     pub fn remote_content_settings(&self) -> Result<RemoteSettings> {
         let current = self.preferences()?;
         let p = &current["preferences"];

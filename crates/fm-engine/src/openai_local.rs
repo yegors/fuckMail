@@ -5,6 +5,7 @@ use fm_core::Result;
 use fm_google::transport::CancellationToken;
 use serde_json::{json, Value};
 
+/// The server root of a loopback endpoint, without any trailing `/v1`.
 fn endpoint_base(endpoint: &str) -> Result<&str> {
     Provider::OpenaiCompatible
         .endpoint_base(endpoint)
@@ -15,6 +16,9 @@ fn endpoint_base(endpoint: &str) -> Result<&str> {
             )
         })
 }
+/// Lists the models a local OpenAI-compatible server advertises at
+/// `/v1/models` (at most 512, duplicates dropped). There are no weight
+/// digests to check, so every listed model is eligible.
 pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Value> {
     let result = request_local(
         endpoint_base(endpoint)?,
@@ -54,6 +58,8 @@ pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Valu
     }
     Ok(json!({"provider":"openai_compatible","models":list,"endpoint":endpoint}))
 }
+/// Confirms the server still advertises the model `name`; otherwise fails
+/// with `model_unavailable`.
 pub async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> Result<()> {
     let result = discover(endpoint, cancel).await?;
     if !result["models"]
@@ -69,6 +75,9 @@ pub async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> 
     }
     Ok(())
 }
+/// Analyses one email with a single `/v1/chat/completions` request, like
+/// [`crate::ollama::infer`]. `measure` gets token usage only; this API
+/// reports no timings.
 pub async fn infer(
     settings: &Settings,
     model: &str,
@@ -96,6 +105,8 @@ pub async fn infer(
     });
     parse(response_content(&result, model)?, labels)
 }
+/// Returns the text of the single choice, refusing a reply from another
+/// model, a tool or function call, or anything but a complete `stop`.
 fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
     if result["model"] != model {
         return Err(failure(
@@ -235,7 +246,10 @@ mod tests {
             json!({"summary":output()["summary"],"sender_kind":"human","category_ids":["work"]})
         );
         let measured = measure.lock().unwrap().clone();
-        assert_eq!(measured["output_tokens"], 42, "token usage reaches the Test button");
+        assert_eq!(
+            measured["output_tokens"], 42,
+            "token usage reaches the Test button"
+        );
         assert!(measured["first_token_ms"].is_null() && measured["raw"].is_string());
         let requests = server.await.unwrap();
         assert_eq!(
@@ -244,7 +258,10 @@ mod tests {
             "no model checks around each email"
         );
         let body = &requests[0].1;
-        assert_eq!(body, &openai_request(&settings, "local-model", &email, &labels));
+        assert_eq!(
+            body,
+            &openai_request(&settings, "local-model", &email, &labels)
+        );
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
         assert_eq!(body["max_tokens"], fm_assist::ollama::OUTPUT_TOKENS);
         assert!(body["messages"][1]["content"]

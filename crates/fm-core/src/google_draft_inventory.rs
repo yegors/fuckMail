@@ -1,5 +1,5 @@
 //! Google draft inventory. RAW and part preparation never hold Store. Each
-//! observed Gmail draft is mirrored as an editable local draft (D121).
+//! observed Gmail draft is mirrored as an editable local draft.
 use crate::{content::BlobStore, err, Result, Store};
 use fm_google::transport::CancellationToken;
 use rusqlite::{params, OptionalExtension};
@@ -14,34 +14,51 @@ pub use preparation::{export_google_draft_source, prepare_google_draft_import};
 #[cfg(test)]
 mod tests;
 
+/// Most Gmail drafts requested and accepted per inventory list page.
 pub const MAX_INVENTORY_PAGE: usize = 50;
+/// Largest RAW draft, in bytes, that an inventory read will import.
 pub const MAX_IMPORT_RAW_BYTES: usize = fm_google::gmail_api::MAX_RAW_MIME;
 // Each page ID probes two partial indexes of current sources. CROSS JOIN
 // preserves that bounded outer loop even when an account has long history.
 const SOURCE_PAGE_SQL: &str = "SELECT s.source_revision,s.draft_id,s.linked_local_draft_id,s.observed_at,s.metadata_json,s.seen_generation,s.last_observed_at FROM json_each(?2) ids CROSS JOIN google_draft_sources s INDEXED BY google_draft_current_owner WHERE s.account=?1 AND s.draft_id=ids.value AND s.is_current=1 UNION SELECT s.source_revision,s.draft_id,s.linked_local_draft_id,s.observed_at,s.metadata_json,s.seen_generation,s.last_observed_at FROM json_each(?2) ids CROSS JOIN google_draft_sources s INDEXED BY google_draft_current_link WHERE s.account=?1 AND s.linked_local_draft_id=ids.value AND s.is_current=1 ORDER BY source_revision DESC";
 
+/// The Google connection an inventory scan reads under. Every step requires the
+/// account to be active and this generation to be connected with a mail-read
+/// grant; otherwise it fails with `stale_google_work`.
 #[derive(Clone)]
 pub struct GoogleDraftReadScope {
     pub account: String,
     pub connection_generation: i64,
 }
 
+/// One `drafts.list` page, as passed to
+/// [`Store::google_draft_inventory_list_finish`].
 pub struct GoogleDraftInventoryPage {
+    /// At most [`MAX_INVENTORY_PAGE`] drafts; repeated IDs are ignored.
     pub drafts: Vec<GoogleDraftListedId>,
     pub next_page_token: Option<String>,
     pub result_size_estimate: Option<u64>,
 }
+/// A Gmail draft ID and the ID of the message it currently contains. Gmail
+/// gives an edited draft a new message ID, so a changed message ID means
+/// changed content.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GoogleDraftListedId {
     pub draft_id: String,
     pub message_id: String,
 }
 
+/// Next inventory step, from [`Store::google_draft_inventory_next`].
 pub enum GoogleDraftInventoryStep {
+    /// Fetch the next `drafts.list` page.
     List(GoogleDraftListPlan),
+    /// Fetch one listed draft in RAW format.
     Fetch(GoogleDraftImportPlan),
+    /// The scan is complete or paused; carries the inventory status.
     Complete(Value),
 }
+/// Cursor for one `drafts.list` request, fenced to the inventory revision it
+/// was planned at.
 #[derive(Clone)]
 pub struct GoogleDraftListPlan {
     scope: GoogleDraftReadScope,
@@ -51,14 +68,18 @@ pub struct GoogleDraftListPlan {
     token: Option<String>,
 }
 impl GoogleDraftListPlan {
+    /// Gmail page token to continue from, or `None` for the first page.
     pub fn page_token(&self) -> Option<&str> {
         self.token.as_deref()
     }
+    /// Page size to request; always [`MAX_INVENTORY_PAGE`].
     pub fn max_results(&self) -> u16 {
         MAX_INVENTORY_PAGE as u16
     }
 }
 
+/// Plan for reading one Gmail draft's RAW and importing it off the writer with
+/// [`prepare_google_draft_import`].
 pub struct GoogleDraftImportPlan {
     scope: GoogleDraftReadScope,
     blobs: BlobStore,
@@ -71,25 +92,33 @@ pub struct GoogleDraftImportPlan {
     fence: Option<Option<(String, i64)>>,
 }
 impl GoogleDraftImportPlan {
+    /// Gmail draft to fetch.
     pub fn provider_draft_id(&self) -> &str {
         &self.item.draft_id
     }
+    /// Message ID the draft had when it was listed. The fetched draft may
+    /// already contain a newer message.
     pub fn listed_message_id(&self) -> &str {
         &self.item.message_id
     }
 }
+/// Result of fetching one listed Gmail draft.
 pub enum GoogleDraftImportOutcome {
+    /// Gmail returned the draft; `raw` is the decoded RFC 5322 message.
     Available {
         draft_id: String,
         message_id: String,
         thread_id: String,
         raw: Vec<u8>,
     },
+    /// Gmail reported the draft missing (deleted or sent since listing).
     Missing,
-    Unavailable {
-        code: String,
-    },
+    /// The draft could not be read, e.g. `source_too_large` or
+    /// `invalid_google_response`; it is recorded without content.
+    Unavailable { code: String },
 }
+/// Normalized import of one Gmail draft: staged RAW and parts, source metadata
+/// and an editable preview, ready for [`Store::google_draft_import_finish`].
 pub struct PreparedGoogleDraftImport {
     plan: GoogleDraftImportPlan,
     source: Source,
@@ -98,6 +127,8 @@ pub struct PreparedGoogleDraftImport {
     cancel: CancellationToken,
 }
 
+/// Plan for exporting one retained Gmail draft source revision, or one of its
+/// attachments, to a file with [`export_google_draft_source`].
 pub struct GoogleDraftSourcePlan {
     blobs: BlobStore,
     account: String,
@@ -121,6 +152,12 @@ struct PendingPage {
     items: Vec<PendingItem>,
     next: Option<String>,
 }
+/// Per-account scan state, stored as JSON in `google_draft_inventory`.
+///
+/// `generation` numbers scans; each source row records the last scan that saw
+/// it, so drafts not seen by a complete scan are gone from Gmail. `revision`
+/// increases on every change and fences stale list and fetch plans. `pending`
+/// holds a listed page whose drafts are still being fetched.
 #[derive(Clone, Serialize, Deserialize)]
 struct Inventory {
     generation: i64,
@@ -140,6 +177,10 @@ struct Inventory {
     started_at: i64,
     completed_at: Option<i64>,
 }
+/// Metadata of one observed Gmail draft version, stored in
+/// `google_draft_sources.metadata_json`. `possible_unknown_create` and
+/// `candidate_request_ids` flag that the draft might be an unconfirmed create
+/// of ours with the same bytes.
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 struct Source {
     provider_draft_id: String,
@@ -248,6 +289,8 @@ impl Store {
         text.map(|s| serde_json::from_str(&s).map_err(Into::into))
             .transpose()
     }
+    /// Upserts the scan state and bumps the store revision. Callers that also
+    /// write sources wrap both in one transaction.
     fn save_inventory(&self, account: &str, state: &Inventory) -> Result<()> {
         self.db.execute("INSERT INTO google_draft_inventory(account,state_json) VALUES(?1,?2) ON CONFLICT(account) DO UPDATE SET state_json=excluded.state_json",params![account,encode(state)?])?;
         self.db.execute(
@@ -256,6 +299,12 @@ impl Store {
         )?;
         Ok(())
     }
+    /// Starts a Gmail draft scan, or resumes an unfinished, unpaused one, and
+    /// returns the inventory status.
+    ///
+    /// A resumed scan keeps its cursor and adopts the new connection
+    /// generation. A new scan increments the scan generation and keeps the
+    /// running totals.
     pub fn google_draft_inventory_begin(&mut self, scope: &GoogleDraftReadScope) -> Result<Value> {
         self.inventory_scope(scope)?;
         let old = self.inventory(&scope.account)?;
@@ -289,6 +338,11 @@ impl Store {
         self.save_inventory(&scope.account, &state)?;
         self.google_draft_inventory_status(&scope.account)
     }
+    /// Returns the next scan step: fetch the next unfinished draft of the
+    /// pending page, list the next page, or report completion. Writes nothing.
+    ///
+    /// Fails with `stale_google_work` if the scan began under another
+    /// connection generation.
     pub fn google_draft_inventory_next(
         &self,
         scope: &GoogleDraftReadScope,
@@ -326,6 +380,8 @@ impl Store {
             token: state.token,
         }))
     }
+    /// Loads the scan state, refusing a list plan whose cursor, revision or
+    /// connection no longer matches it.
     fn check_list(&self, plan: &GoogleDraftListPlan) -> Result<Inventory> {
         self.inventory_scope(&plan.scope)?;
         let state = self.inventory(&plan.scope.account)?.ok_or_else(stale)?;
@@ -342,12 +398,21 @@ impl Store {
         }
         Ok(state)
     }
+    /// Accepts one listed page and returns the inventory status.
+    ///
+    /// Drafts whose current source already holds the listed message ID are
+    /// only marked seen; the rest become the pending page to fetch. When the
+    /// last page is accepted with nothing to fetch, the scan completes and
+    /// local drafts whose Gmail draft went unlisted are reconciled. Fails with
+    /// `invalid_request` for an oversized page or a bad or repeated page token,
+    /// and `stale_google_work` if the plan is stale.
     pub fn google_draft_inventory_list_finish(
         &mut self,
         plan: GoogleDraftListPlan,
         page: GoogleDraftInventoryPage,
     ) -> Result<Value> {
         let mut state = self.check_list(&plan)?;
+        // A token equal to the one just used would loop forever.
         if page.drafts.len() > MAX_INVENTORY_PAGE
             || page.next_page_token.as_ref().is_some_and(|s| {
                 s.is_empty()
@@ -395,6 +460,12 @@ impl Store {
         self.save_inventory(&plan.scope.account, &state)?;
         self.google_draft_inventory_status(&plan.scope.account)
     }
+    /// Handles Gmail rejecting an expired page token by restarting the scan
+    /// from the first page under a new generation.
+    ///
+    /// After more than three restarts the scan pauses as
+    /// `expired_page_token` rather than looping. Only a plan with a page token
+    /// can expire.
     pub fn google_draft_inventory_list_expired(
         &mut self,
         plan: GoogleDraftListPlan,
@@ -417,6 +488,10 @@ impl Store {
         self.save_inventory(&plan.scope.account, &state)?;
         self.google_draft_inventory_status(&plan.scope.account)
     }
+    /// Returns the scan status JSON: generation, completion or pause reason,
+    /// pending items, Gmail's size estimate and retention counters.
+    /// `absence_means_sent` is always false: a draft missing from Gmail may
+    /// have been deleted rather than sent.
     pub fn google_draft_inventory_status(&self, account: &str) -> Result<Value> {
         identifier(account)?;
         let state = self.inventory(account)?;
@@ -431,6 +506,9 @@ impl Store {
         )
     }
 
+    /// Refuses edits to a draft that moved to another account or is a
+    /// read-only retained copy (`draft_read_only`), or on an inactive account.
+    ///
     /// Persisted provenance is authoritative; a client cannot opt into writing.
     pub(crate) fn check_draft_writable(&self, account: &str, p: &Value) -> Result<()> {
         self.require_active_account(account)?;
@@ -451,6 +529,9 @@ impl Store {
         }
         Ok(())
     }
+    /// Finds the local draft that already owns a Gmail draft through a
+    /// baseline, adoption, upload target, ACK or send. Returns the owner when
+    /// exactly one matches, and whether several do.
     fn known_draft_owner(&self, account: &str, remote: &str) -> Result<(Option<String>, bool)> {
         let mut stmt=self.db.prepare("SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.baseline.draft_id')=?2 AND json_extract(google_json,'$.remote_deleted') IS NOT 1 UNION SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.adoption.target.provider_draft_id')=?2 AND json_extract(google_json,'$.remote_deleted') IS NOT 1 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.target')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.ack.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.provider_draft_id')=?2 LIMIT 3")?;
         let mut rows = stmt
@@ -470,6 +551,8 @@ impl Store {
         ))
     }
     /// The local draft mirroring a Gmail draft, with its sync revision.
+    /// Candidates are tried in order: the known owner, the source's linked
+    /// draft, then the inventory's own `google-draft-*` mirror.
     fn draft_fence(&self, account: &str, remote: &str) -> Result<Option<(String, i64)>> {
         let (owner, _) = self.known_draft_owner(account, remote)?;
         let current: Option<(String, Option<String>)> = self.db.query_row(
@@ -525,6 +608,14 @@ impl Store {
         self.db.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,id.draft_id,state.generation,now()?])?;
         Ok(true)
     }
+    /// Publishes one fetched draft as a new source revision, mirrors it into a
+    /// local draft when safe, and marks it done on the pending page.
+    ///
+    /// The mirror is skipped when the tied local draft changed since the read
+    /// was planned, or when the RAW is exactly an unconfirmed create of ours.
+    /// Finishing the last item advances the cursor and may complete the scan.
+    /// A repeated finish for a done item is a no-op. Fails with
+    /// `stale_google_work` when the scan, page or connection moved.
     pub fn google_draft_import_finish(
         &mut self,
         proof: PreparedGoogleDraftImport,
@@ -555,6 +646,8 @@ impl Store {
             return self.google_draft_inventory_status(&plan.scope.account);
         }
         let account = &plan.scope.account;
+        // The source row, local mirror and cursor advance commit together, so
+        // a crash cannot mark an item done without its source.
         let tx = self.db.unchecked_transaction()?;
         self.publish_draft_source(
             account,
@@ -587,6 +680,9 @@ impl Store {
         self.google_draft_inventory_status(account)
     }
 
+    /// Records an observed Gmail draft version and, when `fence` still matches
+    /// the tied local draft, mirrors it into that draft. `fence: None` records
+    /// the source without mirroring. Must run inside the caller's transaction.
     #[allow(clippy::too_many_arguments)]
     fn publish_draft_source(
         &self,
@@ -613,6 +709,8 @@ impl Store {
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             rows
         };
+        // Any unconfirmed create without a known target could be this draft;
+        // those with byte-identical MIME are named as candidates.
         source.possible_unknown_create = !uncertain.is_empty();
         source.candidate_request_ids = uncertain
             .into_iter()
@@ -651,6 +749,8 @@ impl Store {
             .as_ref()
             .map(|r| serde_json::from_str(&r.2))
             .transpose()?;
+        // Counters move by the difference between the old and new source, so
+        // re-observing a draft never double-counts it.
         state.observed_items += i64::from(old_source.is_none());
         state.observed_this_scan += i64::from(old.as_ref().is_none_or(|r| r.3 != state.generation));
         state.source_retained += i64::from(source.source_state == "available")
@@ -672,6 +772,8 @@ impl Store {
                     .is_some_and(|s| s.preview_state != "complete"),
             );
         let tx = &self.db;
+        // A changed source becomes a new current revision; an unchanged one is
+        // only stamped as seen by this scan.
         if changed {
             for part in &parts {
                 tx.execute("INSERT OR IGNORE INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,NULL,?3,?4,?5,'available',?6)",params![account,part.id,part.name,part.mime_type,part.size,part.sha256])?;
@@ -763,6 +865,10 @@ impl Store {
         )? > 0)
     }
 
+    /// Current Gmail source metadata for each of `ids`, keyed by local draft ID
+    /// and matched by either the source's own or its linked draft. Each value
+    /// carries freshness relative to the latest scan; IDs without a source are
+    /// absent.
     pub(crate) fn remote_draft_sources(
         &self,
         account: &str,
@@ -797,12 +903,19 @@ impl Store {
         }
         Ok(out)
     }
+    /// Current Gmail source metadata for one local draft, or JSON `null`.
     pub(crate) fn remote_draft_source(&self, account: &str, id: &str) -> Result<Value> {
         Ok(self
             .remote_draft_sources(account, &[id.into()])?
             .remove(id)
             .unwrap_or(Value::Null))
     }
+    /// Lists a draft's observed Gmail source revisions, newest first, together
+    /// with its Gmail deletion history.
+    ///
+    /// `p` holds `draft_id` and optional `limit` (1-100, default 30) and
+    /// `offset`. A page stops before about 512 KiB of JSON; `next_offset`
+    /// continues it.
     pub fn google_draft_source_history(&self, account: &str, p: &Value) -> Result<Value> {
         crate::fields(p, &["draft_id", "limit", "offset"])?;
         let id = crate::string(p, "draft_id")?;
@@ -840,6 +953,12 @@ impl Store {
         }
         Ok(reply)
     }
+    /// Plans exporting one retained source revision as an `.eml` file, or, with
+    /// `attachment_id`, one attachment of that revision.
+    ///
+    /// `p` holds `draft_id`, `source_revision` and optional `attachment_id`.
+    /// Fails with `not_found` outside this draft or revision and
+    /// `content_unavailable` when the RAW was never retained.
     pub fn google_draft_source_begin(
         &self,
         account: &str,
@@ -896,6 +1015,7 @@ impl Store {
     }
 }
 
+/// Adds when a source was last seen and whether the latest scan saw it.
 fn source_freshness(value: &mut Value, seen: i64, last_observed: i64, state: Option<&Inventory>) {
     value["seen_generation"] = json!(seen);
     value["last_observed_at"] = json!(last_observed);

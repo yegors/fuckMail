@@ -1,3 +1,6 @@
+// ReplyComposer UI test on a real MailBackend over the scripted engine: attaching
+// files one at a time, edits during an import, exact retry, recipient suggestions,
+// keyboard routing, multi-file drop and close protection.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

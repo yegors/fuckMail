@@ -1,3 +1,5 @@
+// A YYYY-MM-DD text field with a calendar button that opens a month-grid
+// picker. Used by EventEditor; `validDate` and parseDate() check the text.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

@@ -32,6 +32,12 @@ const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const JWKS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 const MAX_CALLBACK_BYTES: usize = 16 * 1024;
 
+/// A pending loopback sign-in: an ephemeral listener on `127.0.0.1` and the
+/// [`DesktopAuthorization`] whose redirect points at it, valid until a deadline.
+///
+/// The caller opens [`DesktopLogin::authorization_url`] in the system browser,
+/// awaits [`DesktopLogin::wait_for_callback`], then redeems the code with
+/// [`GoogleOAuth::exchange`].
 pub struct DesktopLogin {
     listener: TcpListener,
     authorization: DesktopAuthorization,
@@ -39,6 +45,7 @@ pub struct DesktopLogin {
 }
 
 impl DesktopLogin {
+    /// Starts a sign-in with default access that expires after `lifetime`.
     pub async fn begin(client_id: String, lifetime: Duration) -> Result<Self, GoogleError> {
         Self::begin_with_login_hint(client_id, lifetime, false, None).await
     }
@@ -51,6 +58,7 @@ impl DesktopLogin {
         Self::begin_with_login_hint(client_id, lifetime, true, None).await
     }
 
+    /// [`DesktopLogin::begin_with_access`] with default access.
     pub async fn begin_with_login_hint(
         client_id: String,
         lifetime: Duration,
@@ -67,6 +75,11 @@ impl DesktopLogin {
         .await
     }
 
+    /// Binds an ephemeral IPv4 loopback port and prepares the consent URL for it.
+    ///
+    /// `lifetime` (up to 10 minutes) bounds the whole wait for the callback.
+    /// See [`DesktopAuthorization::with_access`] for `reconsent`, `login_hint`
+    /// and `access`. Errors with `TransportInterrupted` if no port can be bound.
     pub async fn begin_with_access(
         client_id: String,
         lifetime: Duration,
@@ -74,6 +87,7 @@ impl DesktopLogin {
         login_hint: Option<&str>,
         access: crate::auth::RequestedAccess,
     ) -> Result<Self, GoogleError> {
+        // Validate before binding so a bad request never opens a port.
         access.scopes()?;
         if let Some(email) = login_hint {
             crate::auth::validate_login_hint(email)?;
@@ -105,6 +119,14 @@ impl DesktopLogin {
         &self.authorization.redirect_uri
     }
 
+    /// Serves the loopback redirect until a callback with this attempt's
+    /// `state` arrives, and returns its code. Consumes the login.
+    ///
+    /// Connections from non-loopback peers are dropped. Malformed requests
+    /// and callbacks with another `state` get an error page and are ignored.
+    /// Errors: `PermissionDenied` if the matching callback carries `error`
+    /// (the person declined) or after 32 connections without one, and
+    /// `TransportInterrupted` at the deadline or on cancellation.
     pub async fn wait_for_callback(
         self,
         cancel: &CancellationToken,
@@ -128,6 +150,8 @@ impl DesktopLogin {
             if !peer.ip().is_loopback() {
                 continue;
             }
+            // Give each connection at most 2 seconds to send its headers, so
+            // an idle local client cannot hold up the only listener.
             let request = tokio::select! {
                 _ = cancel.cancelled() => return Err(GoogleError::TransportInterrupted),
                 result = timeout_at(self.deadline.min(Instant::now() + Duration::from_secs(2)), read_headers(&mut stream)) => result,
@@ -140,6 +164,8 @@ impl DesktopLogin {
                 reply(&mut stream, false).await;
                 continue;
             };
+            // Only this attempt's state may end the wait. A stale browser tab
+            // or a local probe cannot make the sign-in fail.
             if !self.authorization.matches_state(&callback.state) {
                 reply(&mut stream, false).await;
                 continue;
@@ -154,6 +180,9 @@ impl DesktopLogin {
     }
 }
 
+/// Reads up to the end of the request headers. The callback is a GET whose
+/// data is all in the query string, so no body is read. The buffer is zeroized
+/// because it holds the authorization code.
 async fn read_headers(stream: &mut TcpStream) -> Result<Zeroizing<Vec<u8>>, GoogleError> {
     let mut bytes = Zeroizing::new(Vec::new());
     loop {
@@ -177,6 +206,9 @@ struct Callback {
     code: Option<String>,
 }
 
+/// Accepts exactly one shape: an HTTP/1.1 `GET /oauth2/callback?...` with a
+/// single `Host` equal to the redirect's `127.0.0.1:<port>`, no body, and
+/// `state` plus exactly one of `code` or `error`, each at most once.
 fn parse_callback(bytes: &[u8], expected_host: &str) -> Result<Callback, GoogleError> {
     let text = std::str::from_utf8(bytes).map_err(|_| GoogleError::PermissionDenied)?;
     let mut lines = text.split("\r\n");
@@ -197,6 +229,8 @@ fn parse_callback(bytes: &[u8], expected_host: &str) -> Result<Callback, GoogleE
             return Err(GoogleError::PermissionDenied);
         }
     }
+    // The Host check rejects requests a web page sends through a hostname
+    // that merely resolves to loopback (DNS rebinding).
     if host != Some(expected_host) || !request[1].starts_with("/oauth2/callback?") {
         return Err(GoogleError::PermissionDenied);
     }
@@ -205,6 +239,8 @@ fn parse_callback(bytes: &[u8], expected_host: &str) -> Result<Callback, GoogleE
     if url.path() != "/oauth2/callback" || url.fragment().is_some() {
         return Err(GoogleError::PermissionDenied);
     }
+    // A repeated parameter could make two parsers disagree on its value, so
+    // duplicates are refused; unrelated parameters such as `scope` are ignored.
     let mut fields = BTreeMap::new();
     for (key, value) in url.query_pairs() {
         if matches!(key.as_ref(), "state" | "code" | "error")
@@ -231,6 +267,7 @@ fn parse_callback(bytes: &[u8], expected_host: &str) -> Result<Callback, GoogleE
     Ok(Callback { state, code })
 }
 
+/// The static, script-free page the browser shows after the redirect.
 fn callback_page(success: bool) -> String {
     let (mark, heading, tone, glow) = if success {
         (
@@ -292,6 +329,9 @@ p{{margin:.9rem 0 0;max-width:22rem;color:rgba(233,234,236,.55);font-size:.95rem
     )
 }
 
+/// Answers the browser. The headers forbid caching, scripts and a `Referer`,
+/// since the page's own URL still holds the authorization code. The write is
+/// capped at 100 ms: the page is a courtesy, not part of the protocol.
 async fn reply(stream: &mut TcpStream, success: bool) {
     let status = if success { "200 OK" } else { "400 Bad Request" };
     let body = callback_page(success);
@@ -303,13 +343,19 @@ async fn reply(stream: &mut TcpStream, success: bool) {
     .await;
 }
 
+/// The client ID and optional client secret of the app's Google Desktop OAuth
+/// registration.
+///
 /// Desktop client configuration is not confidential-client authentication.
 /// Google may nevertheless require the provisioned desktop client secret on exchange.
+/// The secret is zeroized on drop.
 pub struct OAuthClientConfig {
     client_id: String,
     client_secret: Option<Zeroizing<String>>,
 }
 impl OAuthClientConfig {
+    /// Errors with `InvalidResponse` unless the ID is 1–1024 bytes and any
+    /// secret 1–4096 bytes, both free of control characters.
     pub fn new(client_id: String, client_secret: Option<String>) -> Result<Self, GoogleError> {
         if client_id.is_empty()
             || client_id.len() > 1024
@@ -332,17 +378,27 @@ impl OAuthClientConfig {
     }
 }
 
+/// The Google account identity taken from a verified ID token.
+///
 /// Provider identity is private account metadata; callers must not log it.
 #[derive(Clone, PartialEq, Eq)]
 pub struct GoogleIdentity {
+    /// Google's stable account ID. This, not the email, identifies the account.
     pub sub: String,
+    /// The account's email at sign-in; it can change over time.
     pub email: String,
+    /// Always `true`: tokens with an unverified email are rejected.
     pub email_verified: bool,
+    /// The Workspace domain (`hd` claim); `None` for consumer accounts.
     pub hosted_domain: Option<String>,
 }
 
+/// A successful code exchange: the verified identity, the granted scopes and
+/// the tokens, which stay private until persisted.
 pub struct VerifiedGrant {
     pub identity: GoogleIdentity,
+    /// Scopes Google reports as granted, with `userinfo.email` reported as
+    /// `email`. Always contains `openid` and `email`.
     pub granted_scopes: BTreeSet<String>,
     token: StoredToken,
 }
@@ -362,7 +418,11 @@ impl VerifiedGrant {
         .map_err(|_| GoogleError::StoreUnavailable)?
     }
 
+    /// Stores the grant's tokens for `account` on the blocking pool.
+    ///
     /// Core validates reconnect subject and maps identity before requesting persistence.
+    /// Unlike [`crate::auth::CredentialAccountGuard::persist`], this does not
+    /// take the account's credential lock.
     pub async fn persist<V: CredentialVault + 'static>(
         self,
         account: &AccountId,
@@ -375,6 +435,10 @@ impl VerifiedGrant {
     }
 }
 
+/// Google's token endpoint and ID-token verification for one OAuth client.
+///
+/// It redeems sign-in codes and, as an [`AsyncRefreshTransport`], refreshes
+/// tokens for accounts bound with [`GoogleOAuth::bind_account`].
 pub struct GoogleOAuth<T: HttpTransport> {
     config: OAuthClientConfig,
     http: Arc<T>,
@@ -392,7 +456,10 @@ impl<T: HttpTransport> GoogleOAuth<T> {
         self.config.client_id()
     }
 
+    /// Records the Google subject that refreshes for `account` must match.
+    ///
     /// Bind only Core's stored subject or a verified grant; never derive it from email.
+    /// Rebinding an account to a different subject is `PermissionDenied`.
     pub fn bind_account(&self, account: AccountId, sub: String) -> Result<(), GoogleError> {
         if !valid_subject(&sub) {
             return Err(GoogleError::InvalidResponse("invalid Google subject"));
@@ -408,6 +475,14 @@ impl<T: HttpTransport> GoogleOAuth<T> {
         Ok(())
     }
 
+    /// Redeems an authorization code with its PKCE verifier and verifies the
+    /// returned ID token against Google's current signing keys.
+    ///
+    /// `now_secs` is the current Unix time. Errors: `PermissionDenied` if the
+    /// code came from another client, `openid` or `email` was not granted, or
+    /// the ID token fails verification; `ReauthorizationRequired` if Google
+    /// rejects the code or returns no refresh token; `TransportInterrupted` if
+    /// no response arrives.
     pub async fn exchange(
         &self,
         code: AuthorizationCode,
@@ -446,6 +521,8 @@ impl<T: HttpTransport> GoogleOAuth<T> {
                 cancel,
             )
             .await?;
+        // A grant without a refresh token could not outlive its access token,
+        // so it counts as a failed sign-in rather than a partial success.
         let token = StoredToken {
             expires_at_secs: token_expiry(&response, now_secs)?,
             access_token: response.access_token,
@@ -488,6 +565,9 @@ impl<T: HttpTransport> GoogleOAuth<T> {
             .map_err(|_| GoogleError::TransportInterrupted)?;
         let bytes = Zeroizing::new(response.body);
         if response.status != 200 {
+            // The token endpoint reports a revoked, expired or reused grant
+            // (`invalid_grant`) as 400 and a client problem as 401. Neither
+            // improves with a retry; both need a new sign-in.
             if response.status == 400 || response.status == 401 {
                 return Err(GoogleError::ReauthorizationRequired);
             }
@@ -564,6 +644,8 @@ impl<T: HttpTransport> AsyncRefreshTransport for GoogleOAuth<T> {
         cancel: &'a CancellationToken,
     ) -> Pin<Box<dyn Future<Output = Result<RefreshResult, GoogleError>> + Send + 'a>> {
         Box::pin(async move {
+            // Refuse to refresh for an account whose Google subject is unknown.
+            // If Google includes an ID token, it must name that subject.
             let expected_sub = self
                 .subjects
                 .lock()
@@ -610,6 +692,8 @@ struct TokenResponse {
     scope: Option<String>,
 }
 fn token_expiry(response: &TokenResponse, now: u64) -> Result<u64, GoogleError> {
+    // Google access tokens normally last about an hour. A lifetime at or
+    // under the 60-second refresh margin, or over a day, is treated as malformed.
     if !(61..=86400).contains(&response.expires_in) {
         return Err(GoogleError::InvalidResponse("invalid token lifetime"));
     }
@@ -620,6 +704,7 @@ fn parse_scopes(value: &str) -> Result<BTreeSet<String>, GoogleError> {
     if value.len() > 8192 || value.chars().any(char::is_control) {
         return Err(GoogleError::InvalidResponse("invalid token scopes"));
     }
+    // Google may report the requested `email` scope by its long name.
     Ok(value
         .split_whitespace()
         .map(|scope| {
@@ -675,6 +760,8 @@ fn verify_id_token(
     if token.len() > 16 * 1024 {
         return Err(GoogleError::PermissionDenied);
     }
+    // Only RS256 with a `kid` naming exactly one Google key: the token cannot
+    // choose a weaker algorithm or an ambiguous key.
     let header = decode_header(token).map_err(|_| GoogleError::PermissionDenied)?;
     if header.alg != Algorithm::RS256 {
         return Err(GoogleError::PermissionDenied);
@@ -705,6 +792,8 @@ fn verify_id_token(
     let claims = decode::<Claims>(token, &decoding, &validation)
         .map_err(|_| GoogleError::PermissionDenied)?
         .claims;
+    // `iat` may run up to 60 s ahead for clock skew. With several audiences,
+    // `azp` must name this client, as OpenID Connect requires.
     if claims.exp <= now
         || claims.iat > now.saturating_add(60)
         || claims.iat >= claims.exp
@@ -729,6 +818,8 @@ fn verify_id_token(
             return Err(GoogleError::PermissionDenied);
         }
     }
+    // `at_hash` ties the ID token to the access token issued with it: the
+    // left half of its SHA-256, base64url-encoded.
     if let Some(hash) = claims.at_hash {
         let digest = Sha256::digest(access_token.as_bytes());
         if CsrfToken::new(hash) != CsrfToken::new(URL_SAFE_NO_PAD.encode(&digest[..16])) {

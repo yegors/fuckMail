@@ -1,3 +1,6 @@
+// "Calendar activity" dialog: recorded calendar writes (create, edit, delete,
+// RSVP) with their delivery state and Resume / Check / Abandon actions. Opened
+// from CalendarView's menu, and by Main.qml on backend.calendarActivityRequested.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

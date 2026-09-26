@@ -4,6 +4,8 @@ use crate::{composition, err, fields, mutations, string, Result, Store};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
+/// Validates unfinished recipient-field text (at most 16 KiB per field) and
+/// keeps only the non-blank fields.
 pub(crate) fn recipient_inputs(value: &Value) -> Result<Value> {
     fields(value, &["to_recipients", "cc_recipients", "bcc_recipients"])?;
     let mut result = json!({});
@@ -25,6 +27,13 @@ pub(crate) fn recipient_inputs(value: &Value) -> Result<Value> {
 }
 
 impl Store {
+    /// Discards a draft at `expected` revision and, for a saved active draft,
+    /// retains a snapshot so the discard can be undone.
+    ///
+    /// `buffer` optionally carries unsaved editor fields to fold into that
+    /// snapshot, so Undo restores what was on screen. The reply's
+    /// `discard_undo` names the request to undo. Runs inside the caller's
+    /// mutation transaction.
     pub(crate) fn discard_composition(
         &self,
         account: &str,
@@ -63,6 +72,8 @@ impl Store {
         Ok(result)
     }
 
+    /// Overlays validated editor-buffer fields onto the stored draft row that
+    /// will become the Undo snapshot.
     fn apply_discard_buffer(&self, account: &str, raw: &mut Value, buffer: &Value) -> Result<()> {
         fields(
             buffer,
@@ -143,6 +154,13 @@ impl Store {
         Ok(())
     }
 
+    /// Restores a discarded draft's authored content from its discard
+    /// snapshot.
+    ///
+    /// Only valid while the draft is still discarded at the revision the
+    /// discard produced, on the same account lifecycle and with the same
+    /// identity (`stale_revision` otherwise). If its Gmail copy was already
+    /// deleted, the draft starts over and uploads as a new Gmail draft.
     pub(crate) fn undo_discard_composition(
         &self,
         account: &str,
@@ -207,6 +225,8 @@ impl Store {
         Ok(result)
     }
 
+    /// Returns a retained discard's receipt and whether it can still be
+    /// undone.
     pub(crate) fn draft_discard_status(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["request_id"])?;
         let request = string(p, "request_id")?;

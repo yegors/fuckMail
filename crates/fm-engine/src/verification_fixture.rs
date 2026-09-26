@@ -1,5 +1,13 @@
 //! Explicit native verification scenarios, never a public command or provider.
 //! Every source is generated here and goes through Google's existing Core bridge.
+//!
+//! Selected by the hidden `--verification-fixture` engine flag with an
+//! explicit, disposable profile. `snapshot` seeds a fresh profile with a
+//! two-message conversation and publishes one generated arrival when the
+//! client marks that conversation read. `search` streams up to 3,000 batches
+//! of 25 generated messages into a prepared large profile while clients keep
+//! working, to measure foreground latency under background ingestion. Both
+//! write a `verification-ingestion.json` report into the profile.
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use clap::ValueEnum;
 use fm_core::{google_store::GooglePageStore, Store};
@@ -455,8 +463,8 @@ impl Fixture {
             "committed_messages":count,"queue_full_retries":batch.queue_full_retries,"cooperative":timing
         }));
         self.report["status"] = json!("running");
-        // Keep checkpoint evidence visible without rewriting the growing timing
-        // inventory for every small batch. Final-owner shutdown publishes all rows.
+        // Outside snapshot mode, persist every 25th batch rather than rewriting
+        // the growing timing list each time. Final-owner shutdown writes all rows.
         if self.mode == Mode::Snapshot || batch.sequence % 25 == 0 {
             self.persist()?;
         }

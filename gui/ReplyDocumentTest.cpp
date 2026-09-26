@@ -1,3 +1,6 @@
+// ReplyDocument test with a real QML TextEdit: exact Unicode, formatting of the
+// selection, undo/redo kept separate per draft, the restricted HTML round trip,
+// and layout time of deeply nested received HTML.
 #include "ReplyDocument.h"
 
 #include <QDebug>

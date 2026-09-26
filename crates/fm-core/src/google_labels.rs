@@ -18,20 +18,28 @@ struct Label {
     name: String,
     kind: String,
 }
+/// A validated Gmail label list, sorted by ID and fingerprinted, built by
+/// [`prepare_google_labels`].
 pub struct PreparedGoogleLabels {
     labels: Vec<Label>,
     fingerprint: String,
 }
+/// Count and content fingerprint of a prepared label list. A refresh with the
+/// same manifest resumes where an interrupted one stopped.
 #[derive(Clone)]
 pub struct GoogleLabelManifest {
     count: usize,
     fingerprint: String,
 }
+/// A bounded slice of a prepared list (at most 64 labels or about 128 KiB),
+/// staged with [`Store::google_labels_stage`].
 pub struct PreparedGoogleLabelChunk {
     fingerprint: String,
     offset: usize,
     labels: Vec<Label>,
 }
+/// Claim on one pending catalog refresh, from [`Store::google_labels_begin`].
+/// Each staged chunk returns the next lease.
 #[derive(Clone)]
 pub struct GoogleLabelLease {
     account: String,
@@ -40,6 +48,7 @@ pub struct GoogleLabelLease {
     generation: i64,
     fingerprint: String,
     count: usize,
+    /// Number of labels staged so far; the next chunk starts here.
     pub offset: usize,
 }
 
@@ -87,12 +96,15 @@ pub fn prepare_google_labels(value: GmailLabels) -> Result<PreparedGoogleLabels>
     })
 }
 impl PreparedGoogleLabels {
+    /// Returns the list's count and fingerprint.
     pub fn manifest(&self) -> GoogleLabelManifest {
         GoogleLabelManifest {
             count: self.labels.len(),
             fingerprint: self.fingerprint.clone(),
         }
     }
+    /// Returns the chunk starting at `offset`, or `None` once every label is
+    /// staged. Pass the current lease's `offset`.
     pub fn chunk(&self, offset: usize) -> Result<Option<PreparedGoogleLabelChunk>> {
         if offset > self.labels.len() {
             return Err(stale());
@@ -123,8 +135,13 @@ impl PreparedGoogleLabels {
 }
 
 impl Store {
+    /// Starts or resumes staging a new label catalog generation.
+    ///
     /// None means one bounded abandoned-generation cleanup part completed.
     /// Repeat with the same manifest. An identical interrupted refresh resumes.
+    /// A pending refresh with a different manifest or connection is dropped.
+    /// Fails with `stale_revision` if `expected_revision` is not the current
+    /// catalog revision.
     pub fn google_labels_begin(
         &self,
         account: &str,
@@ -176,6 +193,9 @@ impl Store {
         tx.commit()?;
         Ok(Some(lease))
     }
+    /// Stages one chunk into the pending generation and returns the advanced
+    /// lease. The chunk must start exactly at the lease's offset; progress is
+    /// saved, so an interrupted refresh resumes from here.
     pub fn google_labels_stage(
         &self,
         lease: &GoogleLabelLease,
@@ -203,6 +223,9 @@ impl Store {
         tx.commit()?;
         Ok(next)
     }
+    /// Makes a fully staged generation the current catalog and bumps its
+    /// revision. `observed_at_ms` is when Gmail was read, in Unix milliseconds.
+    /// The old generation's rows are removed later by cleanup.
     pub fn google_labels_publish(
         &self,
         lease: &GoogleLabelLease,
@@ -222,9 +245,18 @@ impl Store {
             json!({"catalog_revision":next,"labels":lease.count,"observed_at_ms":observed_at_ms,"available":true}),
         )
     }
+    /// Deletes up to 64 rows of superseded catalog generations and reports
+    /// whether any were deleted, so callers can repeat until it returns false.
     pub fn google_labels_cleanup(&self, account: &str) -> Result<bool> {
         Ok(cleanup(&self.db, account)? > 0)
     }
+    /// Pages through the cached label catalog in label-ID order, with each
+    /// label's linked category.
+    ///
+    /// Labels a category links to that are no longer in the catalog are listed
+    /// with `present: false`. `p` may set `limit` (1-100), `after` (the previous
+    /// page's `next_after`) and `expected_catalog_revision`, which is required
+    /// when paging so a refresh between pages is detected.
     pub fn google_labels(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["limit", "after", "expected_catalog_revision"])?;
         let (connection, generation, _) = self.labels_connection(account, None, false)?;
@@ -264,6 +296,13 @@ impl Store {
             json!({"catalog_revision":state.revision,"available":state.revision>0,"observed_at_ms":state.observed_at,"connection_state":connection,"stale_connection":state.connection_generation!=generation,"labels":labels,"next_after":next}),
         )
     }
+    /// Links a local category to a Gmail user label from the cached catalog,
+    /// creating the category when `create_name` is given.
+    ///
+    /// Relinking an existing category needs `expected_provider_label_id` (or
+    /// null) to match its current link. A label can back only one category.
+    /// Existing messages are re-projected from their Gmail labels; nothing is
+    /// written to Gmail. Replays by `request_id`.
     pub fn google_category_bind(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -433,6 +472,9 @@ impl Store {
         Ok(changed)
     }
 
+    /// Re-projects every linked category once per live profile (recorded in
+    /// `meta`) so stored memberships match the retained Gmail labels. Runs when
+    /// the store opens.
     pub(crate) fn recover_google_category_projections(&self) -> Result<()> {
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Ok(());
@@ -471,6 +513,10 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Checks the Google binding for label work. With `generation`, it must be
+    /// current, connected and granted mail read; with `write`, mail writes must
+    /// be granted and enabled. Returns the connection state, current
+    /// generation and scopes.
     fn labels_connection(
         &self,
         account: &str,
@@ -507,6 +553,7 @@ impl Store {
         }
         Ok((state, current, scopes))
     }
+    /// The catalog row, or all-zero defaults before the first refresh.
     fn label_state(&self, account: &str) -> Result<CatalogState> {
         Ok(self.db.query_row("SELECT revision,generation,next_generation,connection_generation,observed_at_ms,pending_generation,pending_connection_generation,pending_fingerprint,pending_count,pending_offset FROM google_label_catalogs WHERE account=?1",[account],|r|Ok(CatalogState{revision:r.get(0)?,generation:r.get(1)?,next_generation:r.get(2)?,connection_generation:r.get(3)?,observed_at:r.get(4)?,pending_generation:r.get(5)?,pending_connection:r.get(6)?,pending_fingerprint:r.get(7)?,pending_count:r.get(8)?,pending_offset:r.get(9)?})).optional()?.unwrap_or_default())
     }
@@ -537,6 +584,8 @@ struct CatalogState {
     pending_count: usize,
     pending_offset: usize,
 }
+/// Deletes up to 64 catalog rows that belong to neither the current nor the
+/// pending generation. Bounded so one call never holds the writer long.
 fn cleanup(db: &rusqlite::Connection, account: &str) -> Result<usize> {
     Ok(db.execute("DELETE FROM google_label_catalog_items WHERE rowid IN (SELECT l.rowid FROM google_label_catalog_items l JOIN google_label_catalogs c ON c.account=l.account WHERE l.account=?1 AND l.generation!=c.generation AND (c.pending_generation IS NULL OR l.generation!=c.pending_generation) LIMIT 64)",[account])?)
 }

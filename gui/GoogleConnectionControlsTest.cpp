@@ -1,3 +1,6 @@
+// GoogleConnectionDialog UI test against a stand-in backend: chosen services and
+// access reach one sign-in request, the account name saves before sync starts,
+// configuration errors stay visible, and the layout fits in every theme.
 #include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QFontDatabase>

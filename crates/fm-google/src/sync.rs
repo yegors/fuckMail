@@ -1,11 +1,18 @@
+//! Gmail mailbox sync as a checkpointed state machine: a full listing, then
+//! history catch-up. Each page becomes a [`PagePlan`] that a [`PageStore`]
+//! commits atomically together with the next [`Checkpoint`].
 use crate::{AccountId, GoogleError};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// Most message IDs accepted in one listing page (Gmail's own maximum).
 pub const MAX_PAGE_MESSAGES: usize = 500;
+/// Most pages one listing or history scan may take before it is treated as a
+/// pagination loop.
 pub const MAX_PAGES_PER_SCAN: u32 = 10_000;
 
+/// A message ID and its thread ID, as Gmail lists them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageRef {
@@ -13,6 +20,7 @@ pub struct MessageRef {
     pub thread_id: String,
 }
 
+/// A `format=raw` message as Gmail returns it; `raw` is the base64url source.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RawMessage {
@@ -24,6 +32,8 @@ pub struct RawMessage {
     pub raw: String,
 }
 
+/// A decoded, checked message ready to stage.
+///
 /// Source MIME goes to Core's existing parser/content store; no provider-side schema.
 pub struct MessageContent {
     pub id: String,
@@ -33,6 +43,9 @@ pub struct MessageContent {
     pub source_mime: Vec<u8>,
 }
 
+/// Decodes a raw message after checking that its ID is `expected_id`, its
+/// IDs, labels and history ID are well formed, and its source is at most
+/// 40 MiB. Errors with `InvalidResponse`.
 pub fn decode_raw_message(
     message: RawMessage,
     expected_id: &str,
@@ -65,6 +78,7 @@ pub fn decode_raw_message(
     })
 }
 
+/// One page of `messages.list`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListPage {
@@ -74,15 +88,18 @@ pub struct ListPage {
     pub result_size_estimate: Option<u64>,
 }
 
+/// One page of `history.list`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPage {
     #[serde(default)]
     pub history: Vec<HistoryRecord>,
     pub next_page_token: Option<String>,
+    /// The mailbox's current history ID when the page was produced.
     pub history_id: String,
 }
 
+/// One history entry and the message changes it records.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryRecord {
@@ -97,11 +114,14 @@ pub struct HistoryRecord {
     pub labels_removed: Vec<LabelChange>,
 }
 
+/// A message added to or deleted from the mailbox.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageChange {
     pub message: MessageRef,
 }
 
+/// Labels added to or removed from a message; `label_ids` lists only the
+/// labels that changed.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LabelChange {
@@ -109,35 +129,52 @@ pub struct LabelChange {
     pub label_ids: Vec<String>,
 }
 
+/// Where a mailbox sync stands. `page_token` continues the current scan.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
+    /// Listing every message. Changes after `baseline_history_id`, read
+    /// before the listing began, are replayed afterwards in `CatchUp`.
     Full {
         baseline_history_id: String,
         page_token: Option<String>,
     },
+    /// Replaying history from the full listing's baseline.
     CatchUp {
         start_history_id: String,
         page_token: Option<String>,
     },
+    /// Replaying history from the last committed history ID.
     Delta {
         start_history_id: String,
         page_token: Option<String>,
     },
+    /// Caught up; the next scan starts with [`Checkpoint::begin_delta`].
     Idle,
+    /// History expired; restart with [`Checkpoint::restart_full`].
     NeedsFullSync,
 }
 
+/// Durable sync position for one account.
+///
+/// `generation` increases with each full resync and `revision` with each
+/// committed page, so a plan built from an older checkpoint is detectably
+/// stale.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub account: AccountId,
     pub generation: u64,
     pub revision: u64,
+    /// The history ID local state reflects, set when a history scan finishes.
     pub committed_history_id: Option<String>,
+    /// Pages taken so far in the current scan.
     pub page_count: u32,
     pub phase: Phase,
 }
 
 impl Checkpoint {
+    /// Starts the first full listing under `generation`. The caller reads
+    /// `baseline_history_id` from the profile before listing, so nothing that
+    /// changes during the listing is missed.
     pub fn begin_full(
         account: AccountId,
         generation: u64,
@@ -157,6 +194,9 @@ impl Checkpoint {
         })
     }
 
+    /// Plans an empty page that moves an idle checkpoint into a delta scan from
+    /// its committed history ID. Errors with `StaleCheckpoint` if the
+    /// checkpoint is not idle or has never caught up.
     pub fn begin_delta(&self) -> Result<PagePlan, GoogleError> {
         if self.phase != Phase::Idle {
             return Err(GoogleError::StaleCheckpoint);
@@ -187,6 +227,8 @@ impl Checkpoint {
         })
     }
 
+    /// Plans a new full listing under the next generation after history
+    /// expiry. Errors with `StaleCheckpoint` unless the phase is `NeedsFullSync`.
     pub fn restart_full(&self, baseline_history_id: String) -> Result<PagePlan, GoogleError> {
         if self.phase != Phase::NeedsFullSync {
             return Err(GoogleError::StaleCheckpoint);
@@ -225,18 +267,24 @@ impl Checkpoint {
 /// Source bytes and draft/pending-operation state remain owned by Core, not this crate.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PagePlan {
+    /// The checkpoint the store must still hold; otherwise the plan is stale.
     pub expected: Checkpoint,
+    /// The checkpoint committed together with the plan.
     pub next: Checkpoint,
+    /// Message IDs seen on this page.
     pub observed_message_ids: BTreeSet<String>,
     pub fetch_message_ids: BTreeSet<String>,
+    /// IDs Gmail reported deleted, or that returned 404 when fetched.
     pub explicitly_deleted_ids: BTreeSet<String>,
+    /// This page ended the full listing, so the full inventory is now known.
     pub inventory_finished: bool,
+    /// This page ended a history scan; `next.committed_history_id` is current.
     pub caught_up: bool,
 }
 
-/// A real Core adapter must atomically apply fetched content, explicit provider removals
-/// and this checkpoint, preserving local drafts/pending user intent. The trait supplies
-/// that integration seam; the deterministic fake does not prove disk atomicity.
+/// Implementations must atomically apply fetched content, explicit provider
+/// removals and the page's next checkpoint, preserving local drafts and pending
+/// user intent.
 pub trait PageStore {
     /// Stage one verified source before page commit. Must be idempotent for this
     /// account/generation/ID and invisible to inventory removal until commit.
@@ -245,9 +293,16 @@ pub trait PageStore {
         expected: &Checkpoint,
         message: MessageContent,
     ) -> Result<(), GoogleError>;
+    /// Applies `plan` in one transaction, only if the stored checkpoint still
+    /// equals `plan.expected`; otherwise it applies nothing and fails, usually
+    /// with `StaleCheckpoint`. Replaying the identical, already committed plan
+    /// may succeed as a no-op.
     fn commit_page(&mut self, plan: &PagePlan) -> Result<(), GoogleError>;
 }
 
+/// Blocking Gmail reads driven by [`advance`]. `get_raw` must report a
+/// missing message as [`GoogleError::NotFound`], and `history` an expired
+/// start ID as [`GoogleError::HistoryExpired`].
 pub trait GmailTransport {
     fn list(
         &mut self,
@@ -265,6 +320,13 @@ pub trait GmailTransport {
         -> Result<RawMessage, GoogleError>;
 }
 
+/// Runs one sync step and returns the committed plan.
+///
+/// Fetches the next page for the checkpoint's phase, stages every message the
+/// page names, commits the page and moves `checkpoint` to `plan.next`. On an
+/// error `checkpoint` is unchanged and the step can be repeated. An expired
+/// history start commits a move to `NeedsFullSync`. Errors with
+/// `StaleCheckpoint` in the `Idle` and `NeedsFullSync` phases.
 pub fn advance<T: GmailTransport, S: PageStore>(
     checkpoint: &mut Checkpoint,
     transport: &mut T,
@@ -308,6 +370,10 @@ pub fn advance<T: GmailTransport, S: PageStore>(
     Ok(plan)
 }
 
+/// Plans one `messages.list` page for a `Full` checkpoint.
+///
+/// Every listed message is fetched in full. The last page moves the
+/// checkpoint to `CatchUp` from the listing's baseline.
 pub fn prepare_full_page(checkpoint: &Checkpoint, page: ListPage) -> Result<PagePlan, GoogleError> {
     let Phase::Full {
         baseline_history_id,
@@ -364,6 +430,12 @@ pub fn prepare_full_page(checkpoint: &Checkpoint, page: ListPage) -> Result<Page
     })
 }
 
+/// Plans one `history.list` page for a `CatchUp` or `Delta` checkpoint.
+///
+/// Added messages and label changes are refetched rather than replayed. The
+/// last page commits the page's history ID and returns to `Idle`. Errors with
+/// `InvalidResponse` for an out-of-range or unordered history, more than 500
+/// records, or more than 5000 changes.
 pub fn prepare_history_page(
     checkpoint: &Checkpoint,
     page: HistoryPage,
@@ -389,6 +461,8 @@ pub fn prepare_history_page(
     if end_history < start_history || page.history.len() > 500 {
         return Err(GoogleError::InvalidResponse("invalid history range"));
     }
+    // Records apply in order: a later add or label change revives an earlier
+    // delete, and a delete cancels any pending fetch of the same message.
     let mut fetch = BTreeSet::new();
     let mut removed = BTreeSet::new();
     let mut previous_history = start_history;
@@ -473,6 +547,8 @@ pub fn prepare_history_page(
     })
 }
 
+/// Plans the move to `NeedsFullSync` after Gmail reports the history start
+/// ID expired.
 pub fn prepare_expiry(checkpoint: &Checkpoint) -> Result<PagePlan, GoogleError> {
     Ok(PagePlan {
         expected: checkpoint.clone(),

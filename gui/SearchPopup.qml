@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
 
-// Smart search dropdown (Search 7). The search box holds the whole query and
-// Core parses it. Empty, this offers recent searches and the advertised
+// Smart search dropdown under the Mail search box. The box holds the whole
+// query and Core (fm-core's query parser) parses it. Empty, this offers recent searches and the advertised
 // operators. While typing it shows how Core read the text, the result count,
 // completion of a partial operator and people after a trailing from: or to:.
 // label:, has: and is: still parse but are not advertised.

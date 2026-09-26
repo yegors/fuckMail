@@ -1,5 +1,14 @@
 //! Explicit version-four recurring actions reuse the conditional Calendar journal.
 //! Two-step following edits retain one frozen plan and never retry unknown work.
+//!
+//! A recurring action has a scope. `series` patches or deletes the master
+//! itself. `occurrence` changes one instance, like the single-occurrence path.
+//! `following` ("this and following events") has no single Google API call,
+//! so it runs as two requests: step 0 trims the master's rule to end before
+//! the selected occurrence, and step 1 creates a replacement series from that
+//! occurrence onward with a deterministic event ID. Step 1 is never sent
+//! automatically after an interruption; the row waits in `partial` until the
+//! user resumes, and the trimmed master is re-read first.
 use crate::calendar_store::{calendar_error, fingerprint, parse_access};
 use crate::live_calendar_occurrences::{
     CalendarOccurrenceSelector, MasterStamp, PreparedCalendarOccurrence,
@@ -10,13 +19,24 @@ use fm_calendar::{Event, EventKey};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
+/// User-facing consequences of a "this and following" change. A following
+/// request is refused with `confirmation_required` and this text until it
+/// sets `reset_future_exceptions: true`.
 pub const FOLLOWING_NOTICE: &str = "This changes this and following events. Google resets later exceptions. Earlier exceptions are retained. An existing Google Meet is replaced with a new link. The trim and replacement are separate requests; an interrupted operation may need explicit recovery.";
 
+/// Parses a Google `recurrence` array and checks it is the one authorable
+/// shape: a single `RRULE:` line with daily, weekly, monthly or yearly
+/// frequency and a small set of parts. `allow_empty` permits `[]`, which
+/// removes recurrence from an existing series.
 pub fn validate_rule_value(value: &Value, allow_empty: bool) -> Result<Vec<String>> {
     let rules: Vec<String> = serde_json::from_value(value.clone())?;
     fm_calendar::recurring::validate_rule_shape(&rules, allow_empty).map_err(calendar_error)?;
     Ok(rules)
 }
+/// Validates the `recurring` selector of a version-four request. Series
+/// actions must target the master itself with its ETag, rule changes are only
+/// allowed on the whole series, and following actions need the explicit
+/// exception-reset confirmation.
 pub(crate) fn validate_request(request: &Value) -> Result<()> {
     if request.get("occurrence").is_some() {
         return Err(err("invalid_request", "Choose one recurring scope"));
@@ -88,6 +108,9 @@ pub(crate) fn validate_request(request: &Value) -> Result<()> {
     }
     Ok(())
 }
+/// Checks a series-scope or recurring-create dispatch before it is frozen: the
+/// baseline must be a real recurring master, and when the rule or time kind
+/// changes, the patched event must still yield a first occurrence.
 pub(crate) fn validate_series_dispatch(request: &Value, dispatch: &Value) -> Result<()> {
     if request["kind"] != "create" {
         if request["recurring"]["scope"] != "series" {
@@ -166,6 +189,8 @@ pub fn read_selector(params: &Value) -> Result<(CalendarOccurrenceSelector, Stri
 }
 
 impl Store {
+    /// Loads the retained master named by a qualified stamp, failing with
+    /// `stale_revision` if its stamps or bytes changed since qualification.
     fn recurring_master_event(&self, stamp: &MasterStamp) -> Result<Event> {
         self.check_calendar_occurrence_master(stamp)?;
         let raw:String=self.db.query_row("SELECT CASE WHEN length(CAST(json AS BLOB))<=262144 THEN json END FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![stamp.account,stamp.calendar,stamp.series],|r|r.get(0))?;
@@ -176,6 +201,16 @@ impl Store {
         fm_calendar::normalize(&stamp.account, &stamp.calendar, &stamp.zone, &source)
             .map_err(calendar_error)
     }
+    /// Returns the editor row for a recurring `action` (`edit`, `delete` or
+    /// `rsvp`) at `scope`, plus the `recurring` selector the later write must
+    /// send.
+    ///
+    /// Series scope shows the master; occurrence and following scopes show
+    /// the verified instance. Both the master and the chosen event must pass
+    /// the write checks for `action`, and a following preview also checks that
+    /// the rule can be split there and the series can be copied into a
+    /// replacement. The result includes [`FOLLOWING_NOTICE`] for following
+    /// scope.
     pub fn calendar_live_recurring_read_finish(
         &self,
         proof: PreparedCalendarOccurrence,
@@ -226,6 +261,8 @@ impl Store {
             .utc(zone)
             .map_err(calendar_error)?;
         let window = fm_calendar::Window::new(from, to, zone).map_err(calendar_error)?;
+        // Project the chosen event once, without expanding the master's rule,
+        // so the editor gets exactly one row.
         let mut single = chosen.clone();
         single.recurrence.clear();
         let mut rows = fm_calendar::project_event_in_window(
@@ -279,6 +316,15 @@ impl Store {
         Ok(result)
     }
 
+    /// Freezes the dispatch for an occurrence- or following-scope recurring
+    /// action from a verified occurrence proof. `revision` is the row's
+    /// expected operation revision.
+    ///
+    /// For following scope the frozen dispatch is step 0 (the master trim),
+    /// and the replacement series body is computed and validated now so a
+    /// later resume cannot change it. Fails with `stale_revision` when the
+    /// resolved instance or master differs from the request, and with
+    /// `calendar_operation_pending` if the row was already attempted.
     pub fn calendar_live_stage_recurring(
         &mut self,
         account: &str,
@@ -353,6 +399,8 @@ impl Store {
         if recurring["scope"] == "following" {
             let split =
                 fm_calendar::recurring::split_rule(&master, &wanted).map_err(calendar_error)?;
+            // The replacement ID derives from the request, so a retried create
+            // can only ever produce this one series.
             let id = format!(
                 "f{}",
                 fingerprint(&json!([account, stamp.calendar, request_id, "following"]))?
@@ -372,6 +420,8 @@ impl Store {
                 .map_err(calendar_error)?;
             fm_calendar::recurring::validate_rule(&event.recurrence, event.start.as_ref().unwrap())
                 .map_err(calendar_error)?;
+            // Step 0 retargets the dispatch at the master: a conditional patch
+            // of its rule only. The replacement waits inside `following`.
             let mut trim = json!({"recurrence":split.before});
             writes::preserve_label(&mut trim, &master.source)?;
             dispatch["kind"] = "edit".into();
@@ -393,6 +443,9 @@ impl Store {
         self.calendar_live_status(account, request_id)
     }
 
+    /// Extra dispatch-time checks for version-four attempts: the account
+    /// lifecycle and catalog membership are unchanged, a following trim's
+    /// master proof still holds, and no other work on the series is pending.
     pub(crate) fn calendar_recurring_check_start(&self, lease: &CalendarWriteLease) -> Result<()> {
         self.check_active_account_revision(
             &lease.account,
@@ -421,6 +474,10 @@ impl Store {
         )
     }
 
+    /// Fails with `calendar_operation_pending` while any other live write on
+    /// the same series (by target, occurrence or recurring selector) is
+    /// ready, in flight, unknown, partial, or abandoned while unknown. Such
+    /// work may still land at Google, so a new series action could race it.
     pub(crate) fn calendar_recurring_assert_no_pending(
         &self,
         account: &str,
@@ -441,6 +498,8 @@ impl Store {
         Ok(())
     }
 
+    /// The same guard for non-recurring and single-occurrence writes, which
+    /// only have to wait for unresolved version-four work on the series.
     pub(crate) fn calendar_recurring_guard_legacy(
         &self,
         account: &str,
@@ -461,6 +520,9 @@ impl Store {
         Ok(())
     }
 
+    /// Adds version-four fields to a public status: the recurring selector,
+    /// the current dispatch step, `can_resume`, and for following actions a
+    /// per-step `steps` list (trim, then replacement) with `following_complete`.
     pub(crate) fn calendar_recurring_status(
         &self,
         mut status: Value,
@@ -540,6 +602,12 @@ fn replacement_instance_source(source: &Value, request_id: &str) -> Result<Value
     replacement_source(&source, request_id)
 }
 
+/// Builds the create body for a following replacement series from `source`.
+///
+/// Refuses sources with fields that cannot be faithfully copied (unknown
+/// keys, gadgets, extended properties, private copies) or without complete
+/// guest metadata. An existing Google Meet cannot be moved to a new event, so
+/// it is replaced with a fresh Meet create request keyed by `request_id`.
 fn replacement_source(source: &Value, request_id: &str) -> Result<Value> {
     crate::live_calendar_invitations::guest_projection(source)?;
     let allowed = [
@@ -636,6 +704,9 @@ fn replacement_source(source: &Value, request_id: &str) -> Result<Value> {
 }
 
 impl Store {
+    /// Moves a confirmed following-edit trim to `partial` and returns the
+    /// status; other operations are returned unchanged.
+    ///
     /// Called after recording/publishing a trim. This exposes a never-attempted
     /// replacement, without authorizing a background continuation.
     pub fn calendar_live_recurring_finish_step(
@@ -656,8 +727,14 @@ impl Store {
         }
         self.calendar_live_status(&lease.account, &lease.request_id)
     }
+    /// Freezes step 1 (the replacement create) of a following edit and moves
+    /// the row back to `ready`.
+    ///
     /// Only a new explicit resume (or the still-running original action) may
     /// advance the unattempted second step after a fresh exact trim readback.
+    /// `fresh_master` must equal the trimmed master recorded as the trim's
+    /// outcome, or it fails with `stale_revision`. The trim's lease and outcome
+    /// move to `recurring_steps_json` so a late reply can still be matched.
     pub fn calendar_live_following_advance(
         &mut self,
         account: &str,
@@ -683,6 +760,8 @@ impl Store {
         let prior_existing = prior_raw
             .map(|v| serde_json::from_str::<Value>(&v))
             .transpose()?;
+        // A second advance after step 1 was already frozen reads the trim
+        // lease back from the step history instead of the current dispatch.
         let lease = if current_lease.dispatch["step"] == 1 && op.state == "ready" {
             serde_json::from_value(
                 prior_existing
@@ -799,6 +878,10 @@ impl Store {
         self.calendar_live_status(account, request_id)
     }
 
+    /// Handles a late reply to a following trim after the row has already
+    /// advanced to the replacement step. A matching acceptance is recorded in
+    /// the step history; the current step is never touched. Returns `None`
+    /// when the lease is not such a superseded trim.
     pub(crate) fn calendar_recurring_late_prior(
         &mut self,
         lease: &CalendarWriteLease,

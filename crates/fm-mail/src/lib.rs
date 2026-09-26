@@ -1,5 +1,10 @@
-//! Shared incoming text extraction and human-authored MIME construction.
-//! No transport, AI, file reads or database.
+//! Message content for fuckMail: plain-text extraction from received MIME,
+//! MIME construction for human-written mail, and the display transforms for
+//! received HTML ([`html_view`]), images ([`image_view`]), previews
+//! ([`preview`]) and unsubscribe options ([`unsubscribe`]).
+//!
+//! Everything here is a pure transform: no network, file reads, database or
+//! model calls.
 pub mod html_view;
 pub mod image_view;
 mod incoming;
@@ -20,13 +25,21 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, UNIX_EPOCH};
 
+/// Largest authored body or signature, plain or HTML, in bytes (1 MiB).
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
+/// Largest combined size of one message's attachments, in bytes (25 MiB),
+/// counted before transfer encoding.
 pub const MAX_ATTACHMENT_BYTES: usize = 25 * 1024 * 1024;
+/// Largest serialized message, in bytes (35 MiB). This leaves room for
+/// [`MAX_ATTACHMENT_BYTES`] after base64 expansion plus the text parts.
 pub const MAX_WIRE_BYTES: usize = 35 * 1024 * 1024;
 
+/// A mailbox for an address header: an optional display name and an address.
 #[derive(Clone)]
 pub struct Address {
+    /// Display name, encoded by the MIME writer when it is not plain ASCII.
     pub name: Option<String>,
+    /// Bare address such as `ann@example.com`, without angle brackets.
     pub email: String,
 }
 
@@ -35,19 +48,29 @@ pub fn validate_address(address: &Address) -> Result<(), ComposeError> {
     mailbox(address).map(|_| ())
 }
 
+/// The sending account as the MIME writer sees it: its `From` mailbox and
+/// signature.
 pub struct AccountIdentity {
+    /// Must equal [`ComposeRequest::account_id`].
     pub account_id: String,
     pub from: Address,
+    /// Appended to the plain body by [`with_signature`]; empty for none.
     pub signature_text: String,
+    /// Appended to the HTML body. When absent, the plain signature is escaped
+    /// and its line breaks become `<br>`.
     pub signature_html: Option<String>,
 }
 
+/// One authored message to format, as persisted in a draft.
 #[derive(Clone)]
 pub struct ComposeRequest {
+    /// Must match the identity and every attachment.
     pub account_id: String,
+    /// `to`, `cc` and `bcc` together hold at most 100 addresses.
     pub to: Vec<Address>,
     pub cc: Vec<Address>,
     pub bcc: Vec<Address>,
+    /// At most 8 KiB, with no control characters.
     pub subject: String,
     /// Exact author text, without the account signature. Never replaced with generated text.
     pub body_text: String,
@@ -55,42 +78,67 @@ pub struct ComposeRequest {
     pub body_html: Option<String>,
     /// RFC Message-ID with angle brackets, generated once and persisted with send intent.
     pub message_id: String,
+    /// Message-ID being answered. It becomes `In-Reply-To` and is appended to
+    /// `References` when missing there.
     pub reply_to_message_id: Option<String>,
+    /// Up to 100 Message-IDs of the thread, oldest first, with angle brackets.
     pub references: Vec<String>,
+    /// `Date` header, in Unix seconds (UTC), at most the end of year 9999.
     pub timestamp_secs: u64,
 }
 
+/// An attachment's bytes, with the checksum Core recorded when it was staged.
 pub struct StagedAttachment {
     pub account_id: String,
+    /// Non-empty, with no control characters.
     pub filename: String,
+    /// A parseable MIME type such as `image/png`.
     pub content_type: String,
     pub bytes: Vec<u8>,
     /// Core's retained blob checksum, verified before serialization.
     pub sha256: String,
     /// Bare CID token without angle brackets; present only for an inline attachment.
+    /// Inline parts go inside the HTML body's `multipart/related`, so they need
+    /// [`ComposeRequest::body_html`].
     pub content_id: Option<String>,
 }
 
 /// Submission bytes contain Bcc because the Gmail API has no separate SMTP envelope.
 /// This is private draft/submission content, not a public recipient preview.
 pub struct BuiltMail {
+    /// The complete RFC 5322 message.
     pub raw: Vec<u8>,
+    /// Lowercase hex SHA-256 of `raw`.
     pub sha256: String,
+    /// True when the authored HTML plus signature changed under the authored-HTML
+    /// allowlist, so what is sent differs from what the composer exported.
     pub html_was_sanitized: bool,
 }
 
+/// Why an authored message could not be formatted. Nothing is produced on error.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComposeError {
+    /// The account ID is empty, or the identity or an attachment belongs to
+    /// another account.
     WrongAccount,
+    /// The named header value has a control character, or a Message-ID or
+    /// filename is malformed.
     InvalidHeader(&'static str),
+    /// An email address does not parse.
     InvalidAddress,
     InvalidContentType,
+    /// A Content-ID is not a bare token, or an inline part has no HTML body to show it.
     InvalidContentId,
     DuplicateContentId,
+    /// [`build_mail`] needs at least one recipient; [`build_draft_mail`] does not.
     NoRecipients,
+    /// Attachment bytes no longer match their recorded checksum.
     AttachmentNotVerified,
+    /// The named bound (recipients, attachments, body, header or message size) was exceeded.
     LimitExceeded(&'static str),
+    /// `timestamp_secs` is past the end of year 9999.
     InvalidDate,
+    /// The MIME writer rejected the assembled message.
     MimeBuildFailed,
 }
 
@@ -121,6 +169,7 @@ fn build_authored_mail(
     attachments: &[StagedAttachment],
     allow_no_recipients: bool,
 ) -> Result<BuiltMail, ComposeError> {
+    // Check scope, headers, limits and attachment proofs before any MIME is built.
     if request.account_id.is_empty() || request.account_id != identity.account_id {
         return Err(ComposeError::WrongAccount);
     }
@@ -191,6 +240,7 @@ fn build_authored_mail(
     }
 
     let from = mailbox(&identity.from)?;
+    // `keep_bcc`: Gmail takes Bcc recipients from the raw message itself.
     let mut builder = Message::builder()
         .from(from.clone())
         .subject(request.subject.clone())
@@ -215,6 +265,7 @@ fn build_authored_mail(
             references.push(reply.clone());
         }
     }
+    // Checked again: appending the replied-to ID can push the list past the bound.
     if references.len() > 100 {
         return Err(ComposeError::LimitExceeded("reply references"));
     }
@@ -225,6 +276,7 @@ fn build_authored_mail(
     let plain = with_signature(&request.body_text, &identity.signature_text);
     let plain_part = text_part(plain.into_bytes(), ContentType::TEXT_PLAIN);
     let mut sanitized = false;
+    // Boundaries derive from the Message-ID, so rebuilding a draft yields identical bytes.
     let boundary_key = checksum(request.message_id.as_bytes())[..32].to_owned();
     let mut body = if let Some(html) = &request.body_html {
         let signature = identity
@@ -238,6 +290,8 @@ fn build_authored_mail(
         };
         let safe = sanitize_authored_html(&joined, cids);
         sanitized = safe != joined;
+        // multipart/alternative: the plain text first, then the HTML together
+        // with the inline images it references, in a multipart/related.
         let mut related = MultiPart::related()
             .boundary(format!("fm-related-{boundary_key}"))
             .singlepart(text_part(safe.into_bytes(), ContentType::TEXT_HTML));
@@ -254,6 +308,7 @@ fn build_authored_mail(
             .boundary(format!("fm-plain-{boundary_key}"))
             .singlepart(plain_part)
     };
+    // Ordinary attachments wrap the body in an outer multipart/mixed.
     if attachments.iter().any(|part| part.content_id.is_none()) {
         let mut mixed = MultiPart::mixed()
             .boundary(format!("fm-mixed-{boundary_key}"))
@@ -333,6 +388,9 @@ fn attachment_part(part: &StagedAttachment) -> Result<SinglePart, ComposeError> 
     Ok(builder.body(part.bytes.clone(), content_type))
 }
 
+/// Reduces the composer's rich-text export to basic formatting, links and
+/// images. An image survives only as `cid:` naming one of `content_ids`, so
+/// outgoing HTML never shows a remote or unattached image.
 fn sanitize_authored_html(html: &str, content_ids: BTreeSet<String>) -> String {
     let mut cleaner = HtmlCleaner::default();
     cleaner

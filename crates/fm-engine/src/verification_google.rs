@@ -1,4 +1,9 @@
 //! A production build only knows how to refuse an isolated verification profile.
+//!
+//! Builds with the `verification-google` feature replace Google with the
+//! in-memory fixture in `fixture` and mark the profile they use. Every build
+//! refuses to open a marked profile, so fixture data can never meet real
+//! Google services on a later start.
 use std::{io, path::Path};
 
 pub(crate) const MARKER: &str = "verification-google-profile.json";

@@ -1,3 +1,6 @@
+// MailView UI test for Send with Undo, on a real MailBackend over the scripted
+// engine: the six-second hold, save and routing, navigation during the hold, the
+// action toast, cancellation, a draft changed meanwhile, and closing the app.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

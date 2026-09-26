@@ -26,13 +26,18 @@ use std::{
 };
 use tokio::{sync::Mutex, task::JoinHandle};
 
+/// How long a browser sign-in may take before its loopback listener gives up.
 const LOGIN_SECONDS: u64 = 300;
+/// Finished sign-in attempts kept for status queries.
 const RETAINED_ATTEMPTS: usize = 16;
+/// Largest OAuth client JSON file accepted.
 const CONFIG_BYTES: u64 = 64 * 1024;
 mod account_lifecycle;
 mod client_config;
 use client_config::AppClient;
 
+/// Lets one shared transport satisfy the sized `HttpTransport` bound that
+/// `GoogleOAuth` takes.
 struct SharedHttp(Arc<dyn HttpTransport>);
 impl HttpTransport for SharedHttp {
     fn execute<'a>(
@@ -43,6 +48,7 @@ impl HttpTransport for SharedHttp {
         self.0.execute(request, cancel)
     }
 }
+/// The shared credential vault as a sized `CredentialVault`.
 struct SharedVault(Arc<dyn CredentialVault>);
 impl CredentialVault for SharedVault {
     fn retry_access(&self, account: &AccountId) -> std::result::Result<(), GoogleError> {
@@ -64,14 +70,22 @@ impl CredentialVault for SharedVault {
     }
 }
 type OAuth = GoogleOAuth<SharedHttp>;
+/// An OAuth client built from a desktop client registration, and the path
+/// the registration was read from.
 struct LoadedClient {
     oauth: Arc<OAuth>,
     path: String,
 }
+/// One browser sign-in attempt, visible only to the session that started it.
 struct Attempt {
     id: String,
+    /// Owner id of the session that started the attempt.
     owner: String,
+    /// The account being reconnected or restored, or, once known, the
+    /// account the sign-in resolved to.
     account: Option<String>,
+    /// `waiting_for_browser`, `exchanging`, `persisting`, then `connected`,
+    /// `cancelled` or `failed`.
     phase: &'static str,
     error: Option<Value>,
     cancel: CancellationToken,
@@ -82,16 +96,22 @@ impl Attempt {
         json!({"attempt_id":self.id,"phase":self.phase,"account":self.account,"error":self.error})
     }
 }
+/// The cancellation root for one account's provider work.
 struct AccountWork {
-    #[allow(dead_code)] // Read by the shared token API when provider workers are connected.
+    /// Connection generation this work belongs to; a reconnect replaces it.
     generation: i64,
     cancel: CancellationToken,
 }
 #[derive(Default)]
 struct State {
+    /// The attempt still in progress; only one sign-in runs at a time.
     active: Option<String>,
+    /// Recent attempts, oldest first, bounded by `RETAINED_ATTEMPTS`.
     attempts: VecDeque<Attempt>,
+    /// The OAuth client last loaded; token refreshes reuse it while its
+    /// client id and path match the account's stored registration.
     client: Option<Arc<LoadedClient>>,
+    /// Provider-work roots keyed by account id.
     accounts: BTreeMap<String, AccountWork>,
     stopping: bool,
 }
@@ -108,6 +128,8 @@ struct Inner {
     cancel: CancellationToken,
     state: Mutex<State>,
 }
+/// Plays the browser's part in the verification build: it receives each
+/// authorization URL and drives the loopback callback.
 #[cfg(feature = "verification-google")]
 pub(crate) trait VerificationLogin: Send + Sync {
     fn callback<'a>(
@@ -116,10 +138,16 @@ pub(crate) trait VerificationLogin: Send + Sync {
         cancel: CancellationToken,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>;
 }
+/// Google sign-in and credentials: browser sign-in attempts, account
+/// disconnect and removal, and vault-backed access-token refresh for sync.
+/// Clones share state.
 #[derive(Clone)]
 pub(crate) struct Runtime {
     inner: Arc<Inner>,
 }
+/// Fails an attempt that [`Runtime::begin`] abandons before handing it to
+/// its background task, for example when the request future is dropped, so
+/// the single active slot is released.
 struct BeginGuard {
     runtime: Runtime,
     id: String,
@@ -139,6 +167,9 @@ impl Drop for BeginGuard {
     }
 }
 impl Runtime {
+    /// Creates the runtime with the pooled HTTPS transport, the OS credential
+    /// vault under `namespace`, and the client registration installed with
+    /// the app. `cancel` is the engine's shutdown token.
     #[cfg(not(feature = "verification-google"))]
     pub(crate) fn new(
         core: CoreBridge,
@@ -221,6 +252,7 @@ impl Runtime {
             }),
         }
     }
+    /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
@@ -234,10 +266,11 @@ impl Runtime {
         ) || (cfg!(feature = "verification-google") && method == "verification_google_auth_fixture")
     }
     /// Mail and Calendar reuse the engine's bounded pooled HTTPS transport.
-    #[allow(dead_code)] // Used when the provider worker module is connected.
     pub(crate) fn http_transport(&self) -> Arc<dyn HttpTransport> {
         self.inner.http.clone()
     }
+    /// Handles one auth request for the session `owner`; `owner_cancel` fires
+    /// when that session ends and cancels its sign-in attempt.
     pub(crate) async fn handle(
         &self,
         owner: &str,
@@ -288,6 +321,8 @@ impl Runtime {
                 }
                 Ok(json!({"mode":"accounts-v1","browser_stub_allowed":true}))
             }
+            // Sign-in: validate the options here; the attempt then runs in the
+            // background and the client polls `google_auth_status`.
             "google_auth_begin" | "google_auth_restore_begin" => {
                 let restore = method == "google_auth_restore_begin";
                 fields(
@@ -407,6 +442,9 @@ impl Runtime {
                 }
                 Ok(attempt.status())
             }
+            // Disconnect stops the account's sign-in attempts and provider work
+            // and marks it disconnected. Local data and the vault entry stay;
+            // `account_remove` is the path that clears credentials.
             "google_disconnect" => {
                 fields(&params, &[])?;
                 let account = account
@@ -438,6 +476,7 @@ impl Runtime {
             )),
         }
     }
+    /// Client registrations recorded for the profile's existing accounts.
     async fn client_references(&self) -> Result<Vec<GoogleClientReference>> {
         self.inner
             .core
@@ -450,6 +489,13 @@ impl Runtime {
             })
             .await
     }
+    /// Starts a browser sign-in and returns its attempt id, authorization URL
+    /// and lifetime. The client opens the URL; the engine waits on a loopback
+    /// listener for the redirect. Only one attempt runs at a time.
+    ///
+    /// With `account`, the sign-in reconnects that account and must resolve to
+    /// the same Google identity; with `restore_revision` too, it restores an
+    /// archived account at that lifecycle revision.
     #[allow(clippy::too_many_arguments)]
     async fn begin(
         &self,
@@ -462,6 +508,8 @@ impl Runtime {
         restore_revision: Option<i64>,
         access: fm_google::auth::RequestedAccess,
     ) -> Result<Value> {
+        // Claim the single active slot first; `reservation` gives it back if
+        // this future ends before the background task takes over.
         let id = fm_ipc::random_token();
         let cancel = self.inner.cancel.child_token();
         {
@@ -495,6 +543,8 @@ impl Runtime {
             cancel: cancel.clone(),
             armed: true,
         };
+        // Check the profile and target account, load the client registration,
+        // and bind the loopback listener.
         let prepare = async {
             let expected = account.clone();
             let references = self
@@ -566,6 +616,8 @@ impl Runtime {
         let task_cancel = cancel.clone();
         #[cfg(feature = "verification-google")]
         let fixture_url = url.clone();
+        // The rest runs in the background. If the requesting session ends, the
+        // attempt is cancelled but still awaited, so it finishes cleanly.
         let mut state = self.inner.state.lock().await;
         if owner_cancel.is_cancelled() || cancel.is_cancelled() || state.stopping {
             return Err(cancelled());
@@ -603,6 +655,8 @@ impl Runtime {
         reservation.armed = false;
         Ok(json!({"attempt_id":id,"authorization_url":url,"expires_in_seconds":LOGIN_SECONDS}))
     }
+    /// Waits for the browser redirect, exchanges the code, and binds the grant
+    /// to a new or existing account. Returns the account id.
     async fn complete_login(
         &self,
         id: &str,
@@ -639,6 +693,8 @@ impl Runtime {
                 )
                 .await;
         }
+        // Resolve which account this identity belongs to (and, for a
+        // reconnect, that it is the expected one) before touching the vault.
         let subject = grant.identity.sub.clone();
         let email = grant.identity.email.clone();
         let scopes = grant.granted_scopes.clone();
@@ -773,6 +829,7 @@ impl Runtime {
         state.accounts.remove(&committed);
         Ok(committed)
     }
+    /// Advances an attempt's phase unless it has been cancelled.
     async fn phase(&self, id: &str, phase: &'static str) {
         if let Some(attempt) = self
             .inner
@@ -788,6 +845,8 @@ impl Runtime {
             }
         }
     }
+    /// Records an attempt's final phase, frees the active slot, and trims the
+    /// retained history.
     async fn finish_attempt(&self, id: &str, result: Result<String>) {
         let mut state = self.inner.state.lock().await;
         if let Some(attempt) = state.attempts.iter_mut().find(|a| a.id == id) {
@@ -814,8 +873,8 @@ impl Runtime {
             state.attempts.pop_front();
         }
     }
-    /// Use this cancellation token for the whole account job, including provider
-    /// I/O after access_token returns. Disconnect cancels all such children.
+    /// Clears a remembered keychain denial for `account` so the next token read
+    /// asks the OS again. Called when a client starts or refreshes its sync.
     pub(crate) async fn retry_credential_access(&self, account: &str) -> Result<()> {
         let id = AccountId::new(account.to_owned()).map_err(google_error)?;
         let cancel = self.account_work_cancel(account).await?;
@@ -837,7 +896,9 @@ impl Runtime {
         .map_err(|_| error("vault_unavailable", "Credential access could not resume"))?
         .map_err(google_error)
     }
-    #[allow(dead_code)] // Explicit shared API for the upcoming mail/calendar worker wiring.
+    /// A child of the cancellation token for `account`'s current connection.
+    /// Use it for the whole account job, including provider I/O after
+    /// `access_token` returns; disconnect or reconnect cancels all such children.
     pub(crate) async fn account_work_cancel(&self, account: &str) -> Result<CancellationToken> {
         let mut state = self.inner.state.lock().await;
         if state.stopping || self.inner.cancel.is_cancelled() {
@@ -880,7 +941,12 @@ impl Runtime {
         }
         Ok(work.cancel.child_token())
     }
-    #[allow(dead_code)] // Explicit shared API; fixture tests exercise the current boundary.
+    /// Returns a current access token for `account`, refreshing it through the
+    /// vault-backed coordinator when needed.
+    ///
+    /// If Google rejects the refresh, the account is marked as needing
+    /// reauthorization and all its provider work for this connection stops.
+    /// Fails with `vault_unavailable` when the OS keychain refuses access.
     pub(crate) async fn access_token(
         &self,
         account: &str,
@@ -920,6 +986,9 @@ impl Runtime {
             client.oauth.as_ref(),
             &work_cancel,
         );
+        // On caller cancellation the refresh is cancelled but still awaited,
+        // so it winds down under the coordinator's control instead of being
+        // dropped part way through.
         tokio::pin!(operation);
         let result = tokio::select! {
             result = &mut operation => result,
@@ -957,7 +1026,9 @@ impl Runtime {
         }
         result.map_err(google_error)
     }
-    #[allow(dead_code)] // Called by the shared token API above.
+    /// Returns the OAuth client for an account's stored registration, reusing
+    /// the loaded one when its path matches. A different client id than the
+    /// loaded one fails with `client_mismatch`.
     async fn saved_client(&self, reference: GoogleClientReference) -> Result<Arc<LoadedClient>> {
         let mut state = self.inner.state.lock().await;
         if let Some(client) = &state.client {
@@ -979,6 +1050,8 @@ impl Runtime {
         state.client = Some(client.clone());
         Ok(client)
     }
+    /// Cancels every sign-in attempt and all account work, and waits for the
+    /// attempt tasks to finish.
     pub(crate) async fn shutdown(&self) {
         self.inner.cancel.cancel();
         let tasks = {
@@ -1002,6 +1075,11 @@ impl Runtime {
     }
 }
 
+/// Reads a Google "installed app" OAuth client JSON file.
+///
+/// The path must be absolute and name a regular file of at most 64 KiB; a
+/// `web` client is refused, and the client id must be a
+/// `*.apps.googleusercontent.com` id. Any error is `invalid_client_config`.
 async fn read_config(path: String) -> Result<OAuthClientConfig> {
     tokio::task::spawn_blocking(move || {
         if path.chars().any(char::is_control) {
@@ -1026,6 +1104,7 @@ async fn read_config(path: String) -> Result<OAuthClientConfig> {
         } else {
             None
         };
+        // The file holds the client secret; don't leave the raw bytes behind.
         bytes.fill(0);
         let mut value = decoded.ok_or_else(invalid_config)?;
         if value.get("web").is_some() {
@@ -1057,6 +1136,7 @@ async fn read_config(path: String) -> Result<OAuthClientConfig> {
     .await
     .map_err(|_| invalid_config())?
 }
+/// Requires `params` to be an object with no keys outside `allowed`.
 fn fields(params: &Value, allowed: &[&str]) -> Result<()> {
     if !params.is_object()
         || params
@@ -1097,6 +1177,7 @@ fn invalid_config() -> CoreError {
 fn cancelled() -> CoreError {
     error("cancelled", "Google authentication was cancelled")
 }
+/// Maps a provider auth error to a user-facing engine error.
 fn google_error(failure: GoogleError) -> CoreError {
     match failure {
         GoogleError::ReauthorizationRequired => error(

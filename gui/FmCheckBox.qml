@@ -1,3 +1,5 @@
+// Styled checkbox row: the label, an optional grey `description` under it and
+// a bottom rule. Used in form dialogs (AccountEditor, GoogleConnectionDialog).
 import QtQuick
 import QtQuick.Controls
 

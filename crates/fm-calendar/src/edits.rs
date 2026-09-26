@@ -3,6 +3,8 @@ use crate::{error, Access, Event, EventKey, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// An attendee's answer to an invitation. Serialized in snake_case; [`rsvp`]
+/// writes Google's camelCase `responseStatus` values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResponseStatus {
@@ -11,12 +13,20 @@ pub enum ResponseStatus {
     Declined,
     NeedsAction,
 }
+/// A conditional PATCH of one event, planned but not yet sent.
 #[derive(Debug, Clone, Serialize)]
 pub struct GoogleWrite {
     pub target: EventKey,
+    /// ETag the event must still have; Google answers 412 otherwise.
     pub if_match: String,
+    /// Fields to change. Omitted fields stay as they are; an array replaces the
+    /// whole array. `id`, `recurringEventId` and `originalStartTime` are refused.
     pub body: Value,
+    /// Google's `sendUpdates`: `all`, `externalOnly` or `none`. Plans built
+    /// here use `all`.
     pub send_updates: &'static str,
+    /// Always `google_calendar_api`: Google sends any invitation email, never
+    /// this client. The adapter refuses any other value.
     pub notification_owner: &'static str,
 }
 /// An ordinary edit may preserve an existing supported meeting by omission.
@@ -34,6 +44,12 @@ pub fn ordinary_conference_supported(source: &Value) -> bool {
         }
     }
 }
+/// Plans a patch of an event's fields, notifying all guests.
+///
+/// Fails with `permission_denied` unless access resolved for this event is
+/// `Writer` or `Owner`, `stale_revision` when the event has no ETag or it
+/// differs from `expected_etag`, and `invalid_edit` when `body` is not an
+/// object or touches the event's identity.
 pub fn edit(
     event: &Event,
     access: Access,
@@ -68,6 +84,12 @@ pub fn edit(
         notification_owner: "google_calendar_api",
     })
 }
+/// Plans a patch that sets the signed-in attendee's `responseStatus`.
+///
+/// The whole attendee list is sent, since a PATCH replaces arrays; only the
+/// entry with `actor_email` and `self: true` changes. Fails with
+/// `permission_denied` when access is free/busy or less, or the actor is not
+/// that attendee, and `stale_revision` as for [`edit`].
 pub fn rsvp(
     event: &Event,
     access: Access,
@@ -116,11 +138,16 @@ pub fn rsvp(
     })
 }
 
+/// The two requests of a "this and following" edit.
 #[derive(Debug, Clone, Serialize)]
 pub struct FollowingEdit {
+    /// PATCH that ends the existing series before the edited occurrence.
     pub trim_existing: GoogleWrite,
+    /// Body of the new series, inserted as a separate request.
     pub create_following: Value,
+    /// Always true: the old series' exceptions must be re-read afterwards.
     pub reconcile_exceptions: bool,
+    /// Always false: either request can succeed without the other.
     pub atomic: bool,
 }
 /// Planning boundary for Google's two-request following edit, never fake atomicity.

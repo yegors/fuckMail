@@ -1,3 +1,6 @@
+// Base modal dialog: themed card with shadow, a title header and a button
+// footer whose affirmative button is filled (red when `destructive`).
+// FmConfirmDialog, AccountEditor, LabelsDialog and the other dialogs build on it.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects

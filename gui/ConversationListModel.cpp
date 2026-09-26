@@ -1,3 +1,6 @@
+// ConversationListModel: applies each new row list as row-level changes keyed by
+// account and id, so QML delegates keep their identity (a new scope resets), and
+// gives each row the group of the row before it for section headers.
 #include "ConversationListModel.h"
 #include <QSet>
 
@@ -30,6 +33,8 @@ QString ConversationListModel::group(const Row &row) {
 }
 
 bool ConversationListModel::replace(const QString &scope, const QVariantList &rows) {
+    // Validate the whole list before touching m_rows, so a rejected list
+    // leaves the model and its views exactly as they were.
     QVector<Row> next;
     next.reserve(rows.size());
     QSet<Key> keys;
@@ -44,6 +49,8 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
         keys.insert(key);
         next.append({key, map, next.isEmpty() ? QString{} : group(next.last())});
     }
+    // Rows from another account or view share no delegates worth keeping, so
+    // a reset is simpler and cheaper than diffing against them.
     if (scope != m_scope) {
         beginResetModel();
         m_scope = scope;
@@ -54,6 +61,8 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
     if (next == m_rows) return true;
     bool structural = false;
 
+    // Drop rows whose keys are gone, one contiguous run per signal. Walking
+    // from the end keeps the indexes of runs not yet visited valid.
     for (int last = int(m_rows.size()) - 1; last >= 0;) {
         if (keys.contains(m_rows[last].key)) { --last; continue; }
         int first = last;
@@ -74,6 +83,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
         if (i < m_rows.size() && m_rows[i].key == next[i].key) continue;
         const auto found = positions.constFind(next[i].key);
         if (found == positions.cend()) {
+            // Consecutive new keys are inserted as one block.
             int last = i;
             while (last + 1 < next.size() && !positions.contains(next[last + 1].key)) ++last;
             beginInsertRows({}, i, last);

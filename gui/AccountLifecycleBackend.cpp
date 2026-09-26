@@ -1,3 +1,6 @@
+// MailBackend's account lifecycle: removal preview and confirmation, removed
+// accounts kept as read-only local archives, archive deletion, credential cleanup
+// retries, Google account restoration, and unsaved edits of a removed account.
 #include "MailBackend.h"
 #include <QJsonArray>
 #include <QUuid>
@@ -166,6 +169,9 @@ void MailBackend::resumeAccountRemovalAfterView(const QString &account, int gene
     // its completion before obtaining a fresh removal confirmation.
     previewAccountRemoval(target);
 }
+// The dialog must hand back exactly the preview it was shown. Any drift (a
+// newer lifecycle revision, another editor generation, edits in progress)
+// sends the user back to a fresh preview instead of removing on stale facts.
 void MailBackend::confirmAccountRemoval(const QVariantMap &context) {
     const auto captured = QJsonObject::fromVariantMap(context);
     const auto account = captured["account"].toString();
@@ -193,6 +199,8 @@ void MailBackend::submitAccountRemoval(const QString &account, const QJsonObject
         ui["uncertain"] = !ok; if (ok) ui["result"] = result.toVariantMap();
         m_accountLifecycleUi[account] = ui; emit accountLifecycleChanged();
         loadAccounts(); loadCalendarSources(); loadCalendar();
+        // A failed reply does not mean nothing happened; look up the saved
+        // receipt of the same request.
         if (!ok) checkAccountRemoval(account, params["request_id"].toString());
         if (m_shutdown) finishShutdown();
     });
@@ -219,6 +227,8 @@ void MailBackend::retryAccountCleanup(const QString &account) {
     const auto cleanup = lifecycle.value("cleanup").toMap();
     const auto state = cleanup.value("state").toString();
     if (state == "in_flight" || state == "restore_in_flight" || state == "complete") return;
+    // Replay the recorded request when the engine says its cleanup can be
+    // replayed under that id; otherwise start a new request at the current revision.
     auto params = m_accountRemovalRequests.value(account);
     if (state != "pending" || !cleanup.value("replay_cleanup").toBool()
         || params.value("request_id").toString() != cleanup.value("request_id").toString())
@@ -236,6 +246,8 @@ void MailBackend::previewArchiveDeletion(const QString &account) {
     const auto row = lifecycleAccount(account);
     const auto life = row.value("lifecycle").toMap();
     if (life.value("cleanup").toMap().value("state") != "complete") return;
+    // Reuse a pending confirmation, and its request id, while it still matches
+    // this account and revision; otherwise mint a new one.
     if (m_archiveDeletionConfirmation["account"] != account || m_archiveDeletionConfirmation["expected_revision"].toInteger() != life.value("revision").toLongLong())
     m_archiveDeletionConfirmation = {{"account", account}, {"email", row.value("email").toString()},
         {"expected_revision", life.value("revision").toLongLong()},

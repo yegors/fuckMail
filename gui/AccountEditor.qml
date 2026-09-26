@@ -1,3 +1,6 @@
+// Settings > Accounts "Edit account" dialog: display name, local mail retention
+// and which Google services sync (Mail, Calendar; read or read & write). Opened
+// with show(row); emits reconnectRequested when the new access needs a fresh sign-in.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

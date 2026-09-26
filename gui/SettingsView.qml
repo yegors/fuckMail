@@ -1,3 +1,6 @@
+// The Settings workspace: the page list (General, Accounts, Local LLM, Mail,
+// Calendar, Shortcuts, Diagnostics), each page's content and the account
+// dialogs. Main.qml loads it on first open; each page is built when first shown.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

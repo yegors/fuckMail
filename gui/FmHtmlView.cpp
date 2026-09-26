@@ -1,3 +1,6 @@
+// FmHtmlView: lays out HtmlDocument on a single worker thread, paints it into
+// texture tiles near the viewport within memory budgets, and handles links,
+// selection, copy and search highlights on the GUI thread.
 #include "FmHtmlView.h"
 #include "SearchMatch.h"
 #include <QClipboard>
@@ -23,11 +26,19 @@
 #include <cmath>
 
 namespace {
+// Tile height in item pixels; tiles span the item's full width.
 constexpr qreal tileHeight = 512;
+// Process-wide tile memory. Visible tiles are painted regardless; tiles
+// prepared ahead of scrolling must fit within this.
 constexpr qint64 tileBudget = 32ll * 1024 * 1024;
+// Decoded image memory across all documents before new images are halved.
 constexpr qint64 imageBudget = 24ll * 1024 * 1024;
+// Largest html_path file read.
 constexpr qint64 maxHtmlBytes = 4ll * 1024 * 1024;
+// A build (read, decode, parse and first layout) slower than this fails, and
+// the message falls back to Text.
 constexpr qint64 layoutLimitMs = 2000;
+// The smallest scale a too-wide layout is shrunk to before it clips.
 constexpr qreal minimumScale = 0.5;
 std::atomic<qint64> liveTileBytes{0};
 
@@ -42,6 +53,9 @@ QThreadPool *htmlPool() {
     return pool;
 }
 
+// Runs `work` on the HTML worker and `done` with its result on the owner's
+// thread. The watcher is a child of `owner`, so a view destroyed while its job
+// runs never receives the result.
 template <typename T, typename Work, typename Done>
 void runOnPool(QObject *owner, Work work, Done done) {
     QPromise<T> promise;
@@ -70,6 +84,8 @@ HtmlImage::State imageState(const QString &value) {
 
 // Decodes a verified engine PNG. When images already use the budget, pixels
 // are halved while the layout keeps the image's own size.
+// Oversized images, or any image past four times the budget, return a null
+// image, which the caller shows as a failed placeholder.
 QImage decode(const QString &path, QSize *natural) {
     QImageReader reader(path, "png");
     reader.setAutoTransform(false);
@@ -129,6 +145,9 @@ LayoutResult layoutAt(HtmlDocument &document, qreal width) {
 }
 }
 
+// The document, shared with worker jobs, which lock the mutex around every use.
+// Shared ownership lets a job outlive its view, and lets the destructor hand
+// the document to the worker to free.
 struct HtmlViewState {
     QMutex mutex;
     std::unique_ptr<HtmlDocument> document;
@@ -161,6 +180,8 @@ qint64 FmHtmlView::tileBytes() { return liveTileBytes; }
 void FmHtmlView::setContent(const QVariantMap &content) {
     if (content == m_content) return;
     m_content = content;
+    // Identifies the document for the height memory and for telling a relayout
+    // of the same message from a new one.
     m_contentHash = content.isEmpty() ? 0 : qHashMulti(0, content.value("html").toString(), content.value("html_path").toString());
     m_alt.clear();
     for (const auto &value : content.value("resources").toList()) {
@@ -181,6 +202,9 @@ void FmHtmlView::setImages(const QVariantMap &images) {
     QMetaObject::invokeMethod(this, &FmHtmlView::applyImages, Qt::QueuedConnection);
 }
 
+// Sends only the images whose state changed to the worker. A change that can
+// move content (an image without a declared size) lays the document out again;
+// any other change only repaints the tiles.
 void FmHtmlView::applyImages() {
     m_imagesQueued = false;
     if (m_status != "ready" || m_images == m_appliedImages) return;
@@ -219,6 +243,8 @@ void FmHtmlView::applyImages() {
     });
 }
 
+// Stale tiles stay on screen until repainted. Bumping the paint generation
+// drops paints already in flight, which drew the old state.
 void FmHtmlView::markStale() {
     ++m_paintGeneration;
     for (auto &tile : m_tiles) tile.stale = true;
@@ -283,6 +309,8 @@ void FmHtmlView::setStatus(const QString &status, const QString &failure) {
 void FmHtmlView::requestRebuild() {
     // Results for the previous content or links are dropped from now on.
     ++m_generation;
+    // Rebuilding at the next polish folds several property changes made in
+    // one frame into a single layout.
     m_rebuildQueued = true;
     setStatus(m_content.isEmpty() ? QString() : QStringLiteral("loading"));
     polish();
@@ -292,6 +320,8 @@ void FmHtmlView::updatePolish() {
     if (m_rebuildQueued) rebuild();
 }
 
+// The height-memory key for a layout. Width and font are rounded to quarter
+// pixels so floating-point noise still finds the remembered height.
 size_t FmHtmlView::layoutKey(qreal width, const QVariantMap &images) const {
     QString states, blocked;
     for (auto it = images.cbegin(); it != images.cend(); ++it) {
@@ -318,6 +348,7 @@ void FmHtmlView::rebuild() {
     if (hadText) emit textChanged();
     emit selectionChanged(); emit hoveredLinkChanged();
     if (m_content.isEmpty()) { setImplicitHeight(0); setStatus({}); return; }
+    // No width to lay out at yet; geometryChange rebuilds once there is one.
     if (width() <= 0) { setStatus("loading"); m_layoutPending = true; return; }
     setStatus("loading");
     const size_t key = layoutKey(width(), m_images);
@@ -332,6 +363,7 @@ void FmHtmlView::rebuild() {
         images.insert(it.key().toInt(), imageFor(it.key().toInt(), value));
         if (value.value("state") == "ready") paths.insert(it.key().toInt(), value.value("path").toString());
     }
+    // Resources without a state yet still get their alt text on the placeholder.
     for (auto it = m_alt.cbegin(); it != m_alt.cend(); ++it)
         if (!images.contains(it.key())) { HtmlImage image; image.alt = it.value(); images.insert(it.key(), image); }
     m_appliedImages = m_images;
@@ -341,6 +373,9 @@ void FmHtmlView::rebuild() {
     const qreal width = this->width(), font = m_fontPixels;
     m_layoutWidth = width;
     const quint64 generation = m_generation;
+    // Everything slow happens on the worker: reading html_path, decoding images,
+    // parsing and the first layout. The document replaces the shared one only
+    // once it is built within the time limit.
     runOnPool<LayoutResult>(this, [state, html, path, width, font, blocked, images, paths]() mutable {
         QElapsedTimer timer; timer.start();
         LayoutResult result;
@@ -367,6 +402,8 @@ void FmHtmlView::rebuild() {
     });
 }
 
+// Lays the current document out at a new width. Queued, and reading the width
+// only when it runs, so a burst of resizes costs one layout.
 void FmHtmlView::relayout() {
     if (!m_state || m_status != "ready" || width() <= 0) return;
     if (m_layoutQueued) return;
@@ -409,12 +446,17 @@ void FmHtmlView::applyLayout(bool ok, const QString &failure, const QSizeF &size
     if (textChangedNow) emit textChanged();
     Q_UNUSED(scaleChanged)
     emit layoutChanged();
+    // The item may have been resized, or images changed, while the worker was
+    // busy; catch up with one more pass.
     if (!qFuzzyCompare(width(), m_layoutWidth)) relayout();
     if (m_images != m_appliedImages && !m_imagesQueued) { m_imagesQueued = true; QMetaObject::invokeMethod(this, &FmHtmlView::applyImages, Qt::QueuedConnection); }
     ensureTiles();
     update();
 }
 
+// The part of the item visible in the window, clipped by every clipping
+// ancestor such as the reader's Flickable, extended by `margin` visible heights
+// above and below. Item coordinates; empty when nothing is visible.
 QRectF FmHtmlView::visibleArea(qreal margin) const {
     if (!window() || !isVisible() || width() <= 0 || height() <= 0) return {};
     QRectF clip(0, 0, window()->width(), window()->height());
@@ -426,6 +468,9 @@ QRectF FmHtmlView::visibleArea(qreal margin) const {
     return area.isEmpty() ? QRectF() : mapRectFromScene(area);
 }
 
+// Keeps painted tiles for the visible area plus one visible height either
+// side, and queues paints for the missing or stale ones. Runs every frame, so
+// it must stay cheap when nothing changed.
 void FmHtmlView::ensureTiles() {
     if (m_status != "ready" || !m_state || !window()) return;
     const QRectF visible = visibleArea(0);
@@ -455,6 +500,8 @@ void FmHtmlView::ensureTiles() {
             wanted.append(index);
         }
     };
+    // Visible tiles first and whatever the budget; tiles ahead of scrolling
+    // only while the budget allows.
     add(visible, false);
     add(keep, true);
     const auto state = m_state;
@@ -470,6 +517,8 @@ void FmHtmlView::ensureTiles() {
             image.fill(paper);
             QMutexLocker lock(&state->mutex);
             if (!state->document) return QImage();
+            // Paint in document CSS pixels: scale to the item, shift the tile's
+            // top to the origin, and clip so litehtml draws only this band.
             QPainter painter(&image);
             painter.setRenderHint(QPainter::TextAntialiasing);
             painter.scale(scale, scale);
@@ -480,6 +529,8 @@ void FmHtmlView::ensureTiles() {
             return image;
         }, [this, index, generation, paint, top, height, tileWidth](QImage image) {
             m_pendingTiles.remove(index);
+            // A paint of an older state is dropped; for the same document,
+            // paint again at once so the stale tile is not left on screen.
             if (generation != m_generation || paint != m_paintGeneration || image.isNull()) {
                 if (generation == m_generation) ensureTiles();
                 return;
@@ -521,7 +572,11 @@ QSGNode *FmHtmlView::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         }
         if (lost) QMetaObject::invokeMethod(this, &FmHtmlView::ensureTiles, Qt::QueuedConnection);
     }
+    // Tile nodes sit before the selection root, so highlights and the
+    // selection draw over the text.
     if (!m_selectionRoot) { m_selectionRoot = new QSGNode; root->appendChildNode(m_selectionRoot); m_selectionDirty = true; }
+    // Only tiles repainted since their node was made (a new serial) or
+    // released get new nodes; scrolling reuses the existing textures.
     for (auto it = m_nodes.begin(); it != m_nodes.end();) {
         const auto tile = m_tiles.constFind(it.key());
         if (tile == m_tiles.cend() || tile->serial != it->serial) {
@@ -544,6 +599,8 @@ QSGNode *FmHtmlView::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         m_selectionDirty = false;
         while (auto *child = m_selectionRoot->firstChild()) { m_selectionRoot->removeChildNode(child); delete child; }
         // Search matches first, the selection over them.
+        // Each text range becomes one rectangle per run it touches, measured
+        // with the run's own font so it lines up with the painted glyphs.
         const auto paint = [this](int first, int last, const QColor &color) {
             for (const auto &run : std::as_const(m_snapshot.runs)) {
                 const int start = run.offset, end = run.offset + int(run.text.size());
@@ -564,6 +621,8 @@ QSGNode *FmHtmlView::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
 
 void FmHtmlView::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) {
     QQuickItem::geometryChange(newGeometry, oldGeometry);
+    // Moves and height changes only change which tiles are needed; a new
+    // width needs a new layout.
     if (qFuzzyCompare(newGeometry.width(), oldGeometry.width())) { ensureTiles(); return; }
     if (m_layoutPending && newGeometry.width() > 0) { rebuild(); return; }
     relayout();
@@ -584,11 +643,15 @@ void FmHtmlView::itemChange(ItemChange change, const ItemChangeData &data) {
     QQuickItem::itemChange(change, data);
 }
 
+// The scene graph deletes its nodes; forget them so the next updatePaintNode
+// builds a fresh tree.
 void FmHtmlView::releaseResources() {
     m_nodes.clear();
     m_selectionRoot = nullptr;
 }
 
+// Hit-tests in document pixels with a one-pixel margin around each link box.
+// Returns the link id, or 0, and the box in item coordinates.
 int FmHtmlView::linkAt(const QPointF &point, QRectF *box) const {
     const QPointF at(point.x() / m_scale, point.y() / m_scale);
     for (const auto &link : m_snapshot.links)
@@ -599,6 +662,9 @@ int FmHtmlView::linkAt(const QPointF &point, QRectF *box) const {
     return 0;
 }
 
+// Maps an item point to a text offset: the nearest run, then the character
+// boundary nearest the point within it. Points in margins and between lines
+// still land on text, so drags past the edges select to the line ends.
 int FmHtmlView::offsetAt(const QPointF &point) const {
     if (m_snapshot.runs.isEmpty()) return 0;
     const QPointF at(point.x() / m_scale, point.y() / m_scale);
@@ -687,6 +753,7 @@ void FmHtmlView::mousePressEvent(QMouseEvent *event) {
 
 void FmHtmlView::mouseMoveEvent(QMouseEvent *event) {
     if (m_anchor < 0) return;
+    // A few pixels of jitter keep a press a click, so links still activate.
     if (!m_dragging && (event->position() - m_pressPoint).manhattanLength() < 4) return;
     m_dragging = true;
     setSelection(m_anchor, offsetAt(event->position()));
@@ -697,9 +764,11 @@ void FmHtmlView::mouseReleaseEvent(QMouseEvent *event) {
     const bool click = !m_dragging;
     m_anchor = -1; m_pressLink = 0; m_dragging = false;
     setKeepMouseGrab(false);
+    // Activate only when released over the link that was pressed.
     if (click && link && linkAt(event->position()) == link) emit linkActivated(link);
 }
 
+// Selects the run of letters and digits around the point.
 void FmHtmlView::mouseDoubleClickEvent(QMouseEvent *event) {
     const int at = offsetAt(event->position());
     const auto &text = m_snapshot.text;

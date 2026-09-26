@@ -2,6 +2,7 @@
 use crate::{err, Result};
 use serde_json::{json, Value};
 
+/// Editor fields handled here, beyond the basic title, time and text fields.
 pub(crate) const FIELDS: &[&str] = &[
     "reminder_minutes",
     "availability",
@@ -9,6 +10,14 @@ pub(crate) const FIELDS: &[&str] = &[
     "convert_time_kind",
 ];
 
+/// Translates the editor options in `fields` into Google event fields:
+/// `reminders` (one popup override, or none for `null`), `transparency`, and
+/// `conferenceData`.
+///
+/// A new Google Meet uses `request_id` as the conference `requestId`, so a
+/// retried write asks Google for the same meeting rather than a second one.
+/// `convert_time_kind` produces no field; it only confirms that complete
+/// endpoints accompany a timed/all-day switch.
 pub(crate) fn patch(fields: &Value, request_id: &str) -> Result<Value> {
     let mut body = json!({});
     if let Some(minutes) = fields.get("reminder_minutes") {
@@ -59,6 +68,11 @@ pub(crate) fn patch(fields: &Value, request_id: &str) -> Result<Value> {
 }
 
 /// Only call with a permitted full source; never enrich busy-only rows.
+///
+/// Adds `availability`, `reminder_minutes` and conference state to a
+/// projected row. `reminder_minutes` is left out when the event uses the
+/// calendar default or reminders the editor cannot represent, and is `null`
+/// for an explicit "no reminder".
 pub(crate) fn project(row: &mut Value, source: &Value) {
     row["availability"] = if source["transparency"] == "transparent" {
         "free"
@@ -91,6 +105,10 @@ pub(crate) fn project(row: &mut Value, source: &Value) {
 }
 
 /// Normalize a prospective full event after merging an authored PATCH.
+///
+/// A timed/all-day conversion patches the opposite endpoint keys to `null`
+/// (Google merges nested objects), so those nulls are dropped before local
+/// validation.
 pub(crate) fn clear_endpoint_nulls(candidate: &mut Value) {
     for key in ["start", "end"] {
         if let Some(endpoint) = candidate[key].as_object_mut() {

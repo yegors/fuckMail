@@ -25,27 +25,42 @@ use tokio::sync::Semaphore;
 
 mod senders;
 
+/// Largest remote image accepted, checked against `Content-Length` and again
+/// while streaming.
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+/// A generic user agent that names neither the app nor its version.
 const USER_AGENT: &str = "Mozilla/5.0";
+/// Only the formats the image decoder handles.
 const ACCEPT: &str = "image/webp,image/png,image/jpeg,image/gif";
+/// An endpoint that answers 204, fetched to test the proxy.
 const PROXY_TEST_URL: &str = "https://www.gstatic.com/generate_204";
 const MAX_REDIRECTS: usize = 3;
+/// Messages per link-indexer batch.
 const INDEX_BATCH: i64 = 100;
 
+/// What the cached HTTP client was built for; any change rebuilds it.
 #[derive(Clone, PartialEq, Eq)]
 struct ClientKey {
     proxy: Option<ProxySettings>,
     password_generation: u64,
 }
 
+/// The remote-content runtime: sanitised HTML views, remote images, one-click
+/// unsubscribe, proxy settings, sender pictures and the link indexer.
 pub(crate) struct Runtime {
     core: CoreBridge,
     cache: ViewCache,
+    /// The proxy password's keychain entry; `None` without a keychain.
     secret: Option<NativeSecret>,
+    /// Bumped whenever the proxy password changes, so the client is rebuilt.
     password_generation: std::sync::atomic::AtomicU64,
+    /// Blocking-pool slots for HTML and image preparation.
     workers: Arc<Semaphore>,
+    /// Remote requests in flight at once.
     fetches: Arc<Semaphore>,
     client: Mutex<Option<(ClientKey, reqwest::Client)>>,
+    /// The blocklist the redirect policy checks. Shared with the client and
+    /// refreshed from settings on every [`Runtime::client`] call.
     blocked: Arc<RwLock<Vec<String>>>,
     /// Sender picture keys found missing, and when, for the engine's life.
     sender_misses: Mutex<HashMap<String, Instant>>,
@@ -93,6 +108,7 @@ impl Policy {
     }
 }
 
+/// Why a remote fetch did not produce content.
 enum Failure {
     /// Shown on the image; the message and other images are unaffected.
     Failed(&'static str),
@@ -102,6 +118,8 @@ enum Failure {
 }
 
 impl Runtime {
+    /// Creates the runtime with the profile's view cache. `namespace` locates
+    /// the proxy password in the OS keychain; without it no password is used.
     pub(crate) fn new(
         core: CoreBridge,
         profile: &std::path::Path,
@@ -110,6 +128,7 @@ impl Runtime {
         Self::with_policy(core, profile, namespace, Policy::default())
     }
 
+    /// Like [`Runtime::new`], with an explicit fetch [`Policy`] for tests.
     pub(crate) fn with_policy(
         core: CoreBridge,
         profile: &std::path::Path,
@@ -131,6 +150,7 @@ impl Runtime {
         }
     }
 
+    /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
@@ -144,6 +164,8 @@ impl Runtime {
         )
     }
 
+    /// Handles one remote-content request. `cancel` fires when the requesting
+    /// session ends; an image fetch cancelled that way caches nothing.
     pub(crate) async fn handle(
         &self,
         cancel: CancellationToken,
@@ -216,6 +238,8 @@ impl Runtime {
         }
     }
 
+    /// Runs CPU-bound work on the blocking pool, two jobs at a time, skipping
+    /// it if cancelled before it starts.
     async fn blocking<T, F>(&self, cancel: &CancellationToken, operation: F) -> Result<T>
     where
         T: Send + 'static,
@@ -238,6 +262,13 @@ impl Runtime {
         .map_err(|_| failure("content_unavailable", "Message content preparation failed"))?
     }
 
+    /// Handles `message_image`: resolves one image of a message to a reply
+    /// `state`: `ready` (with a cached PNG path and size), `not_cached`,
+    /// `insecure`, `blocked`, `failed` or `proxy_unavailable`.
+    ///
+    /// A remote image is fetched under the fetch policy, then decoded and
+    /// re-encoded as PNG before it is cached, so only memory-safe code ever
+    /// decodes the fetched bytes.
     async fn image(
         &self,
         cancel: CancellationToken,
@@ -296,6 +327,8 @@ impl Runtime {
         if cached_only {
             return Ok(json!({"state":"not_cached"}));
         }
+        // Settings are read per request, so a new blocklist or proxy applies
+        // to the next image straight away.
         let settings = self
             .core
             .call(|store| store.remote_content_settings())
@@ -489,6 +522,8 @@ impl Runtime {
         Ok(client)
     }
 
+    /// Fetches a remote resource under the fetch policy, treating "not found"
+    /// like any other failure.
     async fn fetch(
         &self,
         client: &reqwest::Client,
@@ -510,6 +545,7 @@ impl Runtime {
         cancel: &CancellationToken,
         proxied: bool,
     ) -> std::result::Result<Option<Vec<u8>>, Failure> {
+        // The first URL gets the same check as every redirect target.
         let url = reqwest::Url::parse(url).map_err(|_| Failure::Failed("refused"))?;
         let blocked = self.blocked.read().map(|b| b.clone()).unwrap_or_default();
         check_url(&url, &blocked, self.policy.allow_loopback()).map_err(Failure::Failed)?;
@@ -550,6 +586,9 @@ impl Runtime {
         Ok(Some(bytes))
     }
 
+    /// Handles `remote_proxy_test`: fetches a known 204 endpoint through the
+    /// configured proxy and reports success with the round trip in ms, or the
+    /// reason it failed.
     async fn proxy_test(&self, cancel: CancellationToken) -> Result<Value> {
         let settings = self
             .core
@@ -583,6 +622,9 @@ impl Runtime {
         })
     }
 
+    /// Handles `remote_proxy_password` (`op`: `status`, `set` or `clear`). The
+    /// password lives only in the OS keychain; the reply says whether one is
+    /// saved, never what it is.
     async fn proxy_password(&self, params: &Value) -> Result<Value> {
         let secret = self
             .secret
@@ -669,10 +711,17 @@ impl Runtime {
     }
 }
 
+/// A `ready` image reply.
 fn ready(path: impl AsRef<std::path::Path>, width: u32, height: u32) -> Value {
     json!({"state":"ready","path":path.as_ref().to_string_lossy(),"width":width,"height":height})
 }
 
+/// Builds the HTTP client that enforces the fetch policy in the module docs.
+///
+/// Every redirect is rechecked with [`check_url`] against the live blocklist.
+/// With a proxy, all traffic goes to it over TLS, with basic auth when a
+/// username or password is set; without one, names resolve only to public
+/// addresses through [`PublicResolver`].
 fn build_client(
     proxy: Option<(&ProxySettings, Option<&str>)>,
     blocked: Arc<RwLock<Vec<String>>>,
@@ -762,6 +811,8 @@ fn check_url(
         }
         None => return Err("refused"),
     };
+    // Single-label and internal-looking names usually resolve inside the
+    // local network, so they are refused before any lookup.
     let local = !host.contains('.')
         || [
             "localhost",
@@ -792,6 +843,8 @@ fn allowed_ip(ip: IpAddr, allow_loopback: bool) -> bool {
             if v6.is_loopback() {
                 return allow_loopback;
             }
+            // IPv4-mapped and NAT64 (64:ff9b::/96) addresses are judged by
+            // the IPv4 address they carry.
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return allowed_v4(v4, allow_loopback);
             }
@@ -815,6 +868,9 @@ fn allowed_ip(ip: IpAddr, allow_loopback: bool) -> bool {
     }
 }
 
+/// Public IPv4 unicast only: refuses private, loopback (unless allowed),
+/// link-local, shared (100.64/10), benchmarking, documentation, multicast and
+/// reserved ranges.
 fn allowed_v4(v4: Ipv4Addr, allow_loopback: bool) -> bool {
     if v4.is_loopback() {
         return allow_loopback;

@@ -19,12 +19,18 @@ use std::{
 };
 use tokio::sync::OwnedSemaphorePermit;
 
+/// A shared Gmail preparation permit; store calls and replies that carry
+/// draft bytes hold a clone.
 pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
 /// A changed draft uploads once its text has rested this long: typing never
 /// uploads every few keystrokes, and leaving a draft uploads it shortly after.
 const QUIET_MS: i64 = if cfg!(test) { 0 } else { 30_000 };
 
+/// One step of the draft worker, in priority order: a due account-transfer
+/// cleanup, then the next due draft (an upload, or a read-back of an
+/// acknowledged one), then a discarded draft to delete in Gmail, then a
+/// conflict to resolve.
 pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
     if super::draft_transfers::step(ctx).await? {
         return Ok(Step::Progress);
@@ -126,6 +132,12 @@ async fn resolve_conflict(ctx: &SyncContext) -> Result<bool> {
     Ok(true)
 }
 
+/// Creates or updates the Gmail copy of a local draft with one durable
+/// attempt, then reads it back. Serves `google_draft_sync`,
+/// `google_draft_resolve` and the draft worker's own uploads.
+///
+/// A replayed `request_id` returns its recorded outcome. An upload whose
+/// reply is lost is left `unknown` for read-back, never sent twice.
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {
     validate(&request, true)?;
     let id = text(&request, "draft_id")?.to_owned();
@@ -136,6 +148,8 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         GoogleDraftIntent::Reply(reply) => return replay_reply(ctx, &scope, &request, reply).await,
         GoogleDraftIntent::Upload { provider_draft_id } => provider_draft_id,
     };
+    // A linked Gmail copy is read first. If it changed there, that is a
+    // conflict, unless this request explicitly replaces it with the local copy.
     let current = status(ctx, &id).await?;
     if initial_target.is_some() || provider_id(&current).is_some() {
         let current = observe(ctx, &scope, &id).await?;
@@ -176,6 +190,8 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
                 "Google draft has no current revision",
             )
         })?;
+    // Freeze the MIME and journal the operation. A draft that can never be
+    // uploaded is recorded as failed; a transient local error defers it.
     let begun = memory_core(ctx, &memory, move |store| {
         store.google_draft_begin(&frozen_scope, &begin_request)
     })
@@ -269,6 +285,8 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         }
         Err(error) => Err(error),
     };
+    // Nothing sent is `Undispatched`; a permission refusal is `Rejected`;
+    // anything else after dispatch without a draft reply is `Unknown`.
     let outcome = match response {
         Ok(GmailReply::Draft(draft)) => GoogleDraftOutcome::Acknowledged {
             draft_id: draft.id,
@@ -285,6 +303,9 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         }
         Err(error) => GoogleDraftOutcome::Unknown { code: error.code },
     };
+    // Record through the plain bridge, not `memory_core`: the claimed attempt's
+    // outcome must be stored even if the job was cancelled or the account
+    // reconnected meanwhile. The store validates the lease itself.
     let saved = lease.clone();
     let held = memory.clone();
     let (receipt, _held) = ctx
@@ -325,10 +346,13 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
     }
 }
 
+/// Local failures that defer the draft briefly instead of failing the sync.
 fn local_retry_error(code: &str) -> bool {
     matches!(code, "content_unavailable" | "storage_error")
 }
 
+/// Asks the store what `request` means now: a recorded reply to replay, or an
+/// upload to a known Gmail draft (update) or a new one (create).
 async fn intent(
     ctx: &SyncContext,
     scope: &GoogleDraftScope,
@@ -340,6 +364,8 @@ async fn intent(
         .await
 }
 
+/// Returns a replayed request's recorded reply, reading the Gmail copy back
+/// first when that upload was acknowledged or a later request has synced it.
 async fn replay_reply(
     ctx: &SyncContext,
     scope: &GoogleDraftScope,
@@ -358,11 +384,17 @@ async fn replay_reply(
     }
 }
 
+/// Handles `google_draft_reconcile`: reads the Gmail copy back to settle the
+/// draft's state.
 pub(crate) async fn reconcile(ctx: &SyncContext, draft_id: &str) -> Result<Value> {
     let scope = verified_scope(ctx).await?;
     observe(ctx, &scope, draft_id).await
 }
 
+/// Reads the linked Gmail draft's RAW source and records what Google holds,
+/// which settles an acknowledged or unknown upload or reveals a conflict.
+/// Fails with `reconciliation_unavailable` when a create never learned its
+/// Gmail draft id.
 pub(super) async fn observe(
     ctx: &SyncContext,
     scope: &GoogleDraftScope,
@@ -468,6 +500,8 @@ pub(super) async fn observe(
     .await
 }
 
+/// Reads the Gmail profile so draft work is bound to the mailbox's current
+/// primary address as well as this connection generation.
 pub(super) async fn verified_scope(ctx: &SyncContext) -> Result<GoogleDraftScope> {
     let profile = match ctx
         .gmail(GmailCall::profile(&ctx.account).map_err(provider)?)
@@ -496,6 +530,8 @@ async fn status(ctx: &SyncContext, id: &str) -> Result<Value> {
         .await
 }
 
+/// The Gmail draft id linked to this draft, if any: from the latest
+/// acknowledgement, the synced baseline, or the effective target.
 fn provider_id(status: &Value) -> Option<&str> {
     status["operation"]["ack"]["draft_id"]
         .as_str()
@@ -503,6 +539,8 @@ fn provider_id(status: &Value) -> Option<&str> {
         .or_else(|| status["effective_target"]["provider_draft_id"].as_str())
 }
 
+/// Runs CPU-bound draft preparation on the blocking pool while holding a
+/// share of `memory`. A failed blocking task maps to `content_unavailable`.
 pub(super) async fn prepare<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
 where
     T: Send + 'static,
@@ -521,6 +559,9 @@ where
     .map_err(|_| failure("content_unavailable", "Google draft preparation failed"))?
 }
 
+/// Like [`SyncContext::core_call`], with the same cancellation and generation
+/// checks on the writer, but the call and its reply hold a share of `memory`,
+/// and a queued call is always awaited rather than abandoned on cancellation.
 pub(super) async fn memory_core<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
 where
     T: Send + 'static,
@@ -555,6 +596,9 @@ where
     result
 }
 
+/// Checks draft request fields: `draft_id` alone for a status read; with
+/// `write`, also `expected_revision` and `request_id`, plus `action:
+/// "replace_local"` and `expected_google_revision` to resolve a conflict.
 pub(crate) fn validate(request: &Value, write: bool) -> Result<()> {
     let fields = request.as_object().ok_or_else(|| {
         failure(
@@ -616,6 +660,7 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
         .filter(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
         .ok_or_else(|| failure("invalid_request", "Choose an exact draft/request identity"))
 }
+/// Maps a Gmail error to a draft error code, keeping any retry-after hint.
 pub(super) fn provider(error: GoogleError) -> CoreError {
     let code = match &error {
         GoogleError::ReauthorizationRequired => "google_reauthorization_required",

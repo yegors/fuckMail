@@ -1,5 +1,26 @@
 //! Durable human Calendar intent. Provider receipts and visible cache publication
 //! are separate: a reconnect or concurrent read never erases a dispatched result.
+//!
+//! Each user action is one `calendar_write_operations` row keyed by
+//! `(account, request_id)` and moves through these states:
+//!
+//! - `prepared`: the validated request is journaled; nothing is frozen yet.
+//! - `ready`: a conditional dispatch (body, `If-Match` ETag, base revision) is
+//!   frozen against a fresh source, but no HTTP request has been sent.
+//! - `in_flight`: the single provider attempt is running. After a crash,
+//!   [`Store::calendar_live_recover`] turns it into `unknown`.
+//! - `accepted`, `conflict`, `rejected`, `unknown`: the recorded outcome.
+//!   Unknown work is never retried; only a read can settle it (`reconciled`).
+//! - `acknowledged` / `reconciled` with a receipt: the result has been
+//!   considered for the local cache, which is only updated when no newer
+//!   source won the race.
+//! - `partial`: the first request of a two-step "this and following" change
+//!   succeeded and the second is waiting for an explicit resume.
+//! - `abandoned`: the user dropped the retained intent.
+//!
+//! The intent's `version` selects the rules: 1 for early rows without
+//! attendees, 2 for ordinary single events, 3 for one occurrence of a
+//! recurring series, and 4 for recurring-series actions.
 use crate::live_calendar_occurrences::{
     same_original, CalendarOccurrenceSelector, MasterStamp, PreparedCalendarOccurrence,
 };
@@ -9,13 +30,22 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+/// The frozen dispatch of one provider attempt, returned by
+/// [`Store::calendar_live_start`].
+///
+/// Outcome recording and reconciliation compare every field with the stored
+/// row, so only the exact attempt that was sent can settle it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CalendarWriteLease {
     pub account: String,
     pub request_id: String,
+    /// Attempt counter, incremented each time the operation is started.
     pub attempt: i64,
     pub connection_generation: i64,
     pub permission_epoch: i64,
+    /// The provider request as frozen at staging: kind, target, body,
+    /// `if_match`, baseline source and base revision, plus version-specific
+    /// occurrence and recurring fields.
     pub dispatch: Value,
 }
 /// Authority and source ordering captured before an explicit reconciliation GET.
@@ -32,23 +62,36 @@ pub struct CalendarReadPublicationFence {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lifecycle_revision: Option<i64>,
 }
+/// Internal view of a live write row for the engine. It contains the full
+/// intent and dispatch, so it must never be returned as IPC status.
 #[derive(Clone, Debug)]
 pub struct CalendarWriteOperation {
+    /// Journal state, such as `prepared`, `ready` or `in_flight`.
     pub state: String,
+    /// Row revision (`operation_revision`), used for optimistic concurrency;
+    /// not the intent version.
     pub version: i64,
     pub intent: Value,
+    /// The stored dispatch, present once the operation has been staged.
     pub lease: Option<CalendarWriteLease>,
 }
+/// What the single provider attempt produced, as classified by the engine.
 #[derive(Clone, Debug)]
 pub enum CalendarWriteOutcome {
+    /// The provider returned the resulting event source.
     Accepted(Value),
+    /// The provider confirmed a delete.
     Deleted,
+    /// The `If-Match` precondition failed; the event changed remotely.
     Conflict,
+    /// The provider refused the request with one of a fixed set of codes
+    /// (`permission_denied`, `invalid_request`, `authentication_required`,
+    /// `rate_limited`, `not_found`).
     Rejected(String),
     /// The quota transport proves that no provider request was dispatched.
-    UndispatchedCooldown {
-        retry_after_secs: u64,
-    },
+    UndispatchedCooldown { retry_after_secs: u64 },
+    /// The request may or may not have reached Google (timeout, dropped
+    /// connection, cancellation). It is never retried automatically.
     Unknown,
 }
 type OperationRow = (
@@ -173,6 +216,17 @@ impl OperationProjection {
 }
 
 impl Store {
+    /// Validates and journals a user's live Calendar request, returning its
+    /// public status.
+    ///
+    /// `request` carries `request_id`, `kind` (`create`, `edit`, `delete` or
+    /// `rsvp`), `calendar_id` and, depending on the kind, `event_id`,
+    /// `expected_etag`, `fields`, `response`, `occurrence` or `recurring`.
+    /// Idempotent per request ID: an identical retry returns the current status,
+    /// while a different body under the same ID fails with
+    /// `request_id_conflict`. Fails with `calendar_operation_pending` while
+    /// conflicting unresolved work on the same recurring series exists. No
+    /// provider request is made.
     pub fn calendar_live_prepare(&mut self, account: &str, request: &Value) -> Result<Value> {
         if serde_json::to_vec(request)?.len() > 256 * 1024 {
             return Err(err(
@@ -217,6 +271,8 @@ impl Store {
             return self.calendar_live_status(account, request_id);
         }
         live(self, account)?;
+        // Any recurrence content selects the recurring rules; an occurrence
+        // selector alone selects the single-occurrence rules.
         let version = if request.get("recurring").is_some()
             || request["fields"].get("recurrence").is_some()
         {
@@ -282,6 +338,8 @@ impl Store {
             calendar: calendar.into(),
             event,
         };
+        // Unresolved work on the same series could be overwritten or
+        // reordered by this action, so it has to settle first.
         if version == 4 {
             self.calendar_recurring_assert_no_pending(
                 account,
@@ -337,6 +395,13 @@ impl Store {
         })
     }
 
+    /// Returns the public status of a live write: target, kind, state, row
+    /// revision, intent version and a small outcome summary.
+    ///
+    /// Provider sources and frozen dispatches are never included. For intent
+    /// versions 2 to 4, accepted and reconciled outcomes report
+    /// `notification_delivery: "unverified"` because Google does not confirm
+    /// that guest emails were sent.
     pub fn calendar_live_status(&self, account: &str, request_id: &str) -> Result<Value> {
         crate::id(account)?;
         crate::id(request_id)?;
@@ -380,6 +445,9 @@ impl Store {
         Ok(request)
     }
 
+    /// Lists live writes for status views: unfinished operations first, then
+    /// finished ones, newest first within each group. The continuation is
+    /// `{acknowledged, before_id}` from the last row returned.
     pub(crate) fn calendar_live_operations(
         &self,
         account: &str,
@@ -475,6 +543,15 @@ impl Store {
 
     /// Freeze preflight while holding bounded read memory, before waiting for
     /// mutation admission. Ready means no provider mutation has been dispatched.
+    ///
+    /// Handles ordinary and recurring-series intents (versions 2 and 4);
+    /// occurrence intents use [`Store::calendar_live_stage_occurrence`] or
+    /// [`Store::calendar_live_stage_recurring`]. `source` is a fresh provider
+    /// GET of the target, or `None` for a create. Fails with
+    /// `calendar_not_ready` unless the calendar has a clean full sync at
+    /// `permission_epoch`, `stale_revision` when the fresh ETag differs from
+    /// the one the user edited, and `permission_denied` or
+    /// `unsupported_operation` when the event copy is not writable here.
     pub fn calendar_live_stage(
         &mut self,
         account: &str,
@@ -521,6 +598,8 @@ impl Store {
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
                     r.get(0)
                 })?;
+        // Build the provider body. Creates validate a candidate event locally;
+        // other kinds are checked against the fresh source and its ETag.
         let (body, baseline) = if kind == "create" {
             if source.is_some() || !live_source_writable(access) {
                 return Err(err(
@@ -566,6 +645,8 @@ impl Store {
                     intent_version,
                 )?,
                 "rsvp" => {
+                    // `attendeesOmitted` lets an attendee patch only their own
+                    // response without sending (or clobbering) the guest list.
                     let person = live_self_attendee(&event, &actor)?;
                     json!({"attendeesOmitted":true,"attendees":[{"email":person["email"],"responseStatus":request["response"]}]})
                 }
@@ -578,6 +659,8 @@ impl Store {
         if matches!(intent_version, 2 | 4) && kind == "rsvp" {
             preserve_label(&mut body, &baseline)?;
         }
+        // Every mutation notifies guests (`sendUpdates=all`) and is conditional
+        // on the ETag the user reviewed.
         let mut dispatch = json!({"kind":kind,"target":target,"body":body,"if_match":request.get("expected_etag"),"send_updates":"all","baseline":baseline,"base_revision":checkpoint["revision"]});
         if matches!(intent_version, 2 | 4) {
             dispatch["version"] = intent_version.into();
@@ -599,6 +682,13 @@ impl Store {
         self.calendar_live_status(account, request_id)
     }
 
+    /// Freezes the dispatch for a single-occurrence edit or delete (intent
+    /// version 3) from a verified occurrence proof.
+    ///
+    /// Fails with `stale_revision` when the proof's master stamps moved or the
+    /// instance or master ETag differs from what the user reviewed (their
+    /// authored fields stay retained), and with `unsupported_operation` when
+    /// the user does not organize the series.
     pub fn calendar_live_stage_occurrence(
         &mut self,
         account: &str,
@@ -667,8 +757,13 @@ impl Store {
         self.calendar_live_status(account, request_id)
     }
 
+    /// Moves a `ready` operation to `in_flight` and returns the lease for its
+    /// single HTTP attempt.
+    ///
     /// Called with mutation quota and one response/source memory seat already
     /// admitted. This is the final durable boundary before the one HTTP attempt.
+    /// Fails with `stale_revision` if the connection, permission epoch or
+    /// calendar revision moved while waiting; the unsent intent is kept.
     pub fn calendar_live_start(
         &mut self,
         account: &str,
@@ -725,8 +820,16 @@ impl Store {
         Ok(lease)
     }
 
+    /// Records the result of the attempt identified by `lease` and returns the
+    /// public status.
+    ///
     /// Deliberately independent of current connection/permissions. Evidence from
     /// the exact persisted attempt survives cancellation and reconnect races.
+    /// Outcomes are recorded for `in_flight` and `unknown` attempts; for
+    /// `reconciled` or `abandoned` ones only a late acceptance or delete
+    /// confirmation is recorded. In any other state the call changes nothing
+    /// and returns the current status. Fails with `stale_revision` when `lease`
+    /// is not the stored attempt.
     pub fn calendar_live_record_outcome(
         &mut self,
         lease: &CalendarWriteLease,
@@ -802,6 +905,7 @@ impl Store {
                 }
                 ("rejected", json!({"kind":"rejected","code":code}))
             }
+            // Nothing reached Google, so the frozen dispatch stays sendable.
             CalendarWriteOutcome::UndispatchedCooldown { retry_after_secs } => (
                 "ready",
                 json!({"kind":"undispatched_cooldown","retry_after_secs":retry_after_secs}),
@@ -826,6 +930,11 @@ impl Store {
         self.calendar_live_status(&lease.account, &lease.request_id)
     }
 
+    /// Captures the fence for a reconciliation GET of an `in_flight` or
+    /// `unknown` attempt. Call it before the HTTP request and pass the result
+    /// to [`Store::calendar_live_reconcile_read`] or
+    /// [`Store::calendar_live_reconcile_occurrence_read`].
+    ///
     /// A read can establish the intended state without repeating a mutation.
     /// Missing/inaccessible resources alone never prove that a delete succeeded.
     pub fn calendar_live_reconcile_begin(
@@ -875,6 +984,15 @@ impl Store {
         self.calendar_live_reconcile_read(lease, &fence, source)
     }
 
+    /// Settles an `in_flight` or `unknown` attempt from a freshly read event.
+    ///
+    /// When the source shows the intended result (a cancelled event for a
+    /// delete, or fields matching the recorded intent), versions 2 and 4
+    /// become `reconciled` and keep `fence` for later cache publication; older
+    /// intents record an acceptance. Otherwise the attempt is recorded as
+    /// `unknown`.
+    /// Occurrence dispatches must use
+    /// [`Store::calendar_live_reconcile_occurrence_read`].
     pub fn calendar_live_reconcile_read(
         &mut self,
         lease: &CalendarWriteLease,
@@ -928,6 +1046,8 @@ impl Store {
                 "Occurrence reconciliation requires a qualified master and instance proof",
             ));
         }
+        // Google keeps deleted events readable as `status: cancelled`; a 404
+        // never reaches here and is not treated as proof of deletion.
         let matches = if lease.dispatch["kind"] == "delete" {
             source["status"] == "cancelled"
         } else if matches!(version, 2 | 4) {
@@ -956,6 +1076,12 @@ impl Store {
         }
     }
 
+    /// Occurrence counterpart of [`Store::calendar_live_reconcile_read`]: settles
+    /// an occurrence dispatch from a freshly verified instance.
+    ///
+    /// The proof must have been qualified under the same connection, epoch,
+    /// revision and account lifecycle as `fence` (`stale_revision` otherwise)
+    /// and must describe the dispatched occurrence (`scope_mismatch`).
     pub fn calendar_live_reconcile_occurrence_read(
         &mut self,
         lease: &CalendarWriteLease,
@@ -1004,8 +1130,13 @@ impl Store {
         self.calendar_live_status(&lease.account, &lease.request_id)
     }
 
+    /// Expires event sync runs that began before an accepted write, returning
+    /// their leases so the caller can clean them up with
+    /// [`Store::calendar_finalize_chunk`] before [`Store::calendar_live_publish`].
+    ///
     /// Fence acquisition which began before an accepted write. Cleanup remains
     /// bounded outside this call, and a newer published revision is never expired.
+    /// Returns nothing when authority has moved since the write.
     pub fn calendar_live_expire_staging(
         &mut self,
         lease: &CalendarWriteLease,
@@ -1074,8 +1205,15 @@ impl Store {
         Ok(runs)
     }
 
+    /// Writes an accepted or reconciled result into the local Calendar cache
+    /// and stores the receipt, moving the row to `acknowledged` (or keeping
+    /// `reconciled`). The receipt's `cache_published` says whether the cache
+    /// was actually updated.
+    ///
     /// Publish only when no newer source won the race. Otherwise leave the
     /// provider success visible in the journal and let current sync own the cache.
+    /// Fails with `calendar_sync_pending` while event sync work for the
+    /// calendar is unfinished. Idempotent once a receipt exists.
     pub fn calendar_live_publish(&mut self, lease: &CalendarWriteLease) -> Result<Value> {
         let op = self.check_calendar_write_lease(lease)?;
         if !matches!(op.state.as_str(), "accepted" | "reconciled") {
@@ -1129,6 +1267,8 @@ impl Store {
             |r| r.get(0),
         )?;
         let outcome: Value = serde_json::from_str(&raw)?;
+        // A delete has no response body, so publish a minimal tombstone; an
+        // occurrence tombstone keeps its series and original start.
         let source = if outcome["kind"] == "deleted" {
             if is_instance_dispatch(&lease.dispatch) {
                 json!({"id":target.event,"status":"cancelled","recurringEventId":lease.dispatch["occurrence"]["series_id"],"originalStartTime":lease.dispatch["original_start_provider"]})
@@ -1142,6 +1282,8 @@ impl Store {
         let current = current
             .map(|v| serde_json::from_str::<Value>(&v))
             .transpose()?;
+        // The cached copy is still the one the write was conditioned on (or
+        // already equals the result), so replacing it cannot hide a newer edit.
         let unchanged = current
             .as_ref()
             .is_none_or(|v| v["etag"] == lease.dispatch["if_match"] || v == &source);
@@ -1226,6 +1368,8 @@ impl Store {
         Ok(self.check_calendar_occurrence_master(&stamp).is_ok())
     }
 
+    /// Returns the operation when `lease` equals its stored attempt exactly,
+    /// and fails with `stale_revision` otherwise.
     pub(crate) fn check_calendar_write_lease(
         &self,
         lease: &CalendarWriteLease,
@@ -1262,6 +1406,8 @@ impl CalendarReadPublicationFence {
     }
 }
 
+/// True for dispatches that target one occurrence of a series and therefore
+/// carry a master proof.
 pub(crate) fn is_instance_dispatch(dispatch: &Value) -> bool {
     dispatch["version"] == 3
         || (dispatch["version"] == 4 && dispatch["recurring"]["scope"] == "occurrence")
@@ -1315,6 +1461,9 @@ fn matches_occurrence_source(source: &Value, dispatch: &Value) -> Result<bool> {
     )
 }
 
+/// Returns the account's connection generation when live Calendar writes are
+/// allowed: an active account in a live profile, connected with an events
+/// write scope, and with Calendar writes enabled in preferences.
 pub(crate) fn live(store: &Store, account: &str) -> Result<i64> {
     store.require_active_account(account)?;
     crate::id(account)?;
@@ -1340,6 +1489,8 @@ pub(crate) fn live(store: &Store, account: &str) -> Result<i64> {
     }
     Ok(binding.connection_generation)
 }
+/// Validates an ETag for use in `If-Match`. The wildcard `*` and lists are
+/// rejected because they would make the write unconditional.
 pub(crate) fn etag(value: &str) -> Result<()> {
     if value.is_empty()
         || value.len() > 1024
@@ -1380,6 +1531,8 @@ pub(crate) fn live_event_actions(event: &Event, access: Access, actor: &str) -> 
             && live_self_attendee(event, actor).is_ok(),
     )
 }
+/// Finds the single attendee entry marked `self` whose email matches the
+/// signed-in account; RSVP is refused when there is none or more than one.
 pub(crate) fn live_self_attendee<'a>(event: &'a Event, actor: &str) -> Result<&'a Value> {
     let mut matches = event.attendees.iter().filter(|person| {
         person["self"] == true
@@ -1395,6 +1548,14 @@ pub(crate) fn live_self_attendee<'a>(event: &'a Event, actor: &str) -> Result<&'
         )),
     }
 }
+/// Checks that `event` may be targeted by a `kind` write under intent
+/// `version`.
+///
+/// Organizer rules: edits and deletes need the user's own organizer copy
+/// (`organizer.self`), while RSVP only needs a writable copy. Recurring
+/// masters are allowed only for version 4, and instances only for versions 3
+/// and 4. Cancelled, locked, special-type and unsupported-conference events
+/// are refused.
 pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: u64) -> Result<()> {
     if !matches!(access.for_event(event), Access::Writer | Access::Owner) {
         return Err(err("permission_denied", "This event copy is not writable"));
@@ -1468,6 +1629,12 @@ fn validate_fields_version(fields: &Value, version: u64) -> Result<()> {
     }
     Ok(())
 }
+/// Translates editor `fields` into a Google `events.patch` body, including
+/// only values that differ from `event` (or everything for a create).
+///
+/// `start`, `end` and `all_day` must be supplied together, and switching
+/// between timed and all-day requires `convert_time_kind`. Conference links cannot be changed
+/// here, and attendee changes need intent version 2 or 4.
 pub(crate) fn field_patch(
     request_id: &str,
     fields: &Value,
@@ -1612,6 +1779,9 @@ pub(crate) fn document_version(document: &Value) -> Result<u64> {
     }
 }
 
+/// Copies the source's event label (or legacy color) into the patch body so
+/// the write carries it forward explicitly; refuses values it cannot copy
+/// safely.
 pub(crate) fn preserve_label(body: &mut Value, source: &Value) -> Result<()> {
     if let Some(label) = source.get("eventLabelId") {
         let text = label
@@ -1647,6 +1817,9 @@ pub(crate) fn live_guest_actions(
     initial_event(event, access, "edit", 2)?;
     crate::live_calendar_invitations::guest_projection(&event.source)
 }
+/// Checks whether an observed source already contains every patched field.
+/// Times compare as instants; attendee entries only need the user's own
+/// response to match.
 fn matches_patch(source: &Value, patch: &Value) -> bool {
     let Some(fields) = patch.as_object() else {
         return false;
@@ -1711,6 +1884,8 @@ fn matches_patch_v2_roster(source: &Value, patch: &Value, created: bool) -> bool
     })
 }
 
+/// Decides whether an observed event shows the full recorded intent, not just
+/// the patch that was sent. Used to reconcile unknown attempts by reading.
 pub(crate) fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value) -> bool {
     let source = &event.source;
     if dispatch["version"] == 4 && dispatch["step"] == 0 {

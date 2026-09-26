@@ -12,11 +12,18 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Result of [`Store::local_content_begin`] or [`Store::local_content_finish`].
 pub enum LocalContentStep {
+    /// The operation is complete; carries its reply or stored receipt.
     Reply(Value),
+    /// File or blob work must run off the writer with
+    /// [`prepare_local_content`].
     Prepare(LocalContentPlan),
 }
 
+/// Frozen draft snapshot and attachment selection for one draft save,
+/// attachment import or capture.
+///
 /// No public constructor, serialization, credential, open file or SQLite handle.
 pub struct LocalContentPlan(Box<PlanContents>);
 
@@ -31,6 +38,8 @@ struct PlanContents {
     capture: Option<capture::CaptureRecord>,
 }
 
+/// Verified content from [`prepare_local_content`], ready for
+/// [`Store::local_content_finish`].
 pub struct PreparedLocalContent {
     plan: Box<PlanContents>,
     draft: Option<Value>,
@@ -63,6 +72,7 @@ struct AttachmentRef {
 /// SQL-only frozen saved-draft selection shared by capture and provider drafts.
 /// Its source and attachments are verified only by the blocking preparation.
 pub(crate) struct RetainedDraft {
+    /// Blob store of the profile the draft was selected from.
     pub(crate) blobs: content::BlobStore,
     account: String,
     lifecycle_revision: i64,
@@ -72,9 +82,16 @@ pub(crate) struct RetainedDraft {
 }
 
 impl RetainedDraft {
+    /// The saved draft's projected composition JSON at selection time.
     pub(crate) fn draft(&self) -> &Value {
         &self.snapshot.draft
     }
+    /// Verifies the reply source and loads every attachment's bytes, off the
+    /// writer.
+    ///
+    /// Fails with `invalid_draft` for a discarded draft or unfinished
+    /// recipient input, and `content_unavailable` when the source or an
+    /// attachment is missing or altered.
     pub(crate) fn prepare(&self, cancel: &CancellationToken) -> Result<Vec<StagedAttachment>> {
         cancelled(cancel)?;
         let draft = self.draft();
@@ -120,6 +137,9 @@ impl RetainedDraft {
 }
 
 impl Store {
+    /// Selects a saved draft at `params.expected_revision` for off-writer MIME
+    /// work. Fails with `stale_revision` if the revision moved and
+    /// `invalid_draft` if the draft was never saved.
     pub(crate) fn retained_draft(&self, account: &str, params: Value) -> Result<RetainedDraft> {
         self.check_draft_writable(account, &params)?;
         let snapshot = self.local_draft_snapshot(account, &params)?;
@@ -140,6 +160,9 @@ impl Store {
         })
     }
 
+    /// Re-checks on the writer that the draft, its source, the account identity
+    /// and the attachment selection are still exactly as selected
+    /// (`stale_revision` otherwise).
     pub(crate) fn check_retained_draft(&self, retained: &RetainedDraft) -> Result<()> {
         if retained.blobs.profile != self.profile {
             return Err(err(
@@ -161,6 +184,13 @@ impl Store {
         }
         Ok(())
     }
+    /// Plans a draft operation that needs file or blob work: `draft_save`,
+    /// `draft_attachment_import` or `draft_capture`.
+    ///
+    /// For a save or import, a request ID that already completed replies with
+    /// its receipt before any file is touched. An import needs an absolute path, a positive
+    /// draft revision and room under the 50-attachment limit. Capture is not
+    /// available on live profiles.
     pub fn local_content_begin(
         &self,
         method: &str,
@@ -282,6 +312,13 @@ impl Store {
         ))))
     }
 
+    /// Commits prepared content on the writer after re-checking that the
+    /// draft, account and attachment selection are unchanged
+    /// (`stale_revision` otherwise).
+    ///
+    /// An import adds the attachment, bumps the draft revision and records the
+    /// receipt in one transaction. A capture that lost a same-request race
+    /// returns `Prepare` again so the caller repeats against the winner.
     pub fn local_content_finish(
         &mut self,
         prepared: PreparedLocalContent,
@@ -386,6 +423,9 @@ impl Store {
         }
     }
 
+    /// Loads the selected draft and a stamp of everything its MIME depends on
+    /// (stored row, identity, address, legacy source). An older client's reply
+    /// selected by conversation gets a synthesised unsaved draft.
     fn local_draft_snapshot(&self, account: &str, p: &Value) -> Result<DraftSnapshot> {
         let (selected, legacy) = composition::selector(p)?;
         let raw = self.stored_composition(account, p)?;
@@ -476,6 +516,8 @@ impl Store {
         })
     }
 
+    /// Checks that an attachment ID list is valid for this account: at most
+    /// 50 distinct, fully retained attachments within the size limit.
     pub(crate) fn check_retained_attachment_selection(
         &self,
         account: &str,
@@ -557,7 +599,10 @@ fn prepare_after_import_metadata(
                     {
                         // Reply-To (else From) as the source names it; the
                         // stored sender only when it names nobody.
-                        if routing["to_recipients"].as_array().is_none_or(|rows| rows.is_empty()) {
+                        if routing["to_recipients"]
+                            .as_array()
+                            .is_none_or(|rows| rows.is_empty())
+                        {
                             routing["to_recipients"] =
                                 json!([{"email":if sender==&source.from {recipient}else{sender}}]);
                         }
@@ -674,6 +719,8 @@ fn prepare_after_import_metadata(
     })
 }
 
+/// Reads a retained message source by hash, taking its size from the blob
+/// file, and verifies the bytes. Fails with `content_unavailable`.
 pub(crate) fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<u8>> {
     // Verify the hash syntax before ever joining a stored source reference.
     if hash.len() != 64
@@ -697,6 +744,9 @@ pub(crate) fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<
     read_blob(blobs, hash, size)
 }
 
+/// Reads a blob of known size and re-verifies its length and SHA-256 on the
+/// bytes actually read, since the file could change after the path check.
+/// Fails with `content_unavailable`.
 pub(crate) fn read_blob(blobs: &content::BlobStore, hash: &str, size: u64) -> Result<Vec<u8>> {
     let path = blobs.verified_blob(hash, size)?;
     let mut bytes = Vec::new();

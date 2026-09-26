@@ -1,3 +1,6 @@
+// Launch splash over the whole window. It shows for at least 1.75 s and fades
+// once the engine is ready; if the engine could not start it stays up with the
+// error and Try again / Show profile folder / Quit. Main.qml feeds it backend state.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window

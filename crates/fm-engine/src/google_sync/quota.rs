@@ -14,11 +14,17 @@ struct State {
     scheduler: Scheduler,
     admitted: BTreeMap<WorkId, Permit>,
 }
+/// The engine-wide Google quota scheduler shared by every account's sync job.
+/// It admits work against per-project and per-account per-minute budgets and
+/// a concurrency limit; waiters are woken whenever admission state changes.
 pub(super) struct QuotaGate {
     state: Mutex<State>,
     changed: Notify,
+    /// Origin of the scheduler's millisecond clock.
     clock: Instant,
 }
+/// An admitted (or still queued) quota reservation for one HTTP request.
+/// Dropping it releases the concurrency slot, or removes queued work.
 pub(super) struct Lease {
     gate: Arc<QuotaGate>,
     id: WorkId,
@@ -69,6 +75,8 @@ impl Drop for Lease {
     }
 }
 impl QuotaGate {
+    /// Adds the account's Gmail and Calendar lanes. Idempotent; fails once the
+    /// scheduler's account limit is reached.
     pub(super) fn register(&self, account: fm_google::AccountId) -> Result<(), TransportError> {
         self.state
             .lock()
@@ -90,6 +98,12 @@ impl QuotaGate {
     fn now(&self) -> u64 {
         self.clock.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
     }
+    /// Queues `work` and waits until the scheduler admits it.
+    ///
+    /// Admission reserves the budget and a concurrency slot; the charge
+    /// happens later, at [`Lease::dispatch`]. Fails with `Cancelled` when
+    /// `cancel` fires, and `InvalidRequest` when the account cannot be
+    /// registered or the cost can never fit its budget.
     pub(super) async fn acquire(
         self: &Arc<Self>,
         work: Work,
@@ -115,6 +129,9 @@ impl QuotaGate {
             id,
         };
         loop {
+            // Register for wake-ups before checking, so a change between the
+            // check and the wait is not missed. Each waiter admits every
+            // permit that is ready, not only its own.
             let notified = self.changed.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
@@ -146,6 +163,8 @@ impl QuotaGate {
             }
         }
     }
+    /// Pauses admission and dispatch for `scope` for at least `seconds` (minimum
+    /// one). An existing longer cooldown is kept.
     pub(super) fn cooldown(&self, scope: CooldownScope, seconds: u64) {
         let until = self
             .now()

@@ -42,6 +42,7 @@ void MailBackend::runRemoteSearch() {
     const auto query = m_remoteQuery, account = m_remoteAccount, folder = m_remoteFolder;
     const int serial = ++m_remoteSerial;
     googleOperation("google_remote_search", account, {{"query", query}, {"folder", folder}}, [this, serial](auto result, bool ok) {
+        // A newer query, folder or account bumped the serial; drop this answer.
         if (serial != m_remoteSerial) return;
         m_remoteBusy = false;
         const auto code = result["code"].toString();
@@ -66,6 +67,7 @@ QVariantList MailBackend::withRemoteRows(QVariantList rows) const {
     for (const auto &value : rows) ids.insert(value.toMap().value("id").toString());
     for (const auto &value : m_remoteRows) {
         auto row = value.toMap();
+        // A conversation already stored locally is shown from the store.
         if (ids.contains(row.value("id").toString())) continue;
         row["account"] = m_account;
         const auto when = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);

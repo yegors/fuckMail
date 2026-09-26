@@ -1,4 +1,4 @@
-"""Independent generated-source and archive preservation oracles for P2-01B.
+"""Independent checks that account removal and restore preserve generated sources and archives.
 
 Read-only SQL and retained-file checks; no provider or native credential access.
 """

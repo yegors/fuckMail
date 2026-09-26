@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // "Labels · {Account}", opened from the account's Labels row in Accounts.
-// The table is the same editor as before: name, description, Read, Spam,
+// The table is the LabelSettings editor: name, description, Read, Spam,
 // remove, add, and Sync with Google. Esc or a click outside closes it.
 FmDialog {
     id: dialog

@@ -1,5 +1,8 @@
-//! Durable integration for the Phase 0 fake classifier/summarizer only.
-//! This module is a Rust-internal API; no IPC method or model/network runner exists.
+//! Durable conversation-level assistance jobs built on [`fm_assist::Boundary`]:
+//! a policy per account, a snapshot of the conversation's sources, and a result
+//! committed once and replayable by request ID. This is a Rust-only API used
+//! with a caller-supplied runner; no IPC method reaches it. The local-model
+//! pipeline the app uses lives in `local_model` and `assist_backlog`.
 use crate::{err, id, Result, Store};
 use fm_assist::{Boundary, CategoryResult, Mode, Policy, Runner, Source, SourceKind};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -11,8 +14,12 @@ use std::collections::BTreeSet;
 const MAX_MEMBERS: usize = 200;
 const MAX_RETAINED_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Result of [`Store::start_fake_assistance`].
 pub enum AssistanceStart {
+    /// A job was handed to the runner; pass this to
+    /// [`Store::finish_fake_assistance`] with the runner's output.
     Pending(PreparedAssistance),
+    /// The request ID already has a committed result, returned unchanged.
     Completed(Value),
 }
 
@@ -27,6 +34,9 @@ pub struct PreparedAssistance {
     job_id: u64,
 }
 
+/// Everything a job's output depends on. Its encoding (without message text)
+/// is compared at finish time, so any change to policy, sources, provider
+/// state, manual choices or label mappings makes the output stale.
 struct Snapshot {
     policy: Policy,
     members: Vec<Member>,
@@ -72,6 +82,17 @@ impl Snapshot {
 }
 
 impl Store {
+    /// Validates a runner's raw output for `pending` and commits the result
+    /// once, returning it.
+    ///
+    /// The conversation snapshot is re-read inside the commit transaction and
+    /// must match the one the job started from (`assistance_stale`
+    /// otherwise). In auto-apply mode, configured categories are added to
+    /// received, non-deleted messages, except where the user made a manual
+    /// category choice. Unread, starred, Done and draft state are never
+    /// touched. Replaying the same request and output returns the stored
+    /// result; different output under the same request ID fails with
+    /// `request_id_conflict`.
     pub fn finish_fake_assistance(
         &self,
         pending: &PreparedAssistance,
@@ -127,11 +148,14 @@ impl Store {
                     .iter()
                     .find(|source| source.id == included.id)
                     .ok_or_else(|| err("assistance_stale", "Included source disappeared"))?;
+                // Only received mail is categorized; sent and provider-deleted
+                // messages are left alone.
                 if source.sent || source.provider.as_ref().is_some_and(|provider| provider.2) {
                     continue;
                 }
                 let mut changed = false;
                 for category in &categories {
+                    // A manual choice for this category, either way, always wins.
                     if source
                         .manual
                         .iter()
@@ -163,6 +187,8 @@ impl Store {
                 params![pending.account, pending.conversation],
             )?;
         }
+        // Hash the post-apply state so `fake_assistance_result` can report the
+        // receipt stale only when something changes after this commit.
         let applied_snapshot_hash = digest(
             self.assistance_snapshot(&pending.account, &pending.conversation, false)?
                 .encoded()?
@@ -234,6 +260,15 @@ impl Store {
         Ok(())
     }
 
+    /// Snapshots a conversation's retained sources and starts a job on
+    /// `runner` through `boundary`.
+    ///
+    /// Returns [`AssistanceStart::Completed`] without starting anything when
+    /// the request ID already has a result for this conversation. `owner`
+    /// scopes cancellation only and is not part of the request identity.
+    /// Fails with `assistance_disabled` when the account's policy is off,
+    /// `assistance_limit` above 200 messages or 16 MiB of sources, and
+    /// `content_unavailable` when a source blob is missing or altered.
     pub fn start_fake_assistance(
         &self,
         account: &str,
@@ -279,6 +314,9 @@ impl Store {
         }))
     }
 
+    /// Reads the conversation's policy, members and mappings. Message text is
+    /// decoded from verified blobs only when `include_text` is set (job start);
+    /// staleness checks compare the text-free encoding.
     fn assistance_snapshot(
         &self,
         account: &str,
@@ -338,6 +376,8 @@ impl Store {
             let path = self.verified_blob(&hash, size)?;
             let text = if include_text {
                 let raw = std::fs::read(path)?;
+                // Re-hash what was actually read: the blob could change between
+                // verification and this read.
                 if raw.len() as u64 != size || digest(&raw) != hash {
                     return Err(err(
                         "content_unavailable",
@@ -427,6 +467,9 @@ fn load_policy(db: &Connection, account: &str) -> Result<Policy> {
     })
 }
 
+/// Resolves each policy category to `(id, name, Google label)`. Categories
+/// must exist locally, may never map to Gmail system labels, and need an
+/// explicit label mapping before they can be auto-applied.
 fn configured_mappings(
     db: &Connection,
     policy: &Policy,

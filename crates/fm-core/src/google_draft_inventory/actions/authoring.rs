@@ -1,3 +1,5 @@
+//! Turning an observed Gmail draft into locally authored content: copying it
+//! as plain text or adopting it in place, after checking its full source.
 use super::*;
 use mail_parser::{Address, MimeHeaders, PartType};
 
@@ -5,8 +7,14 @@ fn reason(reasons: &mut BTreeSet<String>, code: &str) {
     reasons.insert(code.into());
 }
 
+/// Parses a retained source off the writer and decides whether it can be
+/// copied or adopted, with reason codes and the content each would lose.
+///
 /// Full-source assessment is deliberately separate from the bounded preview.
 /// A displayable preview never grants permission to serialize the source again.
+/// Adoption needs `fresh_remote`, a new fetch of the exact Gmail draft; other
+/// methods must pass `None`. Allowed content is only accepted if the native
+/// composer could rebuild it as MIME.
 pub fn prepare_google_draft_authoring(
     plan: GoogleDraftAuthoringPlan,
     fresh_remote: Option<GoogleDraftActionRemote>,
@@ -40,6 +48,8 @@ pub fn prepare_google_draft_authoring(
     } else if fresh_remote.is_some() {
         return Err(invalid());
     }
+    // Reasons that forbid a copy also forbid adoption; adoption, which
+    // re-uploads over the Gmail draft, has stricter extra reasons.
     let mut copy = BTreeSet::new();
     let mut adopt = BTreeSet::new();
     let mut losses = BTreeSet::from(["primary_from", "reply_thread", "separate_autosync"]);
@@ -322,6 +332,8 @@ pub fn prepare_google_draft_authoring(
     })
 }
 
+/// Reports whether the native composer can build draft MIME from this
+/// content, as a copy or an adoption would later have to.
 fn can_build(
     c: &ActionContext,
     routing: &Value,
@@ -358,6 +370,8 @@ fn can_build(
     Ok(fm_mail::build_draft_mail(&request, &identity, &staged).is_ok())
 }
 
+/// Checks that a fresh fetch is byte-for-byte the retained source revision.
+/// Fails with `stale_source_revision` when Gmail's draft changed.
 pub(super) fn verify_remote(source: &SourceStamp, remote: &GoogleDraftActionRemote) -> Result<()> {
     identifier(&remote.draft_id)?;
     identifier(&remote.message_id)?;

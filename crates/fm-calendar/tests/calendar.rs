@@ -39,7 +39,13 @@ fn a_timed_event_may_end_when_it_starts_but_an_all_day_one_may_not() {
         1
     );
     assert!(normalize("work","primary","America/Toronto",&json!({"id":"back","start":{"dateTime":"2023-03-30T14:00:00-04:00"},"end":{"dateTime":"2023-03-30T13:59:00-04:00"}})).is_err());
-    assert!(normalize("work","primary","America/Toronto",&json!({"id":"day","start":{"date":"2023-03-30"},"end":{"date":"2023-03-30"}})).is_err());
+    assert!(normalize(
+        "work",
+        "primary",
+        "America/Toronto",
+        &json!({"id":"day","start":{"date":"2023-03-30"},"end":{"date":"2023-03-30"}})
+    )
+    .is_err());
 }
 
 #[test]
@@ -487,10 +493,19 @@ fn meeting_links_come_from_the_location_or_notes() {
         Some("https://acme.zoom.us/j/123456789?pwd=x")
     );
     assert_eq!(
-        fm_calendar::meeting_link(r#"<a href="https://meet.google.com/abc-defg-hij?authuser=0&amp;hs=1">Join</a>"#).as_deref(),
+        fm_calendar::meeting_link(
+            r#"<a href="https://meet.google.com/abc-defg-hij?authuser=0&amp;hs=1">Join</a>"#
+        )
+        .as_deref(),
         Some("https://meet.google.com/abc-defg-hij?authuser=0&hs=1")
     );
-    for none in ["Need help? https://aka.ms/JoinTeamsMeeting", "http://teams.microsoft.com/meet/1", "https://zoom.us/pricing", "Microsoft Teams Meeting", ""] {
+    for none in [
+        "Need help? https://aka.ms/JoinTeamsMeeting",
+        "http://teams.microsoft.com/meet/1",
+        "https://zoom.us/pricing",
+        "Microsoft Teams Meeting",
+        "",
+    ] {
         assert_eq!(fm_calendar::meeting_link(none), None, "{none}");
     }
 }

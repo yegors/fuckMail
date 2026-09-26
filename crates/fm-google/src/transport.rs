@@ -6,8 +6,10 @@ use std::{
     pin::Pin,
     time::{Duration, SystemTime},
 };
+/// Cooperative cancellation shared by every async call in this crate.
 pub use tokio_util::sync::CancellationToken;
 
+/// HTTP method of an [`HttpRequest`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
@@ -28,21 +30,33 @@ impl HttpMethod {
     }
 }
 
+/// Why one HTTP attempt produced no usable response.
+///
 /// No provider URL, header, body or error text is included in diagnostics.
+/// `Cancelled`, `Timeout` and `Network` can happen after the request reached
+/// Google, so for a write they mean the outcome is unknown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportError {
+    /// Refused locally: URL outside the allowlist, disallowed header, invalid
+    /// limits, or a wrapper's policy check. Nothing was sent.
     InvalidRequest,
     /// Local admission refused dispatch after a newly learned provider cooldown.
     /// No HTTP request was submitted for this attempt.
-    Cooldown {
-        retry_after_secs: u64,
-    },
+    Cooldown { retry_after_secs: u64 },
+    /// The HTTP client could not be built.
     Initialization,
+    /// The caller's token was cancelled.
     Cancelled,
+    /// The connect, read or whole-request deadline elapsed.
     Timeout,
+    /// Connection, TLS or protocol failure, including a body cut short.
     Network,
+    /// Google answered with a redirect. Redirects are never followed, so a
+    /// bearer token cannot leave the allowlisted host.
     RedirectDenied,
+    /// The body exceeds [`TransportLimits::max_request_bytes`]. Nothing was sent.
     RequestTooLarge,
+    /// The response exceeds its cap; any partial body is discarded.
     ResponseTooLarge,
 }
 impl fmt::Display for TransportError {
@@ -52,6 +66,11 @@ impl fmt::Display for TransportError {
 }
 impl std::error::Error for TransportError {}
 
+/// A request to an allowlisted Google HTTPS endpoint.
+///
+/// Construction validates the URL and every header, so an `HttpRequest` can
+/// only target the Google hosts and API paths this app uses. `Debug` shows
+/// only the method.
 pub struct HttpRequest {
     method: HttpMethod,
     url: reqwest::Url,
@@ -67,6 +86,12 @@ impl fmt::Debug for HttpRequest {
     }
 }
 impl HttpRequest {
+    /// Starts a request with no headers or body.
+    ///
+    /// Errors with `InvalidRequest` if `url` is over 16 KiB, is not
+    /// `https` on port 443, has userinfo or a fragment, carries a credential
+    /// query parameter (such as `access_token` or `code`), or falls outside
+    /// the Gmail, Calendar and OAuth endpoints this crate calls.
     pub fn new(method: HttpMethod, url: &str) -> Result<Self, TransportError> {
         if url.len() > 16 * 1024 {
             return Err(TransportError::InvalidRequest);
@@ -83,6 +108,11 @@ impl HttpRequest {
             response_limit: None,
         })
     }
+    /// Sets a header, replacing any earlier value of the same name.
+    ///
+    /// Only `authorization`, `accept`, `content-type`, `if-match` and
+    /// `if-none-match` are allowed, each up to 16 KiB. Values are marked
+    /// sensitive so HTTP-layer debugging never prints them.
     pub fn header(mut self, name: &str, value: &str) -> Result<Self, TransportError> {
         let name =
             HeaderName::from_bytes(name.as_bytes()).map_err(|_| TransportError::InvalidRequest)?;
@@ -98,6 +128,7 @@ impl HttpRequest {
         self.headers.insert(name, value);
         Ok(self)
     }
+    /// Attaches a body and its `Content-Type`. Refused for `Get`.
     pub fn body(mut self, bytes: Vec<u8>, content_type: &str) -> Result<Self, TransportError> {
         if self.method == HttpMethod::Get {
             return Err(TransportError::InvalidRequest);
@@ -106,7 +137,10 @@ impl HttpRequest {
         self.body = bytes;
         Ok(self)
     }
-    /// The caller may tighten the transport's cap, never enlarge it.
+    /// Caps the response body at `bytes`.
+    ///
+    /// The caller may tighten the transport's cap, never enlarge it. A cap of
+    /// zero makes execution fail with `InvalidRequest`.
     pub fn response_limit(mut self, bytes: usize) -> Self {
         self.response_limit = Some(bytes);
         self
@@ -127,6 +161,9 @@ impl HttpRequest {
 }
 
 fn allowed_url(url: &reqwest::Url) -> bool {
+    // Bearer tokens ride on these requests, so pin the exact hosts and API
+    // prefixes the app calls. Secrets in a query string would land in
+    // server-side logs, so credential-looking parameters are refused.
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
@@ -161,10 +198,17 @@ fn allowed_url(url: &reqwest::Url) -> bool {
     }
 }
 
+/// A complete response of any status. `Debug` shows only the status.
+///
+/// The transport does not interpret status codes; callers classify them, for
+/// example with [`crate::classify_api_error`].
 pub struct HttpResponse {
     pub status: u16,
+    /// The whole body, within the request's response cap.
     pub body: Vec<u8>,
+    /// `Retry-After` in whole seconds, when present and parseable.
     pub retry_after_secs: Option<u64>,
+    /// The `ETag` header, when it is visible ASCII of at most 1024 bytes.
     pub etag: Option<String>,
 }
 impl fmt::Debug for HttpResponse {
@@ -174,19 +218,42 @@ impl fmt::Debug for HttpResponse {
             .finish_non_exhaustive()
     }
 }
+/// The future returned by [`HttpTransport::execute`].
 pub type HttpFuture<'a> =
     Pin<Box<dyn Future<Output = Result<HttpResponse, TransportError>> + Send + 'a>>;
+
+/// Sends one HTTP request to Google.
+///
+/// Every Google client in this crate goes through this trait, so tests and the
+/// engine can substitute or wrap it. Implementations must:
+/// - submit the request at most once, never retrying or following redirects;
+/// - stop and return `Cancelled` once `cancel` fires;
+/// - return a complete body or an error, never a partial body;
+/// - keep URLs, headers and bodies out of errors and logs.
+///
+/// Retry and backoff belong to the caller, which knows whether the request is
+/// safe to repeat.
 pub trait HttpTransport: Send + Sync {
+    /// Executes `request` once. A non-2xx status is an `Ok` response.
     fn execute<'a>(&'a self, request: HttpRequest, cancel: &'a CancellationToken)
         -> HttpFuture<'a>;
 }
 
+/// Timeouts and byte caps for [`ReqwestTransport`].
+///
+/// All values must be nonzero; connect and read timeouts may not exceed
+/// the request timeout, which is at most 600 s; each byte cap is at most 128 MiB.
 #[derive(Clone, Copy, Debug)]
 pub struct TransportLimits {
+    /// Time to establish the TCP and TLS connection.
     pub connect_timeout: Duration,
+    /// Deadline for the whole request, including the body download.
     pub request_timeout: Duration,
+    /// Longest gap allowed between successive reads.
     pub read_timeout: Duration,
+    /// Largest request body sent.
     pub max_request_bytes: usize,
+    /// Largest response body accepted; requests may lower it.
     pub max_response_bytes: usize,
 }
 impl Default for TransportLimits {
@@ -201,12 +268,18 @@ impl Default for TransportLimits {
     }
 }
 
+/// The production [`HttpTransport`]: an HTTPS-only `reqwest` client.
+///
+/// It follows no redirects, never retries, ignores proxy settings, sends no
+/// `Referer` and does no content decoding. Clones share one connection pool.
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
     limits: TransportLimits,
 }
 impl ReqwestTransport {
+    /// Builds the client. Errors with `InvalidRequest` when `limits` are out
+    /// of range and `Initialization` when the TLS client cannot be built.
     pub fn new(limits: TransportLimits) -> Result<Self, TransportError> {
         Self::build(limits, true)
     }
@@ -224,6 +297,8 @@ impl ReqwestTransport {
         {
             return Err(TransportError::InvalidRequest);
         }
+        // Content decoding is off so the byte caps count what arrives on the
+        // wire, and a small compressed body cannot expand past them.
         let client = reqwest::Client::builder()
             .https_only(https_only)
             .redirect(reqwest::redirect::Policy::none())
@@ -269,11 +344,14 @@ impl ReqwestTransport {
             builder = builder.header(reqwest::header::CONTENT_LENGTH, 0);
         }
         let mut response = builder.send().await.map_err(map_error)?;
+        // 304 is a conditional-read answer, not a redirect.
         if response.status().is_redirection()
             && response.status() != reqwest::StatusCode::NOT_MODIFIED
         {
             return Err(TransportError::RedirectDenied);
         }
+        // Refuse a declared oversize body before reading it; the chunk loop
+        // below still enforces the cap when no length is declared.
         if response
             .content_length()
             .is_some_and(|length| length > cap as u64)
@@ -314,6 +392,9 @@ impl HttpTransport for ReqwestTransport {
         cancel: &'a CancellationToken,
     ) -> HttpFuture<'a> {
         Box::pin(async move {
+            // The outer deadline also covers the body loop in `submit`, so a
+            // server that keeps trickling bytes cannot outlast
+            // `request_timeout`. `biased` lets cancellation win a tie.
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => Err(TransportError::Cancelled),
@@ -331,6 +412,10 @@ fn map_error(error: reqwest::Error) -> TransportError {
     }
 }
 
+/// Parses a `Retry-After` value into whole seconds from `now`.
+///
+/// Accepts delay-seconds or an HTTP date. A past date yields 0, a partial
+/// second rounds up, and negative, fractional or malformed values yield `None`.
 pub fn parse_retry_after(value: &str, now: SystemTime) -> Option<u64> {
     let value = value.trim();
     if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
@@ -383,8 +468,8 @@ mod tests {
         ReqwestTransport::build(TransportLimits::default(), false).unwrap()
     }
 
-    /// Explicit public-metadata probe; ordinary tests/CI remain network-free.
-    /// This is native TLS-root evidence, not OAuth or mailbox interoperability.
+    /// Opt-in probe of public Google metadata; ordinary test runs stay offline.
+    /// It checks only that the native TLS roots reach Google, not OAuth or Gmail.
     #[tokio::test]
     #[ignore = "explicit native HTTPS probe of public Google JWKS; no credentials or mailbox access"]
     async fn native_roots_public_google_jwks_smoke() {

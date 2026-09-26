@@ -22,10 +22,14 @@ const INLINE_HTML_BYTES: usize = 512 * 1024;
 const MAX_INLINE_PART: usize = 25 * 1024 * 1024;
 const MANIFESTS_KEPT: usize = 16;
 
+/// A message's retained source at one version, for building its HTML view or
+/// resolving its images off the writer.
 pub struct HtmlPlan {
     blobs: BlobStore,
     pub account: String,
+    /// Local message ID.
     pub message: String,
+    /// Source hash the view is built from.
     pub version: String,
     /// Sender address, for "always load images from" preferences.
     pub sender: String,
@@ -84,6 +88,8 @@ fn unparsable() -> crate::CoreError {
 }
 
 /// The sanitised view of a source, shared by the reader and image requests.
+/// The last 16 views are memoised by source hash, so image requests right
+/// after a read do not re-parse the message.
 fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlView>>> {
     static MANIFESTS: Mutex<VecDeque<(String, Option<Arc<HtmlView>>)>> =
         Mutex::new(VecDeque::new());
@@ -117,6 +123,13 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
     Ok(view)
 }
 
+/// Builds the sanitised HTML view off the writer and returns it with its image
+/// and link manifests.
+///
+/// Documents over about 512 KiB of JSON are written to the view cache and
+/// returned as `html_path` instead of inline `html`. Images already decoded in
+/// the cache carry their file path. A message without an HTML part returns
+/// `has_html: false`; one too large to sanitise returns `too_large: true`.
 pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) -> Result<Value> {
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
         "sanitizer":html_view::SANITIZER_VERSION,"sender":plan.sender});

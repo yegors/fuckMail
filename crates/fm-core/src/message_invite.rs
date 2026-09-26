@@ -20,6 +20,9 @@ const SERIES_TRIES: usize = 4;
 const CALENDAR_ATTACHMENT: &str =
     "(lower(a.mime_type) IN ('text/calendar','application/ics') OR lower(a.name) LIKE '%.ics')";
 
+/// Writer-selected inputs for [`prepare`]: the message's source version and
+/// the earlier calendar attachments that may hold the invitation's previous
+/// time.
 pub struct InvitePlan {
     blobs: BlobStore,
     account: String,
@@ -29,6 +32,8 @@ pub struct InvitePlan {
     earlier: Vec<(String, u64)>,
 }
 
+/// The parsed invitation (if any) and its previous time, ready for
+/// [`Store::message_invite_finish`].
 pub struct PreparedInvite {
     account: String,
     message: String,
@@ -88,6 +93,12 @@ pub(crate) fn message_calendar(message: &mail_parser::Message<'_>) -> Option<Inv
 }
 
 impl Store {
+    /// Selects the inputs for reading one message's invitation.
+    ///
+    /// `request` is `{id, source_version}`; the version must match the
+    /// message's current source hash (`stale_source` otherwise). Collects up
+    /// to 30 earlier messages with calendar attachments from each of the
+    /// conversation and the sender. Reads no blobs.
     pub fn message_invite_begin(&self, account: &str, request: &Value) -> Result<InvitePlan> {
         fields(request, &["id", "source_version"])?;
         let mid = id(string(request, "id")?)?;
@@ -145,6 +156,14 @@ impl Store {
         })
     }
 
+    /// Links a prepared invitation to its cached Calendar event and returns
+    /// `{invite}`, or `{invite: null}` when the message has none.
+    ///
+    /// The result carries the invitation's UID, method, sequence and summary,
+    /// the times to display (the cached event's own times win over the
+    /// email's), the previous times from an earlier request, and the combined
+    /// Calendar row when one is found. Fails with `stale_source` if the
+    /// message changed since [`Store::message_invite_begin`].
     pub fn message_invite_finish(&self, prepared: PreparedInvite) -> Result<Value> {
         let current: Option<String> = self
             .db
@@ -218,6 +237,8 @@ impl Store {
             })
             .collect();
         let calendars: BTreeSet<&str> = rows.iter().map(|(row, _)| row.calendar.as_str()).collect();
+        // Rank calendars: one where the account is an attendee, then primary,
+        // then one that holds the series master rather than lone instances.
         let Some(calendar) = calendars.into_iter().min_by_key(|calendar| {
             let mut own = false;
             let mut primary = false;

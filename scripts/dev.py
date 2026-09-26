@@ -437,7 +437,7 @@ def package(preset):
         if missing:
             raise RuntimeError("Package lacks the app-local MSVC runtime: " + ", ".join(missing))
     (stage / "README.txt").write_text(
-        "fuckMail Phase 2 feedback build (unsigned)\n\n"
+        "fuckMail development build (unsigned)\n\n"
         + INSTALL_NOTES[HOST] + "\n"
         "A first install starts with an empty profile. Profiles from before the current storage baseline are refused: close the app and move the whole old fuckMail/default folder away before launch.\n"
         "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
@@ -449,7 +449,8 @@ def package(preset):
         "Closing the GUI ends its sync and reminders; an explicitly running CLI has its own lifetime.\n"
         "Use fm --help for CLI commands. Ordinary startup uses fuckMail/default under your local app-data directory.\n"
         "Existing demo-v1 profiles are preserved; --demo-profile selects synthetic data explicitly.\n"
-        "This is a development artifact, not a signed/notarized public release.\n",
+        "This is a development artifact, not a signed/notarized public release.\n"
+        "License texts for fuckMail and the components it bundles are in the licenses folder.\n",
         encoding="utf-8")
     guide = ROOT / "docs/build-development.md"
     if guide.exists():

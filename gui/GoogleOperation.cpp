@@ -1,3 +1,6 @@
+// GoogleOperation: opens its own local-socket connection to the engine, checks
+// the peer, sends hello with the session token and one allow-listed method, and
+// delivers exactly one callback (result, error, timeout or cancellation).
 #include "GoogleOperation.h"
 #include "IpcTrust.h"
 #include <QJsonDocument>
@@ -16,6 +19,8 @@ bool remoteContent(const QString &method) {
 
 GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *parent)
     : QObject(parent), m_account(std::move(account)), m_requestId(std::move(requestId)) {
+    // Bound buffered input; one byte past the frame limit is enough for
+    // receive() to see that a response is oversized.
     m_socket.setReadBufferSize(maxFrame + 1);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, [this] {
@@ -27,6 +32,9 @@ GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *pa
     // Leave Qt's socket notification stack before invoking any such callback.
     connect(&m_socket, &QLocalSocket::connected, this, [this] {
         if (m_finished) return;
+        // Another process could own a socket or pipe with the engine's name.
+        // Confirm the peer before the session token leaves this process, and
+        // drop the token from memory once it is written.
         QString error;
         if (!verifyEnginePeer(m_socket.socketDescriptor(), m_enginePid, error)) {
             reject("engine_untrusted", error); return;
@@ -49,6 +57,9 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
                             const QJsonObject &params, Callback callback) {
     if (m_started || m_finished) return;
     m_started = true; m_method = method; m_callback = std::move(callback);
+    // Only work that needs its own connection (long provider calls, local
+    // imports, cancellable reads and the HTML reader) may use this path;
+    // everything else goes through MailBackend's main request queue.
     if (method != "google_calendar_write" && method != "google_calendar_reconcile" && method != "google_calendar_occurrence_read"
         && method != "google_calendar_resume" && method != "google_labels_refresh"
         && method != "google_draft_reconcile" && method != "google_draft_resolve"
@@ -64,6 +75,8 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && !remoteContent(method)) {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
+    // Read the session token from discovery, and refuse if the engine that
+    // MailBackend connected to (`enginePid`) has since been replaced.
     QString error;
     const auto info = readPrivateDiscovery(profile, error);
     if (!error.isEmpty()) { reject("engine_untrusted", error); return; }
@@ -74,6 +87,7 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
     }
     m_enginePid = enginePid; m_method = method; m_params = params; m_token = info["token"].toString();
 #ifdef Q_OS_WIN
+    // QLocalSocket adds the \\.\pipe\ prefix itself on Windows.
     if (endpoint.startsWith("\\\\.\\pipe\\")) endpoint = endpoint.mid(9);
 #endif
     m_timer.start(15000);
@@ -90,6 +104,8 @@ void GoogleOperation::write(const QString &id, const QString &method, const QJso
 
 void GoogleOperation::receive() {
     if (m_finished) return;
+    // Strict request/response: one newline-terminated JSON frame answers each
+    // request ("hello", then "operation"), and nothing may follow it.
     m_buffer += m_socket.readAll();
     const auto end = m_buffer.indexOf('\n');
     if (m_buffer.size() > maxFrame || (end >= 0 && end + 1 != m_buffer.size())) {
@@ -108,6 +124,8 @@ void GoogleOperation::receive() {
     }
     const auto result = response[ok ? "result" : "error"].toObject();
     if (!ok || m_hello) { finish(result, ok); return; }
+    // The hello result names the profile mode. Provider work needs a live
+    // profile; local reads and imports also run in synthetic profiles.
     const auto mode = result["mode"].toString();
     const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source"
         || m_method == "google_draft_authoring" || m_method == "google_draft_copy" || m_method == "draft_transfer"
@@ -134,6 +152,8 @@ void GoogleOperation::receive() {
 void GoogleOperation::finish(const QJsonObject &result, bool ok) {
     if (m_finished) return;
     m_finished = true; m_timer.stop(); m_token.clear(); m_params = {}; m_buffer.clear();
+    // Detach before abort() so its disconnect notifications cannot queue a
+    // second outcome, then take the callback out: it may delete this object.
     QObject::disconnect(&m_socket, nullptr, this, nullptr);
     m_socket.abort();
     auto callback = std::move(m_callback); m_callback = {};

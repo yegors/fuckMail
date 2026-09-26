@@ -155,7 +155,9 @@ impl Store {
     pub fn local_model_newest_row(&self) -> Result<i64> {
         Ok(self
             .db
-            .query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |r| r.get(0))?)
+            .query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |r| {
+                r.get(0)
+            })?)
     }
     /// Per-account counts for the Accounts view and account tabs, one pass
     /// over the account's mail each.
@@ -211,7 +213,9 @@ impl Store {
             params![account, now - 7 * day, now - 30 * day, now - 365 * day, now + 60_000],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )?;
-        Ok(json!({"account":account,"enabled":enabled,"ranges":{"week":week,"month":month,"year":year,"all":all}}))
+        Ok(
+            json!({"account":account,"enabled":enabled,"ranges":{"week":week,"month":month,"year":year,"all":all}}),
+        )
     }
     /// Widen the queue to older mail: `week`, `month`, `year` or `all`.
     /// The bound only moves further back; `stop` removes it.
@@ -230,7 +234,12 @@ impl Store {
                     .execute("DELETE FROM meta WHERE key=?1", [catch_up_key(account)])?;
                 return self.local_model_progress(Some(account));
             }
-            _ => return Err(err("invalid_request", "Choose week, month, year, all or stop")),
+            _ => {
+                return Err(err(
+                    "invalid_request",
+                    "Choose week, month, year, all or stop",
+                ))
+            }
         };
         self.db.execute(
             "INSERT INTO meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=min(value,excluded.value)",
@@ -257,14 +266,13 @@ mod tests {
             ..Default::default()
         };
         // Only the one account under test; others would share the queue.
-        let others: Vec<String> = s
-            .db
-            .prepare("SELECT id FROM accounts WHERE id<>?1")
-            .unwrap()
-            .query_map([ACCOUNT], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
+        let others: Vec<String> =
+            s.db.prepare("SELECT id FROM accounts WHERE id<>?1")
+                .unwrap()
+                .query_map([ACCOUNT], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
         for other in others {
             settings.accounts.insert(
                 other,
@@ -315,7 +323,12 @@ mod tests {
         assert_eq!(start["queued"], start["eligible"]);
         let mut last: Option<String> = None;
         let mut seen = 0;
-        while let Some(next) = s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next() {
+        while let Some(next) = s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+        {
             let date = next["date"].as_str().unwrap().to_owned();
             assert!(last.as_ref().is_none_or(|l| *l >= date), "newest first");
             assert_eq!(next["class"], "new");
@@ -336,34 +349,51 @@ mod tests {
         let before = progress(&s);
         assert_eq!(before["queued"], 0, "fixture mail predates the cutoff");
         assert_eq!(before["unprocessed"], before["eligible"]);
-        assert!(s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().is_none());
-        let ids: Vec<String> = s
-            .db
-            .prepare("SELECT id FROM messages WHERE account=?1 AND NOT sent ORDER BY rowid")
+        assert!(s
+            .local_model_next(&[], None, 1, &[])
             .unwrap()
-            .query_map([ACCOUNT], |r| r.get(0))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
+            .into_iter()
+            .next()
+            .is_none());
+        let ids: Vec<String> =
+            s.db.prepare("SELECT id FROM messages WHERE account=?1 AND NOT sent ORDER BY rowid")
+                .unwrap()
+                .query_map([ACCOUNT], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
         let now = chrono::Utc::now();
         set_date(&s, &ids[0], now - chrono::Duration::days(3));
         let counts = s.local_model_catch_up_counts(ACCOUNT).unwrap();
         assert_eq!(counts["ranges"]["week"], 1);
         assert_eq!(counts["ranges"]["all"], before["eligible"]);
         s.local_model_catch_up(ACCOUNT, "all").unwrap();
-        let first = s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap();
+        let first = s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         assert_eq!(first["id"], ids[0], "newest catch-up mail first");
         assert_eq!(first["class"], "catch_up");
         assert_eq!(progress(&s)["catching_up"], true);
         // Mail arriving now overtakes the running catch-up.
         set_date(&s, &ids[1], now + chrono::Duration::seconds(5));
-        let next = s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap();
+        let next = s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         assert_eq!(next["id"], ids[1]);
         assert_eq!(next["class"], "new");
         // A narrower range never shrinks the queue.
         s.local_model_catch_up(ACCOUNT, "week").unwrap();
         assert_eq!(progress(&s)["unprocessed"], 0);
-        assert_eq!(s.local_model_catch_up_counts(ACCOUNT).unwrap()["ranges"]["all"], 0);
+        assert_eq!(
+            s.local_model_catch_up_counts(ACCOUNT).unwrap()["ranges"]["all"],
+            0
+        );
         s.local_model_catch_up(ACCOUNT, "stop").unwrap();
         assert_eq!(progress(&s)["queued"], 1, "only the new message remains");
         assert!(s.local_model_catch_up(ACCOUNT, "decade").is_err());
@@ -371,13 +401,43 @@ mod tests {
     #[test]
     fn paused_held_and_failing_mail_leave_the_queue() {
         let (_dir, mut s) = store();
-        let first = s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap();
-        assert!(s.local_model_next(&[ACCOUNT.into()], None, 1, &[]).unwrap().into_iter().next().is_none());
+        let first = s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(s
+            .local_model_next(&[ACCOUNT.into()], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .is_none());
         let id = first["id"].as_str().unwrap();
-        assert_eq!(s.local_model_fail(ACCOUNT, id, "invalid_assistance_result", "Bad JSON").unwrap(), 1);
-        assert_eq!(s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap()["id"], id, "one retry");
-        s.local_model_fail(ACCOUNT, id, "invalid_assistance_result", "Bad JSON").unwrap();
-        assert_ne!(s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap()["id"], id);
+        assert_eq!(
+            s.local_model_fail(ACCOUNT, id, "invalid_assistance_result", "Bad JSON")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            s.local_model_next(&[], None, 1, &[])
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap()["id"],
+            id,
+            "one retry"
+        );
+        s.local_model_fail(ACCOUNT, id, "invalid_assistance_result", "Bad JSON")
+            .unwrap();
+        assert_ne!(
+            s.local_model_next(&[], None, 1, &[])
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap()["id"],
+            id
+        );
         assert_eq!(progress(&s)["failed"], 1);
         // An explicit request that succeeds clears the failure.
         finish(&s, &first);
@@ -391,10 +451,18 @@ mod tests {
             &json!({"expected_revision":state["revision"],"settings":settings}),
         )
         .unwrap();
-        assert!(s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().is_none());
+        assert!(s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .is_none());
         let paused = progress(&s);
         assert_eq!(paused["paused"], true);
-        assert!(paused["queued"].as_i64().unwrap() > 0, "paused mail stays queued");
+        assert!(
+            paused["queued"].as_i64().unwrap() > 0,
+            "paused mail stays queued"
+        );
     }
     #[test]
     fn accounts_take_turns_within_a_class() {
@@ -408,9 +476,19 @@ mod tests {
             &json!({"expected_revision":state["revision"],"settings":settings}),
         )
         .unwrap();
-        let first = s.local_model_next(&[], None, 1, &[]).unwrap().into_iter().next().unwrap();
+        let first = s
+            .local_model_next(&[], None, 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         let account = first["account"].as_str().unwrap();
-        let second = s.local_model_next(&[], Some(account), 1, &[]).unwrap().into_iter().next().unwrap();
+        let second = s
+            .local_model_next(&[], Some(account), 1, &[])
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         assert_ne!(second["account"], account);
     }
     #[test]
@@ -418,11 +496,17 @@ mod tests {
         let (_dir, s) = store();
         let first = s.local_model_next(&[], None, 3, &[]).unwrap();
         assert_eq!(first.len(), 3);
-        let more = s.local_model_next(&[], None, 3, &[first[2].clone()]).unwrap();
+        let more = s
+            .local_model_next(&[], None, 3, &[first[2].clone()])
+            .unwrap();
         assert_eq!(more.len(), 3);
         let all = s.local_model_next(&[], None, 6, &[]).unwrap();
         let ids = |rows: &[Value]| rows.iter().map(|r| r["id"].clone()).collect::<Vec<_>>();
-        assert_eq!(ids(&all), [ids(&first), ids(&more)].concat(), "a continued batch is the same order");
+        assert_eq!(
+            ids(&all),
+            [ids(&first), ids(&more)].concat(),
+            "a continued batch is the same order"
+        );
         let id = first[0]["id"].as_str().unwrap();
         assert!(s.local_model_pending(ACCOUNT, id).unwrap());
         finish(&s, &first[0]);

@@ -2,6 +2,9 @@
 use super::{draft_actions, SyncContext};
 use fm_core::Result;
 
+/// Runs one due cleanup for a draft moved to another account: deletes the
+/// old Google draft (or reconciles an earlier unknown deletion) and records
+/// the result on the transfer. Returns `false` when nothing was due.
 pub(super) async fn step(ctx: &SyncContext) -> Result<bool> {
     let account = ctx.account.as_str().to_owned();
     let due = ctx

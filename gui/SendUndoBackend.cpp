@@ -1,8 +1,13 @@
+// MailBackend's action toast and Undo: holding a Send for its Undo interval
+// before dispatch, and the Undo offered after mail actions: archive or delete,
+// labels, Done, Delay and read state.
 #include "MailBackend.h"
 #include <QJsonArray>
 #include <QUuid>
 #include <algorithm>
 
+// One 50 ms timer drives toast expiry, held sends and calendar holds. Deadlines
+// use m_actionClock, a monotonic clock, so wall-clock changes cannot fire them.
 void MailBackend::initializeSendUndo() {
     m_actionClock.start();
     m_actionTimer.setInterval(50);
@@ -22,6 +27,8 @@ QVariantMap MailBackend::actionToast() const {
 void MailBackend::showActionToast(const QString &text, const QString &action, const QVariantMap &context, int duration, bool preserveUndo) {
     auto toast = context; toast["text"] = text; toast["action"] = action; toast["duration"] = duration;
     if (!toast.contains("issued_at")) toast["issued_at"] = m_actionClock.elapsed();
+    // With `preserveUndo`, a live Undo toast is not replaced by a plain notice
+    // or an older Undo; those wait in a short queue (at most 8) instead.
     if (preserveUndo && m_actionToast.value("action").toString().startsWith("undo_") && m_actionClock.elapsed() < m_actionToastDeadline
         && (!action.startsWith("undo_") || toast.value("issued_at").toLongLong() <= m_actionToast.value("issued_at").toLongLong())) {
         if (m_deferredActionToasts.size() >= 8) m_deferredActionToasts.removeFirst();
@@ -52,6 +59,8 @@ void MailBackend::activateActionToast() {
         openDraftInAccount(toast.value("account").toString(), toast.value("draft_id").toString());
     }
 }
+// A negative Undo interval sends at once. Zero still goes through the queue, so
+// the send gets the same pre-dispatch check, but without an Undo toast.
 void MailBackend::queueGoogleSend(const QJsonObject &params) {
     if (m_sendUndoMs < 0) { startGoogleSendOperation("google_send", params); return; }
     const auto key = googleSendKey();
@@ -121,6 +130,9 @@ void MailBackend::advanceSendUndo() {
     }
     if (m_queuedSends.isEmpty() && m_calendarDeletions.isEmpty() && m_actionToast.isEmpty() && m_deferredActionToasts.isEmpty()) m_actionTimer.stop();
 }
+// Re-reads the draft when the Undo window ends and sends only if it is still
+// the exact saved version Send was pressed on, with no conflicting Google work.
+// While its Gmail copy is uploading, it re-checks every 500 ms for up to 30 s.
 void MailBackend::dispatchQueuedSend(const QString &key) {
     if (!m_queuedSends.contains(key)) return;
     const auto send = m_queuedSends.value(key);
@@ -207,6 +219,8 @@ void MailBackend::undoMailActions(const QVariantMap &context) {
     if (m_pendingMailUndo.isEmpty() || m_pendingMailUndo.size()>200) {m_pendingMailUndo.clear();return;}
     m_mutatingConversation=true;emit mutationChanged();runMailUndo();
 }
+// Undoes one conversation per request, in order, and stops at the first
+// failure; each token is bound to the revision its action produced.
 void MailBackend::runMailUndo() {
     if (m_pendingMailUndo.isEmpty()) {
         m_mutatingConversation=false;emit mutationChanged();loadAccounts();loadCategories();loadConversations(false,true);

@@ -1,3 +1,7 @@
+//! The in-memory Google fixture behind `--verification-google`: generated
+//! accounts, mail, drafts and calendars served through fake HTTP and vault
+//! implementations inside a disposable, marked profile. Compiled only with the
+//! `verification-google` feature.
 use super::MARKER;
 use crate::{core_tasks::CoreBridge, google_auth};
 use fm_core::{

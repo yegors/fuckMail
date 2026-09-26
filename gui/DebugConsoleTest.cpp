@@ -1,3 +1,6 @@
+// QtTest suite for DebugConsole: levels, facilities and redaction, threaded
+// capture limits, log rotation and engine.log, console commands and export,
+// running `fm`, and the production DebugConsole.qml panel's keyboard handling.
 #include "DebugConsole.h"
 #include "FmIconItem.h"
 #include <QClipboard>
@@ -228,6 +231,67 @@ private slots:
                  "network", "db", "  schema 42 number"})
             QVERIFY2(tree.contains(expected), expected);
     }
+    void fmCommandRunsTheCli() {
+#ifndef FM_CLI_PATH
+        QSKIP("fm is not part of this build");
+#else
+        QVERIFY2(QFileInfo(FM_CLI_PATH).isExecutable(), FM_CLI_PATH);
+        QTemporaryDir profile; QVERIFY(profile.isValid());
+        DebugConsole log;
+        log.setLogDirectory(profile.path());
+        log.record("info", "sync", "persisted line");
+        log.setCliProgram(FM_CLI_PATH);
+        QSignalSpy running(&log, &DebugConsole::cliChanged);
+        QVERIFY(!log.paused());
+        log.run("fm");
+        QVERIFY(log.cliRunning());
+        // fm pauses live events so its output stays put; its own lines still show.
+        QVERIFY(log.paused());
+        QVERIFY(rows(log).contains("live log paused so fm output stays put"));
+        log.record("info", "sync", "live event while paused");
+        QTRY_VERIFY_WITH_TIMEOUT(!log.cliRunning(), 15000);
+        QVERIFY(rows(log).contains("› fm"));
+        // Bare fm shows the help, not a missing-command error.
+        QVERIFY2(rows(log).contains("Usage: fm"), qPrintable(rows(log)));
+        QVERIFY(!rows(log).contains("requires a subcommand"));
+        QVERIFY(!rows(log).contains("exited with code"));
+        QVERIFY(!rows(log).contains("live event while paused"));
+        // CLI output is shown and copied, but never written to gui.log.
+        QVERIFY(text(log).contains("Usage: fm"));
+        QFile disk(QDir(log.logDirectory()).filePath("gui.log")); QVERIFY(disk.open(QIODevice::ReadOnly));
+        const auto persisted = QString::fromUtf8(disk.readAll());
+        QVERIFY(persisted.contains("persisted line")); QVERIFY(persisted.contains("live event while paused")); QVERIFY(!persisted.contains("Usage: fm"));
+        // --json gathers stdout into one expandable line; failures report the exit code.
+        log.run("clear");
+        log.run("fm --json mail senders");
+        QTRY_VERIFY_WITH_TIMEOUT(!log.cliRunning(), 15000);
+        auto model = qobject_cast<QAbstractItemModel *>(log.lines());
+        QString json;
+        for (int i = 0; i < model->rowCount(); ++i)
+            if (model->data(model->index(i, 0), DebugLogModel::MessageRole).toString() == "fm --json mail senders")
+                json = model->data(model->index(i, 0), DebugLogModel::JsonRole).toString();
+        QVERIFY2(json.contains("invalid_request") && json.contains("--account"), qPrintable(rows(log) + "\n" + json));
+        QVERIFY(rows(log).contains("fm exited with code 2"));
+        // One command at a time; stop ends it.
+#ifdef Q_OS_WIN
+        log.setCliProgram("ping"); log.run("fm -n 30 127.0.0.1");
+#else
+        log.setCliProgram("sleep"); log.run("fm 30");
+#endif
+        QVERIFY(log.cliRunning());
+        log.run("fm --help");
+        QVERIFY(rows(log).contains("fm is still running"));
+        log.run("stop");
+        QTRY_VERIFY_WITH_TIMEOUT(!log.cliRunning(), 5000);
+        QVERIFY(rows(log).contains("fm stopped"));
+        log.run("stop");
+        QVERIFY(rows(log).contains("no fm command is running"));
+        log.setCliProgram(QDir::temp().filePath("fm-missing-binary"));
+        log.run("fm --help");
+        QTRY_VERIFY(rows(log).contains("fm could not start"));
+        QVERIFY(!log.cliRunning());
+#endif
+    }
     void keyboardAndProductionPanel() {
         DebugConsole log;
         log.record("WARN", "sync", "account-1 mail = retrying; google_rate_limited", {{"retry_after_secs", 23}});
@@ -270,12 +334,26 @@ ApplicationWindow {
         idle->forceActiveFocus(); window->setProperty("searching", true);
         QTest::keyClick(window, Qt::Key_QuoteLeft); QVERIFY(!console->property("opened").toBool());
         window->setProperty("searching", false);
-        QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY(console->property("opened").toBool());
-        // Drops from the top: full width, 76% of the height, at least 360 px.
-        QTRY_COMPARE(console->property("y").toDouble(), 0.0);
+        const auto popupState = [&] {
+            auto focus = window->activeFocusItem();
+            return QString("active=%8 visible=%1 opened=%2 shown=%3 reopening=%4 y=%5 focus=%6/%7").arg(console->property("visible").toBool()).arg(console->property("opened").toBool())
+                .arg(console->property("shown").toBool()).arg(console->property("reopening").toBool()).arg(console->property("y").toDouble())
+                .arg(focus ? focus->metaObject()->className() : "none").arg(focus ? focus->objectName() : QString()).arg(window->isActive());
+        };
+        QElapsedTimer slide;
+        // Slides down from above the window and fills it. The first open also builds
+        // the panel, so the timing is checked on a warm open.
+        QTest::keyClick(window, Qt::Key_QuoteLeft);
+        QTRY_VERIFY_WITH_TIMEOUT(console->property("opened").toBool() && console->property("y").toDouble() == 0.0, 2000);
+        QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY_WITH_TIMEOUT(!console->property("visible").toBool(), 1000);
+        slide.start();
+        QTest::keyClick(window, Qt::Key_QuoteLeft);
+        QVERIFY(console->property("y").toDouble() < 0);
+        QTRY_VERIFY_WITH_TIMEOUT(console->property("opened").toBool() && console->property("y").toDouble() == 0.0, 1000);
+        QVERIFY2(slide.elapsed() < 300, qPrintable(QString::number(slide.elapsed())));
         QCOMPARE(console->property("x").toDouble(), 0.0);
         QCOMPARE(console->property("width").toDouble(), 1280.0);
-        QCOMPARE(console->property("height").toDouble(), 820 * 0.76);
+        QCOMPARE(console->property("height").toDouble(), 820.0);
         auto command = window->findChild<QQuickItem *>("debugCommand"); QVERIFY(command);
         QTRY_VERIFY(command->hasActiveFocus());
         auto events = window->findChild<QQuickItem *>("debugEvents"); QVERIFY(events);
@@ -301,8 +379,21 @@ ApplicationWindow {
         grep->forceActiveFocus(); grep->setProperty("text", ""); QMetaObject::invokeMethod(grep, "textEdited");
         QCOMPARE(log.grep(), QString());
         // ` in the console's own fields closes it; reopen.
+        slide.restart();
         QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY(!console->property("opened").toBool());
+        // Slides back up out of view, also under 300 ms.
+        QTRY_VERIFY_WITH_TIMEOUT(!console->property("visible").toBool(), 1000);
+        QVERIFY2(slide.elapsed() < 300, qPrintable(QString::number(slide.elapsed())));
         QVERIFY(grep->property("text").toString().isEmpty());
+        // ~ mid-slide follows what was asked for: open then close at once ends closed,
+        // and ~ while it slides up brings it straight back down.
+        QTest::keyClick(window, Qt::Key_QuoteLeft); QTest::qWait(40); QTest::keyClick(window, Qt::Key_QuoteLeft);
+        QTRY_VERIFY_WITH_TIMEOUT(!console->property("visible").toBool(), 1000);
+        QTest::qWait(250); QVERIFY(!console->property("visible").toBool());
+        QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY2(console->property("opened").toBool(), qPrintable(popupState()));
+        QTest::keyClick(window, Qt::Key_QuoteLeft); QTest::qWait(40); QTest::keyClick(window, Qt::Key_QuoteLeft);
+        QTRY_VERIFY2_WITH_TIMEOUT(console->property("opened").toBool() && console->property("y").toDouble() == 0.0, qPrintable(popupState()), 1000);
+        QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY_WITH_TIMEOUT(!console->property("visible").toBool(), 1000);
         QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY(console->property("opened").toBool());
         // A JSON line: collapsed hint, expanded details and block, copy.
         QQuickItem *jsonRow = nullptr;
@@ -396,10 +487,10 @@ ApplicationWindow {
             QVERIFY(events->property("atYEnd").toBool());
         }
         window->resize(1000, 650); QTest::qWait(100);
-        QCOMPARE(console->property("height").toDouble(), 650 * 0.76);
+        QCOMPARE(console->property("height").toDouble(), 650.0);
         QVERIFY(events->property("atYEnd").toBool());
         window->resize(1000, 400); QTest::qWait(50);
-        QCOMPARE(console->property("height").toDouble(), 360.0);
+        QCOMPARE(console->property("height").toDouble(), 400.0);
         window->resize(1280, 820); QTest::qWait(100);
         QVERIFY(events->property("atYEnd").toBool());
         events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_PageUp);
@@ -413,6 +504,60 @@ ApplicationWindow {
         QVERIFY(log.paused()); QCOMPARE(mode->property("text").toString(), QString::fromUtf8("‖ paused"));
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(pause));
         QVERIFY(!log.paused());
+        // Running a command from a scrolled-up view jumps to the bottom and stays
+        // there as its output arrives, including a burst of lines later on.
+        for (int i = 0; i < 700; ++i) { log.record("info", "sync", QString("filler %1").arg(i)); if (i % 40 == 0) settle(); }
+        settle(); QTest::qWait(50);
+        events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::qWait(30);
+        QVERIFY(!events->property("atYEnd").toBool()); QVERIFY(!console->property("followTail").toBool());
+        command->forceActiveFocus(); typeText(window, "help"); QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY2(events->property("atYEnd").toBool(), qPrintable(QString::number(events->property("contentY").toDouble())));
+        QVERIFY(console->property("followTail").toBool());
+        // Output that arrives later (as fm's does) also brings the view to the bottom.
+        events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::qWait(30);
+        QVERIFY(!events->property("atYEnd").toBool());
+        log.run("level bogus");
+        QTRY_VERIFY(events->property("atYEnd").toBool()); QVERIFY(console->property("followTail").toBool());
+        // A burst of more than 50 lines at once resets the view's model; it stays at the end.
+        QTest::qWait(100); QVERIFY(events->property("atYEnd").toBool());
+        for (int i = 0; i < 80; ++i) log.record("info", "sync", QString("burst %1").arg(i));
+        settle(); QTest::qWait(100);
+        QVERIFY2(events->property("atYEnd").toBool(), qPrintable(QString("burst: contentY=%1 contentHeight=%2 originY=%3").arg(events->property("contentY").toDouble())
+            .arg(events->property("contentHeight").toDouble()).arg(events->property("originY").toDouble())));
+#ifdef FM_CLI_PATH
+        events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home); QTest::qWait(30);
+        QVERIFY(!events->property("atYEnd").toBool());
+        log.setCliProgram(FM_CLI_PATH);
+        command->forceActiveFocus(); typeText(window, "fm mail --help"); QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY_WITH_TIMEOUT(!log.cliRunning(), 15000);
+        QTRY_VERIFY(rows(log).contains("Usage: fm"));
+        QTest::qWait(100);
+        QVERIFY2(events->property("atYEnd").toBool(), qPrintable(QString("contentY=%1 contentHeight=%2 height=%3").arg(events->property("contentY").toDouble())
+            .arg(events->property("contentHeight").toDouble()).arg(events->property("height").toDouble())));
+        log.setPaused(false);
+#endif
+        // Ctrl+C in the command line ends a running fm command.
+#ifdef Q_OS_WIN
+        log.setCliProgram("ping"); command->forceActiveFocus(); typeText(window, "fm -n 30 127.0.0.1");
+#else
+        log.setCliProgram("sleep"); command->forceActiveFocus(); typeText(window, "fm 30");
+#endif
+        QTest::keyClick(window, Qt::Key_Return);
+        QVERIFY(log.cliRunning());
+        auto cliRunning = window->findChild<QQuickItem *>("debugCliRunning"); QVERIFY(cliRunning);
+        QTRY_VERIFY(cliRunning->isVisible());
+#ifdef Q_OS_MACOS
+        QTest::keyClick(window, Qt::Key_C, Qt::MetaModifier);
+#else
+        QTest::keyClick(window, Qt::Key_C, Qt::ControlModifier);
+#endif
+        QTRY_VERIFY_WITH_TIMEOUT(!log.cliRunning(), 5000);
+        QTRY_VERIFY(!cliRunning->isVisible());
+        QVERIFY(rows(log).contains("fm stopped"));
+        // It paused the live log; resume brings it back.
+        QVERIFY(log.paused()); QCOMPARE(mode->property("text").toString(), QString::fromUtf8("‖ paused"));
+        command->forceActiveFocus(); typeText(window, "resume"); QTest::keyClick(window, Qt::Key_Return);
+        QVERIFY(!log.paused());
         // The state tab.
         command->forceActiveFocus(); typeText(window, "state"); QTest::keyClick(window, Qt::Key_Return);
         auto state = window->findChild<QQuickItem *>("debugState"); QVERIFY(state);
@@ -424,7 +569,7 @@ ApplicationWindow {
         // Esc closes and restores focus; `exit` closes too.
         QTest::keyClick(window, Qt::Key_Escape); QTRY_VERIFY(!console->property("opened").toBool());
         QTRY_VERIFY(idle->hasActiveFocus());
-        QTest::keyClick(window, Qt::Key_AsciiTilde, Qt::ShiftModifier); QTRY_VERIFY(console->property("opened").toBool());
+        QTest::keyClick(window, Qt::Key_AsciiTilde, Qt::ShiftModifier); QTRY_VERIFY2(console->property("opened").toBool(), qPrintable(popupState()));
         QTRY_VERIFY(events->property("atYEnd").toBool());
         for (const auto theme : {"graphite", "paper", "harbour", "terminal"}) {
             window->setProperty("testTheme", theme); QTest::qWait(30);

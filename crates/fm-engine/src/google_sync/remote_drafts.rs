@@ -1,5 +1,5 @@
 //! One resumable Gmail draft inventory per owned account job, repeated every
-//! minute so drafts made, changed or deleted in Gmail follow here (D121).
+//! minute so drafts made, changed or deleted in Gmail follow here.
 use super::{drafts, failure, mail::Step, progress_state, retry_wait, SyncContext};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_core::{
@@ -23,6 +23,7 @@ use std::{
 /// How often Gmail's drafts are listed again while the account syncs.
 const RESCAN: Duration = Duration::from_secs(60);
 
+/// The account and connection generation that inventory steps are checked against.
 pub(super) fn scope(ctx: &SyncContext) -> GoogleDraftReadScope {
     GoogleDraftReadScope {
         account: ctx.account.as_str().to_owned(),
@@ -30,12 +31,18 @@ pub(super) fn scope(ctx: &SyncContext) -> GoogleDraftReadScope {
     }
 }
 
+/// Walks Gmail's drafts list and imports new or changed drafts, one
+/// store-directed step at a time. Nothing is written to Google.
 #[derive(Default)]
 pub(crate) struct RemoteDraftWorker {
+    /// A scan has been started and not yet completed.
     begun: bool,
+    /// Latest inventory status, copied into sync progress by [`run`].
     status: Option<Value>,
 }
 impl RemoteDraftWorker {
+    /// Runs the step the store asks for: begin a scan, list one page of draft
+    /// ids, or fetch one draft's RAW source. A completed scan idles for a minute.
     pub(crate) async fn step(&mut self, ctx: &SyncContext) -> Result<Step> {
         if !self.begun {
             let scope = scope(ctx);
@@ -181,6 +188,8 @@ impl RemoteDraftWorker {
     }
 }
 
+/// The remote-drafts worker loop. Besides its own schedule it wakes on
+/// `google_drafts_refresh` and on the job's refresh signal.
 pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
     let mut worker = RemoteDraftWorker::default();
     let mut failures = 0;
@@ -230,6 +239,9 @@ pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
                 {
                     break;
                 }
+                // Transient errors back off. Other errors park the worker
+                // until an explicit wake or refresh, with no timer; a stale
+                // check that the probe above did not confirm retries at once.
                 let delay = retry_wait(&error, failures).unwrap_or_else(|| {
                     if error.code == "stale_google_work" {
                         Duration::from_millis(1)
@@ -252,6 +264,7 @@ pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
     progress_state(&progress, "remote_drafts", "stopped", None);
 }
 
+/// Maps a Gmail error to an engine error code, keeping any retry-after hint.
 fn provider(error: GoogleError) -> CoreError {
     let code = match error {
         GoogleError::RateLimited { .. } => "google_rate_limited",

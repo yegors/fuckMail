@@ -7,7 +7,6 @@ import QtQuick.Effects
 // card. Viewing never acknowledges, snoozes or plays a sound on opening.
 Item {
     id: panel
-    // Kept for existing hosts; "Open event" is gone, so nothing emits it.
     // View mode: the host closes the screen.
     signal closeRequested()
     property Item backgroundSource

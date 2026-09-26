@@ -1,4 +1,4 @@
-//! google-p2-calendar-v1: generated fixtures, no accounts or real network.
+//! Calendar API client tests against generated responses; no accounts or network.
 use super::*;
 use fm_google::transport::HttpFuture;
 use std::{collections::VecDeque, sync::Mutex};

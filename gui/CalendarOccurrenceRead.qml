@@ -1,3 +1,6 @@
+// Non-visual helper for EventDetails and EventEditor: re-reads a recurring
+// occurrence via backend.readCalendarOccurrence() before it is edited, deleted
+// or answered, then emits resolved() or failed(). Stale replies are dropped.
 import QtQuick
 
 QtObject {

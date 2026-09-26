@@ -4,22 +4,41 @@ use crate::{read_retry_delay, AccountId, GoogleError};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// A Google API with its own project and per-account quota.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Service {
     Gmail,
     Calendar,
 }
+/// What a request does, which sets its admission rules and retry policy.
+///
+/// [`Scheduler::enqueue`] refuses a class that does not belong to the service,
+/// such as a Gmail submission charged to Calendar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkClass {
+    /// A read the person is waiting on.
     UserRead,
+    /// An incremental sync read, such as Gmail history.
     DeltaRead,
+    /// Background read. It may use at most 3/4 of each budget and of the
+    /// in-flight slots, so it cannot starve other work.
     BackfillRead,
+    /// Gmail label, trash, delete or label-creation change.
     StateMutation,
+    /// Gmail draft create, update or delete.
     DraftMutation,
+    /// Gmail send.
     Submission,
+    /// Calendar write.
     CalendarMutation,
 }
 impl WorkClass {
+    /// Whether this class is a read.
+    ///
+    /// Reads may be retried after backoff and run up to
+    /// [`SchedulerConfig::max_reads_per_account`] at a time per account.
+    /// Mutations run one at a time per account, across both services, in
+    /// enqueue order, and [`retry_delay`] never suggests repeating one.
     pub fn is_read(self) -> bool {
         matches!(self, Self::UserRead | Self::DeltaRead | Self::BackfillRead)
     }
@@ -28,13 +47,20 @@ impl WorkClass {
     }
 }
 
+/// Per-minute quota-unit budgets for one service, as enforced locally.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServiceBudget {
+    /// Budget for the whole Google Cloud project as seen by this engine.
+    /// Other installations sharing the OAuth client are not visible here.
     pub project_units_per_minute: u32,
+    /// Budget for each account.
     pub account_units_per_minute: u32,
 }
 impl ServiceBudget {
     /// Reserve 20% headroom below the supplied per-minute limits.
+    ///
+    /// Each result is rounded down to a multiple of 4. Errors with
+    /// `InvalidConfiguration` if either result is below 4 units.
     pub fn from_confirmed_limits(project: u32, account: u32) -> Result<Self, SchedulerError> {
         let budget = Self {
             project_units_per_minute: project / 5 * 4,
@@ -51,20 +77,28 @@ impl ServiceBudget {
         }
     }
 }
+/// Budgets and admission limits for a [`Scheduler`].
 #[derive(Clone, Debug)]
 pub struct SchedulerConfig {
     pub gmail: ServiceBudget,
     pub calendar: ServiceBudget,
+    /// Permits admitted and not yet finished, across all accounts (2–32).
     pub max_in_flight: usize,
+    /// Concurrent reads per account, across both services.
     pub max_reads_per_account: usize,
+    /// Work items waiting in all queues (at most 65,536).
     pub max_queued: usize,
+    /// Registered accounts (at most 1024).
     pub max_accounts: usize,
 }
 impl SchedulerConfig {
-    /// Published Google API limits checked 2026-09-14. Provider throttling remains
-    /// authoritative; these defaults do not assert a project's assigned quota.
-    /// https://developers.google.com/workspace/gmail/api/reference/quota
-    /// https://developers.google.com/workspace/calendar/api/guides/quota
+    /// Google's published per-minute quotas for Gmail and Calendar.
+    ///
+    /// The JSON has the shape [`SchedulerConfig::from_confirmed_json`] accepts.
+    /// Provider throttling remains authoritative; these defaults do not assert
+    /// a project's assigned quota. Sources:
+    /// <https://developers.google.com/workspace/gmail/api/reference/quota> and
+    /// <https://developers.google.com/workspace/calendar/api/guides/quota>.
     pub fn published_limits() -> serde_json::Value {
         serde_json::json!({
             "gmail_project_units_per_minute":1_200_000,
@@ -74,8 +108,11 @@ impl SchedulerConfig {
         })
     }
 
-    /// Resolve an ordinary sync start to built-in limits. Explicit complete
-    /// overrides remain supported for isolated verification and older clients.
+    /// Resolves the quota JSON for a sync start and returns it validated.
+    ///
+    /// An empty object selects [`SchedulerConfig::published_limits`]. Explicit
+    /// complete overrides remain supported for verification builds and older
+    /// clients.
     pub fn sync_limits(params: &serde_json::Value) -> Result<serde_json::Value, SchedulerError> {
         let limits = if params.as_object().is_some_and(|object| object.is_empty()) {
             Self::published_limits()
@@ -86,7 +123,12 @@ impl SchedulerConfig {
         Ok(limits)
     }
 
+    /// Parses the four `*_units_per_minute` limits and applies the 20% headroom
+    /// of [`ServiceBudget::from_confirmed_limits`].
+    ///
     /// Shared validation for legacy explicit overrides and stored preferences.
+    /// Each field must be an integer from 100 to 100,000,000; a missing,
+    /// extra or out-of-range field is `InvalidConfiguration`.
     pub fn from_confirmed_json(params: &serde_json::Value) -> Result<Self, SchedulerError> {
         const FIELDS: [&str; 4] = [
             "gmail_project_units_per_minute",
@@ -114,6 +156,8 @@ impl SchedulerConfig {
             ServiceBudget::from_confirmed_limits(values[2], values[3])?,
         ))
     }
+    /// Uses the given budgets with the default limits: 4 in flight, 2 reads
+    /// per account, 1024 queued and 128 accounts.
     pub fn new(gmail: ServiceBudget, calendar: ServiceBudget) -> Self {
         Self {
             gmail,
@@ -131,14 +175,22 @@ impl SchedulerConfig {
         }
     }
 }
+/// Why the scheduler refused a configuration or a work item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SchedulerError {
+    /// A budget or limit is out of range.
     InvalidConfiguration,
+    /// The account was never passed to [`Scheduler::register_account`].
     UnknownAccount,
+    /// The queue, the account table or the ID space is full.
     Capacity,
+    /// `units` is zero or larger than one minute of budget could ever admit.
     InvalidCost,
+    /// The work class does not belong to the service.
     InvalidClass,
 }
+/// Identifies queued or admitted work. Unique within one scheduler and
+/// increasing in enqueue order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WorkId(u64);
 impl WorkId {
@@ -146,11 +198,13 @@ impl WorkId {
         self.0
     }
 }
+/// One request waiting for quota. `Debug` omits the account.
 #[derive(Clone)]
 pub struct Work {
     pub account: AccountId,
     pub service: Service,
     pub class: WorkClass,
+    /// Quota cost in the service's units, including every batch subrequest.
     pub units: u32,
 }
 impl std::fmt::Debug for Work {
@@ -162,6 +216,11 @@ impl std::fmt::Debug for Work {
             .finish_non_exhaustive()
     }
 }
+/// Admission of one [`Work`] item, returned by [`Scheduler::next`].
+///
+/// It holds a concurrency slot and a quota reservation until it is passed to
+/// [`Scheduler::finish_at`]. It is valid only with the scheduler that issued
+/// it and cannot be cloned.
 #[derive(Debug)]
 pub struct Permit {
     owner: u64,
@@ -176,12 +235,16 @@ impl Permit {
         &self.work
     }
 }
+/// What a provider throttle pauses: all of the project's use of a service, or
+/// one account's use of it.
 #[derive(Clone, Debug)]
 pub enum CooldownScope {
     Project(Service),
     Account(AccountId, Service),
 }
 
+/// Rolling 60-second record of charged units, plus reservations that have
+/// not dispatched yet.
 #[derive(Default)]
 struct Window {
     charges: VecDeque<(u64, u32)>,
@@ -214,6 +277,8 @@ impl Window {
         self.charge(now, units);
     }
     fn charge(&mut self, now: u64, units: u32) {
+        // Charges in the same millisecond share one entry, which bounds the
+        // deque under bursts.
         self.used += u64::from(units);
         if let Some((at, old)) = self.charges.back_mut().filter(|(at, _)| *at == now) {
             let _ = at;
@@ -233,6 +298,7 @@ impl Window {
         if used + u64::from(units) <= u64::from(limit) {
             return Some(now);
         }
+        // Walk the oldest charges forward until enough of them have aged out.
         for (at, charge) in &self.charges {
             used -= u64::from(*charge);
             if used + u64::from(units) <= u64::from(limit) {
@@ -242,6 +308,8 @@ impl Window {
         None
     }
 }
+/// One budget (a project or an account lane). Backfill is charged to both
+/// windows, so it is capped separately while still counting toward the total.
 #[derive(Default)]
 struct BudgetState {
     total: Window,
@@ -281,6 +349,8 @@ impl BudgetState {
         }
     }
 }
+/// Backfill may use at most 3/4 of a budget, so at least a quarter always
+/// remains for work someone is waiting on.
 fn backfill_limit(limit: u32) -> u32 {
     limit - limit.div_ceil(4)
 }
@@ -291,8 +361,17 @@ struct Lane {
     budget: BudgetState,
 }
 type LaneKey = (AccountId, Service);
+/// Tags each scheduler so a permit from one can never release another's quota.
 static NEXT_SCHEDULER: AtomicU64 = AtomicU64::new(1);
 
+/// Deterministic quota admission for Gmail and Calendar requests.
+///
+/// The scheduler has no clock, threads or I/O: callers pass monotonic
+/// milliseconds to each call and serialize access themselves. Each
+/// (account, service) pair has a lane with an urgent and a backfill queue.
+/// Quota is tracked in rolling 60-second windows, per project and per
+/// account. Admitted work reserves its units, and the reservation becomes a
+/// charge at [`Scheduler::dispatch`], just before the HTTP request.
 pub struct Scheduler {
     owner: u64,
     config: SchedulerConfig,
@@ -307,6 +386,8 @@ pub struct Scheduler {
     now: u64,
 }
 impl Scheduler {
+    /// Creates an empty scheduler. Errors with `InvalidConfiguration` if a
+    /// budget or limit in `config` is out of range.
     pub fn new(config: SchedulerConfig) -> Result<Self, SchedulerError> {
         config.gmail.validate()?;
         config.calendar.validate()?;
@@ -339,10 +420,13 @@ impl Scheduler {
             now: 0,
         })
     }
+    /// Creates the Gmail and Calendar lanes for `account`. Repeat calls are
+    /// no-ops; errors with `Capacity` beyond `max_accounts`.
     pub fn register_account(&mut self, account: AccountId) -> Result<(), SchedulerError> {
         if self.lanes.contains_key(&(account.clone(), Service::Gmail)) {
             return Ok(());
         }
+        // Every account owns exactly two lanes.
         if self.lanes.len() / 2 >= self.config.max_accounts {
             return Err(SchedulerError::Capacity);
         }
@@ -352,9 +436,15 @@ impl Scheduler {
         }
         Ok(())
     }
+    /// Queues `work` at the back of its lane and returns its ID.
+    ///
     /// Units include every batch subrequest. Queues contain identifiers only;
     /// payloads and journal records remain with the owning engine worker.
+    /// Errors: `InvalidCost`, `InvalidClass`, `Capacity`, or `UnknownAccount`
+    /// if the account is not registered.
     pub fn enqueue(&mut self, work: Work) -> Result<WorkId, SchedulerError> {
+        // An item larger than one minute of its tightest budget could never
+        // be admitted, so it is refused now instead of waiting forever.
         let limit = self.config.budget(work.service);
         let max = limit
             .project_units_per_minute
@@ -393,6 +483,8 @@ impl Scheduler {
         self.queued += 1;
         Ok(id)
     }
+    /// Removes still-queued work. Returns `false` if it was already admitted
+    /// or is unknown; admitted work is released with [`Scheduler::finish_at`].
     pub fn cancel_queued(&mut self, id: WorkId) -> bool {
         for lane in self.lanes.values_mut() {
             for queue in [&mut lane.urgent, &mut lane.backfill] {
@@ -405,19 +497,28 @@ impl Scheduler {
         }
         false
     }
+    /// Admits the next eligible work item, or returns `None` if nothing can
+    /// start at `now_ms`. Call it repeatedly until it returns `None`.
+    ///
     /// Round-robin account/service lanes, preferring urgent work for four
     /// admissions then an eligible backfill. No progress is promised while its
-    /// quota is unavailable. At least ceil(overall/4) slots cannot be backfill.
+    /// quota is unavailable. At least `ceil(max_in_flight / 4)` slots cannot be
+    /// backfill. Only the head of each queue is considered, so work never
+    /// overtakes earlier work in its own queue.
     pub fn next(&mut self, now_ms: u64) -> Option<Permit> {
         self.now = self.now.max(now_ms);
         if self.active.len() >= self.config.max_in_flight {
             return None;
         }
+        // Start scanning just after the lane served last, so every lane gets
+        // a turn regardless of its position in the map.
         let mut keys: Vec<_> = self.lanes.keys().cloned().collect();
         if let Some(last) = &self.last_lane {
             let start = keys.partition_point(|key| key <= last);
             keys.rotate_left(start);
         }
+        // After four urgent admissions in a row, offer backfill the first
+        // chance so a steady urgent stream cannot starve it.
         let preference = if self.urgent_streak >= 4 {
             [true, false]
         } else {
@@ -461,6 +562,7 @@ impl Scheduler {
         None
     }
     fn available(&mut self, id: WorkId, work: &Work) -> bool {
+        // Backfill never takes the last `ceil(max_in_flight / 4)` slots.
         if work.class.background()
             && self
                 .active
@@ -471,6 +573,8 @@ impl Scheduler {
         {
             return false;
         }
+        // Concurrency is per account across both services: a bounded number
+        // of reads, and at most one mutation at a time.
         let same_account = || self.active.values().filter(|w| w.account == work.account);
         if work.class.is_read() {
             if same_account().filter(|w| w.class.is_read()).count()
@@ -497,6 +601,7 @@ impl Scheduler {
                 return false;
             }
         }
+        // Both the project budget and the account budget must have room.
         let limit = self.config.budget(work.service);
         self.projects.get_mut(&work.service).unwrap().allows(
             self.now,
@@ -509,7 +614,7 @@ impl Scheduler {
             .budget
             .allows(self.now, work, limit.account_units_per_minute)
     }
-    /// Convert this exact permit's non-expiring reservation to a rolling-window
+    /// Converts this exact permit's non-expiring reservation to a rolling-window
     /// charge immediately before HTTP. This never admits a second concurrency
     /// lease and succeeds only once for a live permit owned by this scheduler.
     /// A cooldown learned while waiting also refuses dispatch; the owner must
@@ -563,9 +668,10 @@ impl Scheduler {
             .dispatch(self.now, &work);
         self.dispatched.insert(id);
     }
-    /// Release concurrency at a supplied current monotonic time. An undispatched
+    /// Releases concurrency at a supplied current monotonic time. An undispatched
     /// cancellation is conservatively charged then; an actual HTTP charge is
     /// retained at its original dispatch time, never extended by a slow response.
+    /// Returns `false` for a permit this scheduler does not hold.
     pub fn finish_at(&mut self, permit: Permit, now_ms: u64) -> bool {
         if permit.owner != self.owner || !self.active.contains_key(&permit.id) {
             return false;
@@ -585,6 +691,10 @@ impl Scheduler {
     pub fn finish(&mut self, permit: Permit) -> bool {
         self.finish_at(permit, self.now)
     }
+    /// Pauses admission and dispatch for `scope` until monotonic `until_ms`.
+    ///
+    /// A cooldown only ever extends; an earlier `until_ms` has no effect.
+    /// Errors with `UnknownAccount` for an unregistered account scope.
     pub fn cooldown(&mut self, scope: CooldownScope, until_ms: u64) -> Result<(), SchedulerError> {
         let state = match scope {
             CooldownScope::Project(service) => self.projects.get_mut(&service).unwrap(),
@@ -602,6 +712,7 @@ impl Scheduler {
     pub fn queued(&self) -> usize {
         self.queued
     }
+    /// Permits admitted and not yet finished.
     pub fn in_flight(&self) -> usize {
         self.active.len()
     }
@@ -641,6 +752,9 @@ impl Scheduler {
     }
 }
 
+/// Returns the backoff in milliseconds before re-enqueueing a failed read, as
+/// computed by [`crate::read_retry_delay`]; always `None` for a mutation.
+///
 /// A caller must explicitly enqueue a read again. Every mutation, including a
 /// draft update or calendar write, requires operation-specific reconciliation.
 pub fn retry_delay(

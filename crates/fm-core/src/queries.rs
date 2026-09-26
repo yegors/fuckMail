@@ -701,6 +701,7 @@ impl Store {
                 "offset",
                 "sender",
                 "exact_sender",
+                "exact_person",
                 "kind",
                 "status",
                 "has_attachment",
@@ -739,9 +740,14 @@ impl Store {
         }
         validate_filters(p)?;
         let sender = optional_string(p, "sender", "")?;
-        let exact_sender = optional_string(p, "exact_sender", "")?
-            .trim()
-            .to_lowercase();
+        // One exact address: the sender only, or anyone on a message.
+        let exact_sender = [
+            optional_string(p, "exact_sender", "")?,
+            optional_string(p, "exact_person", "")?,
+        ]
+        .concat()
+        .trim()
+        .to_lowercase();
         let kind = optional_string(p, "kind", "all")?;
         let sender_pattern = format!(
             "%{}%",
@@ -970,7 +976,7 @@ impl Store {
         } else {
             field
         };
-        // Each phrase must appear as written (Search 10). The index finds its
+        // Each phrase must appear as written. The index finds its
         // words in order, the last as a prefix; the message text then decides
         // the punctuation and spacing between them.
         let expression = text
@@ -982,7 +988,11 @@ impl Store {
                     .iter()
                     .map(|v| search_query::fts_phrase("subject", v)),
             )
-            .chain(text.body.iter().map(|v| search_query::fts_phrase("body", v)))
+            .chain(
+                text.body
+                    .iter()
+                    .map(|v| search_query::fts_phrase("body", v)),
+            )
             .flatten()
             .collect::<Vec<_>>()
             .join(" AND ");
@@ -1127,9 +1137,10 @@ impl Store {
                     for (column, phrase) in &phrase_checks {
                         let mut has = |index: usize| -> Result<bool> {
                             if folded[index].is_none() {
-                                let text = row.get_ref(4 + index)?.as_str_or_null().map_err(|_| {
-                                    err("storage_error", "Invalid message text")
-                                })?;
+                                let text = row
+                                    .get_ref(4 + index)?
+                                    .as_str_or_null()
+                                    .map_err(|_| err("storage_error", "Invalid message text"))?;
                                 folded[index] = Some(search_query::fold(text.unwrap_or("")));
                             }
                             Ok(search_query::contains_phrase(
@@ -1420,9 +1431,10 @@ impl Store {
                 .and_then(Value::as_str)
                 .ok_or_else(|| err("invalid_request", "Sender summary needs an email address"))?,
         )?;
+        // Conversations the person is on: as sender, or on To or Cc.
         let result = self.conversations_ordered(
             account,
-            &json!({"exact_sender":email,"folder":"all","limit":3}),
+            &json!({"exact_person":email,"folder":"all","limit":3}),
             true,
         )?;
         Ok(
@@ -1596,7 +1608,7 @@ fn number(p: &Value, key: &str, default: i64, min: i64, max: i64) -> Result<i64>
 /// addresses, starting near the first search token.
 fn search_snippet(body: &str, phrases: &[String]) -> String {
     let body = fm_mail::preview::preview_source(body);
-    // The first place a phrase matches, as the search decided (Search 10).
+    // The first place a phrase matches, as the search decided.
     let position = phrases
         .iter()
         .filter_map(|phrase| search_query::find_phrase(&body, phrase))
@@ -1616,12 +1628,20 @@ fn search_snippet(body: &str, phrases: &[String]) -> String {
 
 // Structured filters combine on the same source message; status considers the whole conversation.
 pub(crate) fn validate_filters(p: &Value) -> Result<()> {
-    if let Some(value) = p.get("exact_sender") {
-        canonical_email(
-            value
-                .as_str()
-                .ok_or_else(|| err("invalid_request", "Exact sender must be an email address"))?,
-        )?;
+    for key in ["exact_sender", "exact_person"] {
+        if let Some(value) = p.get(key) {
+            canonical_email(
+                value.as_str().ok_or_else(|| {
+                    err("invalid_request", "Exact sender must be an email address")
+                })?,
+            )?;
+        }
+    }
+    if p.get("exact_sender").is_some() && p.get("exact_person").is_some() {
+        return Err(err(
+            "invalid_request",
+            "Use either an exact sender or an exact person",
+        ));
     }
     if !["all", "people", "automated", "unknown"].contains(&optional_string(p, "kind", "all")?) {
         return Err(err("invalid_request", "Unknown sender kind"));
@@ -1735,6 +1755,11 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     search_matches_sql_with(search, p, &text)
 }
 
+/// A message listing the exact address `?12` as any From/To/Cc person the link
+/// index has read, or as the first To of a message it has not read yet. One
+/// list, so the outer scan stays on its index instead of reading every row.
+const EXACT_LISTED: &str = "m.rowid IN (SELECT mp.message_rowid FROM message_people mp WHERE mp.person=(SELECT id FROM people WHERE email=?12) UNION ALL SELECT rowid FROM messages WHERE rowid>COALESCE((SELECT indexed_rowid FROM link_index_state),0) AND account=?1 AND trim(recipient)=?12 COLLATE NOCASE)";
+
 pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredicates) -> String {
     // Only add predicates actually requested. Bound optional OR expressions kept
     // sender/body columns in the old query's scan even for unfiltered listings.
@@ -1765,6 +1790,13 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
         predicate.push_str(
             " AND (trim(m.sender_email)=?12 COLLATE NOCASE OR m.sender_email GLOB '*[^ -~]*')",
         );
+    }
+    if p.get("exact_person").is_some() {
+        // The sender as above, the first To address on the row, or any
+        // From/To/Cc person the link index has read from the source.
+        predicate.push_str(&format!(
+            " AND (trim(m.sender_email)=?12 COLLATE NOCASE OR m.sender_email GLOB '*[^ -~]*' OR {EXACT_LISTED})"
+        ));
     }
     if let Some(has) = text.attachment {
         predicate.push_str(if has {
@@ -1807,10 +1839,14 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
     } else {
         "messages m"
     };
+    // The exact-address check in Rust compares this column; a listed
+    // recipient already matched exactly, so it reports the wanted address.
     let exact_column = if p.get("exact_sender").is_some() {
-        "m.sender_email"
+        "m.sender_email".to_owned()
+    } else if p.get("exact_person").is_some() {
+        format!("CASE WHEN {EXACT_LISTED} THEN ?12 ELSE m.sender_email END")
     } else {
-        "''"
+        "''".to_owned()
     };
     let text_columns = if text.texts {
         ",m.subject,m.body,m.sender_name||' '||m.sender_email"

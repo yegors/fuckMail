@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
+/// Gmail call used to deliver a mutation: `messages.modify`, `messages.trash`
+/// or `messages.untrash`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MailMutationAction {
@@ -28,6 +30,9 @@ impl MailMutationAction {
 fn is_false(v: &bool) -> bool {
     !*v
 }
+/// One label state a mutation wants Gmail to reach, tied to the intent
+/// revision that asked for it. `present` says whether `label` should be on the
+/// message; a newer intent for the same field supersedes this one.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct DesiredField {
     #[serde(default, skip_serializing_if = "is_false")]
@@ -42,49 +47,77 @@ struct DesiredField {
     present: bool,
 }
 
+/// One queued message mutation, from [`Store::google_mail_mutation_next`].
+///
+/// Delivery is read-first: the caller reads the message's current Gmail labels
+/// and passes them to [`Store::google_mail_mutation_observe`], which decides
+/// whether a write is still needed.
 #[derive(Clone, Debug)]
 pub struct MailMutationWork {
     pub account: String,
+    /// Local operation that queued the mutation; one request can cover many
+    /// messages.
     pub request_id: String,
+    /// Local message ID.
     pub message_id: String,
+    /// Gmail message ID captured when the mutation was queued.
     pub remote_id: String,
     pub action: MailMutationAction,
     pub connection_generation: i64,
+    /// Number of writes claimed so far; fences stale results.
     pub attempt: i64,
     now_ms: u64,
     desired: Vec<DesiredField>,
 }
+/// A message's current Gmail labels, read just before deciding on a write.
 #[derive(Clone, Debug)]
 pub struct MailLabelObservation {
     pub remote_id: String,
     pub remote_thread_id: String,
+    /// Decimal Gmail history ID of the read. An older value than one already
+    /// stored means the read was stale.
     pub history_id: String,
     pub labels: BTreeSet<String>,
 }
+/// A claimed Gmail write: the work, now `in_flight`, and the label changes
+/// still needed.
 #[derive(Clone, Debug)]
 pub struct MailMutationAttempt {
     pub work: MailMutationWork,
     pub add_labels: Vec<String>,
     pub remove_labels: Vec<String>,
 }
+/// What to do after an observation.
 #[derive(Clone, Debug)]
 pub enum MailMutationDecision {
+    /// Gmail already matches, the intent was superseded, or the mutation
+    /// failed; nothing to send.
     Finished,
+    /// The read was older than state already stored; read again later.
     RetryRead,
+    /// Send this write, then report it with
+    /// [`Store::google_mail_mutation_attempt_result`].
     Submit(MailMutationAttempt),
 }
+/// Transport result of one claimed write.
 #[derive(Clone, Debug)]
 pub enum MailMutationAttemptOutcome {
+    /// Gmail returned success. This is not taken as proof; the labels are read
+    /// back before the mutation is confirmed.
     Submitted,
+    /// The write may or may not have applied; read back at `retry_at_ms`
+    /// (Unix milliseconds).
     Reconcile {
         retry_at_ms: u64,
         error_code: &'static str,
     },
-    Failed {
-        error_code: &'static str,
-    },
+    /// Gmail refused the write; the mutation stops.
+    Failed { error_code: &'static str },
 }
 
+/// Queues Gmail delivery of a local read, star, category, filing or undo
+/// change, one row per affected message. A no-op outside live profiles.
+///
 /// Same transaction as the local operation and its exact replay receipt.
 pub(crate) fn enqueue(
     db: &Transaction<'_>,
@@ -227,6 +260,10 @@ pub(crate) fn enqueue(
     }
     Ok(())
 }
+/// Applies a model-suggested category locally and, when the category is linked
+/// to a Gmail label, queues its delivery. Returns a short status code such as
+/// `pending`, `local_only`, `manual_override` or `already_present`.
+///
 /// Persist a source-validated model label through the existing delivery journal.
 /// Human choices are durable even after their provider acknowledgement.
 pub(crate) fn enqueue_assisted_category(
@@ -483,6 +520,7 @@ pub(crate) fn enqueue_assisted_spam(
     }
     Ok(true)
 }
+/// The subset of `labels` that some local category is linked to.
 fn mapped_labels(
     db: &Connection,
     account: &str,
@@ -497,6 +535,8 @@ fn mapped_labels(
 }
 
 /// Admit previously local label choices after an explicit label link/sync.
+/// Queues at most 64 per call and returns how many; request IDs derive from
+/// the intent, so calling again never queues a duplicate.
 pub(crate) fn enqueue_bound_categories(db: &Transaction<'_>, account: &str) -> Result<usize> {
     validate_authoring(db, account)?;
     let rows=db.prepare("WITH intents AS (
@@ -551,6 +591,8 @@ pub(crate) fn enqueue_bound_categories(db: &Transaction<'_>, account: &str) -> R
     }
     Ok(rows.len())
 }
+/// Requires a mail-write grant and Google mail writes enabled for the account
+/// (`capability_unavailable` otherwise).
 fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
     let scopes: Option<String> = db
         .query_row(
@@ -573,6 +615,12 @@ fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
     Ok(())
 }
 impl Store {
+    /// Returns the oldest unfinished mutation whose retry time has come, or
+    /// `None`. Writes nothing.
+    ///
+    /// `now_ms` is Unix milliseconds. Fails with `stale_google_work` unless
+    /// `generation` is still connected, and `capability_unavailable` without
+    /// mail-write permission.
     pub fn google_mail_mutation_next(
         &self,
         account: &str,
@@ -599,6 +647,16 @@ impl Store {
         )
         .transpose()
     }
+    /// Compares a fresh read of the message's Gmail labels with what the
+    /// mutation wants, and either finishes it or claims the next write.
+    ///
+    /// `observation: None` means Gmail no longer has the message, which fails
+    /// the mutation. Otherwise the read's labels are published locally, even if
+    /// no write follows. Intents already satisfied are
+    /// cleared; ones replaced by a newer local change are dropped. When
+    /// nothing remains the mutation is `confirmed` (or `superseded` if nothing
+    /// was still wanted); otherwise it becomes `in_flight` with a new attempt
+    /// number.
     pub fn google_mail_mutation_observe(
         &mut self,
         work: &MailMutationWork,
@@ -655,6 +713,8 @@ impl Store {
             )
             .optional()?
             .flatten();
+        // A read older than history already applied could undo newer labels;
+        // retry it shortly instead of acting on it.
         if previous
             .as_ref()
             .and_then(|(v, _)| v.parse::<u128>().ok())
@@ -666,9 +726,13 @@ impl Store {
             tx.commit()?;
             return Ok(MailMutationDecision::RetryRead);
         }
+        // Keep only fields whose intent is still exactly the one queued; a
+        // newer local change owns the field now.
         let mut active = Vec::new();
         for desired in &work.desired {
             let current: Option<(bool, i64)> = if desired.assisted {
+                // A model suggestion yields to any human category choice, here
+                // or, before our first write, in Gmail.
                 let blocked:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM local_model_label_overrides WHERE account=?1 AND message_id=?2) OR EXISTS(SELECT 1 FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category')",params![work.account,work.message_id],|r|r.get(0))?;
                 let provider_changed = work.attempt == 0
                     && !observed.labels.contains(&desired.label)
@@ -701,6 +765,8 @@ impl Store {
             }
             active.push(desired.clone());
         }
+        // Fields Gmail already shows as wanted are done; clear their intents
+        // so the local view follows Gmail again.
         let was_active = !active.is_empty();
         let mut remaining = Vec::new();
         for desired in active {
@@ -799,6 +865,11 @@ impl Store {
             remove_labels,
         }))
     }
+    /// Records the transport result of a claimed write.
+    ///
+    /// Success schedules a read-back rather than confirming: immediately after
+    /// the first write, then after 1, 2, 4 and 8 s, then every 5 min. Fails with
+    /// `stale_google_work` if a newer claim or connection replaced this one.
     pub fn google_mail_mutation_attempt_result(
         &mut self,
         attempt: &MailMutationAttempt,
@@ -844,6 +915,8 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Returns the account's delivery queue summary: counts by state and up to
+    /// 20 recent failures and 20 oldest unfinished rows.
     pub fn google_mail_mutation_status(&self, account: &str) -> Result<Value> {
         let mut statement = self.db.prepare(
             "SELECT state,count(*) FROM google_mail_mutations WHERE account=?1 GROUP BY state",
@@ -897,6 +970,8 @@ impl Store {
         };
         Ok(json!({"request_id":request_id,"state":state,"counts":counts,"total":total}))
     }
+    /// Requires an active live account whose `generation` is still connected
+    /// and allowed to modify mail.
     fn mutation_connection(&self, account: &str, generation: i64) -> Result<()> {
         self.require_active_account(account)?;
         if self.profile_kind()? != ProfileKind::Live {
@@ -918,6 +993,8 @@ impl Store {
 fn integer_time(value: u64) -> i64 {
     value.min(i64::MAX as u64) as i64
 }
+/// Refuses work whose row finished, moved to another attempt or changed
+/// Gmail identity since it was handed out.
 fn verify_work(db: &Connection, work: &MailMutationWork) -> Result<()> {
     let current:Option<(String,i64,String)>=db.query_row("SELECT state,attempt,remote_id FROM google_mail_mutations WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
     if !current.is_some_and(|(state, attempt, remote)| {
@@ -961,6 +1038,10 @@ fn validate_observation(work: &MailMutationWork, observation: &MailLabelObservat
     }
     Ok(())
 }
+/// Sets a message's unread, starred, inbox, sent, trash and category state
+/// from its Gmail labels, except where a pending local intent still overrides
+/// a field.
+///
 /// Shared by full-source publication and lightweight mutation observations.
 pub(crate) fn project_labels(
     db: &Connection,

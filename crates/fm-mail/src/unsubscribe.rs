@@ -7,14 +7,18 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 const MAX_URL: usize = 8 * 1024;
 const MAX_NODES: usize = 50_000;
 
+/// One way to leave a mailing list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unsubscribe {
     /// An https POST of `List-Unsubscribe=One-Click` to `url`, in the background.
     OneClick { url: String },
     /// An email to `address`, with the subject and body the header asks for.
     Mailto {
+        /// One plain address, lowercased.
         address: String,
+        /// One line of at most 200 characters; `unsubscribe` when the URI has none.
         subject: String,
+        /// At most 2,000 characters; often empty.
         body: String,
     },
     /// A page the person opens in their browser: a header URL without
@@ -23,6 +27,7 @@ pub enum Unsubscribe {
 }
 
 impl Unsubscribe {
+    /// Stable snake_case name of the variant: `one_click`, `mailto` or `link`.
     pub fn method(&self) -> &'static str {
         match self {
             Unsubscribe::OneClick { .. } => "one_click",

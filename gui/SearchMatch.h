@@ -9,18 +9,25 @@
 #include <algorithm>
 #include <vector>
 
-// Where the search's phrases appear in shown text, by the rules Core matched
-// them with (Search 10): case, Latin accents and runs of whitespace ignored,
+// Where the search's phrases appear in shown text, by the rules Core's search
+// matched them with: case, Latin accents and runs of whitespace ignored,
 // punctuation kept, starting at the beginning of a word. Ranges are UTF-16
 // [start, end) offsets into the original text.
 namespace SearchMatch {
 
+// Text folded for matching, with a map back to the original.
 struct Folded {
     QString text;
     // For each unit of `text`, the original range it came from.
     std::vector<int> from, to;
 };
 
+// Folds `text` as Core's search does: lower case, combining marks dropped
+// after canonical decomposition, stroked letters such as ł mapped to their
+// base, and each run of whitespace between words turned into one space.
+// Keeping the source range of every folded unit lets matches found in the
+// folded text be drawn over the original, even where one character folds to
+// several units or to none.
 inline Folded fold(const QString &text) {
     Folded out;
     out.text.reserve(text.size());
@@ -48,6 +55,10 @@ inline Folded fold(const QString &text) {
     return out;
 }
 
+// Every place any of `phrases` appears in `text`, as sorted UTF-16
+// [start, end) ranges with overlapping or touching ranges merged. A phrase
+// starting with a letter or digit matches only at the start of a word; its
+// end may fall inside one, like Core's prefix match.
 inline QList<QPair<int, int>> ranges(const QString &text, const QStringList &phrases) {
     QList<QPair<int, int>> found;
     if (phrases.isEmpty() || text.isEmpty()) return found;
@@ -74,9 +85,11 @@ inline QList<QPair<int, int>> ranges(const QString &text, const QStringList &phr
 }
 
 // Tints the search's matches in a text document, paragraph by paragraph.
+// A phrase that spans a paragraph break is not tinted.
 class SearchHighlighter : public QSyntaxHighlighter {
 public:
     using QSyntaxHighlighter::QSyntaxHighlighter;
+    // Sets the phrases and tint, re-highlighting the document only if either changed.
     void set(const QStringList &phrases, const QColor &color) {
         if (phrases == m_phrases && color == m_color) return;
         m_phrases = phrases; m_color = color;

@@ -1,3 +1,6 @@
+// CTest gui-composer-probe: checks the QTextDocument behaviour the composer relies
+// on (exact Unicode text, selection, bold/italic, undo/redo, HTML round trip).
+// `--export-dir <dir>` also writes the resulting composer-qt.html/.txt pair.
 #include <QGuiApplication>
 #include <QDebug>
 #include <QFont>
@@ -7,8 +10,6 @@
 #include <QTextDocument>
 #include <QTextDocumentFragment>
 
-// P0-04 feasibility probe only. The initial GUI persists plain text; formatted
-// drafts will join the shared schema before exposing formatting controls.
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     QTextDocument document;

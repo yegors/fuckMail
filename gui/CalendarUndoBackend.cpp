@@ -1,9 +1,14 @@
+// MailBackend's Undo window for calendar deletions and declines: the event is
+// hidden at once and the write is sent when the interval ends. Also decides which
+// events are visible given pending deletions and the "Show declined" preference.
 #include "MailBackend.h"
 #include "CalendarLayout.h"
 #include <QDateTime>
 #include <QJsonArray>
 
 namespace {
+// A row names its place in a recurring series in one of three shapes; reduce
+// them to one selector with `series_id` and a typed `original_start`.
 QVariantMap selector(const QVariantMap &event) {
     for (const auto field : {"recurring_selector", "occurrence_selector"})
         if (!event.value(field).toMap().isEmpty()) return event.value(field).toMap();
@@ -17,10 +22,15 @@ QVariantMap selector(const QVariantMap &event) {
     }
     return key;
 }
+// The row without the display fields calendarPresentation() adds, so two reads
+// of the same provider event compare equal whichever day segment they came from.
 QVariantMap sourceIdentity(QVariantMap event) {
     for (const auto field : {"column", "columns", "lane", "date", "day_index", "start_hour", "duration_hours", "span_days", "time_display", "multi_day", "start_display", "end_display", "duration_minutes"}) event.remove(field);
     return event;
 }
+// Whether a queued delete or decline covers `event`: a single event by id, or
+// for a recurring scope the exact occurrence, it and every later one
+// ("following"), or the whole series.
 bool matchesDeletion(const QVariantMap &request, const QVariantMap &event) {
     if (request.value("account") != event.value("account") || request.value("calendar_id") != event.value("calendar_id")) return false;
     auto recurring = request.value("recurring").toMap();
@@ -150,6 +160,9 @@ void MailBackend::advanceCalendarDeletions() {
             continue;
         }
         if (pending.dispatched) continue;
+        // The write was prepared against a specific etag and calendar
+        // permission. If either moved during the Undo window, cancel rather
+        // than send a stale write.
         const auto current = currentCalendarSource(pending.source);
         if (pending.authority != calendarOccurrenceContext(pending.request.value("account").toString(), pending.request.value("calendar_id").toString())
             || (!current.isEmpty() && sourceIdentity(current) != sourceIdentity(pending.source))) {

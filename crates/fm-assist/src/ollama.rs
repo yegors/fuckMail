@@ -3,7 +3,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+/// Built-in system prompt: behaviour rules and the reply shape.
 pub const DEFAULT_SYSTEM: &str = include_str!("system-prompt.txt");
+/// Built-in user message template, with the `{{labels}}` and `{{messages}}`
+/// variables.
 pub const DEFAULT_USER: &str = include_str!("user-prompt.txt");
 /// Characters of one email's stored (reply-stripped) text sent to the model.
 /// Longer text keeps its start and is marked shortened.
@@ -13,23 +16,30 @@ pub const BODY_CHARS: usize = 24_000;
 pub const CONTEXT_TOKENS: u32 = 16_384;
 /// The reply is three short fields; this only stops runaway output.
 pub const OUTPUT_TOKENS: u32 = 512;
+/// Which local server API the engine talks to.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
+    /// Ollama's native `/api/chat`.
     #[default]
     Ollama,
+    /// A server with the OpenAI-style `/v1/chat/completions` API.
     OpenaiCompatible,
 }
 impl Provider {
     pub fn is_ollama(&self) -> bool {
         *self == Self::Ollama
     }
+    /// The stable name used in settings JSON and stored results.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ollama => "ollama",
             Self::OpenaiCompatible => "openai_compatible",
         }
     }
+    /// Returns the server's base URL, or `None` if `endpoint` is not an
+    /// allowed loopback URL (see [`valid_endpoint`]). For OpenAI-compatible
+    /// servers, trailing slashes and a trailing `/v1` are removed first.
     pub fn endpoint_base(self, endpoint: &str) -> Option<&str> {
         let base = if self == Self::OpenaiCompatible {
             let endpoint = endpoint.trim_end_matches('/');
@@ -40,19 +50,29 @@ impl Provider {
         valid_endpoint(base).then_some(base)
     }
 }
+/// The selected model.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Model {
     pub name: String,
+    /// Ollama's 64-hex-digit model digest; empty for OpenAI-compatible
+    /// servers, which do not report one.
     pub digest: String,
 }
+/// Per-account assistance settings. Maps are keyed by local label ID.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Account {
+    /// Choose a label and a sender kind for each email.
     pub classification: bool,
+    /// Write a one-sentence summary of each email.
     pub summaries: bool,
+    /// The person's description of each label, shown to the model.
     #[serde(default)]
     pub descriptions: BTreeMap<String, String>,
+    /// Whether newly arrived mail the model files under a label is marked
+    /// read. `fm-core` treats a missing label as on for a label named
+    /// Receipts and off otherwise.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auto_read: BTreeMap<String, bool>,
     /// Labels whose model-applied mail goes to Spam. Missing means off.
@@ -80,12 +100,15 @@ fn default_system() -> String {
 fn default_user() -> String {
     DEFAULT_USER.into()
 }
+/// All local-model settings, stored as JSON. Unknown fields are refused.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     #[serde(default, skip_serializing_if = "Provider::is_ollama")]
     pub provider: Provider,
+    /// Base URL of the local server: `http://`, a loopback host and a port.
     pub endpoint: String,
+    /// `None` until a model is chosen.
     pub model: Option<Model>,
     /// Behaviour rules and the reply shape. Missing means the built-in text.
     #[serde(default = "default_system")]
@@ -94,6 +117,8 @@ pub struct Settings {
     /// around the user's own context.
     #[serde(default = "default_user")]
     pub user: String,
+    /// Settings by account ID. `fm-core` treats a missing account as
+    /// [`Account::default`].
     pub accounts: BTreeMap<String, Account>,
 }
 impl Default for Settings {
@@ -109,6 +134,13 @@ impl Default for Settings {
     }
 }
 impl Settings {
+    /// Checks the settings before they are saved. The error is a message for
+    /// the person.
+    ///
+    /// Requires a loopback endpoint, a system prompt of 1–16,384 bytes, a user
+    /// message of at most 8,192 bytes with valid variables, a model that looks
+    /// discovered from this provider, at most 64 accounts and labels with
+    /// bounded descriptions, and at most 48 KiB of JSON in total.
     pub fn validate(&self) -> Result<(), String> {
         if self.provider.endpoint_base(&self.endpoint).is_none() {
             return Err("Use an http loopback endpoint with an explicit port".into());
@@ -228,6 +260,8 @@ pub fn messages(settings: &Settings, email: &Value, labels: &Value) -> Value {
 }
 /// The complete Ollama `/api/chat` body.
 pub fn ollama_request(settings: &Settings, model: &str, email: &Value, labels: &Value) -> Value {
+    // Temperature 0 for repeatable answers, no reasoning output, and the
+    // model kept loaded between emails.
     let ids = label_ids(labels);
     json!({"model":model,"messages":messages(settings, email, labels),"format":schema(&ids),
         "stream":false,"think":false,"keep_alive":"10m",
@@ -240,6 +274,7 @@ pub fn openai_request(settings: &Settings, model: &str, email: &Value, labels: &
         "temperature":0,"max_tokens":OUTPUT_TOKENS,
         "response_format":{"type":"json_schema","json_schema":{"name":"mail_analysis","strict":true,"schema":schema(&ids)}}})
 }
+/// Returns the `id` of each object in the engine's labels array.
 pub fn label_ids(labels: &Value) -> Vec<String> {
     labels
         .as_array()
@@ -250,7 +285,11 @@ pub fn label_ids(labels: &Value) -> Vec<String> {
         })
         .unwrap_or_default()
 }
+/// Whether `endpoint` is exactly `http://` plus `127.0.0.1`, `localhost` or
+/// `[::1]` plus a nonzero port, with nothing after the port.
 pub fn valid_endpoint(endpoint: &str) -> bool {
+    // Prompts carry email text, so the model server must be on this machine.
+    // Userinfo, paths and queries fail the host or port parse below.
     let Some(rest) = endpoint.strip_prefix("http://") else {
         return false;
     };

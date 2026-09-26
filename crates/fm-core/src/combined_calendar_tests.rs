@@ -285,7 +285,7 @@ fn unloaded_or_revoked_selected_calendars_are_not_reported_as_complete_empty_day
     let scope = fm_calendar::SyncScope {
         account: "personal".into(),
         calendar: "unloaded".into(),
-        query_fingerprint: "phase1-test".into(),
+        query_fingerprint: "combined-calendar-test".into(),
     };
     store
         .calendar_configure(&scope, "America/Toronto", Access::Reader)

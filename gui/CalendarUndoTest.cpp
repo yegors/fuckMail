@@ -1,3 +1,6 @@
+// CalendarView UI test for delete and decline with Undo, on a real MailBackend
+// over the scripted engine: the six-second hold, which events it hides, Activity
+// recovery, and cancellation on close or when the source or permission changes.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

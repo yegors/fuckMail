@@ -237,7 +237,7 @@ ApplicationWindow {
     };
 
     check(await(ready), "the message lays out on its paper card");
-    // Search matches are painted on the paper like a selection (Search 10).
+    // Search matches are painted on the paper like a selection.
     body()->setProperty("matchPhrases", QStringList{"news"});
     check(await([&] { return view()->property("highlightCount").toInt() == 1; }), "a search match in the HTML body is tinted");
     body()->setProperty("matchPhrases", QStringList{});

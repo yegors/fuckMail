@@ -1,8 +1,10 @@
 [package]
 name = "fm-mail"
+description = "MIME parsing, text and HTML extraction and message construction for fuckMail"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

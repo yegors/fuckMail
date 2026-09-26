@@ -1,3 +1,5 @@
+// The app's themed single-line TextField; FmDateField and most form inputs
+// build on it.
 import QtQuick
 import QtQuick.Controls
 

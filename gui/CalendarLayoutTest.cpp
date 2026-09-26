@@ -1,3 +1,5 @@
+// Unit test for CalendarLayout: overlap columns, midnight clipping, all-day
+// lanes, DST repeated hours and display-zone dates.
 #include "CalendarLayout.h"
 #include <QCoreApplication>
 #include <QJsonObject>

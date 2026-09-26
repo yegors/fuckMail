@@ -1,3 +1,6 @@
+// The transient toast at the bottom of the main window (send progress, Undo
+// after an action, and so on). Text, optional action button and progress or
+// success icon all come from `backend.actionToast`; Main.qml positions it.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

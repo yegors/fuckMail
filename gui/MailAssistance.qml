@@ -1,6 +1,8 @@
 import QtQuick
 
-// One controller for the loaded conversation; views never own independent jobs.
+// Local-model work (summaries and sender classification) for the conversation
+// open in MailView. One controller per loaded conversation: the per-message
+// views (MessageAssistance) read from it and never own jobs of their own.
 Item {
     id: assistance
     property string conversationId: backend.selectedId

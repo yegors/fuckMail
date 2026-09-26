@@ -23,6 +23,8 @@ pub fn reference(kind: &str, value: &str) -> String {
     format!("{:016x}", hasher.finish())
 }
 
+/// Starts logging to `diagnostics/engine.log` in the profile. Logging stays
+/// off if the directory cannot be created; later calls have no effect.
 pub fn initialize(profile: &Path) {
     let directory = profile.join("diagnostics");
     if fs::create_dir_all(&directory).is_ok() {
@@ -31,6 +33,11 @@ pub fn initialize(profile: &Path) {
     }
 }
 
+/// Appends one JSON line to the engine log. The level is `ERROR` for a
+/// `failed` event, `WARN` when `fields` has a string `code`, and `INFO`
+/// otherwise. Lines over 4 KiB are dropped; the log rotates to one previous
+/// segment at 2.5 MiB. Fields should be metadata only, with identifiers
+/// passed through [`reference()`]. Does nothing before [`initialize`].
 pub fn event(scope: &str, name: &str, fields: Value) {
     let Some(log) = LOG.get() else { return };
     let Ok(path) = log.lock() else { return };

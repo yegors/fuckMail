@@ -1,3 +1,6 @@
+// HtmlContent: the HTML reader's engine calls (message HTML, images, sender
+// pictures, the link blocklist, HTTPS proxy and image cache), each on its own
+// GoogleOperation connection, with small caches and concurrency limits.
 #include "HtmlContent.h"
 #include "GoogleOperation.h"
 #include "HtmlLinks.h"
@@ -249,6 +252,8 @@ QVariantMap HtmlContent::linkSummary(const QString &input, const QString &conver
             && now - found->value("at").toLongLong() > summaryRetryMs;
         if (!retry) return *found;
     }
+    // Keep the previous numbers visible while the refresh runs; the loading
+    // flag also stops repeated binding evaluations from sending duplicates.
     auto pending = found != m_summaries.cend() ? *found : QVariantMap{};
     pending["loading"] = true;
     m_summaries.insert(key, pending);
@@ -281,6 +286,8 @@ QVariantMap HtmlContent::senderPicture(const QString &email, const QString &kind
             && QDateTime::currentMSecsSinceEpoch() - found->value("at").toLongLong() > pictureRetryMs;
         if (!retry) return *found;
     }
+    // Record "loading" before queueing, so bindings re-evaluated while the
+    // lookup runs get the placeholder instead of queueing it again.
     m_pictures.insert(key, {{"state", "loading"}});
     m_pictureQueue.enqueue(key);
     QMetaObject::invokeMethod(this, &HtmlContent::pumpPictures, Qt::QueuedConnection);
@@ -329,6 +336,7 @@ QString HtmlContent::styleLinks(const QString &html) const {
         const auto match = matches.next();
         result += html.mid(end, match.capturedStart() - end);
         const auto href = match.captured(1);
+        // The attribute is HTML-escaped; match the blocklist against the real URL.
         QString decoded = href; decoded.replace("&amp;", "&").replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">");
         result += linkBlocked(decoded) ? "<a href=\"" + href + "\" style=\"color:#8a8f98;text-decoration:line-through\">" : match.captured();
         end = match.capturedEnd();

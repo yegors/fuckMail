@@ -1,3 +1,6 @@
+// Developer harness for `--account-lifecycle-self-test <report> --account-lifecycle-expectation
+// <file>`, run by scripts/verify_google_accounts_gui.py: adds, removes and restores an
+// account through the native UI against a provider fixture, with `fm` CLI cross-checks.
 #include "GuiAccountLifecycleSelfTest.h"
 #include "MailBackend.h"
 #include <QCoreApplication>

@@ -2,25 +2,35 @@
 use super::*;
 use crate::EventTime;
 
+/// Which slot of which series one instance fills.
+///
 /// A discovery result is only an identity hint, never a writable event source.
 #[derive(Debug, Clone)]
 pub struct InstanceIdentity {
+    /// The instance's own event key.
     pub key: EventKey,
+    /// The recurring master's event ID.
     pub series_id: String,
     pub original_start: EventTime,
+    /// `None` only for a cancelled instance.
     pub etag: Option<String>,
     pub cancelled: bool,
 }
 
+/// One page of a recurring event's instances, reduced to their identities.
 pub struct InstancesPage {
     pub items: Vec<InstanceIdentity>,
+    /// Set when more pages follow.
     pub next_page_token: Option<String>,
 }
 
+/// One complete instance with its identity.
+///
 /// Cancelled exceptions may have only their immutable identity. An absent ETag
 /// is permitted only for read evidence and cannot become an EventResource.
 pub struct OccurrenceResource {
     pub identity: InstanceIdentity,
+    /// The instance JSON; a header-only ETag is copied into it.
     pub source: Value,
 }
 
@@ -166,6 +176,8 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
     }
 }
 
+/// Checks that `source` is an instance of `series` (not the master itself)
+/// with a known status, and an ETag unless cancelled.
 fn instance_identity(
     account: &AccountId,
     calendar: &str,
@@ -194,6 +206,8 @@ fn instance_identity(
             .and_then(|zone| zone.parse::<chrono_tz::Tz>().ok())
             .ok_or(ApiError::InvalidResponse)?;
     }
+    // Without a `timeZone` the slot is labelled UTC; a timed value's offset
+    // still fixes its instant, and identity compares instants.
     let original_start = crate::parse_time(&source["originalStartTime"], "Etc/UTC")
         .map_err(|_| ApiError::InvalidResponse)?;
     Ok(InstanceIdentity {

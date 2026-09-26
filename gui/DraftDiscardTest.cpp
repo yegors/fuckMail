@@ -1,3 +1,6 @@
+// MailView UI test for discarding drafts with Undo, on a real MailBackend over the
+// scripted engine: single and grouped discards, the unsaved editor buffer,
+// switching accounts, recovery of a lost result and the six-second expiry.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

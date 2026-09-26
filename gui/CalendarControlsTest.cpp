@@ -1,3 +1,6 @@
+// Calendar UI test: the production event editor, details, Activity, label setup,
+// CalendarView and startup overlay against a scripted stand-in backend. Covers
+// recurring scopes, RSVP, recovery, sync/permission gates and theme layouts.
 #include <QCoreApplication>
 #include "CalendarLayout.h"
 #include "FmIconItem.h"
@@ -714,8 +717,8 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         window->resize(1100, 850);
     }
 
-    // D038: the action scope is resolved before any write. A following split
-    // has a separate explicit consequence confirmation and typed recovery.
+    // A recurring event's action scope is resolved before any write. Splitting
+    // at "following" has its own consequence confirmation and typed recovery.
     auto scopedSource = recurring;
     scopedSource["recurring_selector"] = scopedSource.take("occurrence_selector"); scopedSource["can_resolve_occurrence"] = false;
     scopedSource["recurring_scopes"] = QVariantMap{{"edit", QStringList{"occurrence", "series", "following"}},

@@ -1,3 +1,5 @@
+// Modal list of events; CalendarView uses it for a day's overflowing all-day
+// events ("+N all day"). Set `eventRows` and open(); a row click emits eventSelected.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end local model pipeline check (D111) against synthetic mail and a
+"""End-to-end local model pipeline check against synthetic mail and a
 fake same-machine model server. No real accounts, mail or model service.
 
 Runs the built engine and CLI: settings, one explicit analysis, the queue

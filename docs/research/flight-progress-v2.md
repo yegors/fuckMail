@@ -90,7 +90,7 @@ The prototype persists theme/split in localStorage, while launch, sync and notif
 
 ## Earlier September 12 reference — historical P1-08 inventory
 
-Copied unchanged from `C:/Users/Yegor/Downloads/`:
+Copied unchanged from the supplied design export:
 
 | Repository reference | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -113,7 +113,7 @@ The native implementation retains accurate counts, independent unread/held state
 
 ## Reference and provenance
 
-The following copies are byte-for-byte originals from `/Users/yegor/Downloads/Mail and Calendar Redesign/`. Keep the pair together; the HTML loads the sibling support file.
+The following copies are byte-for-byte originals from the supplied `Mail and Calendar Redesign` export. Keep the pair together; the HTML loads the sibling support file.
 
 | Original / repository reference | Bytes | SHA-256 |
 | --- | --- | --- |

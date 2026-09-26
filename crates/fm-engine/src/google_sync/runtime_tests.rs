@@ -108,11 +108,20 @@ async fn deleting_for_good_reaches_gmail_through_the_mutation_lane() {
         units: 50,
     };
     let url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete";
-    assert!(mutation_request_matches(&work, &HttpRequest::new(HttpMethod::Post, url).unwrap()));
-    assert!(!mutation_request_matches(&work, &HttpRequest::new(HttpMethod::Delete, url).unwrap()));
+    assert!(mutation_request_matches(
+        &work,
+        &HttpRequest::new(HttpMethod::Post, url).unwrap()
+    ));
+    assert!(!mutation_request_matches(
+        &work,
+        &HttpRequest::new(HttpMethod::Delete, url).unwrap()
+    ));
     let mut wrong = work;
     wrong.units = 5;
-    assert!(!mutation_request_matches(&wrong, &HttpRequest::new(HttpMethod::Post, url).unwrap()));
+    assert!(!mutation_request_matches(
+        &wrong,
+        &HttpRequest::new(HttpMethod::Post, url).unwrap()
+    ));
 }
 
 #[tokio::test]

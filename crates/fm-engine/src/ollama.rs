@@ -5,6 +5,7 @@ use fm_google::transport::CancellationToken;
 use reqwest::{Client, Method};
 use serde_json::{json, Value};
 use std::time::Duration;
+/// An engine error with `code` and `message` and no details.
 pub fn failure(code: &str, message: &str) -> CoreError {
     CoreError {
         code: code.into(),
@@ -12,6 +13,8 @@ pub fn failure(code: &str, message: &str) -> CoreError {
         details: Value::Null,
     }
 }
+/// Calls Ollama's `/api/{path}` through [`request_local`]; `chat` counts as
+/// generation for the timeout.
 pub async fn request(
     endpoint: &str,
     path: &str,
@@ -40,6 +43,13 @@ fn client() -> &'static Client {
             .expect("local HTTP client")
     })
 }
+/// Sends one JSON request to a same-machine model server: GET without a
+/// body, POST with one.
+///
+/// Endpoints that are not on this machine are refused. The reply must be
+/// JSON of at most 256 KiB. Generation requests time out after 120 s
+/// (`assistance_timeout`, a slow email) and others after 5 s
+/// (`assistance_unavailable`). Cancellation returns `assistance_canceled`.
 pub(crate) async fn request_local(
     endpoint: &str,
     path: &str,
@@ -123,6 +133,8 @@ pub(crate) async fn request_local(
     };
     tokio::select! {biased;_=cancel.cancelled()=>Err(failure("assistance_canceled","Local model request canceled")),v=work=>v}
 }
+/// Lists an Ollama server's version and installed models (at most 512).
+/// Cloud models and models without local weights are marked ineligible.
 pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Value> {
     let version = request(endpoint, "version", None, cancel).await?;
     let tags = request(endpoint, "tags", None, cancel).await?;
@@ -149,10 +161,12 @@ pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Valu
 /// Confirm the selected model is installed, local and unchanged. The engine
 /// runs this when the model is first used and after model errors, not per email.
 pub async fn qualify(settings: &Settings, cancel: &CancellationToken) -> Result<()> {
-    let model = settings
-        .model
-        .as_ref()
-        .ok_or_else(|| failure("assistance_unavailable", "Choose a model in Settings → Local LLM"))?;
+    let model = settings.model.as_ref().ok_or_else(|| {
+        failure(
+            "assistance_unavailable",
+            "Choose a model in Settings → Local LLM",
+        )
+    })?;
     if !settings.provider.is_ollama() {
         return crate::openai_local::qualify(&settings.endpoint, &model.name, cancel).await;
     }
@@ -162,7 +176,12 @@ pub async fn qualify(settings: &Settings, cancel: &CancellationToken) -> Result<
         .unwrap()
         .iter()
         .find(|m| m["name"] == model.name)
-        .ok_or_else(|| failure("model_unavailable", "The selected model is no longer installed"))?;
+        .ok_or_else(|| {
+            failure(
+                "model_unavailable",
+                "The selected model is no longer installed",
+            )
+        })?;
     if entry["digest"] != model.digest {
         return Err(failure(
             "model_changed",
@@ -208,10 +227,12 @@ pub async fn infer(
     cancel: &CancellationToken,
     measure: &std::sync::Mutex<Value>,
 ) -> Result<Value> {
-    let model = settings
-        .model
-        .as_ref()
-        .ok_or_else(|| failure("assistance_unavailable", "Choose a model in Settings → Local LLM"))?;
+    let model = settings.model.as_ref().ok_or_else(|| {
+        failure(
+            "assistance_unavailable",
+            "Choose a model in Settings → Local LLM",
+        )
+    })?;
     if !settings.provider.is_ollama() {
         return crate::openai_local::infer(settings, &model.name, email, labels, cancel, measure)
             .await;
@@ -222,6 +243,8 @@ pub async fn infer(
     let content = response_content(&result, &model.name)?;
     parse(content, labels)
 }
+/// Parses the model's JSON reply into the stored analysis. A label outside
+/// `labels` makes the reply invalid.
 pub(crate) fn parse(content: &str, labels: &Value) -> Result<Value> {
     ollama::parse_reply(content, &ollama::label_ids(labels))
         .map_err(|message| failure("invalid_assistance_result", &message))
@@ -237,6 +260,8 @@ fn measurement(result: &Value) -> Value {
         "raw": result["message"]["content"],
     })
 }
+/// Returns the reply text, refusing a reply from another model, one that
+/// asks for a tool, or one that was cut off or incomplete.
 fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
     if result["model"] != model {
         return Err(failure(
@@ -295,20 +320,32 @@ mod reply_tests {
         let content = r#"{"summary":"You paid $49.","label":null,"sender":"bot"}"#;
         let ok = json!({"model":"m","done":true,"done_reason":"stop","message":{"content":content,"tool_calls":null}});
         assert_eq!(response_content(&ok, "m").unwrap(), content);
-        assert_eq!(parse(content, &json!([])).unwrap()["sender_kind"], "automated");
+        assert_eq!(
+            parse(content, &json!([])).unwrap()["sender_kind"],
+            "automated"
+        );
         let mut other = ok.clone();
         other["model"] = "x".into();
-        assert_eq!(response_content(&other, "m").unwrap_err().code, "model_changed");
+        assert_eq!(
+            response_content(&other, "m").unwrap_err().code,
+            "model_changed"
+        );
         let mut long = ok.clone();
         long["done_reason"] = "length".into();
-        assert_eq!(response_content(&long, "m").unwrap_err().code, "assistance_output_limit");
+        assert_eq!(
+            response_content(&long, "m").unwrap_err().code,
+            "assistance_output_limit"
+        );
         let mut tool = ok.clone();
         tool["message"]["tool_calls"] = json!([{"function":{}}]);
         assert!(response_content(&tool, "m").is_err());
         assert_eq!(
-            parse(r#"{"summary":"x","label":"invented","sender":"bot"}"#, &json!([]))
-                .unwrap_err()
-                .code,
+            parse(
+                r#"{"summary":"x","label":"invented","sender":"bot"}"#,
+                &json!([])
+            )
+            .unwrap_err()
+            .code,
             "invalid_assistance_result"
         );
     }

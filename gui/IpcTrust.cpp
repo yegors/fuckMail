@@ -1,3 +1,6 @@
+// Engine discovery and peer checks: reads engine.json only if the profile and
+// file are private to this user (mode bits or Windows ACLs), and confirms the
+// connected socket or named pipe belongs to the expected engine process and user.
 #include "IpcTrust.h"
 #include <QDir>
 #include <QFile>
@@ -18,6 +21,8 @@
 
 namespace {
 #ifdef Q_OS_WIN
+// The TOKEN_USER structure (user SID) of `process`, or empty on failure. The
+// first call only asks for the buffer size.
 QByteArray processUser(HANDLE process) {
     HANDLE token = nullptr;
     if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return {};
@@ -28,11 +33,17 @@ QByteArray processUser(HANDLE process) {
     CloseHandle(token);
     return ok ? data : QByteArray{};
 }
+// The Windows counterpart of mode 0700/0600: owned by this process's user,
+// and every allow entry in the DACL is for that user. The engine creates the
+// profile with a protected user-only DACL, so inherited grants (Administrators,
+// SYSTEM) are absent and any extra grant means someone widened access.
 bool privateWindowsPath(const QString &path, bool directory, QString &error) {
     const auto reject = [&error](const QString &reason) { error = reason; return false; };
     const auto wide = reinterpret_cast<LPCWSTR>(path.utf16());
     auto attributes = GetFileAttributesW(wide);
     if (attributes == INVALID_FILE_ATTRIBUTES) return reject("cannot inspect file attributes (Windows error " + QString::number(GetLastError()) + ")");
+    // A junction or symlink would make the checks below describe its target
+    // while the path could be re-pointed afterwards.
     if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) return reject("reparse points are not allowed");
     if (bool(attributes & FILE_ATTRIBUTE_DIRECTORY) != directory) return reject("unexpected file type");
     auto current = processUser(GetCurrentProcess());
@@ -44,6 +55,8 @@ bool privateWindowsPath(const QString &path, bool directory, QString &error) {
     bool ok = owner && EqualSid(owner, sid) && dacl;
     if (!owner || !EqualSid(owner, sid)) error = "owner is not the current process user";
     else if (!dacl) error = "permission list is absent";
+    // Deny entries only narrow access, so they are harmless. Any other entry
+    // type (object or callback ACEs) cannot be judged here and fails closed.
     if (ok) for (DWORD index = 0; index < dacl->AceCount; ++index) {
         void *raw = nullptr;
         if (!GetAce(dacl, index, &raw)) { ok = false; error = "cannot inspect a permission entry"; break; }
@@ -56,6 +69,8 @@ bool privateWindowsPath(const QString &path, bool directory, QString &error) {
     LocalFree(security); return ok;
 }
 #else
+// Exact modes, not just "no group/other bits": the engine creates the profile
+// 0700 and the file 0600, so anything else means the permissions were changed.
 bool privateStat(const struct stat &info, bool directory) {
     return info.st_uid == geteuid() && (directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode))
         && (info.st_mode & 0777) == (directory ? 0700 : 0600);
@@ -74,6 +89,9 @@ QJsonObject readPrivateDiscovery(const QString &profile, QString &error) {
     discovery.setFileName(path);
     if (!discovery.open(QIODevice::ReadOnly)) { error = "Cannot read the private engine discovery file."; return {}; }
 #else
+    // Check and read through file descriptors, never by path again, so the
+    // directory or file cannot be swapped between the check and the read.
+    // O_NOFOLLOW refuses symlinks at both steps.
     const auto directory = ::open(QFile::encodeName(profile).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (directory < 0) {
         if (QFileInfo::exists(profile)) error = "The local profile must be a private directory, not a symbolic link.";
@@ -101,6 +119,9 @@ QJsonObject readPrivateDiscovery(const QString &profile, QString &error) {
     return data;
 }
 
+// The refusal file holds no secret and only supplies display text, so it gets
+// lighter checks than discovery. Matching the pid ties the message to an engine
+// this GUI launched, not a stale file from an earlier run.
 QString readStartupRefusal(const QString &profile, const QList<qint64> &launched) {
     if (launched.isEmpty()) return {};
     const QFileInfo info(QDir(profile).filePath("engine-refusal.json"));
@@ -112,9 +133,13 @@ QString readStartupRefusal(const QString &profile, const QList<qint64> &launched
     return data["message"].toString();
 }
 
+// Asks the kernel who is on the other end of the connection. A process that
+// created a same-named pipe or socket first cannot fake these answers, and the
+// pid must match the one in the private discovery record.
 bool verifyEnginePeer(qintptr descriptor, qint64 expectedPid, QString &error) {
     bool ok = false;
 #ifdef Q_OS_WIN
+    // Named pipes: the server's pid, then that process's token user SID.
     ULONG pid = 0;
     if (GetNamedPipeServerProcessId(reinterpret_cast<HANDLE>(descriptor), &pid) && pid == expectedPid) {
         auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
@@ -125,10 +150,13 @@ bool verifyEnginePeer(qintptr descriptor, qint64 expectedPid, QString &error) {
         }
     }
 #elif defined(Q_OS_MACOS)
+    // macOS has no SO_PEERCRED: the effective uid comes from getpeereid() and
+    // the pid from LOCAL_PEERPID.
     uid_t user = 0; gid_t group = 0; pid_t pid = 0; socklen_t length = sizeof(pid);
     ok = getpeereid(static_cast<int>(descriptor), &user, &group) == 0 && user == geteuid()
         && getsockopt(static_cast<int>(descriptor), SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 && pid == expectedPid;
 #else
+    // Linux: SO_PEERCRED reports the peer's uid and pid as of connect().
     struct ucred peer{}; socklen_t length = sizeof(peer);
     ok = getsockopt(static_cast<int>(descriptor), SOL_SOCKET, SO_PEERCRED, &peer, &length) == 0 && peer.uid == geteuid() && peer.pid == expectedPid;
 #endif

@@ -9,9 +9,13 @@ use fm_google::{
 };
 use serde_json::{json, Value};
 
+/// Spam messages listed per page.
 const PAGE_SIZE: u16 = 50;
+/// Metadata reads in flight at once while building a page.
 const CONCURRENT_READS: usize = 8;
 
+/// `{page_token?}`: one page of Spam, newest first, as header rows with
+/// Google's snippet, plus the next page token and Google's estimated total.
 pub(crate) async fn list(ctx: &SyncContext, params: Value) -> Result<Value> {
     let fields = params
         .as_object()
@@ -70,6 +74,8 @@ pub(crate) async fn list(ctx: &SyncContext, params: Value) -> Result<Value> {
     }))
 }
 
+/// `{id}`: one Spam message's extracted plain text. Its HTML is never
+/// returned, so nothing in it can load or run.
 pub(crate) async fn message(ctx: &SyncContext, params: Value) -> Result<Value> {
     let id = params
         .as_object()
@@ -109,6 +115,7 @@ pub(crate) async fn message(ctx: &SyncContext, params: Value) -> Result<Value> {
     Ok(json!({"id": id, "text": text}))
 }
 
+/// A Spam list row built from message metadata.
 fn row(message: &GmailMessageMetadata) -> Value {
     let (name, email) = mailbox(message.header("From").unwrap_or(""));
     json!({
@@ -123,7 +130,7 @@ fn row(message: &GmailMessageMetadata) -> Value {
     })
 }
 
-/// "Name <address>" or a bare address, as Gmail reports From.
+/// `Name <address>` or a bare address, as Gmail reports From.
 pub(super) fn mailbox(from: &str) -> (String, String) {
     match (from.rfind('<'), from.rfind('>')) {
         (Some(open), Some(close)) if open < close => {
@@ -145,6 +152,7 @@ pub(super) fn unescape(snippet: &str) -> String {
         .replace("&amp;", "&")
 }
 
+/// Requires the Gmail read grant (`capability_unavailable` otherwise).
 pub(super) async fn require_mail_read(ctx: &SyncContext) -> Result<()> {
     let account = ctx.account.as_str().to_owned();
     ctx.core_call(move |store| {

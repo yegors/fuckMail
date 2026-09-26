@@ -1,3 +1,6 @@
+// LabelSettings UI test against a stand-in backend: adding, describing and
+// removing labels, per-label auto-read and spam switches, retry after a save
+// conflict, and keeping the selected account through confirmations.
 #include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>

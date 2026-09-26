@@ -1,3 +1,6 @@
+// Settings > Accounts dialog that connects a Google account, reconnects one or
+// restores a removed one. Step 0: email, Mail/Calendar access and retention;
+// step 1: waiting for the browser sign-in; step 2: display name and local model option.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -18,7 +21,7 @@ FmDialog {
     property bool authStarted: false
     // A configured local model can also summarize/label the mail this first
     // sync downloads. Off by default: a large mailbox can take a long time, and
-    // the account's Backlog can process it later.
+    // the account's Catch up menu on its Accounts card can process it later.
     property bool modelConfigured: false
     property string modelTicket: ""
     readonly property var retentionKeys: ["90_days", "1_year", "2_years", "5_years", "all"]

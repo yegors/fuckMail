@@ -8,6 +8,8 @@
 - **macOS:** `fuckMail-<version>-<commit>-macos-arm64.dmg`, containing `fuckMail.app` and an Applications shortcut, made with the built-in `hdiutil`. The script mounts the finished image and checks the app's ad-hoc signature.
 - **Linux:** a `.tar.gz` of the staged folder, as before.
 
+The app, window, Dock and installer icon comes from `gui/app-icon/app-icon.png`. When it changes, run `python scripts/make_app_icons.py` to regenerate the committed `.ico` and `.icns`; this one script needs Pillow, which the build does not. The source is 128 px, so the largest sizes are upscaled; a 1024 px source would make them sharp. The `.dmg` file keeps the standard disk-image icon.
+
 Inno Setup 7.1.0 is the only added tool. Bootstrap, or the first Windows package, downloads it, checks the SHA-256 pinned in `scripts/toolchain.json` and installs it in its portable mode under `.tools/innosetup-7.1.0`, registering nothing on the host. Its license is permissive; commercial users are asked to buy a license.
 
 Both installers are unsigned for now. Windows testers see SmartScreen (**More info → Run anyway**). macOS testers must choose **Open Anyway** in System Settings → Privacy & Security, and macOS asks again for Keychain access after each update. When signing is added: macOS needs Developer ID signing and notarization, and `google-oauth-client.json` must first move out of `Contents/MacOS`, which should hold only code. Windows can sign through ISCC's `--signtool` option.
@@ -18,21 +20,28 @@ The current Windows staged tree is `dist/windows-amd64/bin/fuckmail-gui.exe`, wi
 
 The staged tree passes relocated GUI smoke and empty-live CLI/GUI checks. The broad GUI self-test passes its corrected D092 Account Editor path but times out later in native search scroll restoration; the package script therefore has not produced a verified archive. [Current execution limits](research/search-storage.md#2026-09-23-shared-tree-integration).
 
-## Email-first Google setup (D040)
+## Google sign-in setup
 
-Configured builds use **Settings → Accounts → Connect Google account → email → Continue with Google**. Google opens in the system browser. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync; confirm actual quotas and protected-profile/backup admission before importing.
+fuckMail uses the Gmail and Google Calendar APIs. Each build therefore needs a Google Cloud OAuth client of type **Desktop app**. Whoever builds the app sets this up once; people who sign in never handle the client file.
 
-D042 configures the founder-supplied Desktop registration on the current Mac in the ignored location below. A new host still needs that private local input. Desktop clients use the app’s temporary `http://127.0.0.1:<port>/oauth2/callback`; no manual web callback URL or hosted callback service is needed.
-
-The app developer configures the Google Desktop client once; individual account users do not supply JSON. With the existing Google Cloud Desktop-client download outside Git, run:
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API** and the **Google Calendar API**.
+2. Configure the OAuth consent screen. For personal use, choose the **External** audience, leave the app in **Testing**, and add each Google account you will sign in with as a test user.
+3. Create an OAuth client ID of type **Desktop app** and download its JSON file. Keep it outside the repository.
+4. Register it with the build (use `python` instead of `python3` on Windows), then rebuild:
 
 ```sh
 python3 scripts/configure_google.py /absolute/private/path/to/desktop-client.json
 scripts/dev.sh build --preset release
-scripts/dev.sh package --preset release
 ```
 
-The script stores only app registration fields in ignored `.tools/google-oauth-client.json`. CMake stages it beside the engine in native builds and packages; moving the package retains it. An explicit `FM_GOOGLE_CLIENT_CONFIG` absolute path overrides that local build input and also works when running an engine directly. Never commit this file or put user access/refresh tokens in it. An unconfigured build reports Google sign-in unavailable. CI remains credential-free.
+The app requests `openid`, `email`, `https://mail.google.com/`, `calendar.events`, `calendar.calendarlist.readonly` and `calendar.events.freebusy`. Read-only access uses `gmail.readonly` and `calendar.events.readonly` instead. Gmail's scopes are *restricted*, which has two consequences:
+
+- While the app is in Testing, only listed test users can sign in (up to 100), and Google expires their sign-in after 7 days, so you reconnect weekly.
+- Offering a build to the general public requires Google's verification for restricted scopes.
+
+Sign-in happens in the system browser. The engine receives the callback on a temporary `http://127.0.0.1:<port>/oauth2/callback` listener, so there is no web callback URL or hosted service. In the app, use **Settings → Accounts → Connect Google account**, enter the email and continue with Google. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync: choose **Start sync** for each account.
+
+The script stores only the client registration fields, in the ignored `.tools/google-oauth-client.json`. CMake copies that file beside the engine in builds and packages, so **a package you share contains your client ID and secret**. Google treats desktop client secrets as non-confidential, but share packages only with people you are happy to have use your Cloud project. An absolute `FM_GOOGLE_CLIENT_CONFIG` path overrides the file, including when you run an engine directly. Never commit the file or put access or refresh tokens in it. A build without it reports Google sign-in as unavailable. CI builds carry no credentials.
 
 The CLI shares the same setup:
 
@@ -111,7 +120,7 @@ An advanced Qt-only compilation is available with CMake `-DFM_GUI_ONLY=ON` in a 
 Use a new disposable profile path for the three-account fixture. Existing profiles are upgraded in place and retain their original accounts, drafts and fixture revision; they are not reseeded. For example, on Windows:
 
 ```powershell
-./scripts/dev.ps1 run -- --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-walkthrough --fixture-clock
+./scripts/dev.ps1 run -- --profile C:/path/to/fuckMail/.tools/phase1-walkthrough --fixture-clock
 ```
 
 On Mac/Linux use `scripts/dev.sh run -- --profile /absolute/local/phase1-walkthrough --fixture-clock`. The optional fixture clock fixes the view at 11 September 2026; ordinary launches use the current clock. Use a genuinely new path to repeat the initial state. All content and submission outcomes in this walkthrough are synthetic/local.
@@ -140,7 +149,7 @@ Use a native Windows path in place of the illustrative absolute path. `mail read
 The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [historical execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
 
 ```powershell
-./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-update2-walkthrough --fixture-clock
+./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/path/to/fuckMail/.tools/phase1-update2-walkthrough --fixture-clock
 ```
 
 Use `dist/windows-amd64/bin/fm.exe` with that same profile for the paired CLI. Historical schema4/schema5 packages are preserved under `dist/baselines`; [the c34b82e record](research/phase-1-execution.md#final-windows-development-package--c34b82e) retains their earlier runtime scope. Use separate disposable profiles with old packages; an old engine must refuse a profile already upgraded to a newer incompatible schema. Final-source CI and physical-input limits remain explicit.
@@ -180,7 +189,7 @@ On Windows use `python` and native absolute paths. The default baseline is schem
 
 Before changing machines, commit and push source, lockfiles, fixtures and accurate status. On the other host, pull the same branch/revision, run bootstrap once, then doctor/test. Never transfer `.tools`, `target`, `build`, `dist`, tokens or live SQLite profiles through Git or a cloud folder. Generate synthetic data locally. Keep any real mail, draft or credential handoff separate from source control.
 
-Qt modules have their own open-source licenses and third-party notices; Rust packages have individual licenses too. Public distribution requires a complete dependency/license inventory and the appropriate notices/source availability, not just these links. The current dependency/source route is inspectable, but this document does not claim the public-release license audit is complete. [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt source archives](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/).
+fuckMail is MIT-licensed ([LICENSE](../LICENSE)). [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) lists every redistributed component with its license. Packages install those texts, plus `THIRD-PARTY-RUST.txt` generated from `Cargo.lock` by `scripts/third_party_notices.py`, into their `licenses` folder. Add new bundled components to that file. [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt source archives](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/).
 
 ## Observed setup evidence
 
@@ -188,7 +197,7 @@ Qt modules have their own open-source licenses and third-party notices; Rust pac
 
 The Windows GUI sets `QT_D3D_NO_VBLANK_THREAD=1` before Qt starts unless the caller already supplied that variable. This pinned Qt 6.11.2 workaround uses Qt's normal timer update fallback after the native D3D11 renderer stalled on this host; D3D11, threaded rendering and presentation vsync remain enabled. It needs rechecking when Qt changes. See the [renderer diagnosis](research/phase-1-execution.md#expanded-acceptance-and-windows-renderer-correction); no system-wide environment change is needed.
 
-2026-09-11, home Windows PC: Windows 11 Pro build 26200 x64, Ryzen 7 9800X3D, 128 GB installed RAM and RTX 5090. Existing Python 3.11.9, VS Build Tools 2022 17.14/MSVC 19.44 and Windows SDK 10.0.26100.0 were reused. Bootstrap installed the pinned project-local tools; doctor, dev/release builds and all eight CTests in each preset passed. Packaging exposed and drove the project-local executable-lookup correction above. The corrected release package passes relocated SDK-free GUI/CLI checks and native Windows/D3D11 rendering with system-only PATH. A schema-4 archive is retained under `dist/baselines/`; exact provenance, hashes, logs and limits are in [Windows handoff evidence](research/phase-0-execution.md#home-windows-handoff-before-phase-1). Phase 1 implementation has not started.
+2026-09-11, Windows 11 Pro build 26200 x64 development PC: existing Python 3.11.9, VS Build Tools 2022 17.14/MSVC 19.44 and Windows SDK 10.0.26100.0 were reused. Bootstrap installed the pinned project-local tools; doctor, dev/release builds and all eight CTests in each preset passed. Packaging exposed and drove the project-local executable-lookup correction above. The corrected release package passes relocated SDK-free GUI/CLI checks and native Windows/D3D11 rendering with system-only PATH. A schema-4 archive is retained under `dist/baselines/`; exact provenance, hashes, logs and limits are in [Windows handoff evidence](research/phase-0-execution.md#home-windows-handoff-before-phase-1). Phase 1 implementation has not started.
 
 Final Phase 0 runtime source `204fa62` passed all eight CTests and relocated packaged GUI/CLI checks on native macOS 15 ARM64, Windows Server 2022 x64 and Ubuntu 24.04 x64 CI. The native Mac desktop walkthrough and actual packaged schema 2→4 upgrade/refusal checks also pass. See [complete execution evidence](research/phase-0-execution.md). This does not qualify the physical home Windows PC, Linux desktops or OS keyrings.
 

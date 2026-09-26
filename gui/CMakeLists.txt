@@ -24,7 +24,7 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GoogleOperation.cpp
     GoogleOperation.h
     MailBackend.h
-    Phase1Backend.cpp
+    RemindersAndPreferencesBackend.cpp
     CompositionBackend.cpp DraftTransferBackend.cpp
     ConversationListModel.cpp
     ConversationListModel.h
@@ -75,19 +75,36 @@ qt_add_qml_module(fuckmail-gui
     QML_FILES HtmlMessageBody.qml MessageNotices.qml RemoteContentSettings.qml
     QML_FILES CalendarMailCount.qml
     QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
-    RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
+    RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt app-icon/app-icon.png
 )
 target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-html-content Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
-    target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm)
+    target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm dwmapi)
 endif()
 set_target_properties(fuckmail-gui PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "fuckMail"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.fuckmail.desktop"
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+    MACOSX_BUNDLE_ICON_FILE "app-icon.icns"
 )
+# App icon. scripts/make_app_icons.py regenerates the .ico and .icns from app-icon.png.
+# Qt also uses the Windows IDI_ICON1 resource as the default window icon.
+if(WIN32)
+    target_sources(fuckmail-gui PRIVATE app-icon/app-icon.rc)
+elseif(APPLE)
+    target_sources(fuckmail-gui PRIVATE app-icon/app-icon.icns)
+    set_source_files_properties(app-icon/app-icon.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+endif()
+# The native title bar follows the theme; macOS needs AppKit for its colour.
+if(APPLE)
+    enable_language(OBJCXX)
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.mm)
+    target_link_libraries(fuckmail-gui PRIVATE "-framework AppKit")
+else()
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.cpp)
+endif()
 # Qt's Windows runtime layout differs from the Unix subdirectory layout. Let
 # developer launchers consume the generator's actual path rather than guess it.
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
@@ -100,6 +117,10 @@ if(BUILD_TESTING)
     add_executable(gui-debug-console-test DebugConsoleTest.cpp DebugConsole.cpp DebugConsole.h)
     target_link_libraries(gui-debug-console-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Test)
     target_compile_definitions(gui-debug-console-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(TARGET fm-rust)
+        target_compile_definitions(gui-debug-console-test PRIVATE FM_CLI_PATH="${FM_RUST_BIN_DIR}/fm${CMAKE_EXECUTABLE_SUFFIX}")
+        add_dependencies(gui-debug-console-test fm-rust)
+    endif()
     add_test(NAME gui-debug-console COMMAND gui-debug-console-test)
     set_tests_properties(gui-debug-console PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1")
     if(WIN32)
@@ -161,7 +182,7 @@ if(BUILD_TESTING)
     add_executable(gui-google-draft-controls-test GoogleDraftControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
+        RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-google-draft-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -175,7 +196,7 @@ if(BUILD_TESTING)
     add_executable(gui-google-send-controls-test GoogleSendControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
+        RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-google-send-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -189,7 +210,7 @@ if(BUILD_TESTING)
     add_executable(gui-calendar-occurrence-test CalendarOccurrenceBackendTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp
         GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
+        RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-calendar-occurrence-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-calendar-occurrence-test PRIVATE cxx_std_20)
@@ -254,7 +275,7 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-draft-transfer COMMAND gui-draft-transfer-test)
     set_tests_properties(gui-draft-transfer PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
-    target_link_libraries(gui-mail-selection-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_link_libraries(gui-mail-selection-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Test)
     target_compile_features(gui-mail-selection-test PRIVATE cxx_std_20)
     target_compile_definitions(gui-mail-selection-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     if(WIN32)
@@ -297,7 +318,7 @@ if(BUILD_TESTING)
     set(FM_AUTHORING_TEST_SOURCES GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp SendUndoBackend.cpp OutgoingBackend.cpp RemoteMailBackend.cpp DiscardUndoBackend.cpp CalendarUndoBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
+        RemindersAndPreferencesBackend.cpp CompositionBackend.cpp DraftTransferBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     add_executable(gui-account-lifecycle-controls-test AccountLifecycleControlsTest.cpp ${FM_AUTHORING_TEST_SOURCES})

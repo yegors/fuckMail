@@ -23,6 +23,8 @@ UninstallDisplayName=fuckMail
 CloseApplications=yes
 RestartApplications=no
 WizardStyle=modern
+SetupIconFile=..\gui\app-icon\app-icon.ico
+WizardSmallImageFile=..\gui\app-icon\app-icon.png
 Compression=lzma2
 SolidCompression=yes
 

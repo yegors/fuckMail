@@ -1,3 +1,6 @@
+// Local-model controls under one message in MailView: the sender-kind
+// correction menu (Human / Automated) and the message's SummaryCard. Results
+// and jobs belong to the shared MailAssistance passed in as `controller`.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

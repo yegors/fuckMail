@@ -369,7 +369,10 @@ fn composition_legacy_first_save_binds_loaded_member_across_actual_arrival() {
     assert_eq!(loaded["revision"], 0);
     assert_eq!(loaded["source_message_id"], mid);
     // The source's Reply-To, not its From (a no-reply sender bounces).
-    assert_eq!(emails(&loaded["to_recipients"]), vec!["reply@fixture.example"]);
+    assert_eq!(
+        emails(&loaded["to_recipients"]),
+        vec!["reply@fixture.example"]
+    );
     let (_, arrived) = ingest(&mut store, "after-load", source("after-load", 1));
     assert_eq!(
         call(&mut store, "draft_get", json!({"conversation_id":cid}))["source_message_id"],
@@ -457,9 +460,19 @@ fn composition_drafts_page_search_scope_and_invalid_edits_are_bounded() {
         call(&mut store, "drafts", json!({"query":"paged uni"}))["total"],
         0
     );
-    // Drafts match phrases as mail does (Search 10).
-    for (query, total) in [("safe café", 3), ("punctuation-safe cafe", 3), ("punctuation safe", 0), ("draft 1", 1), ("afe", 0)] {
-        assert_eq!(call(&mut store, "drafts", json!({"query":query}))["total"], total, "{query}");
+    // Drafts match phrases as mail does.
+    for (query, total) in [
+        ("safe café", 3),
+        ("punctuation-safe cafe", 3),
+        ("punctuation safe", 0),
+        ("draft 1", 1),
+        ("afe", 0),
+    ] {
+        assert_eq!(
+            call(&mut store, "drafts", json!({"query":query}))["total"],
+            total,
+            "{query}"
+        );
     }
     let first = call(
         &mut store,

@@ -6,17 +6,25 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 /// One received email, captured for the model.
+///
+/// Built by [`Store::local_model_prepare`] with a snapshot of everything the
+/// result depends on; [`Store::local_model_finish`] refuses to save if that
+/// snapshot changed while the model ran.
 #[derive(Clone)]
 pub struct Prepared {
     pub account: String,
     pub conversation: String,
+    /// The message ID being analysed.
     pub target: String,
+    /// Model settings as read at preparation, used for the whole run.
     pub settings: Settings,
     /// `{from, to, subject, date, text, shortened}`: what `{{messages}}` becomes.
     pub email: Value,
     /// `[{id, name, description}]`: what `{{labels}}` becomes.
     pub labels: Value,
     snapshot: Value,
+    /// The body was cut to the model's character budget. Partial runs still
+    /// save a summary but never apply a label.
     pub partial: bool,
     /// Set only for mail that arrived while the queue ran; permits label Auto-read.
     pub arrival: bool,
@@ -24,6 +32,7 @@ pub struct Prepared {
     pub overwrite: bool,
 }
 impl Prepared {
+    /// Returns the label IDs the model may choose from.
     pub fn label_ids(&self) -> Vec<String> {
         ollama::label_ids(&self.labels)
     }
@@ -39,6 +48,9 @@ pub(crate) fn history_cutoff_key(account: &str) -> String {
 pub(crate) fn catch_up_key(account: &str) -> String {
     format!("local_model_catch_up_from:{account}")
 }
+/// Turns analysis of mail that predates the account on or off. Turning it off
+/// sets the history cutoff to now, but only if none is set yet, so toggling
+/// never moves an existing cutoff forward.
 pub(crate) fn set_history_analysis(
     db: &rusqlite::Connection,
     account: &str,
@@ -68,7 +80,7 @@ fn stale() -> crate::CoreError {
         "Message, labels or manual choices changed; run again",
     )
 }
-/// Saved snapshots from before D111 also carried model settings and a version.
+/// Snapshots saved by older versions also carried model settings and a version.
 /// Settings changes no longer make results out of date, so both are ignored.
 fn same_snapshot(stored: &Value, current: &Value) -> bool {
     let strip = |v: &Value| {
@@ -85,6 +97,8 @@ fn same_stored(stored: &str, current: &Value) -> bool {
     serde_json::from_str::<Value>(stored).is_ok_and(|v| same_snapshot(&v, current))
 }
 impl Store {
+    /// Returns `{revision, settings, defaults}` for the local model; a profile
+    /// that never saved settings reports revision 0 with the defaults.
     pub fn local_model_settings(&self) -> Result<Value> {
         let row: Option<(i64, String)> = self
             .db
@@ -110,6 +124,14 @@ impl Store {
             self.local_model_settings()?["settings"].clone(),
         )?)
     }
+    /// Dispatches the `assist_*` IPC methods: settings get and save, the label
+    /// catalog, saved results, sender-kind corrections, and accepting a
+    /// suggested label.
+    ///
+    /// Settings saves are revision-checked (`assistance_stale` on conflict)
+    /// and may only reference active accounts and their existing labels.
+    /// Accepting a label applies it through the ordinary `set_category` path,
+    /// so it behaves exactly like a manual choice.
     pub fn local_model_handle(
         &mut self,
         method: &str,
@@ -198,6 +220,8 @@ impl Store {
                 if p["expected_revision"].as_i64() != Some(rev) {
                     return Err(stale());
                 }
+                // A manual kind is pinned to this source hash and survives
+                // later model runs; reset hands the message back to the model.
                 if k == "reset" {
                     tx.execute(
                         "DELETE FROM message_sender_kinds WHERE account=?1 AND message_id=?2",
@@ -248,6 +272,8 @@ impl Store {
                     |r| r.get(0),
                 )?;
                 let reply=self.handle("set_category",Some(a),json!({"id":c,"message_ids":[m],"category_id":category,"present":true,"expected_revision":revision,"request_id":string(p,"request_id")?}))?;
+                // Accepting changes the label state the classification depends
+                // on; re-stamp it so the accepted suggestion does not read as stale.
                 let snapshot = self.local_model_snapshot(a, c, "classification", m)?;
                 self.db.execute("UPDATE local_model_results SET snapshot_json=?1 WHERE account=?2 AND conversation_id=?3 AND task='classification' AND target=?4",params![serde_json::to_string(&snapshot)?,a,c,m])?;
                 Ok(reply)
@@ -399,6 +425,9 @@ impl Store {
             overwrite: false,
         })
     }
+    /// Fails with `assistance_stale` if the email, its labels or manual
+    /// choices changed since `p` was prepared. The engine calls it right
+    /// before inference; [`Store::local_model_finish`] repeats it on commit.
     pub fn local_model_validate(&self, p: &Prepared) -> Result<()> {
         if !same_snapshot(
             &p.snapshot,
@@ -409,6 +438,14 @@ impl Store {
         Ok(())
     }
     /// Save a checked reply: `{summary, sender_kind, category_ids}`.
+    ///
+    /// The output must have a valid summary, a `human` or `automated` sender
+    /// kind and at most one label from `p`'s label list
+    /// (`invalid_assistance_result` otherwise). Only enabled tasks are saved,
+    /// and queue work only fills missing results unless `p.overwrite` is set.
+    /// A chosen label is queued as a Gmail label change, followed by Spam or
+    /// Auto-read when the account's policy asks for it. A manual sender-kind
+    /// correction is never overwritten. Clears the email's failure count.
     pub fn local_model_finish(&self, p: &Prepared, output: Value) -> Result<Value> {
         let summary = output["summary"].as_str().unwrap_or_default();
         let kind = output["sender_kind"].as_str().unwrap_or_default();
@@ -416,11 +453,14 @@ impl Store {
         if !ollama::valid_summary(summary)
             || !["human", "automated"].contains(&kind)
             || !output["category_ids"].as_array().is_some_and(|c| {
-                c.len() <= 1 && c.iter().all(|id| id.as_str().is_some_and(|id| ids.iter().any(|i| i == id)))
+                c.len() <= 1
+                    && c.iter()
+                        .all(|id| id.as_str().is_some_and(|id| ids.iter().any(|i| i == id)))
             })
         {
             return Err(err("invalid_assistance_result", "Invalid model analysis"));
         }
+        // Recheck staleness inside the same transaction as the writes.
         let tx = self.db.unchecked_transaction()?;
         self.local_model_validate(p)?;
         let policy = p
@@ -445,6 +485,7 @@ impl Store {
                 )?;
                 tx.execute("INSERT INTO message_sender_kinds VALUES(?1,?2,?3,?4,?5) ON CONFLICT(account,message_id) DO UPDATE SET source_hash=excluded.source_hash,kind=excluded.kind,provenance=excluded.provenance",params![p.account,p.target,hash,if kind=="human"{"people"}else{kind},p.settings.provider.as_str()])?;
             }
+            // A label chosen from a truncated body is not trusted enough to apply.
             if p.partial {
                 label_state = "partial_source";
             } else if let Some(category) = output["category_ids"]
@@ -515,11 +556,19 @@ impl Store {
         )?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
-        Ok(json!({"task":"message","target":p.target,"items":items,"label_state":label_state,"prompt_sha256":prompt}))
+        Ok(
+            json!({"task":"message","target":p.target,"items":items,"label_state":label_state,"prompt_sha256":prompt}),
+        )
     }
     /// Count a failed attempt on one email. After `MAX_ATTEMPTS` the queue
     /// skips it until an explicit Try again succeeds.
-    pub fn local_model_fail(&self, account: &str, message: &str, code: &str, text: &str) -> Result<i64> {
+    pub fn local_model_fail(
+        &self,
+        account: &str,
+        message: &str,
+        code: &str,
+        text: &str,
+    ) -> Result<i64> {
         self.db.execute("INSERT INTO local_model_failures(account,message_id,attempts,code,message,updated_at) SELECT ?1,?2,1,?3,?4,?5 WHERE EXISTS(SELECT 1 FROM messages WHERE account=?1 AND id=?2) ON CONFLICT(account,message_id) DO UPDATE SET attempts=attempts+1,code=excluded.code,message=excluded.message,updated_at=excluded.updated_at",
             params![account, message, code, text, chrono::Utc::now().to_rfc3339()])?;
         Ok(self
@@ -538,6 +587,9 @@ impl Store {
         self.db.execute("DELETE FROM local_model_results WHERE account=?1 AND task='classification' AND json_array_length(result_json,'$.output.category_ids')=0",[account])?;
         Ok(())
     }
+    /// Returns the saved summary to show as a message preview, or `None` when
+    /// there is none, it is in an outdated format, or the message changed
+    /// since it was written.
     pub(crate) fn local_model_preview(
         &self,
         account: &str,
@@ -561,6 +613,10 @@ impl Store {
         }
         Ok(Some(text.into()))
     }
+    /// Returns `{items, failures}` for a conversation's received messages:
+    /// each saved result marked `stale` when its inputs changed (and, for
+    /// summaries, `format_outdated`), plus queue failures so the reader can
+    /// offer Try again.
     pub fn local_model_results(&self, account: &str, conversation: &str) -> Result<Value> {
         self.require_active_account(account)?;
         let mut stmt=self.db.prepare("SELECT r.task,r.target,r.snapshot_json,r.result_json FROM local_model_results r JOIN messages m ON m.account=r.account AND m.id=r.target AND NOT m.sent WHERE r.account=?1 AND r.conversation_id=?2 LIMIT 401")?;
@@ -670,7 +726,8 @@ mod tests {
                 .unwrap()["auto_read"],
             true
         );
-        let result = json!({"summary":"A receipt.","sender_kind":"automated","category_ids":["receipts"]});
+        let result =
+            json!({"summary":"A receipt.","sender_kind":"automated","category_ids":["receipts"]});
         let mut plan = store
             .local_model_prepare(account, conversation, message)
             .unwrap();
@@ -887,7 +944,10 @@ mod tests {
             params![A, M],
         )
         .unwrap();
-        assert_eq!(s.local_model_prepare(A, C, M).err().unwrap().code, "assistance_limit");
+        assert_eq!(
+            s.local_model_prepare(A, C, M).err().unwrap().code,
+            "assistance_limit"
+        );
     }
     #[test]
     fn sent_messages_are_excluded_and_old_results_hidden() {
@@ -962,13 +1022,19 @@ mod tests {
         assert!(s.local_model_preview(A, C, M).unwrap().is_none());
         // A label the account does not have is refused before anything is saved.
         let p = s.local_model_prepare(A, C, M).unwrap();
-        assert!(s.local_model_finish(&p, output("x y", json!(["invented"]))).is_err());
+        assert!(s
+            .local_model_finish(&p, output("x y", json!(["invented"])))
+            .is_err());
     }
     #[test]
     fn settings_changes_keep_saved_results_and_queue_work_fills_only_gaps() {
         let (_dir, mut s) = configured_store();
         save(&mut s, |settings| {
-            settings.accounts.entry(A.into()).or_default().classification = false;
+            settings
+                .accounts
+                .entry(A.into())
+                .or_default()
+                .classification = false;
         });
         let p = s.local_model_prepare(A, C, M).unwrap();
         s.local_model_finish(&p, output("First summary.", json!([])))
@@ -978,20 +1044,30 @@ mod tests {
         save(&mut s, |settings| {
             settings.system = "Summarize tersely.".into();
             settings.model.as_mut().unwrap().name = "other".into();
-            settings.accounts.entry(A.into()).or_default().classification = true;
+            settings
+                .accounts
+                .entry(A.into())
+                .or_default()
+                .classification = true;
         });
         assert_eq!(summary(&s)["stale"], false);
-        assert_eq!(s.local_model_preview(A, C, M).unwrap().as_deref(), Some("First summary."));
+        assert_eq!(
+            s.local_model_preview(A, C, M).unwrap().as_deref(),
+            Some("First summary.")
+        );
         // Queue work adds the missing classification without replacing the summary.
         let p = s.local_model_prepare(A, C, M).unwrap();
-        let saved = s.local_model_finish(&p, output("Second summary.", json!([]))).unwrap();
+        let saved = s
+            .local_model_finish(&p, output("Second summary.", json!([])))
+            .unwrap();
         assert_eq!(saved["items"].as_array().unwrap().len(), 1);
         assert_eq!(saved["items"][0]["task"], "classification");
         assert_eq!(summary(&s)["output"]["summary"], "First summary.");
         // An explicit request (Resummarize) replaces it, with the new prompt's hash.
         let mut p = s.local_model_prepare(A, C, M).unwrap();
         p.overwrite = true;
-        s.local_model_finish(&p, output("Third summary.", json!([]))).unwrap();
+        s.local_model_finish(&p, output("Third summary.", json!([])))
+            .unwrap();
         let now = summary(&s);
         assert_eq!(now["output"]["summary"], "Third summary.");
         assert_eq!(now["model"]["name"], "other");
@@ -1010,7 +1086,9 @@ mod tests {
             .unwrap();
         s.local_model_handle("assist_correct",Some(A),&json!({"conversation_id":C,"message_id":M,"kind":"automated","expected_revision":revision})).unwrap();
         assert_eq!(
-            s.local_model_finish(&pending, output("x y", json!([]))).unwrap_err().code,
+            s.local_model_finish(&pending, output("x y", json!([])))
+                .unwrap_err()
+                .code,
             "assistance_stale"
         );
         let settings_conflict = s.local_model_handle(
@@ -1024,17 +1102,22 @@ mod tests {
     fn results_saved_before_d111_stay_current() {
         let (_dir, s) = configured_store();
         let p = s.local_model_prepare(A, C, M).unwrap();
-        s.local_model_finish(&p, output("Saved earlier.", json!([]))).unwrap();
+        s.local_model_finish(&p, output("Saved earlier.", json!([])))
+            .unwrap();
         // Older snapshots also held the model settings and a version number.
         s.db.execute("UPDATE local_model_results SET snapshot_json=json_set(snapshot_json,'$.version',2,'$.settings',json('{\"prompt\":\"old\"}')) WHERE account=?1",[A]).unwrap();
         assert_eq!(summary(&s)["stale"], false);
-        assert_eq!(s.local_model_preview(A, C, M).unwrap().as_deref(), Some("Saved earlier."));
+        assert_eq!(
+            s.local_model_preview(A, C, M).unwrap().as_deref(),
+            Some("Saved earlier.")
+        );
     }
     #[test]
     fn unlabeled_classifications_are_forgotten_after_a_label_import() {
         let (_dir, s) = configured_store();
         let p = s.local_model_prepare(A, C, M).unwrap();
-        s.local_model_finish(&p, output("Saved earlier.", json!([]))).unwrap();
+        s.local_model_finish(&p, output("Saved earlier.", json!([])))
+            .unwrap();
         s.local_model_forget_unlabeled(A).unwrap();
         let tasks: Vec<String> = s.local_model_results(A, C).unwrap()["items"]
             .as_array()

@@ -15,6 +15,8 @@ use std::io::Read;
 // Includes the optional 8192-byte subject and its JSON escaping overhead.
 const MAX_CAPTURE_RECORD_BYTES: usize = 32 * 1024;
 
+/// Result the synthetic transport reports, chosen by the caller so both the
+/// accepted and the unknown-outcome paths can be exercised.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Outcome {
@@ -22,6 +24,12 @@ enum Outcome {
     Unknown,
 }
 
+/// One capture's journal entry in `capture_operations` (execution kind
+/// `synthetic`), keyed by request ID with the MIME hash as `blob_hash`.
+///
+/// `operation` follows the same prepared/in-flight/outcome journal as a real
+/// submission. `conversation_id` is empty for a standalone draft;
+/// `attempts_started` counts transitions into in-flight.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct CaptureRecord {
     conversation_id: String,
@@ -46,6 +54,9 @@ struct CaptureRequest<'a> {
 }
 
 impl<'a> CaptureRequest<'a> {
+    /// Parses and bounds a capture request. Older callers select a
+    /// conversation's reply draft by `conversation_id`; newer ones pass
+    /// `draft_id`. `outcome` defaults to accepted.
     fn parse(value: &'a Value) -> Result<Self> {
         fields(
             value,
@@ -105,6 +116,9 @@ impl<'a> CaptureRequest<'a> {
 }
 
 impl Store {
+    /// Loads the journal entry for this request ID, if any. Fails with
+    /// `request_id_conflict` when the ID already froze a different draft,
+    /// revision or outcome.
     pub(crate) fn capture_existing(
         &self,
         account: &str,
@@ -137,6 +151,12 @@ impl Store {
         }
         Ok(record)
     }
+    /// Builds a saved draft's MIME, journals it and passes it through a local
+    /// stand-in transport, returning a receipt with the exported `.eml` path.
+    ///
+    /// Nothing leaves the machine and the draft is left unchanged. Replaying a
+    /// request ID returns the same receipt; an attempt interrupted in flight is
+    /// recorded as unknown and never repeated.
     pub(crate) fn draft_capture(&mut self, account: &str, params: &Value) -> Result<Value> {
         let request = CaptureRequest::parse(params)?;
         let mut transport = LocalCapture {
@@ -183,6 +203,8 @@ impl Store {
             }
             None => self.prepare_capture(account, request)?,
         };
+        // An in-flight entry is from an interrupted attempt; it becomes unknown
+        // rather than being submitted again.
         if record.operation.state == SendState::InFlight
             && self.account_lifecycle(account)?["state"] == "active"
         {
@@ -192,6 +214,8 @@ impl Store {
                 .map_err(capture_error)?;
             record.operation = next;
         }
+        // `submit_once` journals in-flight before calling the transport and the
+        // outcome after, the same ordering a real submission relies on.
         if record.operation.state == SendState::Prepared
             && self.account_lifecycle(account)?["state"] == "active"
         {
@@ -231,6 +255,7 @@ impl Store {
         Ok(result)
     }
 
+    /// Builds and journals a new capture as `Prepared`, on the writer.
     fn prepare_capture(
         &mut self,
         account: &str,
@@ -277,6 +302,8 @@ impl Store {
         )?;
         let record = proof.record;
         let hash = record.operation.mime_sha256.clone();
+        // Take the write lock before re-reading the revision so no save can
+        // slip between the check and the insert.
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -309,6 +336,8 @@ impl Store {
         Ok(record)
     }
 
+    /// Loads and verifies the draft's attachments: at most 50, distinct, fully
+    /// retained, and within the MIME attachment byte limit.
     fn capture_attachments(&self, account: &str, draft: &Value) -> Result<Vec<StagedAttachment>> {
         let Some(ids) = draft.get("attachment_ids") else {
             return Ok(vec![]);
@@ -368,6 +397,8 @@ impl Store {
         Ok(staged)
     }
 
+    /// Reads a blob and re-checks its size and SHA-256 after reading, since the
+    /// file could change after it was verified.
     fn capture_bytes(&self, hash: &str, size: u64) -> Result<Vec<u8>> {
         let path = self.verified_blob(hash, size)?;
         let mut bytes = Vec::new();
@@ -383,6 +414,8 @@ impl Store {
         Ok(bytes)
     }
 
+    /// Marks every capture left in flight by an earlier run as unknown. Runs
+    /// when the store opens.
     pub(crate) fn recover_captures(&mut self) -> Result<()> {
         let operations = {
             let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='synthetic' AND json_extract(json,'$.operation.state')='InFlight'")?;
@@ -410,6 +443,12 @@ pub(crate) struct PreparedCapture {
     path: std::path::PathBuf,
 }
 
+/// Builds and stages a capture's MIME off the writer, or reuses `existing`'s
+/// frozen record, and exports the `.eml` copy.
+///
+/// The Message-ID derives from the account and request ID. Fails with
+/// `invalid_draft` when no bounded MIME can be formed and
+/// `content_unavailable` when a reply's original routing was lost.
 pub(crate) fn prepare_capture_content(
     blobs: &crate::content::BlobStore,
     account: &str,
@@ -495,6 +534,9 @@ pub(crate) fn prepare_capture_content(
 }
 
 impl Store {
+    /// Journals a prepared capture, if no entry exists yet, and runs its
+    /// synthetic submission; returns the receipt.
+    ///
     /// None redirects a same-request race to its already frozen winner.
     pub(crate) fn finish_prepared_capture(
         &mut self,
@@ -556,6 +598,8 @@ impl Store {
                 .map_err(capture_error)?;
             record.operation = next;
         }
+        // Same journal ordering as `submit_once`: in-flight is durable before
+        // the outcome is recorded, so a crash in between reads as unknown.
         if record.operation.state == SendState::Prepared
             && self.account_lifecycle(account)?["state"] == "active"
         {
@@ -605,6 +649,8 @@ impl Store {
     }
 }
 
+/// Loads and validates a capture entry; its account, ID and hash must agree
+/// with the row that holds it.
 fn load_record(db: &Connection, account: &str, id: &str) -> Result<Option<CaptureRecord>> {
     crate::google_drafts::check_execution_kind(db, account, id, "synthetic")?;
     let row: Option<(String, String)> = db
@@ -636,10 +682,14 @@ fn load_record(db: &Connection, account: &str, id: &str) -> Result<Option<Captur
     Ok(Some(record))
 }
 
+/// [`SendJournal`] over `capture_operations`, so captures share the send state
+/// machine's compare-and-set transitions.
 struct SqliteCaptureJournal<'a> {
     db: &'a mut Connection,
 }
 impl SendJournal for SqliteCaptureJournal<'_> {
+    /// Replaces `expected` with `next` only if the stored operation still
+    /// equals `expected`; otherwise fails with `StaleCheckpoint`.
     fn transition(
         &mut self,
         expected: &SendOperation,
@@ -686,6 +736,8 @@ fn capture_error(_: GoogleError) -> crate::CoreError {
     err("capture_error", "Synthetic capture could not complete; a started operation will not be automatically retried")
 }
 
+/// Stand-in transport that "accepts" with an ID derived from the MIME hash, or
+/// reports no definitive response, as the request asked.
 struct LocalCapture {
     outcome: Outcome,
     thread_id: String,
@@ -705,6 +757,11 @@ impl SubmissionTransport for LocalCapture {
 }
 
 impl Store {
+    /// Lists capture receipts newest first, optionally for one draft or
+    /// conversation, or only those still unresolved.
+    ///
+    /// `limit` is 1-100 (default 30). Every row is marked `local_only` and
+    /// `provider_delivered: false`.
     pub(crate) fn capture_history(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -942,10 +999,7 @@ mod tests {
             .unwrap();
         let raw = std::fs::read(result["path"].as_str().unwrap()).unwrap();
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
-        assert_eq!(
-            parsed.body_text(0).unwrap(),
-            plain
-        );
+        assert_eq!(parsed.body_text(0).unwrap(), plain);
         let alternative = parsed.body_html(0).unwrap();
         assert!(alternative.contains("font-weight:700"));
         assert!(alternative.contains("font-style:italic"));
@@ -1239,10 +1293,7 @@ mod tests {
         assert_eq!(result["network_used"], false);
         let raw = std::fs::read(result["path"].as_str().unwrap()).unwrap();
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
-        assert_eq!(
-            parsed.body_text(0).unwrap(),
-            authored
-        );
+        assert_eq!(parsed.body_text(0).unwrap(), authored);
         assert_eq!(
             parsed.from().unwrap().first().unwrap().address.as_deref(),
             Some("you@windscribe.example")

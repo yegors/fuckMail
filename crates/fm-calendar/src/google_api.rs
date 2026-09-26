@@ -13,24 +13,41 @@ use std::{
 };
 use url::Url;
 
+/// Names the fixed query [`GoogleCalendarApi::calendar_list`] sends. Core
+/// stores it with each sync cursor and refuses to resume a cursor recorded
+/// under a different value, so changing the query must change this string.
 pub const CATALOG_SYNC_FINGERPRINT: &str =
     "google-calendar-catalog-v1:hidden=true;deleted=true;max=250";
+/// Names the fixed query [`GoogleCalendarApi::events`] sends, with the same
+/// role as [`CATALOG_SYNC_FINGERPRINT`].
 pub const EVENT_SYNC_FINGERPRINT: &str =
     "google-calendar-events-v1:single=false;deleted=true;hiddenInvitations=true;max=250";
+/// Response cap for list pages and free/busy.
 const PAGE_BYTES: usize = 16 * 1024 * 1024;
+/// Response and request-body cap for one event.
 const EVENT_BYTES: usize = 2 * 1024 * 1024;
 
 mod occurrences;
 pub use occurrences::{InstanceIdentity, InstancesPage, OccurrenceResource};
 
+/// Why a Calendar API call failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
+    /// An argument failed local checks; nothing was sent.
     InvalidRequest,
+    /// Google's answer was malformed, oversized, inconsistent with the request,
+    /// or had an unexpected status.
     InvalidResponse,
+    /// HTTP 410 on a calendar-list or events sync: start again with a full sync.
     SyncTokenExpired,
+    /// HTTP 412: the event's ETag no longer matches `If-Match`.
     PreconditionFailed,
+    /// HTTP 409, for example an insert whose event ID already exists.
     Conflict,
+    /// The transport refused, cancelled or failed the request, or the response
+    /// exceeded its size cap.
     Transport(TransportError),
+    /// Any other HTTP error, classified by `fm_google::classify_api_error`.
     Provider(GoogleError),
 }
 impl From<TransportError> for ApiError {
@@ -40,15 +57,21 @@ impl From<TransportError> for ApiError {
 }
 type Result<T> = std::result::Result<T, ApiError>;
 
+/// Where a list request resumes: `Default` starts a full listing.
+///
 /// No Debug: cursor material remains native, never diagnostic text.
 #[derive(Clone, Copy, Default)]
 pub struct SyncCursor<'a> {
+    /// `nextSyncToken` of the last complete run, for an incremental listing.
     pub sync_token: Option<&'a str>,
+    /// `nextPageToken` of the previous page in this run.
     pub page_token: Option<&'a str>,
 }
 
+/// The account's access role on a calendar, from its calendar-list entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CalendarRole {
+    /// No access, an unknown role, or a deleted entry.
     None,
     FreeBusy,
     Reader,
@@ -57,6 +80,8 @@ pub enum CalendarRole {
     Owner,
 }
 impl CalendarRole {
+    /// Maps Google's `accessRole` string. Unknown values become `None`, the
+    /// safe default.
     pub fn from_provider(value: &str) -> Self {
         match value {
             "freeBusyReader" => Self::FreeBusy,
@@ -67,7 +92,8 @@ impl CalendarRole {
             _ => Self::None,
         }
     }
-    /// Per-event mapping keeps legacy projection/edit consumers permission safe.
+    /// Returns the [`Access`] for one event on this calendar: readers and
+    /// limited writers see a private event as free/busy only.
     pub fn event_access(self, private: bool) -> Access {
         match self {
             Self::None => Access::None,
@@ -80,6 +106,7 @@ impl CalendarRole {
             Self::Owner => Access::Owner,
         }
     }
+    /// Whether this role can read event details, not just busy times.
     pub fn has_event_details(self) -> bool {
         matches!(
             self,
@@ -88,72 +115,109 @@ impl CalendarRole {
     }
 }
 
+/// One calendar-list entry.
+///
 /// Retains complete provider catalog metadata, including fields not displayed.
 pub struct CalendarEntry {
     pub id: String,
+    /// `None` for a deleted entry, whatever role it last had.
     pub role: CalendarRole,
+    /// The user removed this calendar from their list.
     pub deleted: bool,
+    /// The complete entry JSON.
     pub source: Value,
 }
+/// One page of the account's calendar list.
 pub struct CatalogPage {
     pub account: AccountId,
     pub items: Vec<CalendarEntry>,
+    /// Exactly one of `next_page_token` and `next_sync_token` is set: more
+    /// pages follow, or this was the last and the token resumes the next run.
     pub next_page_token: Option<String>,
     pub next_sync_token: Option<String>,
+    /// Collection ETag, from the body or the header.
     pub etag: Option<String>,
 }
+/// One page of a calendar's events. Recurring masters and their exceptions
+/// arrive as separate, unexpanded items.
 pub struct EventPage {
     pub account: AccountId,
     pub calendar: String,
     /// Retained source, not permission-filtered UI data. Normalize per item in Core.
     pub items: Vec<Value>,
+    /// Exactly one continuation is set, as in [`CatalogPage`].
     pub next_page_token: Option<String>,
     pub next_sync_token: Option<String>,
     pub etag: Option<String>,
+    /// The calendar's IANA zone, checked against the bundled database.
     pub time_zone: String,
+    /// The account's role on this calendar when the page was served.
     pub role: CalendarRole,
+    /// The calendar's `defaultReminders` array; `[]` when absent.
     pub default_reminders: Value,
 }
+/// A complete event with its ETag, as returned by a read, patch or insert.
 pub struct EventResource {
     pub key: EventKey,
+    /// From the body or the header; always present.
     pub etag: String,
     pub source: Value,
 }
+/// The result of [`GoogleCalendarApi::get_event`].
 pub enum EventFetch {
+    /// HTTP 304: the event still has the ETag given as `if_none_match`.
     NotModified,
     Found(EventResource),
 }
 
+/// Why Google gave no busy times for one calendar in a free/busy query.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusyError {
+    /// The response had no entry for this calendar.
     Missing,
+    /// `forbidden` or `permissionDenied`.
     PermissionDenied,
+    /// `notFound`.
     NotFound,
+    /// `internalError`.
     Internal,
+    /// `groupTooBig` or `tooManyCalendarsRequested`.
     Limit,
+    /// Any other reason.
     Unknown,
+    /// The entry was malformed, or an interval fell outside the window.
     InvalidResponse,
 }
+/// One busy span in UTC, inside the requested window.
 pub struct BusyInterval {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
 }
+/// Free/busy outcome for one calendar.
 pub enum CalendarBusy {
+    /// Busy spans, possibly none.
     Available(Vec<BusyInterval>),
+    /// Google reported errors, or the entry could not be trusted.
     Unavailable(Vec<BusyError>),
 }
+/// Free/busy results for exactly the requested calendars over one window.
 pub struct BusySnapshot {
     pub account: AccountId,
+    /// The requested window, which Google echoed back unchanged.
     pub from: DateTime<Utc>,
     pub to: DateTime<Utc>,
     /// There are no provider event IDs on this path; never fabricate them.
     pub calendars: BTreeMap<String, CalendarBusy>,
 }
 
+/// Google's `sendUpdates`: which guests get email about a change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationPolicy {
+    /// Every guest.
     All,
+    /// Only guests who do not use Google Calendar.
     ExternalOnly,
+    /// No guests.
     None,
 }
 impl NotificationPolicy {
@@ -166,18 +230,33 @@ impl NotificationPolicy {
     }
 }
 
+/// Calendar API v3 client for one account over an injected transport.
+///
+/// Each method sends exactly one request and never retries; quota, retry and
+/// token refresh belong to the caller and its transport. `access_token` goes
+/// out as a bearer `authorization` header, which a wrapping transport may
+/// replace. Responses are capped at 16 MiB per page and 2 MiB per event.
 pub struct GoogleCalendarApi<T: HttpTransport> {
     account: AccountId,
     http: Arc<T>,
 }
 impl<T: HttpTransport> GoogleCalendarApi<T> {
+    /// Creates a client for `account`. Results carry this account, and writes
+    /// to any other account are refused.
     pub fn new(account: AccountId, http: Arc<T>) -> Self {
         Self { account, http }
     }
+    /// Returns the account this client acts for.
     pub fn account(&self) -> &AccountId {
         &self.account
     }
 
+    /// Fetches one page of the account's calendar list, hidden and deleted
+    /// entries included; with `cursor.sync_token`, only changes since then.
+    ///
+    /// Fails with [`ApiError::SyncTokenExpired`] when Google has expired the
+    /// sync token, and `InvalidResponse` unless exactly one continuation token
+    /// comes back, or when the next page token repeats the current one.
     pub async fn calendar_list(
         &self,
         access_token: &str,
@@ -213,6 +292,9 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
         })
     }
 
+    /// Fetches one calendar-list entry, re-reading the account's current role
+    /// and metadata for that calendar.
+    ///
     /// Catalog deltas cannot replace this explicit permission/metadata revalidation.
     pub async fn calendar_entry(
         &self,
@@ -229,13 +311,19 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
             )
             .await?;
         let entry = catalog_entry(parse_json(&response.body, EVENT_BYTES)?)?;
+        // `primary` is an alias; Google answers with the calendar's real ID.
         if calendar != "primary" && entry.id != calendar {
             return Err(ApiError::InvalidResponse);
         }
         Ok(entry)
     }
 
+    /// Fetches one page of a calendar's events for a full or incremental sync.
+    ///
     /// Fixed full/delta scope. No expansion, partial fields, attendee cap, time or search filter.
+    /// Deleted events and hidden invitations are included. Fails with
+    /// [`ApiError::SyncTokenExpired`] on an expired token, and `InvalidResponse`
+    /// when the calendar's zone is not a known IANA zone.
     pub async fn events(
         &self,
         access_token: &str,
@@ -285,6 +373,10 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
         })
     }
 
+    /// Fetches one event, conditionally when `if_none_match` holds its last ETag.
+    ///
+    /// The response must name the requested event and carry an ETag. A 304 is
+    /// accepted only for a conditional request.
     pub async fn get_event(
         &self,
         access_token: &str,
@@ -299,6 +391,7 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
             validate_etag(etag)?;
             request = request.header("if-none-match", etag)?;
         }
+        // Execute directly: `check_response` would treat the 304 as an error.
         let response = self.http.execute(request, cancel).await?;
         if response.status == 304 {
             if if_none_match.is_none() {
@@ -315,6 +408,12 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
         )?))
     }
 
+    /// Queries busy spans for up to 50 distinct calendars over `window`.
+    ///
+    /// The snapshot has one entry per requested calendar; calendars Google adds
+    /// by expanding groups are dropped. Fails with `InvalidRequest` for an
+    /// invalid window or an empty, oversized or repeating list, and
+    /// `InvalidResponse` when Google echoes a different window.
     pub async fn free_busy(
         &self,
         access_token: &str,
@@ -363,6 +462,8 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
 
     /// Caller has already journaled intent and refreshed permissions/source. Submits once.
     /// Patch preserves fields omitted by the form; arrays in the plan replace whole arrays.
+    ///
+    /// Fails with `PreconditionFailed` when the event changed since `if_match`.
     pub async fn apply_write(
         &self,
         access_token: &str,
@@ -414,6 +515,10 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
     }
 
     /// Stable client-generated ID must already be committed in Core's operation journal.
+    ///
+    /// Google requires 5 to 1024 base32hex characters (`0-9`, `a-v`) for a
+    /// client-chosen ID. Reusing it makes a repeated insert fail with `Conflict`
+    /// instead of creating a second event.
     pub async fn insert_event(
         &self,
         access_token: &str,
@@ -452,6 +557,7 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
     }
 
     /// A successful delete is distinct from 404/410. Reconciliation owns prior outcomes.
+    /// Only HTTP 204 counts as success; the delete is conditional on `etag`.
     pub async fn delete_event(
         &self,
         access_token: &str,
@@ -486,6 +592,8 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
     }
 }
 
+/// Refuses a path segment that would not survive as one literal segment:
+/// empty, `.` or `..`, over 1024 bytes, or with control characters.
 fn validate_segment(value: &str) -> Result<()> {
     if value.is_empty()
         || value.len() > 1024
@@ -534,6 +642,8 @@ fn request(method: HttpMethod, url: &Url, token: &str, limit: usize) -> Result<H
         .header("accept", "application/json")?
         .response_limit(limit))
 }
+/// Maps an HTTP status to success or an [`ApiError`]. Only sync listings read
+/// 410 as an expired token; elsewhere it is an ordinary provider error.
 fn check_response(response: &HttpResponse, sync: bool) -> Result<()> {
     match response.status {
         200 | 201 | 204 => Ok(()),
@@ -574,6 +684,9 @@ fn optional_text(value: &Value, key: &str, max: usize) -> Result<Option<String>>
     }
     Ok(None)
 }
+/// The page's `(nextPageToken, nextSyncToken)`. Exactly one must be present,
+/// and a page must not point back to itself, or the run would loop or lose its
+/// final sync token.
 fn continuation(value: &Value, cursor: SyncCursor<'_>) -> Result<(Option<String>, Option<String>)> {
     let page = optional_text(value, "nextPageToken", 8192)?;
     let sync = optional_text(value, "nextSyncToken", 8192)?;
@@ -605,6 +718,7 @@ fn catalog_entry(source: Value) -> Result<CalendarEntry> {
         Some(Value::Bool(value)) => *value,
         _ => return Err(ApiError::InvalidResponse),
     };
+    // A deleted entry grants nothing, whatever role it still lists.
     let role = if deleted {
         CalendarRole::None
     } else {
@@ -617,12 +731,16 @@ fn catalog_entry(source: Value) -> Result<CalendarEntry> {
         source,
     })
 }
+/// Accepts one concrete ETag. `*` or a list would make a conditional request
+/// match any version.
 fn validate_etag(value: &str) -> Result<()> {
     if !bounded_text(value, 1024) || value == "*" || value.contains(',') {
         return Err(ApiError::InvalidRequest);
     }
     Ok(())
 }
+/// The ETag from the body or the header, whichever is present; when both are,
+/// they must agree.
 fn response_etag(value: &Value, header: Option<String>) -> Result<Option<String>> {
     let body = optional_text(value, "etag", 1024)?;
     if header.as_deref().is_some_and(|v| !bounded_text(v, 1024))
@@ -703,6 +821,9 @@ fn encode_body(value: &Value) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+/// Adds the write query parameters. Declaring conference data version 1 and
+/// attachment support makes Google apply those fields in a body rather than
+/// ignore them.
 fn write_parameters(url: &mut Url, policy: NotificationPolicy) {
     url.query_pairs_mut()
         .append_pair("sendUpdates", policy.parameter())

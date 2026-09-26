@@ -21,6 +21,7 @@ fn email(value: &str) -> Result<String> {
     Ok(value.to_lowercase())
 }
 
+/// The organizer and the signed-in user are never editable as guests.
 fn protected(person: &Value) -> bool {
     person["organizer"] == true || person["self"] == true
 }
@@ -30,6 +31,9 @@ fn roster(source: &Value) -> Result<BTreeMap<String, Value>> {
     parse_roster(source, true)
 }
 
+/// Parses an attendee array keyed by lowercase email. Anything the editor
+/// could not write back unchanged (unknown fields, an omitted or still
+/// expanding list, duplicates) is refused rather than silently dropped.
 fn parse_roster(
     source: &Value,
     include_implicit_organizer: bool,
@@ -110,6 +114,9 @@ fn parse_roster(
     Ok(output)
 }
 
+/// Splits an event's roster into editable guest addresses and protected
+/// entries (organizer and self) for the editor. Fails when the roster cannot
+/// be edited safely; callers show the error code as the reason.
 pub(crate) fn guest_projection(source: &Value) -> Result<(Vec<Value>, Vec<Value>)> {
     let roster = roster(source)?;
     let mut guests = Vec::new();
@@ -125,6 +132,11 @@ pub(crate) fn guest_projection(source: &Value) -> Result<(Vec<Value>, Vec<Value>
 }
 
 /// None means the submitted set is unchanged and PATCH must omit attendees.
+///
+/// Otherwise builds the full replacement array Google's PATCH requires:
+/// protected entries and kept guests are copied with their existing
+/// responses, and new guests start as `needsAction`. `input` may list only
+/// non-protected addresses.
 pub(crate) fn attendee_patch(
     input: &Value,
     source: Option<&Value>,

@@ -439,7 +439,12 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
         port: open.port,
         username: String::new(),
     };
-    let client = build_client(Some((&anonymous, None)), runtime.blocked.clone(), &runtime.policy).unwrap();
+    let client = build_client(
+        Some((&anonymous, None)),
+        runtime.blocked.clone(),
+        &runtime.policy,
+    )
+    .unwrap();
     assert_eq!(
         runtime
             .fetch(&client, "https://origin.test/img.png", &cancel, true)
@@ -448,7 +453,10 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
             .unwrap(),
         png()
     );
-    assert_eq!(open.connects.lock().unwrap().as_slice(), ["origin.test:443"]);
+    assert_eq!(
+        open.connects.lock().unwrap().as_slice(),
+        ["origin.test:443"]
+    );
 }
 
 /// A grey PNG of any size, written by hand with stored deflate blocks.

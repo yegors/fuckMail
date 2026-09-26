@@ -1,3 +1,6 @@
+// The in-app debug console: a bounded, filterable log of Qt messages, engine log
+// lines and backend state changes (metadata only), mirrored to gui.log in the
+// profile, plus typed console commands that can run the `fm` CLI.
 #pragma once
 #include <QAbstractListModel>
 #include <QObject>
@@ -8,6 +11,8 @@
 #include <QMutex>
 #include <QVariantMap>
 #include <deque>
+
+class QProcess;
 #include <vector>
 
 // One retained console line. Levels are syslog 0 (emerg) to 7 (debug).
@@ -55,6 +60,8 @@ class DebugConsole final : public QObject {
     Q_PROPERTY(int errors READ errors NOTIFY countsChanged)
     Q_PROPERTY(int warnings READ warnings NOTIFY countsChanged)
     Q_PROPERTY(QString logDirectory READ logDirectory NOTIFY countsChanged)
+    // An `fm` command started from the console is still running.
+    Q_PROPERTY(bool cliRunning READ cliRunning NOTIFY cliChanged)
 public:
     static constexpr int retained = 5000, shown = 600;
     explicit DebugConsole(QObject *parent = nullptr);
@@ -81,6 +88,14 @@ public:
     int errors() const { return m_errors; }
     int warnings() const { return m_warnings; }
     QString logDirectory() const;
+    bool cliRunning() const { return m_cli != nullptr; }
+    // The `fm` binary the console runs: beside the app, else beside the engine.
+    QString cliProgram() const;
+    void setCliProgram(const QString &path) { m_cliProgram = path; }
+    // Runs `fm` with these arguments against this app's profile, engine and
+    // current account. Output lands in the console only, never in gui.log.
+    Q_INVOKABLE bool runCli(const QString &arguments);
+    Q_INVOKABLE void stopCli();
     // Filtered lines in the export format, oldest first.
     Q_INVOKABLE QStringList exportLines() const;
     // Copies exportLines() to the clipboard; returns how many lines matched.
@@ -113,10 +128,15 @@ signals:
     void filterChanged();
     void pausedChanged();
     void countsChanged();
+    // Typed commands or their replies reached the view (after the rows are in).
+    void commandOutput();
+    void cliChanged();
 private:
     bool passes(const DebugLogEntry &entry) const;
     void add(DebugLogEntry entry, bool persist);
-    void say(int level, const QString &message);
+    void say(int level, const QString &message, const QString &facility = QStringLiteral("app"), const QString &json = {});
+    void cliOutput(QByteArray &partial, const QByteArray &bytes, bool error, bool flush);
+    void cliStdout(const QByteArray &bytes, bool flush);
     void flush();
     void rebuild();
     void countRecent();
@@ -153,4 +173,9 @@ private:
     QDateTime m_engineBirthTime;
     QByteArray m_enginePartial;
     bool m_capturing = false;
+    QString m_engine, m_cliProgram, m_cliCommand;
+    QProcess *m_cli = nullptr;
+    QByteArray m_cliStdout, m_cliStderr, m_cliJson;
+    bool m_cliWantsJson = false;
+    int m_cliLines = 0;
 };

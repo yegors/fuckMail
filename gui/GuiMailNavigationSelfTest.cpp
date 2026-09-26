@@ -1,3 +1,6 @@
+// Developer harness: the mail search and navigation stage of `fuckmail-gui
+// --self-test`. Types searches and filters into the real UI, opens results from
+// known demo messages, and checks read-on-open, request ordering and scrolling.
 #include "GuiMailNavigationSelfTest.h"
 #include <QCoreApplication>
 #include <QDebug>
@@ -673,7 +676,7 @@ void GuiMailNavigationSelfTest::step() {
         if (!m_loadingSeen || m_backend.loading() || !m_backend.query().isEmpty()) return;
         m_searchPending=false; m_unfilteredRows=m_backend.conversations();
         if (m_unfilteredRows.size()<2 || !m_backend.filters().isEmpty()) { finish("Filter acceptance needs the unfiltered mailbox page."); return; }
-        // Search 7: typed filters are part of the query Core reads.
+        // Typed filters (from:, is:, has:) are part of the query Core reads.
         if (!typeQuery(QString("from:") + searches[0].query + " is:done has:attachment")) { finish("Cannot type the combined search grammar."); return; }
         m_stage=11; break;
     case 11: {
@@ -1210,7 +1213,7 @@ void GuiMailNavigationSelfTest::step() {
         m_stage=76; break;
     case 76:
         if (m_backend.loading() || m_backend.m_searchTimer.isActive() || senderPopup()) return;
-        if (m_backend.query()!="from:status@service.example" || m_backend.folder()!="all"
+        if (m_backend.query()!="status@service.example" || m_backend.folder()!="all"
             || m_backend.filters()["kind"].toString()!="automated"
             || m_backend.conversations().size()!=1 || m_backend.selectedId()!="windscribe-thread-005") {
             finish("Sender-card Filter lost the address query, All mail scope, existing kind or reader."); return;

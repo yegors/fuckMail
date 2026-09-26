@@ -17,6 +17,13 @@ struct Person {
 }
 
 impl Store {
+    /// Suggests people for a search's `from:` or `to:` term, from this
+    /// account's 5000 most recent received messages, or sent messages and
+    /// recent drafts for recipients, ranked by match quality, frequency and
+    /// recency.
+    ///
+    /// `folder` picks the default role: recipients in `sent` and `drafts`,
+    /// senders elsewhere; `role` overrides it. `limit` is 1-10 (default 5).
     pub(crate) fn search_senders(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["query", "folder", "limit", "role"])?;
         let query = match p.get("query") {

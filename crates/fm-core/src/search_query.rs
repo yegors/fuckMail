@@ -1,6 +1,19 @@
-//! Search box grammar shared by conversation and draft search (Search 9).
+//! Search box grammar shared by conversation and draft search.
 //! GUI and CLI send the same text. Core parses it once, reports how it read
 //! the text and runs the typed predicates; clients never re-implement it.
+//!
+//! The grammar: `subject:`, `body:`, `from:` and `to:` take everything up to
+//! the next operator, quotes optional; `label:`, `has:attachment` and `is:`
+//! take one word. Operators are case-insensitive and count only at the start
+//! of the text or after whitespace. Other text is bare words; words typed
+//! together form a phrase, and a bare email address names a sender or
+//! recipient instead.
+//!
+//! Mail search runs in two stages. [`fts_phrase`] turns each phrase into an
+//! FTS5 phrase query that finds candidates by their tokens. The index
+//! tokenizes with `unicode61 remove_diacritics 2`, which drops punctuation,
+//! so [`contains_phrase`] then checks the folded text itself for phrases with
+//! punctuation or several words. People filters use LIKE, not the index.
 use crate::{err, Result};
 use serde_json::{json, Value};
 
@@ -16,9 +29,11 @@ pub(crate) struct SearchText {
     /// Bare words, as typed.
     pub words: Vec<String>,
     /// Bare words typed together, without surrounding quotes. Each phrase must
-    /// appear as written in the subject or the message text (Search 10).
+    /// appear as written in the subject or the message text.
     pub phrases: Vec<String>,
+    /// `subject:` values; each must appear as written in the subject.
     pub subject: Vec<String>,
+    /// `body:` values; each must appear as written in the message text.
     pub body: Vec<String>,
     /// Sender name or address.
     pub from: Vec<String>,
@@ -26,13 +41,17 @@ pub(crate) struct SearchText {
     pub to: Vec<String>,
     /// Bare addresses: the sender or a recipient.
     pub people: Vec<String>,
+    /// The `label:` name as typed; the caller resolves it to a label.
     pub label: Option<String>,
+    /// `has:attachment` (any word starting with `attach`) was given.
     pub has_attachment: bool,
     /// Review state: `review`, `held` (shown as delayed) or `done`.
     pub is: Option<&'static str>,
 }
 
 impl SearchText {
+    /// Whether the text sets no filter at all. Phrases are not checked: every
+    /// phrase is built from bare words.
     pub(crate) fn is_empty(&self) -> bool {
         self.words.is_empty()
             && self.subject.is_empty()
@@ -72,7 +91,9 @@ pub(crate) fn tokens(text: &str) -> impl Iterator<Item = &str> {
         .filter(|s| !s.is_empty())
 }
 
-fn looks_like_email(word: &str) -> bool {
+/// Whether a bare word should filter by person: one `@` with a non-empty
+/// local part and a dotted domain. `a@b` and `@example.com` stay words.
+pub(crate) fn looks_like_email(word: &str) -> bool {
     let Some((local, domain)) = word.split_once('@') else {
         return false;
     };
@@ -83,7 +104,8 @@ fn looks_like_email(word: &str) -> bool {
             .is_some_and(|(host, top)| !host.is_empty() && !top.is_empty())
 }
 
-fn unquote(value: &str) -> &str {
+/// Strips one pair of surrounding double quotes, if present.
+pub(crate) fn unquote(value: &str) -> &str {
     value
         .strip_prefix('"')
         .and_then(|rest| rest.strip_suffix('"'))
@@ -93,6 +115,14 @@ fn unquote(value: &str) -> &str {
 /// Splits `text` at each operator that starts the text or follows whitespace.
 /// An operator's value runs until the next operator or the end.
 fn segments(text: &str) -> Vec<(Option<&'static str>, &str)> {
+    segments_with(text, &OPERATORS)
+}
+
+/// `segments` with another operator set, such as Calendar search's.
+pub(crate) fn segments_with<'a>(
+    text: &'a str,
+    operators: &[&'static str],
+) -> Vec<(Option<&'static str>, &'a str)> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let (mut key, mut start) = (None, 0);
@@ -101,7 +131,7 @@ fn segments(text: &str) -> Vec<(Option<&'static str>, &str)> {
         let boundary = i == 0 || text[..i].ends_with(char::is_whitespace);
         let found = boundary
             .then(|| {
-                OPERATORS.iter().find(|op| {
+                operators.iter().find(|op| {
                     let end = i + op.len();
                     end < bytes.len()
                         && bytes[i..end].eq_ignore_ascii_case(op.as_bytes())
@@ -215,6 +245,8 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
 /// a prefix. It finds candidates; `contains_phrase` then checks the text.
 pub(crate) fn fts_phrase(columns: &str, text: &str) -> Option<String> {
     let phrase = tokens(text).collect::<Vec<_>>().join(" ");
+    // Tokens hold only letters and digits, so nothing inside the quotes needs
+    // escaping. The trailing `*` lets a word still being typed match.
     (!phrase.is_empty()).then(|| format!("{columns} : \"{phrase}\"*"))
 }
 
@@ -286,12 +318,14 @@ pub(crate) fn contains_phrase(text: &str, phrase: &str) -> bool {
     })
 }
 
-/// Whether the index's phrase match alone decides: one word, nothing else.
+/// Whether a folded phrase needs [`contains_phrase`] after the index match.
+/// Only a single word of letters and digits is decided by the index alone.
 pub(crate) fn phrase_needs_check(folded: &str) -> bool {
     !folded.chars().all(char::is_alphanumeric)
 }
 
-/// `%value%` for LIKE with its wildcards escaped.
+/// `%value%` for LIKE with its wildcards escaped. The query must declare
+/// `ESCAPE '\'`.
 pub(crate) fn like_pattern(value: &str) -> String {
     format!(
         "%{}%",

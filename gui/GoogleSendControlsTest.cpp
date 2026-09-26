@@ -1,3 +1,6 @@
+// ReplyComposer UI test for Send, on a real MailBackend over the scripted engine:
+// recipient validation, save before send, resume and abandon of an unconfirmed
+// send, historical receipts, and isolation between accounts and drafts.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

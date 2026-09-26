@@ -526,3 +526,46 @@ Not verified:
 - the live mailbox;
 - the tint strength on the other themes (only Graphite was captured);
 - a phrase split across differently styled HTML runs (for example part bold), which is not highlighted.
+
+## D131 — contact card copy (2026-09-26)
+
+The founder reported that hovering a contact showed both the card and an address tooltip, and that nothing in the card could be selected or copied. The tooltip came from `tip: modelData.email` on recipient names; the card drew its name and address as plain `Text`.
+
+Verification on Windows, Release build in `build/p9`. `gui-mail-selection` (real MailView; the test now links Qt Test for real key presses) checks:
+- recipient names have no tooltip;
+- the card's name, address and status are selectable and read-only;
+- a mouse drag across the address selects "priya@example.test";
+- after the pointer leaves, the card is still open 500 ms later;
+- `QTest::keyClick` Ctrl+C puts the address on the clipboard;
+- closing the card clears the selection.
+
+All 31 GUI tests pass.
+
+## D137 — mail download progress (2026-09-26)
+
+After changing both accounts from one year to two, the founder saw "13.2k of 13.2k+", a full bar and "Counting mail…" throughout. The inventory lists 100 IDs and downloads them before listing more, so the only total was what had been listed so far. The decision is in D137.
+
+Verification on Windows, Release build in `build/p9`:
+- **fm-engine** `inventory_count_gives_progress_a_total_before_the_download_ends`. The fake Gmail now sizes pages in proportion to `maxResults`, as Gmail does; with 14 messages, 100-ID pages hold 2 and 500-ID pages hold 10. It checks:
+  - "10 found" while counting;
+  - the total of 14 arriving while fewer than 14 are downloaded;
+  - every count request using the inventory's exact `q` and `includeSpamTrash=true`;
+  - a finished count not repeated while the worker idles.
+
+  `saved_inventory_continuation…` now counts only the inventory's own 100-ID pages.
+- **fm-core** `inventory_count_follows_the_mail_generation`:
+  - counting then counted states in `google.sync`;
+  - keeping 2 years instead of 1 clears the count;
+  - a late record for the old generation is refused.
+- **`gui-mail-selection`** (real Settings → Accounts):
+  - "13.2k" with "Counting… · 8.5k found";
+  - then "13.2k of 21.4k" at 61%;
+  - 99% when local passes the total before the inventory finishes;
+  - "Complete" once it finishes.
+- `cargo test --workspace` (810), clippy and all 31 GUI tests pass.
+
+Another session's GUI test runs (a separate `fm-perf` checkout and `build/dc`) were running at the same time and made several of these runs fail in under a second. Once they finished, the same builds passed. The earlier "file lock right after a relink" failures may have had the same cause.
+
+Not verified:
+- a real Gmail count;
+- the time left on a real 2-year download.

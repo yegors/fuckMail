@@ -1,49 +1,84 @@
+//! Optional local-model assistance: tagging mail with the user's own labels,
+//! telling people from automated senders and writing one-line summaries.
+//!
+//! [`ollama`] holds the model settings and prompts, builds the request body for
+//! Ollama or an OpenAI-compatible server and validates the reply. The engine
+//! performs the HTTP call and `fm-core` stores the result.
+//!
+//! The crate root is a runner-agnostic job queue, [`Boundary`]. It limits what
+//! a model sees (one account, no unpublished drafts, bounded size), lets each
+//! owner cancel its jobs, and rejects late or out-of-policy output. The only
+//! result it passes on is a subset of the configured category IDs plus an
+//! optional summary.
+//!
+//! Nothing here performs I/O or acts on mail.
 pub mod ollama;
-// Phase 0 fake assistance boundary. There is no model, network client, or action tool.
-// The only returned mutation intent is a subset of configured category IDs.
+
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Most jobs a [`Boundary`] holds at once; more starts fail with [`Error::Busy`].
 pub const MAX_JOBS: usize = 16;
+/// Most source text, in bytes, one job sends to the model.
 pub const MAX_CONTEXT_BYTES: usize = 128 * 1024;
+/// Most source messages one job sends to the model.
 pub const MAX_SOURCE_MESSAGES: usize = 128;
+/// Largest raw model output [`Boundary::finish`] accepts, in bytes.
 pub const MAX_RESULT_BYTES: usize = 16 * 1024;
 
+/// What a job may do with category choices.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mode {
+    /// No categories; summaries may still run.
     Off,
+    /// Categories are offered for the person to confirm.
     Suggest,
+    /// Configured categories are applied without confirmation.
     AutoApply,
 }
 
+/// The committed assistance settings for one account. A result is accepted
+/// only if the policy is unchanged when it arrives.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Policy {
     pub account: String,
+    /// Changes whenever the settings change.
     pub revision: u64,
     pub mode: Mode,
     /// Local configured category IDs, never arbitrary provider label destinations.
     pub categories: BTreeSet<String>,
+    /// Whether the model may return a summary.
     pub summaries: bool,
 }
 
+/// Where a source message came from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceKind {
     Received,
     Sent,
+    /// A local draft; never shown to a model.
     UnpublishedDraft,
 }
 
+/// One stored message offered as model context, with the revisions that make
+/// a late result stale.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Source {
     pub account: String,
     pub id: String,
+    /// Changes when the message content changes.
     pub content_revision: u64,
+    /// Changes when the message's labels or state change.
     pub state_revision: u64,
+    /// Changes when the person corrects the result by hand.
     pub manual_override_revision: u64,
     pub kind: SourceKind,
+    /// The text the model may see.
     pub text: String,
 }
 
+/// A source's revisions when a job started, compared again at
+/// [`Boundary::finish`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stamp {
     pub id: String,
@@ -52,41 +87,63 @@ pub struct Stamp {
     pub manual_override_revision: u64,
 }
 
+/// Which sources a job saw.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Coverage {
+    /// Sources sent to the model, in input order.
     pub included: Vec<Stamp>,
+    /// All non-draft sources offered, including any left out.
     pub source_count: usize,
+    /// Size limits left some sources out.
     pub partial: bool,
 }
 
+/// An admitted job as handed to a [`Runner`].
 #[derive(Clone, Debug)]
 pub struct Job {
     pub id: u64,
+    /// The client that started it, for [`Boundary::cancel_owner`].
     pub owner: String,
     pub policy: Policy,
     pub coverage: Coverage,
+    /// `(source id, text)` pairs sent to the model, in input order.
     pub context: Vec<(String, String)>,
 }
 
+/// Why a job was refused or its result rejected.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Error {
+    /// Categories are off and summaries are off.
     Disabled,
+    /// The runner reports no model available.
     Unavailable,
+    /// Bad IDs, a system label as a category, too many categories or sources,
+    /// a source from another account, a duplicate source or no usable source.
     InvalidInput,
+    /// The output is not the expected JSON or goes beyond the policy.
     InvalidOutput,
+    /// The output exceeds [`MAX_RESULT_BYTES`].
     TooLarge,
+    /// [`MAX_JOBS`] jobs are already running.
     Busy,
+    /// The job is unknown: cancelled or already finished.
     Canceled,
+    /// The policy or the sources changed since the job started.
     Stale,
 }
 
+/// The category outcome of an accepted result.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CategoryResult {
+    /// For the person to confirm (`Mode::Suggest`).
     Suggested(Vec<String>),
+    /// To apply without confirmation (`Mode::AutoApply`).
     ApplyConfigured(Vec<String>),
+    /// The model abstained, or the mode is `Off`.
     None,
 }
 
+/// An accepted result and the coverage it was based on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Accepted {
     pub categories: CategoryResult,
@@ -102,14 +159,20 @@ struct Output {
     summary: Option<String>,
 }
 
-/// A fake adapter for this phase. Cancellation is an adapter operation, not merely
-/// dropping a client connection. Tests below check that the fake stops work.
+/// Runs the model jobs that [`Boundary`] admits. Cancellation is an explicit
+/// runner operation, not merely dropping a client connection.
 pub trait Runner {
+    /// Whether a model is ready; checked before a job is admitted.
     fn available(&self) -> bool;
+    /// Starts `job`. An error rejects the job and nothing is recorded.
     fn start(&mut self, job: &Job) -> Result<(), Error>;
+    /// Stops `job_id`. It may be called for a job the runner already finished.
     fn cancel(&mut self, job_id: u64);
 }
 
+/// The in-flight job table between stored mail and a [`Runner`].
+///
+/// Job IDs start at 1 and are never reused by one boundary.
 #[derive(Default)]
 pub struct Boundary {
     next_id: u64,
@@ -130,6 +193,13 @@ fn stamp(source: &Source) -> Stamp {
 }
 
 impl Boundary {
+    /// Admits a job over `sources` for `owner`, starts it on `runner` and
+    /// returns its ID.
+    ///
+    /// Drafts are skipped. Sources fill the context in order while they fit
+    /// within [`MAX_SOURCE_MESSAGES`] and [`MAX_CONTEXT_BYTES`]; one that does
+    /// not fit is left out and the coverage is marked partial. See [`Error`]
+    /// for refusals.
     pub fn start(
         &mut self,
         owner: &str,
@@ -141,6 +211,8 @@ impl Boundary {
         if policy.mode == Mode::Off && !policy.summaries {
             return Err(Error::Disabled);
         }
+        // Categories are local labels only. Gmail system labels such as SPAM,
+        // TRASH, UNREAD or STARRED would let model output change mail state.
         if !valid_id(owner)
             || !valid_id(&policy.account)
             || policy.categories.len() > 64
@@ -203,6 +275,7 @@ impl Boundary {
         Ok(self.next_id)
     }
 
+    /// Cancels and forgets every job started by `owner`.
     pub fn cancel_owner(&mut self, owner: &str, runner: &mut impl Runner) {
         self.jobs.retain(|id, job| {
             if job.owner == owner {
@@ -214,6 +287,7 @@ impl Boundary {
         });
     }
 
+    /// Cancels and forgets every job for `account`.
     pub fn cancel_account(&mut self, account: &str, runner: &mut impl Runner) {
         self.jobs.retain(|id, job| {
             if job.policy.account == account {
@@ -228,6 +302,12 @@ impl Boundary {
     /// Consume one bounded result once. The caller supplies the latest committed
     /// policy and source revisions, so a delayed answer cannot defeat a correction.
     /// Core must recheck these same stamps inside its mutation transaction.
+    ///
+    /// The job is removed whatever the outcome. Errors: `Canceled` for an
+    /// unknown job, `Stale` if the policy or sources changed, `TooLarge`, and
+    /// `InvalidOutput` for anything but `{categories, abstain, summary}` with
+    /// unique configured categories (at most 16) and a summary only when
+    /// allowed.
     pub fn finish(
         &mut self,
         id: u64,

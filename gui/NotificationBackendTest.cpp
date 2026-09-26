@@ -1,3 +1,6 @@
+// Reminder and new-mail notification test on a real MailBackend over the scripted
+// engine: reminder receipts, permission and calendar-selection changes, Join,
+// Dismiss and Snooze, the arrival cursor, and the ReminderPopup layout.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"

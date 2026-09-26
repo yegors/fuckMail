@@ -1,3 +1,5 @@
+// Developer harness: Google Calendar workflows through the native controls,
+// started by `--google-calendar-self-test`; see GuiGoogleCalendarSelfTest.cpp.
 #pragma once
 #include <QObject>
 #include <QJsonArray>

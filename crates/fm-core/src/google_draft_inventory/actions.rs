@@ -14,16 +14,25 @@ pub use deletion::*;
 #[cfg(test)]
 mod tests;
 
+/// A Gmail draft fetched fresh in RAW format for an explicit action, used to
+/// confirm the retained source is still what Gmail holds.
 pub struct GoogleDraftActionRemote {
     pub draft_id: String,
     pub message_id: String,
     pub thread_id: String,
+    /// Decoded RFC 5322 bytes.
     pub raw: Vec<u8>,
 }
+/// Result of beginning an assessment, copy or adoption of a retained source.
 pub enum GoogleDraftAuthoringStep {
+    /// The request ID already completed; carries its stored reply.
     Reply(Value),
+    /// Assess the source off the writer with
+    /// [`prepare_google_draft_authoring`].
     Prepare(GoogleDraftAuthoringPlan),
 }
+/// Frozen source revision, local owners and identity for one authoring action.
+/// [`Store::google_draft_authoring_finish`] refuses it if any of them changed.
 pub struct GoogleDraftAuthoringPlan {
     context: Box<ActionContext>,
     method: String,
@@ -31,10 +40,13 @@ pub struct GoogleDraftAuthoringPlan {
     scope: Option<GoogleDraftScope>,
 }
 impl GoogleDraftAuthoringPlan {
+    /// Gmail draft the retained source came from. Adoption must fetch it fresh.
     pub fn provider_draft_id(&self) -> &str {
         &self.context.source.provider_draft_id
     }
 }
+/// Assessment of a retained source and, when allowed, its authored content,
+/// ready for [`Store::google_draft_authoring_finish`].
 pub struct PreparedGoogleDraftAuthoring {
     plan: GoogleDraftAuthoringPlan,
     assessment: Value,
@@ -49,6 +61,8 @@ struct Authored {
     parts: Vec<Part>,
 }
 
+/// The exact Gmail draft version an adoption targets: IDs plus the SHA-256
+/// and size of its retained RAW.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct ObservedTarget {
     pub provider_draft_id: String,
@@ -57,6 +71,9 @@ pub(crate) struct ObservedTarget {
     pub sha256: String,
     pub size: u64,
 }
+/// Twin record that a local draft edits a Gmail draft in place. Until its
+/// first upload the draft compares observations against `target`;
+/// `draft_revision` is the local revision that matches it unchanged.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Adoption {
     pub source_draft_id: String,
@@ -64,6 +81,8 @@ pub(crate) struct Adoption {
     pub draft_revision: i64,
     pub target: ObservedTarget,
 }
+/// Twin record that a local draft was copied from a retained source, with the
+/// copy policies used. A copy has no Gmail target and uploads as a new draft.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Derivation {
     pub source_draft_id: String,
@@ -124,6 +143,9 @@ fn source_params(p: &Value, extra: &[&str]) -> Result<()> {
 }
 
 impl Store {
+    /// Records a draft version observed by an explicit fetch as a new source
+    /// revision, without mirroring it and without counting it as seen by the
+    /// current list scan.
     pub(crate) fn retain_action_source(&mut self, proof: PreparedGoogleDraftImport) -> Result<()> {
         cancelled(&proof.cancel)?;
         if proof.plan.blobs.profile != self.profile {
@@ -153,6 +175,8 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    /// Loads the named source revision of a draft; actions need its complete
+    /// RAW (`content_unavailable` otherwise).
     fn action_source(&self, account: &str, p: &Value) -> Result<SourceStamp> {
         identifier(account)?;
         let selected = crate::string(p, "draft_id")?;
@@ -179,6 +203,10 @@ impl Store {
             is_current,
         })
     }
+    /// Builds a Gmail deletion request for the current source linked to a
+    /// local draft. Fails with `content_unavailable` before the Gmail draft has
+    /// been read, and `stale_source_revision` if it no longer matches
+    /// `expected` (the target the caller saw).
     pub(crate) fn linked_draft_delete_request(
         &self,
         account: &str,
@@ -207,6 +235,9 @@ impl Store {
         }
         Ok(p)
     }
+    /// Snapshot of every local draft tied to the source (its original, linked
+    /// and owning drafts): revision, origin, discard flag and Google state.
+    /// Actions compare it before and after preparation to detect changes.
     fn action_owner_stamp(&self, account: &str, source: &SourceStamp) -> Result<Value> {
         let (owner, ambiguous) = self.known_draft_owner(account, &source.provider_draft_id)?;
         if ambiguous {
@@ -234,6 +265,9 @@ impl Store {
         }
         Ok(json!(stamps))
     }
+    /// Refuses actions while a tied draft has an unresolved upload or
+    /// submission, or while another deletion guards the Gmail draft
+    /// (`except_delete` names the caller's own deletion).
     fn check_action_work(
         &self,
         account: &str,
@@ -258,6 +292,9 @@ impl Store {
         }
         self.check_google_draft_deletion_target(account, &source.provider_draft_id, except_delete)
     }
+    /// Freezes everything an action must still find unchanged when it
+    /// finishes. `current` requires the newest source revision and a Gmail
+    /// draft that no send consumed and no deletion removed.
     fn action_context(&self, account: &str, p: &Value, current: bool) -> Result<ActionContext> {
         self.require_active_account(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
@@ -307,6 +344,9 @@ impl Store {
     fn action_identity(&self, account: &str) -> Result<Value> {
         Ok(self.db.query_row("SELECT a.email,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok(json!({"email":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"revision":r.get::<_,i64>(2)?})))?)
     }
+    /// Re-checks a frozen context on the writer: same account lifecycle,
+    /// profile, source bytes, links, local owners and identity. Fails with
+    /// `stale_source_revision` on any change.
     fn check_action_context(
         &self,
         c: &ActionContext,
@@ -337,6 +377,8 @@ impl Store {
         }
         self.check_action_work(&c.account, &source, except_delete)
     }
+    /// Stored reply for a completed action with this request ID, or
+    /// `request_id_conflict` if the ID was used with other parameters.
     fn source_action_receipt(
         &self,
         account: &str,
@@ -364,6 +406,11 @@ impl Store {
         })
         .transpose()
     }
+    /// Plans a read-only assessment of whether a retained source revision can
+    /// be copied or adopted, and what either would lose.
+    ///
+    /// `p` holds `draft_id` and `source_revision`. Requires a live profile and
+    /// no unresolved upload, submission or deletion on the source's drafts.
     pub fn google_draft_authoring_begin(
         &self,
         account: &str,
@@ -379,6 +426,13 @@ impl Store {
             },
         ))
     }
+    /// Plans copying a retained source revision into a new, independent local
+    /// draft.
+    ///
+    /// Besides `draft_id`, `source_revision` and `request_id`, `p` must state
+    /// the copy's losses explicitly: `from_policy: "primary"`,
+    /// `content_policy: "plain_text"`, `inline_policy: "attachments"` and
+    /// `thread_policy: "omit"`. A completed request ID replies with its receipt.
     pub fn google_draft_copy_begin(
         &self,
         account: &str,
@@ -416,6 +470,12 @@ impl Store {
             },
         ))
     }
+    /// Plans adopting the current source revision as a local draft that edits
+    /// the Gmail draft in place.
+    ///
+    /// `p` holds `draft_id`, `source_revision` and `request_id`. The caller
+    /// must fetch the Gmail draft fresh and pass it to
+    /// [`prepare_google_draft_authoring`]. Adoption uploads nothing by itself.
     pub fn google_draft_adopt_begin(
         &self,
         scope: &GoogleDraftScope,
@@ -435,6 +495,15 @@ impl Store {
             },
         ))
     }
+    /// Completes an assessment, copy or adoption.
+    ///
+    /// An assessment returns its findings. A copy creates a new local draft; an
+    /// adoption creates one or reuses the draft already adopting this exact
+    /// target. The draft, attachments and request receipt commit together.
+    /// If a fresh fetch shows Gmail's draft changed, the newer version is
+    /// retained and this fails with `stale_source_revision`. Errors raised
+    /// before the commit carry `draft_authoring_invocation_finished_without_commit`
+    /// in their details.
     pub fn google_draft_authoring_finish(
         &mut self,
         proof: PreparedGoogleDraftAuthoring,
@@ -490,6 +559,8 @@ impl Store {
         let authored = proof.authored.ok_or_else(invalid)?;
         let c = p.context;
         let account = &c.account;
+        // One Gmail draft has at most one local editor: adopting a target that
+        // already has one reuses it, and only if it still matches exactly.
         let existing = if adopt {
             self.known_draft_owner(account, &c.source.provider_draft_id)?
                 .0
@@ -504,6 +575,8 @@ impl Store {
             }
             existing
         } else {
+            // Derived from the request ID, so a retried request names the same
+            // draft.
             let id = format!(
                 "draft-{}",
                 hash(format!("{account}\0{}", request_id(&p.params)?).as_bytes())
@@ -548,6 +621,8 @@ impl Store {
         Ok(reply)
     }
 }
+/// Imports a freshly observed adopted Gmail draft as a source revision, off the
+/// writer. `remote: None` records the draft as missing.
 pub(crate) fn prepare_adopted_source(
     blobs: &BlobStore,
     scope: &GoogleDraftScope,
@@ -580,6 +655,8 @@ pub(crate) fn prepare_adopted_source(
         .unwrap_or(GoogleDraftImportOutcome::Missing);
     prepare_google_draft_import(plan, outcome, cancel)
 }
+/// Imports the draft version an explicit action fetched as a source revision,
+/// off the writer, outside any list scan.
 fn prepare_action_source(
     c: &ActionContext,
     generation: i64,

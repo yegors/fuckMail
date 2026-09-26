@@ -1,3 +1,6 @@
+// Developer benchmark for `fuckmail-gui --benchmark-resize-output <report.json>
+// --profile <dir>`: resizes the Mail and Calendar workspaces on a fixed schedule,
+// records frame timing and saves captures in <report>-captures. Not run by CTest.
 #include "GuiResizeBenchmark.h"
 #include <QColor>
 #include <QCoreApplication>

@@ -187,7 +187,7 @@ fn exact_raw_routing_cid_parts_and_account_isolation_survive_restart() {
     import(&mut store, &a, "same-container", RAW, "fetched-new-member");
     let id = draft_id(&store, &a, "same-container");
     let got = draft(&mut store, &a, &id);
-    // D121: a Gmail draft arrives as an ordinary editable draft tied to it.
+    // A Gmail draft arrives as an ordinary editable draft tied to it.
     assert_eq!(got["origin"], "local");
     assert_ne!(got["read_only"], true);
     assert_eq!(got["from"], "outside@example.test");
@@ -331,7 +331,7 @@ fn latest_preview_history_empty_scan_and_missing_observation_are_distinct() {
     assert_eq!(status["enumeration_complete"], true);
     assert_eq!(status["observed_this_scan"], 1);
     assert_eq!(draft(&mut store, &a, &id)["revision"], latest["revision"]);
-    // D121: a complete listing without it means Gmail no longer has it; the
+    // A complete listing without it means Gmail no longer has it; the
     // unchanged local copy leaves and nothing is deleted in Gmail.
     store.google_draft_inventory_begin(&a).unwrap();
     let status = page(&mut store, &a, &[], None);
@@ -1047,7 +1047,8 @@ fn an_earlier_versions_read_only_copies_become_ordinary_drafts() {
     assert_eq!(draft(&mut store, &a, &kept)["read_only"], true);
     // The listing still matches what was read, yet the copy is read again.
     store.google_draft_inventory_begin(&a).unwrap();
-    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap() else {
+    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap()
+    else {
         panic!("list expected")
     };
     store
@@ -1092,12 +1093,15 @@ fn an_earlier_versions_read_only_copies_become_ordinary_drafts() {
     // Nothing refers to a row that is no longer there.
     let dangling: i64 = store
         .db
-        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(dangling, 0);
     // A later scan leaves the converted draft and the retired copy alone.
     store.google_draft_inventory_begin(&a).unwrap();
-    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap() else {
+    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap()
+    else {
         panic!("list expected")
     };
     store
@@ -1117,5 +1121,8 @@ fn an_earlier_versions_read_only_copies_become_ordinary_drafts() {
         store.google_draft_inventory_next(&a).unwrap(),
         GoogleDraftInventoryStep::Complete(_)
     ));
-    assert_eq!(draft(&mut store, &a, &kept)["revision"], converted["revision"]);
+    assert_eq!(
+        draft(&mut store, &a, &kept)["revision"],
+        converted["revision"]
+    );
 }

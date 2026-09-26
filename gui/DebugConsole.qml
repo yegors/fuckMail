@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// The developer console: drops from the top over a dim overlay. ~ or ` toggles
-// it outside normal text fields; Esc, `exit` or the overlay closes it. The logs
+// The developer console: slides down over the whole window and back up. ~ or `
+// toggles it outside normal text fields; Esc or `exit` closes it. The logs
 // tab shows the latest 600 filtered lines of the 5,000 retained; the state tab
 // shows a read-only tree of live state.
 Popup {
@@ -51,7 +51,7 @@ Popup {
     parent: Overlay.overlay
     x: 0; y: 0
     width: parent ? parent.width : 0
-    height: parent ? Math.min(parent.height, Math.max(360, parent.height * 0.76)) : 0
+    height: parent ? parent.height : 0
     padding: 0
     modal: true
     focus: true
@@ -67,8 +67,15 @@ Popup {
         }
         return false
     }
+    // `opened` is only true once the slide finishes, so ~ follows the intended
+    // state instead: shown from the start of the slide down until the slide up.
+    property bool shown: false
+    property bool reopening: false
+    onAboutToShow: { shown = true; Qt.callLater(commandField.forceActiveFocus) }
+    onAboutToHide: shown = false
     function toggle() {
-        if (opened) close()
+        if (shown) close()
+        else if (visible) reopening = true   // still sliding up: come back down after
         else { previousFocus = hostWindow.activeFocusItem; open() }
     }
     function levelColor(level) {
@@ -194,8 +201,18 @@ Popup {
         if (!dragged) { clearSelection(); row.toggle() }
     }
     // Keys while the lines have focus: copy, scrolling, and typing that goes to the command line.
+    // Ctrl+C ends a running fm command, as in a terminal. On Windows and Linux it
+    // copies instead while text is selected; on macOS ⌘C copies.
+    function interrupts(event, hasSelection) {
+        if (!diagnostics || !diagnostics.cliRunning || event.key !== Qt.Key_C) return false
+        if (Qt.platform.os === "osx") return (event.modifiers & Qt.MetaModifier) !== 0
+        return (event.modifiers & Qt.ControlModifier) !== 0 && !hasSelection
+    }
     function logKey(event) {
-        if (event.matches(StandardKey.Copy)) { copySelection(); event.accepted = true }
+        const o = orderedSelection()
+        if (interrupts(event, !!o && (o[0].seq !== o[1].seq || o[0].pos !== o[1].pos))) {
+            diagnostics.stopCli(); event.accepted = true
+        } else if (event.matches(StandardKey.Copy)) { copySelection(); event.accepted = true }
         else if (event.key === Qt.Key_End) { tail(); event.accepted = true }
         else if ([Qt.Key_Home, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
             stopFollowing()
@@ -222,10 +239,16 @@ Popup {
     }
 
     onOpened: { tail(); refreshState(); if (diagnostics) diagnostics.requestState(); commandField.forceActiveFocus() }
-    onClosed: if (previousFocus && previousFocus.visible) previousFocus.forceActiveFocus()
+    onClosed: {
+        if (reopening) { reopening = false; open(); return }
+        if (previousFocus && previousFocus.visible) previousFocus.forceActiveFocus()
+    }
     onTabChanged: { refreshState(); if (tab === "state" && diagnostics) diagnostics.requestState(); Qt.callLater(settleTail) }
     Connections {
         target: panel.diagnostics
+        // A command and its output always bring you to the bottom, including fm
+        // output that arrives after Enter; wait for the new rows to lay out.
+        function onCommandOutput() { Qt.callLater(panel.tail) }
         function onFilterChanged() {
             panel.clearSelection()
             if (grepField.text !== panel.diagnostics.grep) grepField.text = panel.diagnostics.grep
@@ -235,7 +258,7 @@ Popup {
     Shortcut {
         sequences: ["`", "~", "Shift+~", "Shift+`"]
         autoRepeat: false
-        enabled: panel.diagnostics !== null && !panel.searchActive && (panel.opened || !panel.typing(panel.hostWindow.activeFocusItem))
+        enabled: panel.diagnostics !== null && !panel.searchActive && (panel.visible || !panel.typing(panel.hostWindow.activeFocusItem))
         onActivated: panel.toggle()
     }
     // Dragging a selection past the top or bottom scrolls the lines.
@@ -254,16 +277,11 @@ Popup {
     Timer { id: copiedTimer; interval: 1200; onTriggered: panel.copiedSequence = "" }
     Timer { interval: 1000; repeat: true; running: panel.opened && panel.tab === "state"; onTriggered: panel.refreshState() }
 
-    enter: Transition {
-        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
-        NumberAnimation { property: "y"; from: -16; to: 0; duration: 180; easing.type: Easing.OutCubic }
-    }
-    exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 100 } }
+    // A quick slide, like a game console: down in 200 ms, up in 160 ms.
+    enter: Transition { NumberAnimation { property: "y"; from: -panel.height; to: 0; duration: 200; easing.type: Easing.OutCubic } }
+    exit: Transition { NumberAnimation { property: "y"; from: 0; to: -panel.height; duration: 160; easing.type: Easing.InCubic } }
     Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.4) }
-    background: Rectangle {
-        color: Theme.canvas
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Theme.ruleWidth; color: Theme.line2 }
-    }
+    background: Rectangle { color: Theme.canvas }
 
     // One monospace line of console text.
     component Mono: Text {
@@ -416,7 +434,7 @@ Popup {
                         Layout.fillWidth: true; clip: true
                         font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection; selectByMouse: true
                         onTextEdited: panel.diagnostics.grep = text
-                        Keys.onPressed: event => { if (event.text === "`" || event.text === "~") { panel.close(); event.accepted = true } }
+                        Keys.onPressed: event => { if (event.text === "`" || event.text === "~") { panel.toggle(); event.accepted = true } }
                         Accessible.name: "Filter lines"
                     }
                 }
@@ -609,9 +627,13 @@ Popup {
                 Layout.fillWidth: true; clip: true
                 font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection; selectByMouse: true
                 cursorDelegate: Rectangle { width: 1.5; color: Theme.amber; visible: commandField.activeFocus && commandField.cursorVisible }
-                Text { visible: !commandField.text.length; text: "type help"; font: panel.monoFont; color: Theme.inkAlpha(.3); textFormat: Text.PlainText }
+                Text {
+                    visible: !commandField.text.length; font: panel.monoFont; color: Theme.inkAlpha(.3); textFormat: Text.PlainText
+                    text: panel.diagnostics && panel.diagnostics.cliRunning ? "fm is running · ctrl+c stops it" : "type help · fm --help for the engine CLI"
+                }
                 Keys.onPressed: event => {
-                    if (event.text === "`" || event.text === "~") { panel.close(); event.accepted = true }
+                    if (panel.interrupts(event, commandField.selectedText.length > 0)) { panel.diagnostics.stopCli(); event.accepted = true }
+                    else if (event.text === "`" || event.text === "~") { panel.toggle(); event.accepted = true }
                     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { panel.run(text); event.accepted = true }
                     else if (event.key === Qt.Key_Up && panel.history.length) {
                         panel.historyIndex = Math.max(0, panel.historyIndex - 1); text = panel.history[panel.historyIndex]; event.accepted = true
@@ -632,6 +654,12 @@ Popup {
                     objectName: "debugMode"
                     text: panel.paused ? "‖ paused" : panel.followTail ? "● tail" : "○ scrolled"
                     color: panel.followTail ? panel.green : Theme.inkAlpha(.5)
+                }
+                Status {
+                    objectName: "debugCliRunning"
+                    visible: parent.d ? parent.d.cliRunning : false
+                    text: "● fm running"
+                    color: Theme.amber
                 }
                 Status {
                     objectName: "debugCounts"

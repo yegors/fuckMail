@@ -1,3 +1,6 @@
+// Side panel that slides in from the right to create or edit an event:
+// calendar, times and time zone, repeat rule, location and Meet, guests, notes,
+// reminder and availability. Used by CalendarView and TodayStrip; saves via backend.calendarWrite().
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -143,8 +146,9 @@ Popup {
     function clockHour(text) { let parts = text.split(":"); return parts.length === 2 ? Number(parts[0]) + Number(parts[1]) / 60 : NaN }
     function allGuests() {
         const addresses = guestAddresses.concat(attendeeField.text.split(",")).map(function(a) { return a.trim() }).filter(function(a) { return a.length > 0 })
-        // Live validation belongs to the shared boundary. Preserve duplicate or
-        // malformed authored input so a refused edit can be corrected in place.
+        // For live accounts the engine validates guests, as it does for the CLI.
+        // Keep duplicate or malformed input as typed so a refused edit can be
+        // corrected in place.
         if (live) return addresses
         let seen = {}
         return addresses.filter(function(a) { if (seen[a.toLowerCase()]) return false; seen[a.toLowerCase()] = true; return true })

@@ -262,7 +262,7 @@ async fn two_accounts_multipage_changed_get_identity_and_unavailable_items_prese
             .iter()
             .find(|row| row["remote_source"]["provider_draft_id"] == "d0")
             .unwrap();
-        // D121: every readable Gmail draft is an editable local draft.
+        // Every readable Gmail draft is an editable local draft.
         assert_eq!(row["origin"], "local");
         assert_ne!(row["read_only"], true);
         assert_eq!(row["remote_source"]["message_id"], "actual-0-v1");

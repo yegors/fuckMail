@@ -1,3 +1,5 @@
+// A To / Cc / Bcc row in ReplyComposer: recipient chips from backend.draft
+// plus a text entry with address suggestions from backend.recipientSuggestions().
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

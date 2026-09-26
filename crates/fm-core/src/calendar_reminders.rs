@@ -12,6 +12,8 @@ fn clock(p: &Value) -> Result<DateTime<Utc>> {
         _ => Err(err("invalid_request", "now must be an RFC3339 instant")),
     }
 }
+/// Whether a projected occurrence may raise an alert: it has details (not
+/// busy-only), is not cancelled, and the user has not declined it.
 fn permitted(event: &Value) -> bool {
     event["busy_only"] != true
         && event["cancelled"] != true
@@ -34,6 +36,8 @@ fn bounded<'a>(p: &'a Value, key: &str, max: usize) -> Result<&'a str> {
             }
         })
 }
+/// The instant an occurrence's reminder counts down to. All-day events are
+/// treated as starting at 09:00 in the display zone.
 fn start_instant(event: &Value, window: &fm_calendar::Window) -> Result<Option<DateTime<Utc>>> {
     let start = string(event, "start")?;
     if event["all_day"] == true {
@@ -52,6 +56,9 @@ fn start_instant(event: &Value, window: &fm_calendar::Window) -> Result<Option<D
         ))
     }
 }
+/// Returns the start instant when `now` is inside the alert window: from the
+/// reminder lead time (event override or the default) before the start until
+/// one minute after it.
 fn due_now(
     event: &Value,
     now: DateTime<Utc>,
@@ -85,6 +92,8 @@ impl Store {
     fn default_reminder_minutes(&self) -> Result<i64> {
         Ok(default_lead(&self.preferences()?))
     }
+    /// Projects the saved calendar selection from the day before `date` over
+    /// 30 days, wide enough for any allowed reminder lead time.
     fn reminder_projection(&self, date: NaiveDate) -> Result<Value> {
         let from = date
             .pred_opt()
@@ -94,6 +103,14 @@ impl Store {
             .ok_or_else(|| err("invalid_request", "Date is out of range"))?;
         self.calendar_combined(&json!({"from":from.to_string(),"to":to.to_string()}))
     }
+    /// Lists reminders a running client should show at `now` (default: the
+    /// current time), marked `Now` or `Soon`.
+    ///
+    /// Uses the same permitted projection as the Calendar view, so hidden or
+    /// declined events never alert. Dismissed occurrences stay silent, and a
+    /// snoozed one reappears after its snooze deadline. A reminder that was
+    /// already shown keeps showing for up to an hour past the start; one never
+    /// shown is not raised late. Returns nothing when notifications are off.
     pub(crate) fn calendar_reminders(&self, p: &Value) -> Result<Value> {
         fields(p, &["now"])?;
         let now = clock(p)?;
@@ -176,6 +193,13 @@ impl Store {
         }
         Ok(json!({"reminders":reminders,"coverage":projection["coverage"],"now":now.to_rfc3339()}))
     }
+    /// Records that a reminder was `shown`, `dismissed` or `snoozed` for one
+    /// occurrence start. Local only; nothing is sent to Google.
+    ///
+    /// The occurrence must still be in the permitted projection
+    /// (`stale_reminder` otherwise), `shown` requires it to be due now, and
+    /// `snoozed` requires it to have been shown. Dismissal is final: later
+    /// acknowledgements never undo it.
     pub(crate) fn calendar_reminder_ack(&self, account: Option<&str>, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -267,6 +291,14 @@ impl Store {
             json!({"account":account,"calendar_id":calendar,"occurrence_id":occurrence,"start":start,"state":if state == "snoozed" && actual == "shown" { "snoozed" } else { actual.as_str() },"event":event,"remote_data_changed":false}),
         )
     }
+    /// Returns new-mail notifications after the `after` row cursor, and the
+    /// next cursor.
+    ///
+    /// With no cursor it returns the current position without notifying, so a
+    /// fresh client never alerts for existing mail. Only unread, received
+    /// inbox mail on active accounts, dated no earlier than `since` and at
+    /// most five minutes ago, notifies, and only when notifications are set
+    /// to `all`. At most 20 messages are returned per call.
     pub(crate) fn mail_notifications(&self, p: &Value) -> Result<Value> {
         fields(p, &["after", "since", "now"])?;
         let max: i64 =

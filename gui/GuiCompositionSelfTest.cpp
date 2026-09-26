@@ -1,3 +1,6 @@
+// Developer harness: the composition stage of `fuckmail-gui --self-test` (new,
+// reply, forward, recipients, conflicts, checked with the `fm` CLI). Alone, it is
+// `--self-test --self-test-attachments` (CTest gui-attachments) for attachments.
 #include "GuiCompositionSelfTest.h"
 #include "GoogleOperation.h"
 #include <QCoreApplication>

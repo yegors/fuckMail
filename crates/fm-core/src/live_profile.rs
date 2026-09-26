@@ -7,8 +7,18 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::{io::Write, path::Path};
 
+/// The exact contents of a profile's `live-profile` marker file.
 const LIVE_MARKER: &[u8] = b"fuckMail live profile v1\n";
 
+/// Reports whether `profile` carries the live-profile marker, first writing it
+/// if `create` is set and it is missing.
+///
+/// The marker records the intent to create a live profile before SQLite
+/// writes anything, so a crash during the first transaction cannot leave a
+/// store that a later ordinary open would seed with demo content. It is
+/// written with `create_new` and synced along with its directory. The caller
+/// holds the profile's exclusive `store.lock`. Fails with `profile_invalid`
+/// if the path is not a regular file holding exactly [`LIVE_MARKER`].
 pub(crate) fn live_initialization_marker(profile: &Path, create: bool) -> Result<bool> {
     let path = profile.join("live-profile");
     if create && !path.exists() {
@@ -24,6 +34,8 @@ pub(crate) fn live_initialization_marker(profile: &Path, create: bool) -> Result
         file.sync_all()?;
         crate::content::sync_directory(profile)?;
     }
+    // `symlink_metadata` does not follow links, so a symlink planted in
+    // place of the marker is refused rather than read through.
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) => {
             if !metadata.is_file()
@@ -43,12 +55,17 @@ pub(crate) fn live_initialization_marker(profile: &Path, create: bool) -> Result
     }
 }
 
+/// Whether a profile holds bundled demo data or real Google accounts. A
+/// profile's kind is fixed when it is created and never converted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfileKind {
+    /// Demo data seeded from the bundled fixture; no provider access.
     Synthetic,
+    /// Real Google accounts; never seeded with demo content.
     Live,
 }
 impl ProfileKind {
+    /// Decodes the `meta.profile_kind` value: 0 synthetic, 1 live.
     pub(crate) fn from_stored(value: i64) -> Result<Self> {
         match value {
             0 => Ok(Self::Synthetic),
@@ -58,11 +75,16 @@ impl ProfileKind {
     }
 }
 
+/// Whether the engine may call Google for an account. Local mail, drafts and
+/// calendars stay readable in every state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionState {
+    /// Signed in; sync and permitted writes run.
     Connected,
+    /// The person disconnected the account; nothing is scheduled.
     Disconnected,
+    /// Google refused the stored grant; the person must sign in again.
     ReauthorizationRequired,
 }
 impl ConnectionState {
@@ -77,20 +99,34 @@ impl ConnectionState {
 
 /// Returned only to the engine's provider coordinator, never as credential data.
 pub struct GoogleAccountBinding {
+    /// The local account ID (see [`google_account_id`]).
     pub account: String,
+    /// Google's immutable `sub` claim for the signed-in user.
     pub subject: String,
+    /// The OAuth scopes Google granted.
     pub scopes: BTreeSet<String>,
     pub state: ConnectionState,
+    /// Increases on every connect, reconnect and state change. Work started
+    /// under an older value is stale and must not write.
     pub connection_generation: i64,
 }
 
+/// The desktop OAuth client an account signed in with, and where its
+/// configuration file lives. Holds no secret itself.
 #[derive(Clone)]
 pub struct GoogleClientReference {
     pub client_id: String,
+    /// Absolute path of the client configuration file.
     pub config_path: String,
 }
 
 /// Stable local identity uses Google's verified immutable `sub`, never email.
+///
+/// Returns `google-` followed by the SHA-256 hex digest of `subject`, so the ID
+/// survives an email change and reveals nothing about the account. After an
+/// archive is deleted, the same subject binds to a replacement ID instead.
+/// Fails with `invalid_identity` for an empty, over-long or control-character
+/// subject.
 pub fn google_account_id(subject: &str) -> Result<String> {
     if subject.is_empty() || subject.len() > 255 || subject.chars().any(char::is_control) {
         return Err(err("invalid_identity", "Invalid Google account identity"));
@@ -99,6 +135,7 @@ pub fn google_account_id(subject: &str) -> Result<String> {
 }
 
 impl Store {
+    /// Returns whether this store is a demo or a live profile.
     pub fn profile_kind(&self) -> Result<ProfileKind> {
         let value =
             self.db
@@ -109,6 +146,8 @@ impl Store {
     }
 
     /// Opaque per-profile namespace prevents credentials crossing profile stores.
+    ///
+    /// A random 64-character hex string chosen when the profile is created.
     pub fn vault_namespace(&self) -> Result<String> {
         Ok(self.db.query_row(
             "SELECT vault_namespace FROM profile_identity WHERE singleton=1",
@@ -117,6 +156,10 @@ impl Store {
         )?)
     }
 
+    /// Checks at open that the stored kind, fixture revision, vault namespace
+    /// and accounts agree. A live profile has fixture revision 0 and only
+    /// Google-bound accounts; a demo profile has a known fixture revision.
+    /// Fails with `profile_invalid` otherwise.
     pub(crate) fn validate_profile_identity(&self) -> Result<()> {
         let kind = self.profile_kind()?;
         let fixture = self.fixture_revision()?;
@@ -147,6 +190,10 @@ impl Store {
 
     /// Internal engine API, after OAuth validates identity and persists the grant
     /// in this profile's vault. Deliberately absent from the public IPC allowlist.
+    ///
+    /// Adds or reconnects the account for `subject` and returns its local ID.
+    /// Like [`Store::bind_google_account_with_client`], but neither checks
+    /// nor records the OAuth client.
     pub fn bind_google_account(
         &mut self,
         subject: &str,
@@ -158,6 +205,11 @@ impl Store {
     }
 
     /// Read-only admission before durable vault persistence. Repeated at commit.
+    ///
+    /// Returns the local account ID the sign-in would bind to. Fails if the
+    /// profile is not live, the identity or scopes are invalid, a reconnect
+    /// picked a different Google account, the existing account is an archive,
+    /// or `client_id` differs from the OAuth client this profile already uses.
     pub fn check_google_connection(
         &self,
         subject: &str,
@@ -172,6 +224,8 @@ impl Store {
         Ok(account)
     }
 
+    /// Requires every account in the profile to use the same desktop OAuth
+    /// client, so one set of client credentials serves them all.
     pub(crate) fn check_google_client_id(&self, client_id: &str) -> Result<()> {
         if client_id.is_empty() || client_id.len() > 1024 || client_id.chars().any(char::is_control)
         {
@@ -191,6 +245,16 @@ impl Store {
         Ok(())
     }
 
+    /// Adds or reconnects the account for `subject` after sign-in, recording
+    /// the OAuth client used, and returns its local ID.
+    ///
+    /// `expected_account` is set for a reconnect and must match the account
+    /// the subject maps to. Binding marks the account connected and stores the
+    /// granted scopes; a reconnect also advances its connection generation,
+    /// which makes in-flight work from the previous connection stale. A new
+    /// account gets one year of retention, a color and a one-time label
+    /// import. Checks as [`Store::check_google_connection`] does;
+    /// `config_path` must be absolute.
     pub fn bind_google_account_with_client(
         &mut self,
         subject: &str,
@@ -211,6 +275,8 @@ impl Store {
         )
     }
 
+    /// Returns the OAuth client recorded for `account`, or `None` if it was
+    /// bound without one.
     pub fn google_account_client(&self, account: &str) -> Result<Option<GoogleClientReference>> {
         Ok(self
             .db
@@ -227,6 +293,8 @@ impl Store {
             .optional()?)
     }
 
+    /// Resolves the local account ID for a signed-in `subject` and checks the
+    /// identity, email and scopes, without writing.
     pub(crate) fn validate_google_binding(
         &self,
         subject: &str,
@@ -240,6 +308,9 @@ impl Store {
                 "Connect Google accounts in a separate live profile",
             ));
         }
+        // An existing binding wins. A subject whose archive was deleted gets
+        // that deletion's replacement ID, because the deleted ID stays reserved
+        // for the deletion's idempotent receipt.
         let base = google_account_id(subject)?;
         let existing: Option<String> = self
             .db
@@ -310,6 +381,8 @@ impl Store {
         Ok(account)
     }
 
+    /// Refuses, with `account_removed`, to bind over an account kept as a
+    /// read-only archive; a new account passes.
     fn check_binding_active(&self, account: &str) -> Result<()> {
         let exists: bool = self.db.query_row(
             "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
@@ -322,6 +395,8 @@ impl Store {
         Ok(())
     }
 
+    /// Lists every Google account binding in the profile, in account-ID order,
+    /// whatever its connection state.
     pub fn google_account_bindings(&self) -> Result<Vec<GoogleAccountBinding>> {
         let mut statement = self.db.prepare("SELECT account,google_subject,scopes_json,connection_state,connection_generation FROM google_accounts ORDER BY account")?;
         let rows = statement
@@ -349,6 +424,12 @@ impl Store {
     }
 
     /// Stops provider scheduling without removing downloaded or authored content.
+    ///
+    /// Sets the account's state and advances its connection generation even
+    /// when the state is unchanged, so in-flight work from the previous
+    /// connection is fenced off. Fails with `account_removed` for an archived
+    /// account and `not_found` if it has no Google binding. Bumps the store
+    /// revision.
     pub fn set_google_connection_state(
         &mut self,
         account: &str,
@@ -368,6 +449,12 @@ impl Store {
         Ok(())
     }
 
+    /// The account's connection, granted scopes, effective capabilities and
+    /// sync coverage as reported to clients, or `None` for an account with no
+    /// Google binding.
+    ///
+    /// `granted_capabilities` reflect the scopes alone; `capabilities` also
+    /// apply the account's lifecycle, connection and write preferences.
     pub(crate) fn google_account_status(&self, account: &str) -> Result<Option<Value>> {
         let raw: Option<(String, String)> = self
             .db
@@ -388,11 +475,13 @@ impl Store {
             Ok(json!({"connection_state":state,"granted_scopes":scopes,
                 "granted_capabilities":{"mail_read":fm_google::auth::ScopeSet::new(&scopes).mail_read(),"mail_write":fm_google::auth::ScopeSet::new(&scopes).mail_write(),"calendar_read":fm_google::auth::ScopeSet::new(&scopes).calendar_events_read(),"calendar_write":fm_google::auth::ScopeSet::new(&scopes).calendar_events_write()},
                 "capabilities":{"mail_read":active,"drafts":active,"mail_write":mail_write,"mail_delivery":mail_write && connected,"send":mail_write && connected,"calendar_read":active,"calendar_write":calendar_write},
-                "sync":{"state":if !started {"not_started"} else if coverage.offline_complete {"caught_up"} else {"incomplete"},"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,"offline_complete":coverage.offline_complete,"observed_messages":coverage.observed,"retained_sources":coverage.retained_sources,"indexed_messages":coverage.indexed,"unavailable_messages":coverage.unavailable}}))
+                "sync":{"state":if !started {"not_started"} else if coverage.offline_complete {"caught_up"} else {"incomplete"},"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,"offline_complete":coverage.offline_complete,"observed_messages":coverage.observed,"retained_sources":coverage.retained_sources,"indexed_messages":coverage.indexed,"unavailable_messages":coverage.unavailable,"inventory_total":coverage.listed,"inventory_counting":coverage.listing}}))
         }).transpose()
     }
 }
 
+/// Requires an absolute, bounded OAuth client configuration path with no
+/// control characters.
 pub(crate) fn validate_client_path(config_path: &str) -> Result<()> {
     if !Path::new(config_path).is_absolute()
         || config_path.len() > 32768
@@ -405,6 +494,10 @@ pub(crate) fn validate_client_path(config_path: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Writes a validated binding inside the caller's transaction: creates or
+/// updates the account, marks it connected with the granted scopes, advances
+/// the connection generation of an existing binding, and bumps the store
+/// revision.
 pub(crate) fn write_binding(
     tx: &rusqlite::Transaction<'_>,
     account: &str,
@@ -432,6 +525,8 @@ pub(crate) fn write_binding(
         )?;
         crate::local_model::set_history_analysis(tx, account, false)?;
     }
+    // A name the person chose survives; one that only mirrored the old email
+    // follows the new address.
     tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
     if added {
         crate::preferences::assign_account_color(tx, account)?;

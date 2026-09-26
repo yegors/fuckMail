@@ -8,15 +8,20 @@ pub const MAX_PIXELS: u64 = 16 * 1024 * 1024;
 /// Widest image kept; a reader column at 2x device pixels fits within it.
 pub const MAX_WIDTH: u32 = 1600;
 
+/// Why image bytes were refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageError {
     /// Not PNG, JPEG, GIF or WebP by its magic bytes (SVG is never accepted).
     Unsupported,
+    /// Over [`MAX_PIXELS`], or over a decoder size or allocation limit while decoding.
     TooLarge,
+    /// Corrupt, truncated or zero-sized, or the PNG could not be written.
     Invalid,
 }
 
 impl ImageError {
+    /// Stable snake_case code for error reporting: `unsupported`, `too_large`
+    /// or `invalid`.
     pub fn code(self) -> &'static str {
         match self {
             ImageError::Unsupported => "unsupported",
@@ -26,12 +31,19 @@ impl ImageError {
     }
 }
 
+/// An RGBA PNG re-encoded from sender bytes, with its size in pixels.
 pub struct NormalizedImage {
     pub png: Vec<u8>,
     pub width: u32,
     pub height: u32,
 }
 
+/// Decodes PNG, JPEG, GIF or WebP bytes and re-encodes them as an RGBA PNG no
+/// wider than [`MAX_WIDTH`].
+///
+/// The format comes from the magic bytes, not a declared content type. Wider
+/// images are scaled down keeping their aspect ratio; animations keep their
+/// first frame.
 pub fn normalize_image(bytes: &[u8]) -> Result<NormalizedImage, ImageError> {
     let format = image::guess_format(bytes).map_err(|_| ImageError::Unsupported)?;
     if !matches!(
@@ -49,6 +61,8 @@ pub fn normalize_image(bytes: &[u8]) -> Result<NormalizedImage, ImageError> {
         reader.limits(limits);
         reader
     };
+    // Read the header first, so an oversized image is refused before any
+    // pixel buffer is allocated.
     let (width, height) = reader(bytes)
         .into_dimensions()
         .map_err(|_| ImageError::Invalid)?;

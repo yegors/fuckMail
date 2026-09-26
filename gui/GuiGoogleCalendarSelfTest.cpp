@@ -1,3 +1,6 @@
+// Developer harness for `--google-calendar-self-test <report> --google-calendar-expectation
+// <file>`, run by scripts/verify_google_calendar_gui.py and verify_google_occurrences.py:
+// Calendar create, guest edits, recurring edits and delete against a provider fixture.
 #include "GuiGoogleCalendarSelfTest.h"
 #include "MailBackend.h"
 #include <QCoreApplication>

@@ -2,12 +2,22 @@
 use super::*;
 use mail_parser::MimeHeaders;
 
+/// Frozen metadata and blob handle for reading one submission's MIME off the
+/// writer with [`read`].
 pub struct ReadPlan {
     upload: GoogleSendUploadPlan,
     metadata: Value,
 }
 
 impl Store {
+    /// Lists the account's outgoing submissions whose Gmail copy has not been
+    /// synced yet, newest first.
+    ///
+    /// Includes pending, unknown and accepted submissions; one disappears once
+    /// a message with its acknowledged Gmail ID is stored. `request` may set
+    /// `offset`, `limit` (1-100, default 50) and `conversation_id`, which keeps
+    /// replies in that conversation. Pages stop near 850 KiB of JSON;
+    /// `next_offset` continues them.
     pub fn google_sent(&self, account: &str, request: &Value) -> Result<Value> {
         fields(request, &["offset", "limit", "conversation_id"])?;
         id(account)?;
@@ -93,6 +103,8 @@ impl Store {
         )
     }
 
+    /// Plans reading one submission's frozen MIME; `request` holds only
+    /// `request_id`.
     pub fn google_sent_message_begin(&self, account: &str, request: &Value) -> Result<ReadPlan> {
         fields(request, &["request_id"])?;
         id(account)?;
@@ -110,6 +122,12 @@ impl Store {
     }
 }
 
+/// Reads and parses a submission's frozen MIME off the writer, returning its
+/// metadata plus the plain-text body and up to 50 attachment names and sizes.
+///
+/// The text is cut at about 256 KiB of escaped JSON, and `text_truncated` says
+/// whether it was. Fails with `content_unavailable` if the blob is missing,
+/// altered or unparseable.
 pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     let bytes = load_google_send_upload(plan.upload, cancel)?;
     let parsed = mail_parser::MessageParser::default()

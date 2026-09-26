@@ -1,3 +1,5 @@
+// Calendar grid layout: splits events at midnight in the display zone, clips
+// them to the visible days, and assigns overlap columns and all-day lanes.
 #include "CalendarLayout.h"
 #include <QDateTime>
 #include <QJsonObject>
@@ -8,6 +10,8 @@ namespace {
 double hour(const QTime &time) { return time.hour() + time.minute() / 60.0 + time.second() / 3600.0; }
 struct Segment { QVariantMap event; int day; double start, end; };
 QVariantList layoutSegments(std::vector<Segment> &timed, std::vector<Segment> &allDay) {
+    // At equal starts the longer segment sorts first, so it takes the leftmost
+    // column or top lane; the id tie-break keeps the layout stable between refreshes.
     auto order = [](const Segment &a, const Segment &b) {
         if (a.day != b.day) return a.day < b.day;
         if (a.start != b.start) return a.start < b.start;
@@ -22,6 +26,8 @@ QVariantList layoutSegments(std::vector<Segment> &timed, std::vector<Segment> &a
         while (stop < timed.size() && timed[stop].day == timed[begin].day && timed[stop].start < groupEnd) {
             groupEnd = std::max(groupEnd, timed[stop].end); ++stop;
         }
+        // Greedy interval colouring: reuse the first column whose last event
+        // has ended, else open a new one.
         std::vector<double> ends;
         for (size_t index = begin; index < stop; ++index) {
             auto free = std::find_if(ends.begin(), ends.end(), [&](double end) { return end <= timed[index].start; });
@@ -32,6 +38,8 @@ QVariantList layoutSegments(std::vector<Segment> &timed, std::vector<Segment> &a
         for (size_t index = begin; index < stop; ++index) timed[index].event["columns"] = int(ends.size());
         begin = stop;
     }
+    // All-day rows are placed in day units across the whole range, so a
+    // multi-day row keeps one lane for its full span.
     std::sort(allDay.begin(), allDay.end(), order);
     std::vector<double> laneEnds;
     for (auto &segment : allDay) {
@@ -47,6 +55,8 @@ QVariantList layoutSegments(std::vector<Segment> &timed, std::vector<Segment> &a
 }
 
 QVariantList calendarPresentation(const QJsonArray &events, QDate first, int days, const QTimeZone &zone) {
+    // 42 days is the largest range any view asks for: the six-week month grid
+    // and the agenda window.
     if (!first.isValid() || days < 1 || days > 42 || !zone.isValid()) return {};
     const auto last = first.addDays(days);
     // Civil day boundaries are shared by every timed event in the range.
@@ -80,6 +90,8 @@ QVariantList calendarPresentation(const QJsonArray &events, QDate first, int day
         if (!start.isValid() || !end.isValid() || end <= start) continue;
         if (bounds.front().isValid() && bounds.back().isValid() && (end <= bounds.front() || start >= bounds.back())) continue;
         auto event = object.toVariantMap();
+        // Across a DST change the same wall time can mean two instants; add
+        // the zone abbreviation to the labels only in that case.
         const bool offsetChanges = start.offsetFromUtc() != end.offsetFromUtc();
         event["multi_day"] = start.date() != end.date();
         event["duration_minutes"] = start.secsTo(end) / 60;

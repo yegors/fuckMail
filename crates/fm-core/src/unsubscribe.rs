@@ -7,14 +7,20 @@ use fm_mail::unsubscribe::Unsubscribe;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
+/// A received message to unsubscribe from, fixed at the source version the
+/// reader showed. Built by [`Store::unsubscribe_begin`].
 pub struct UnsubscribePlan {
     blobs: BlobStore,
     pub account: String,
+    /// Local message ID.
     pub message: String,
     version: String,
+    /// Conversation the remembered state is recorded against.
     pub conversation: String,
     /// Lowercase sender address; the remembered state is keyed by it.
     pub sender: String,
+    /// The account's own address and name, used as From for a mailto
+    /// unsubscribe.
     pub from_email: String,
     pub from_name: String,
 }
@@ -96,8 +102,8 @@ impl Store {
     }
 }
 
-/// How this message can be unsubscribed from, read from its retained MIME.
-/// The list's unsubscribe address, when it also has one besides one-click.
+/// The list's unsubscribe address, when it also has one besides one-click,
+/// read from the retained MIME.
 pub fn resolve_mailto(plan: &UnsubscribePlan) -> Result<Option<Unsubscribe>> {
     let bytes = crate::local_content::read_source(&plan.blobs, &plan.version)?;
     let parsed = mail_parser::MessageParser::default()
@@ -111,6 +117,9 @@ pub fn resolve_mailto(plan: &UnsubscribePlan) -> Result<Option<Unsubscribe>> {
     Ok(fm_mail::unsubscribe::mailto_alternative(&parsed))
 }
 
+/// How this message can be unsubscribed from, read from its retained MIME.
+/// Fails with `not_found` when it offers no way, and `content_unavailable`
+/// when the source is missing, altered or unparseable.
 pub fn resolve(plan: &UnsubscribePlan) -> Result<Unsubscribe> {
     let bytes = crate::local_content::read_source(&plan.blobs, &plan.version)?;
     let parsed = mail_parser::MessageParser::default()

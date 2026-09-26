@@ -159,7 +159,7 @@ Item {
         const now = new Date(backend.clockNow).getTime()
         return backend.folder !== "sent" ? 0 : backend.conversations.filter(function(row) { const at = new Date(row.latest_at).getTime(); return at <= now && now - at < 7 * 86400000 }).length
     }
-    // The phrases the current search matched (Search 10), for highlighting:
+    // The phrases the current search matched, for highlighting:
     // bare phrases in subjects and text, subject: and body: in their own.
     readonly property var searchPhrases: backend.searchTerms.phrases || []
     function phrasesFor(field) { return searchPhrases.filter(function(p) { return p.field === "any" || p.field === field }).map(function(p) { return p.text }) }
@@ -1399,8 +1399,13 @@ Item {
                     }
                     RowLayout {
                         objectName: "conversationMetaRow"
+                        // The message header already names the sender and time
+                        // of a single-message thread; keep only its status.
+                        readonly property bool threadLine: mail.members.length > 1
+                        visible: threadLine || mail.matchingIds.length > 0 || (!backend.syntheticProfile && deliveryStatus.text.length > 0)
                         Layout.fillWidth: true; spacing: 12
                         Row {
+                            visible: parent.threadLine
                             spacing: -6
                             Repeater {
                                 model: mail.participants.slice(0,6)
@@ -1414,6 +1419,7 @@ Item {
                         }
                         Flow {
                             id: participantNames
+                            visible: parent.threadLine
                             Layout.fillWidth: true; spacing: 0
                             Text { text: mail.members.length + (mail.members.length === 1 ? " message · " : " messages · "); color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                             Text { text: mail.conversationSpan; color: Theme.inkAlpha(0.85); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); FmToolTip { shown: spanHover.hovered; text: "First message → latest message" } HoverHandler { id: spanHover } }
@@ -1428,8 +1434,10 @@ Item {
                                 }
                             }
                         }
+                        Item { visible: !parent.threadLine; Layout.fillWidth: true }
                         FmButton { visible: mail.matchingIds.length>0; text: "Show match"; font.pointSize: Theme.fontPoints(11); implicitHeight: 22; onClicked: mail.revealMatch() }
                         Text {
+                            id: deliveryStatus
                             objectName: "mailDeliveryStatus"
                             // Read-on-open acknowledgments arrive after the reader.
                             // They share the participant line, so pending/error/
@@ -1640,7 +1648,6 @@ Item {
                                                     width: Math.min(implicitWidth, recipientLine.width)
                                                     underline: false; foreground: hovered ? Theme.text : Theme.inkAlpha(.55)
                                                     font.pointSize: Theme.fontPoints(12.5)
-                                                    tip: modelData.email
                                                 }
                                             }
                                         }
@@ -1718,7 +1725,7 @@ Item {
                                             required property var modelData
                                             required property int index
                                             objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
-                                            // Search matches tinted in the document (Search 10).
+                                            // Search matches tinted in the document.
                                             readonly property var matchKey: [mail.bodyPhrases, Theme.matchTint]
                                             onMatchKeyChanged: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)
                                             Component.onCompleted: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)

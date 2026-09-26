@@ -5,6 +5,13 @@ use rusqlite::params;
 use serde_json::{json, Value};
 
 impl Store {
+    /// Counts received and sent cached messages per display-zone day over a
+    /// 1 to 42 day range, for one active account or all of them.
+    ///
+    /// Days come from Gmail's internal date when known, otherwise the header
+    /// date (counted in `header_date_count`). Provider-deleted mail is
+    /// excluded. Without a display zone it returns no days and
+    /// `display_zone_required`.
     pub(crate) fn calendar_mail_activity(&self, account: Option<&str>, p: &Value) -> Result<Value> {
         fields(p, &["from", "to"])?;
         let date = |name| -> Result<NaiveDate> {

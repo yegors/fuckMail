@@ -1,3 +1,6 @@
+// Small received/sent mail-count badge for one day in CalendarView's Week
+// header and Month cells. Reads the day's row from `row` or `activity`;
+// clicking emits clicked(), which CalendarView turns into a switch to Mail.
 import QtQuick
 import QtQuick.Controls
 

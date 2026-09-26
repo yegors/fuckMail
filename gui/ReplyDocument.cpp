@@ -1,3 +1,6 @@
+// ReplyDocument: loads saved drafts into the QML editor's QTextDocument without
+// disturbing selection or undo, applies bold/italic/underline, pastes as plain
+// text, and reduces HTML to the allowed formatting (also for received bodies).
 #include "ReplyDocument.h"
 #include <QSet>
 #include "ReceivedBody.h"
@@ -41,6 +44,8 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
         }
         linearTables |= depth != 0 || cells > 64 || rows > 32;
     }
+    // Text between tags is copied with stray angle brackets escaped; each tag
+    // is re-emitted from scratch or dropped, never copied through.
     QString output; qsizetype end = 0;
     auto matches = tags.globalMatch(body);
     while (matches.hasNext()) {
@@ -136,6 +141,10 @@ void ReplyDocument::setIdentity(const QString &identity) {
 }
 void ReplyDocument::load(const QString &body, const QString &value) {
     if (!m_document) return;
+    // The saved draft comes back here whenever it changes, including after
+    // this editor's own edits are saved. Skip reloads that change neither the
+    // words nor the normalised formatting: setPlainText()/setHtml() would
+    // reset the cursor and clear undo.
     const bool sameBody = plainText() == body;
     if (sameBody) {
         QString expectedHtml;
@@ -187,6 +196,8 @@ void ReplyDocument::pastePlain() {
 }
 void ReplyDocument::undo() { if (!m_readOnly && m_document && m_document->textDocument()->isUndoAvailable()) m_document->textDocument()->undo(); }
 void ReplyDocument::redo() { if (!m_readOnly && m_document && m_document->textDocument()->isRedoAvailable()) m_document->textDocument()->redo(); }
+// Paste shortcuts and drops would otherwise insert rich text from outside the
+// allowed formatting; paste goes through pastePlain() and drops are refused.
 bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_editor && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->matches(QKeySequence::Paste)) { pastePlain(); return true; }
     if (watched == m_editor && event->type() == QEvent::Drop) return true;
