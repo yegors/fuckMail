@@ -1,5 +1,16 @@
 # Local mail analysis
 
+## D161 — subject-only mail (Local assistance28)
+
+- An eligible email needs text or a subject. Sync's "(no subject)" placeholder is no subject.
+- A subject-only email is prepared with empty `text`, and its subject reaches the model as always.
+- With neither, Summarize fails with `assistance_limit`: "This message has no subject or text to summarize".
+- The queue, `eligible` and the other progress counts include subject-only mail.
+- Text sent to the model drops leading whitespace.
+- Prompts, schema and the saved prompt digest are unchanged.
+
+Consumers: Core, engine worker, Mail UI summaries and CLI `assist`; Quality88.
+
 ## D148 — People/Automated answers survive label edits (Local assistance27)
 
 - Editing or removing a label's instructions no longer deletes the model's People/Automated answers. The answer doesn't depend on labels. Earlier builds deleted the answers but kept the classification results, so the queue treated that mail as done and never asked again.

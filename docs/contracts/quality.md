@@ -1,5 +1,27 @@
 # Quality, performance and release acceptance
 
+## D161 — subject-only summaries (Quality88)
+
+Local assistance28. Required checks:
+- a subject-only email prepares with its subject and empty text;
+- "(no subject)" or a blank subject with no text fails with `assistance_limit`;
+- a subject-only email is pending in the queue while a blank one is not, and `eligible` drops only by the blank one.
+
+## D160 — reading text and forward layout (Quality87)
+
+Mail UI111, Core82 and CLI59. Required checks:
+
+- **Conversion:** div boundaries, inline spacing, entities and byte-order marks; per-level quote marks with blank lines at the outer level; lists, tables and `pre`; nesting 5,000 deep without stack exhaustion.
+- **Source reply:** `message_source` returns `body_text` and truncates all three parts under pressure.
+- **Previews** drop quote marks.
+- **Text-mode rows:**
+  - an Apple-style whole-quoted forward yields label, headers, text, attribution, quote 1 and quote 2;
+  - a Gmail-style forward keeps the note apart and joins a wrapped attribution;
+  - prose mentioning a forward stays text;
+  - a nested forward gets its own label.
+- **Native reader:** rows read top to bottom, quotes indent 16 px per level, second-level quotes draw two bars, and the caption is capitalised.
+- **Composer:** the forward quote of the HTML-only fixture keeps the heading and each paragraph on their own lines.
+
 ## D159 — prototype, full-length list and large-message checks (Quality86)
 
 Mail UI110, Core81 and Gmail41; schema 40, live0/demo3 and protocol1. Required checks:

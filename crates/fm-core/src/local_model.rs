@@ -373,6 +373,8 @@ impl Store {
     }
     /// Capture one received email for the model: its stored text (reply
     /// history already removed at sync), headers and the account's labels.
+    /// An email with no text is read from its subject; one with neither
+    /// fails with `assistance_limit`.
     pub fn local_model_prepare(
         &self,
         account: &str,
@@ -399,14 +401,15 @@ impl Store {
             params![account, target],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
         )?;
-        if body.trim().is_empty() {
+        // Sync stores "(no subject)" for a missing subject.
+        if body.trim().is_empty() && (subject.trim().is_empty() || subject == "(no subject)") {
             return Err(err(
                 "assistance_limit",
-                "This message has no text to summarize",
+                "This message has no subject or text to summarize",
             ));
         }
         let partial = body.chars().count() > ollama::BODY_CHARS;
-        let text: String = body.chars().take(ollama::BODY_CHARS).collect();
+        let text: String = body.trim_start().chars().take(ollama::BODY_CHARS).collect();
         let from = if name.is_empty() || name == email {
             email
         } else {
@@ -969,15 +972,27 @@ mod tests {
         let kept = plan.email["text"].as_str().unwrap();
         assert_eq!(kept.chars().count(), ollama::BODY_CHARS);
         assert!(text.starts_with(kept));
+        // No text: the subject is the message, as in a reminder to oneself.
         s.db.execute(
-            "UPDATE messages SET body=' ' WHERE account=?1 AND id=?2",
+            "UPDATE messages SET body=' ',subject='Dont forget to milk the cow' WHERE account=?1 AND id=?2",
             params![A, M],
         )
         .unwrap();
-        assert_eq!(
-            s.local_model_prepare(A, C, M).err().unwrap().code,
-            "assistance_limit"
-        );
+        let plan = s.local_model_prepare(A, C, M).unwrap();
+        assert_eq!(plan.email["subject"], "Dont forget to milk the cow");
+        assert_eq!(plan.email["text"], "");
+        assert!(!plan.partial);
+        for subject in ["(no subject)", "  "] {
+            s.db.execute(
+                "UPDATE messages SET subject=?3 WHERE account=?1 AND id=?2",
+                params![A, M, subject],
+            )
+            .unwrap();
+            assert_eq!(
+                s.local_model_prepare(A, C, M).err().unwrap().code,
+                "assistance_limit"
+            );
+        }
     }
     #[test]
     fn sent_messages_are_excluded_and_old_results_hidden() {

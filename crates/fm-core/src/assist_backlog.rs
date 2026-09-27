@@ -22,8 +22,10 @@ pub(crate) struct ProgressKey {
 /// Only small result rows are cached; never message bodies or queued jobs.
 pub(crate) type ProgressCache = RefCell<HashMap<String, (ProgressKey, Value)>>;
 
-/// Received mail the local model can analyse.
-const ELIGIBLE: &str = "m.account=?1 AND NOT m.sent AND NOT m.trashed AND length(m.source_hash)=64 AND length(m.body)>0
+/// Received mail the local model can analyse: with text, or with a subject
+/// that carries the whole message, as a reminder sent to oneself does.
+const ELIGIBLE: &str = "m.account=?1 AND NOT m.sent AND NOT m.trashed AND length(m.source_hash)=64
+    AND (length(trim(m.body))>0 OR (length(trim(m.subject))>0 AND m.subject<>'(no subject)'))
     AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id
         AND (g.deleted=1 OR EXISTS(SELECT 1 FROM json_each(g.provider_labels_json) l WHERE l.value='DRAFT')))";
 const DATE_MS: &str = "((julianday(m.sent_at)-2440587.5)*86400000.0)";
@@ -525,6 +527,31 @@ mod tests {
         assert_eq!(end["queued"], 0);
         assert_eq!(end["done"], end["eligible"]);
         assert_eq!(seen, start["queued"].as_i64().unwrap());
+    }
+    #[test]
+    fn mail_with_only_a_subject_is_queued_and_blank_mail_is_not() {
+        let (_dir, s) = store();
+        let ids: Vec<String> =
+            s.db.prepare("SELECT m.id FROM messages m WHERE m.account=?1 AND NOT m.sent AND length(m.source_hash)=64 ORDER BY m.id LIMIT 2")
+                .unwrap()
+                .query_map([ACCOUNT], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+        let eligible = progress(&s)["eligible"].as_i64().unwrap();
+        for (id, subject) in ids
+            .iter()
+            .zip(["Dont forget to milk the cow", "(no subject)"])
+        {
+            s.db.execute(
+                "UPDATE messages SET body='',subject=?3 WHERE account=?1 AND id=?2",
+                params![ACCOUNT, id, subject],
+            )
+            .unwrap();
+        }
+        assert!(s.local_model_pending(ACCOUNT, &ids[0]).unwrap());
+        assert!(!s.local_model_pending(ACCOUNT, &ids[1]).unwrap());
+        assert_eq!(progress(&s)["eligible"].as_i64().unwrap(), eligible - 1);
     }
     #[test]
     fn new_mail_goes_ahead_of_catch_up_and_catch_up_only_widens() {

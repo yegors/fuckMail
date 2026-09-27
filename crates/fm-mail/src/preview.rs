@@ -55,16 +55,27 @@ pub fn looks_like_html(text: &str) -> bool {
         )
 }
 
-/// Text a preview can be cut from: HTML source becomes its readable text.
+/// Text a preview can be cut from: HTML source becomes its readable text, and
+/// the `>` marks opening quoted lines go.
 pub fn preview_source(body: &str) -> Cow<'_, str> {
-    if !looks_like_html(body) {
-        return Cow::Borrowed(body);
+    let text = if looks_like_html(body) {
+        let mut end = body.len().min(MAX_PREVIEW_HTML);
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        Cow::Owned(crate::html_source_text(&body[..end]))
+    } else {
+        Cow::Borrowed(body)
+    };
+    if !text.lines().any(|line| line.trim_start().starts_with('>')) {
+        return text;
     }
-    let mut end = body.len().min(MAX_PREVIEW_HTML);
-    while !body.is_char_boundary(end) {
-        end -= 1;
-    }
-    Cow::Owned(crate::html_source_text(&body[..end]))
+    Cow::Owned(
+        text.lines()
+            .map(|line| line.trim_start().trim_start_matches(['>', ' ']))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 /// Preview text without web addresses: a link, a short lead-in before it
@@ -142,5 +153,15 @@ mod tests {
         assert_eq!(without_links(&preview_source(body)), "Your hub is ready");
         assert!(!looks_like_html("Hello <b>there</b>"));
         assert_eq!(preview_source("Hello"), "Hello");
+    }
+
+    #[test]
+    fn quote_marks_leave_the_preview() {
+        let body =
+            "Begin forwarded message:\n\n> From: Panel\n> > Hi Kris,\n>> Older\nNo > mark here";
+        assert_eq!(
+            without_links(&preview_source(body)),
+            "Begin forwarded message: From: Panel Hi Kris, Older No > mark here"
+        );
     }
 }

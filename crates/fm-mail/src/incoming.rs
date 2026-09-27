@@ -1,7 +1,8 @@
 //! Plain text from received MIME, for the reader and the search index. HTML-only
 //! mail is sanitized before conversion; the original MIME is kept elsewhere.
+use crate::html_text::html_to_text;
 use ammonia::{Builder, UrlRelative};
-use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
+use mail_parser::{MessageParser, PartType};
 use std::collections::{HashMap, HashSet};
 
 /// Why no text could be extracted from received MIME.

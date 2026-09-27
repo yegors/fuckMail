@@ -1,5 +1,9 @@
 # CLI and external agent interface
 
+## D160 — reading text in `mail source` (CLI59)
+
+`mail source` adds Core82's `body_text` and `text_truncated`. Other fields are unchanged, and querying still never marks mail reviewed.
+
 ## D158 — status refresh generations (CLI58)
 
 `status` exposes Core80's additive `ui_generations` object with `epoch`, `accounts`, `categories`, `reader`, `drafts` and `captures`. Compare counters only within the same epoch; a new epoch invalidates all areas. Existing command grammar, calendar/mail generations, preference revision and protocol1 stay unchanged. Consumers: Mail UI109; Quality85.

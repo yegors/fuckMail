@@ -1,5 +1,19 @@
 # Mail UI, reader and human composer
 
+## D160 — forwards in text mode (Mail UI111)
+
+- Text mode reads a message's `body_text` from its source reply when present, else the stored `text`.
+- **A forward's rows,** from its marker line (Apple Mail's "Begin forwarded message:" or a "Forwarded message" rule) on:
+  - `forward`: an 11 pt caption, "FORWARDED MESSAGE", at 50% ink. When text comes before it, a 1 px rule and 14 px of space sit above.
+  - `headers`: its From/Date/To/Subject block, a 13 pt two-column table with bold labels at 72% ink.
+  - The forwarded text, as ordinary reader text.
+  - `attribution`: an "On … wrote:" line, 13 pt at 55% ink.
+  - `quote`: quoted history, 14 pt at 55% ink, indented 16 px per `depth`. Each level has a 2 px bar at 16% ink, running on into the next row while that level continues.
+- **Levels.** A forward that its client quoted whole starts from its own level. A nested forward repeats the caption and headers.
+- **Other mail.** Reply history outside forwards stays hidden as before. A line that only mentions a forwarded message is ordinary text.
+
+Consumers: `ReceivedBody`, `MailView.qml`, `MailBackend` and the reply-document, mail-selection and integration checks; Core82, Quality87.
+
 ## D159 — Flight Progress v2 (8), full-length list, quiet progress (Mail UI110)
 
 - **Account tabs:**

@@ -1605,6 +1605,43 @@ public:
     // The list is its full length before older pages load, so arriving pages
     // never move the scrollbar, and a jump to the end loads through to it
     // without a loading line.
+    // Text mode shows a forward as a label, a header block, the forwarded
+    // text and the history it quotes, each quote level indented with a bar.
+    static void forwardLayout() {
+        Harness h;
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:900; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Forward.qml")));
+        require(!qml.rootObjects().isEmpty(),"forward MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"forward window exposed");
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && !h.backend.conversations().isEmpty();},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{return !h.backend.m_conversation.value("messages").toList().isEmpty();},"the thread loads");
+        const auto text=QString("Begin forwarded message:\n\n> From: Panel <panel@example.test>\n> Date: Monday\n> To: Team <team@example.test>\n> Subject: Re: Trial\n>\n"
+            "> I would like more time once the agreement is signed.\n>\n> Thanks,\n> Sam\n> On Monday, Team <team@example.test> wrote:\n>\n> > Hi Sam,\n> >\n> > Your trial ends tomorrow.\n> > > An older note");
+        const auto message=QVariantMap{{"id","fwd"},{"sender_name","Forwarder"},{"sender_email","forwarder@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text",text},{"sent",false},{"source_available",false}};
+        h.backend.m_conversation={{"id","a"},{"subject","Fwd: Trial"},{"revision",3},{"message_ids",QVariantList{"fwd"}},{"messages",QVariantList{message}}};
+        emit h.backend.conversationChanged();
+        QQuickItem *label=nullptr,*quote=nullptr,*older=nullptr,*headers=nullptr,*attribution=nullptr,*body=nullptr;
+        await([&]{
+            label=quote=older=headers=attribution=body=nullptr;
+            for(int i=0;i<12;++i){auto *row=find(window->contentItem(),i?QString("messageBodyPart_fwd_%1").arg(i):QString("messageBody_fwd"));if(!row)continue;
+                const auto kind=row->property("kind").toString();const int level=row->property("level").toInt();
+                if(kind=="forward")label=row;else if(kind=="headers")headers=row;else if(kind=="attribution")attribution=row;else if(kind=="quote"&&level==1)quote=row;else if(kind=="quote"&&level==2)older=row;else if(kind.isEmpty())body=row;}
+            return label && headers && body && attribution && quote && older && older->height()>0;},"the forward's rows are laid out");
+        require(label->y()<headers->y() && headers->y()<body->y() && body->y()<attribution->y() && attribution->y()<quote->y() && quote->y()<older->y(),"label, headers, text, attribution and quotes read top to bottom");
+        require(qAbs(quote->property("leftPadding").toReal()-16)<0.5 && qAbs(older->property("leftPadding").toReal()-32)<0.5 && body->property("leftPadding").toReal()==0,"each quote level indents 16 pixels more");
+        int bars=0; for(auto *child:older->childItems()) if(child->width()==2 && child->height()>10) ++bars;
+        require(bars==2,"a second-level quote draws a bar for each level");
+        require(label->property("font").value<QFont>().capitalization()==QFont::AllUppercase,"the forward label is a small capitalised caption");
+        require(body->property("text").toString().contains("Thanks,") && !body->property("text").toString().contains("wrote:"),"the forwarded text stops before the attribution");
+        const auto capture=qEnvironmentVariable("FM_FORWARD_CAPTURE");
+        if(!capture.isEmpty()){QElapsedTimer t;t.start();while(t.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);require(window->grabWindow().save(capture),"forward frame saved");}
+    }
     static void pagingKeepsLength() {
         Harness h;
         h.pageSize = 100;
@@ -1779,6 +1816,6 @@ public:
     }
     static void memoryChecks(){readerMemorySharing();controls();}
     static void refreshChecks(){scopedRefreshes();mutations();undoActions();remoteMail();reviewTransitions();}
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();undoActions();remoteMail();controls();reviewTransitions();monthToggles();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();undoActions();remoteMail();controls();reviewTransitions();monthToggles();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

@@ -1248,7 +1248,10 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
                 if (!members.isEmpty()) {
                     auto latest = members.last().toMap();
                     const auto source = latest.value("reader_source").toMap();
-                    const auto plain = latest.value("text").toString();
+                    // The source's text is this build's reading of the message; the
+                    // stored copy may come from an older one.
+                    const auto fresh = source.value("body_text").toString();
+                    const auto plain = fresh.isEmpty() ? latest.value("text").toString() : fresh;
                     const auto html = source.value("html_truncated").toBool() ? QString{} : source.value("body_html").toString();
                     if (!latest.contains("reader_sections")) {
                         latest["reader_sections"] = ReplyDocument::receivedBody(html, plain.isEmpty() ? "(No text)" : plain);

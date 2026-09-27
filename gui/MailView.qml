@@ -1941,11 +1941,16 @@ Item {
                                     spacing: 7
                                     property var rows: []
                                     readonly property string plainText: member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)"
+                                    // The source's text is this build's reading of the message; the
+                                    // stored copy may come from an older one. The source can arrive
+                                    // while a projection lays out, so it projects again afterwards.
+                                    readonly property string sourceText: member.modelData.content_pending ? "" : messageSource.result.body_text || ""
+                                    onSourceTextChanged: Qt.callLater(project)
                                     readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
                                     function project() {
                                         if (!member.isExpanded) { rows = []; return }
                                         const prepared = messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
-                                        rows = (prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", plainText)).filter(function(row) { return !row.quote && !(row.parents || []).length })
+                                        rows = (prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", sourceText || plainText)).filter(function(row) { return !row.quote && !(row.parents || []).length })
                                     }
                                     onPlainTextChanged: project()
                                     onProjectionKeyChanged: project()
@@ -1990,6 +1995,10 @@ Item {
                                             id: bodyText
                                             required property var modelData
                                             required property int index
+                                            // A forward's rows: its label, header block, text, and the
+                                            // history it quotes, one indent and bar per level.
+                                            readonly property string kind: modelData.kind || ""
+                                            readonly property int level: modelData.depth || 0
                                             objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
                                             // Search matches tinted in the document.
                                             readonly property var matchKey: [mail.bodyPhrases, Theme.matchTint]
@@ -1998,8 +2007,29 @@ Item {
                                             Layout.fillWidth: true; text: mail.presentLinks(modelData.html)
                                             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                             palette.link: Theme.text
-                                            color: member.isLast ? Theme.text : Theme.inkAlpha(.78); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15)
-                                            leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
+                                            color: kind === "forward" ? Theme.inkAlpha(.5) : kind === "headers" ? Theme.inkAlpha(.72)
+                                                : kind === "quote" || kind === "attribution" ? Theme.inkAlpha(.55) : member.isLast ? Theme.text : Theme.inkAlpha(.78)
+                                            font.family: Theme.fontFamily
+                                            font.pointSize: Theme.fontPoints(kind === "forward" ? 11 : kind === "headers" || kind === "attribution" ? 13 : kind === "quote" ? 14 : 15)
+                                            font.capitalization: kind === "forward" ? Font.AllUppercase : Font.MixedCase
+                                            font.letterSpacing: kind === "forward" ? 0.6 : 0
+                                            leftPadding: level * 16; rightPadding: 0
+                                            topPadding: kind === "forward" && index > 0 ? 14 : 0
+                                            bottomPadding: kind === "headers" ? 10 : kind === "quote" ? 12 : kind === "attribution" ? 6 : 0
+                                            background: null
+                                            // A rule above the label sets the forward apart from the note before it.
+                                            Rectangle { visible: bodyText.kind === "forward" && bodyText.index > 0; width: parent.width; height: 1; color: Theme.inkAlpha(.1) }
+                                            // A level's bar runs on into the next row while the quote does.
+                                            readonly property var following: messageBody.rows[index + 1] || ({})
+                                            Repeater {
+                                                model: bodyText.kind === "quote" ? bodyText.level : 0
+                                                Rectangle {
+                                                    required property int index
+                                                    readonly property bool continues: bodyText.following.kind === "quote" && bodyText.following.depth > index
+                                                    x: index * 16; width: 2; radius: continues ? 0 : 1; color: Theme.inkAlpha(.16)
+                                                    height: continues ? bodyText.height + messageBody.spacing : bodyText.height - bodyText.bottomPadding
+                                                }
+                                            }
                                             Accessible.name: "Message from " + member.modelData.sender_name
                                             onLinkActivated: function(link) { mail.openBodyLink(link) }
                                             // The app's own text menu, not Qt's.

@@ -403,10 +403,10 @@ void GuiCompositionSelfTest::step() {
             const auto full=draft["body"].toString();
             if (!full.startsWith(opening)) { finish("Forward did not start with the account signature as plain text."); return; }
             const auto quote=full.mid(opening.size());
-            // Exact normalized text of fixture html-only.eml, independently
-            // confirmed through the real CLI; its heading shares the first line.
+            // Exact normalized text of fixture html-only.eml: its heading and
+            // each paragraph on lines of their own.
             const QString expectedQuote="---------- Forwarded message ----------\nFrom: status@service.example\nDate: \nSubject: Weekly service availability\n\n"
-                "> Weekly availability99.97% uptime & one resolved incident.\n> Read the report\n> Review the Frankfurt maintenance window.";
+                "> Weekly availability\n> \n> 99.97% uptime & one resolved incident.\n> \n> Read the report\n> \n> Review the Frankfurt maintenance window.";
             if (quote!=expectedQuote) { finish("Forward did not preserve the exact normalized quote of the retained source."); return; }
             m_body+="\n\n"+quote;
             if (!recipient("to_recipients","Forward Reader <forward@example.test>")) return;

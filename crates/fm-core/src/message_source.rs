@@ -54,10 +54,12 @@ fn bounded_at(value: &str, limit: usize) -> (String, bool) {
 
 /// Verifies and parses the source off the writer and returns reader content:
 /// address metadata, unsubscribe options, whether it has an invitation, the
-/// HTML part and the raw source.
+/// HTML part, the reading text as this build extracts it (`body_text`, which
+/// may be newer than the stored copy) and the raw source.
 ///
-/// HTML and raw text are each cut at 256 KiB, then halved further until the
-/// reply fits in about 900 KiB of JSON; the `*_truncated` flags say so. Fails
+/// HTML, reading text and raw text are each cut at 256 KiB, then the longest
+/// is halved until the reply fits in about 900 KiB of JSON; the `*_truncated`
+/// flags say so. Fails
 /// with `content_unavailable` if the blob is missing, altered or unparseable.
 pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     if cancel.is_cancelled() {
@@ -105,27 +107,31 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         crate::unsubscribe::describe(fm_mail::unsubscribe::unsubscribe(&parsed, &plain).as_ref());
     // Readers ask message_invite only for mail with a usable calendar part.
     let has_invite = crate::message_invite::message_calendar(&parsed).is_some();
+    let text = fm_mail::extract_parsed_incoming_contribution(&parsed).unwrap_or_default();
+    let (body_text, text_truncated) = bounded(&text);
     let (raw, raw_truncated) = bounded(&String::from_utf8_lossy(&bytes));
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
         "metadata":metadata,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
-        "raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
+        "body_text":body_text,"text_truncated":text_truncated,"raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
     fit_reply(&mut result)?;
     Ok(result)
 }
 
 fn fit_reply(result: &mut Value) -> Result<()> {
     // JSON escaping can enlarge even bounded UTF-8. Leave room for the IPC envelope.
+    const PARTS: [(&str, &str); 3] = [
+        ("raw", "raw_truncated"),
+        ("body_html", "html_truncated"),
+        ("body_text", "text_truncated"),
+    ];
     while serde_json::to_vec(result)?.len() > 900 * 1024 {
-        let key = if result["raw"].as_str().unwrap().len()
-            >= result["body_html"].as_str().unwrap().len()
-        {
-            "raw"
-        } else {
-            "body_html"
-        };
+        let (key, flag) = PARTS
+            .into_iter()
+            .max_by_key(|(key, _)| result[*key].as_str().map_or(0, str::len))
+            .unwrap();
         let value = result[key].as_str().unwrap();
         if value.is_empty() {
             return Err(err(
@@ -134,11 +140,7 @@ fn fit_reply(result: &mut Value) -> Result<()> {
             ));
         }
         result[key] = bounded_at(value, value.len() / 2).0.into();
-        result[if key == "raw" {
-            "raw_truncated"
-        } else {
-            "html_truncated"
-        }] = true.into();
+        result[flag] = true.into();
     }
     Ok(())
 }
@@ -184,6 +186,8 @@ mod tests {
             String::from_utf8_lossy(source)
         );
         assert_eq!(result["body_html"], "<p>Hello <b>team</b>.</p>");
+        assert_eq!(result["body_text"], "Hello team.");
+        assert_eq!(result["text_truncated"], false);
         assert_eq!(
             result["metadata"][1]["people"][0]["email"],
             "copy@example.test"
@@ -226,10 +230,11 @@ mod tests {
         assert!(truncated);
         assert!(preview.len() <= 256 * 1024);
         assert!(text.starts_with(&preview));
-        let mut result = json!({"raw":"\u{1}".repeat(256*1024),"body_html":"\u{2}".repeat(256*1024),"raw_truncated":false,"html_truncated":false});
+        let mut result = json!({"raw":"\u{1}".repeat(256*1024),"body_html":"\u{2}".repeat(256*1024),"body_text":"\u{3}".repeat(256*1024),"raw_truncated":false,"html_truncated":false,"text_truncated":false});
         fit_reply(&mut result).unwrap();
         assert!(serde_json::to_vec(&result).unwrap().len() <= 900 * 1024);
-        assert_eq!(result["raw_truncated"], true);
-        assert_eq!(result["html_truncated"], true);
+        for flag in ["raw_truncated", "html_truncated", "text_truncated"] {
+            assert_eq!(result[flag], true);
+        }
     }
 }

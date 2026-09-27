@@ -1889,3 +1889,42 @@ The founder asked for the updated prototype, with the designer's notes, and a li
   - A flaky engine test compared live refresh generations between clients; it now compares the store epoch.
 
 Mail UI110, Core81, Gmail41 and Quality86. Schema 40 (data-only migration 040 after 039), live0/demo3 fixtures, CLI shapes and protocol1 unchanged apart from Core81's `undownloadable_messages`. The copies of large sources made while the retained-source path re-prepares a message, and streaming raw downloads to disk, remain separate work.
+
+## D160 — readable forwards in text mode (2026-09-27T15:50:00Z)
+
+The founder showed a forwarded message in text mode. Its lines ran together: "Thanks,KrisOn Thursday … wrote:" was one line, and "From:CMNetworx Panel" had lost its space. Nothing showed where the forward began, which part was the forwarded text, and which part was the history it quoted. HTML mode showed all three.
+
+- **Cause.** The message was HTML only, so text mode showed our own HTML-to-text conversion. The parser's converter broke lines only at `<br>` and `<p>`. It ignored `<div>` boundaries, which Apple Mail and Proton use for every line, and it dropped whitespace between inline elements.
+- **Conversion.**
+  - Reading text comes from a block-aware converter: blocks on their own lines, paragraphs a blank line apart, one space between inline runs, list items marked, and each blockquote level prefixed `> ` as plain-text mail quotes.
+  - Search, previews, composer quotes and the stored reading copy of new mail use it.
+  - List previews drop the `>` marks.
+- **Older mail.** The reader's source reply includes the reading text as this build extracts it, so messages stored before the change display the new text without rewriting the database. Their stored copy, and so their search text, stays as it was.
+- **Text-mode layout of a forward:**
+  - a small "Forwarded message" caption, with a rule when a note precedes it;
+  - the From/Date/To/Subject block as a compact two-column table;
+  - the forwarded text at the reader's normal size;
+  - an "On … wrote:" line in muted small text;
+  - the history it quotes muted and indented 16 px per level, with a bar per level that runs on while the quote continues.
+- **Detection.**
+  - A forward whose client quotes it whole, as Apple Mail does, is read from its own level.
+  - A forward inside a forward starts over.
+  - A sentence that merely mentions a forwarded message stays ordinary text.
+  - Replies still hide their quoted history as before.
+
+Mail UI111, Core82, CLI59 and Quality87. No schema, fixture or protocol change.
+
+## D161 — summarize mail that is only a subject (2026-09-27T16:40:00Z)
+
+The founder found that an email with only a subject ("Dont forget to milk the cow") would not summarize. They asked whether the model gets the subject at all.
+
+- **Found.**
+  - Every request already sends from, to, subject, date and the stored text.
+  - Two checks refused mail without text before asking the model: Summarize failed with "no text to summarize", and the background queue counted only mail with a body.
+- **Change.**
+  - Mail with no text is analysed from its subject: the request carries the subject and empty text. Mail with neither fails with "This message has no subject or text to summarize". Sync's "(no subject)" placeholder counts as no subject.
+  - The queue and progress counts include subject-only mail, so it is summarized and labelled like other mail.
+  - Leading whitespace no longer goes to the model.
+- **Evidence.** The built-in prompt is unchanged. With synthetic subject-only emails, the founder's local qwen3.8 and gemma4:e4b both wrote one-line "you" summaries from the subject alone and judged the sender correctly.
+
+Local assistance28 and Quality88. No schema, fixture or protocol change.

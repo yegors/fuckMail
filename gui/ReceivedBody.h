@@ -31,11 +31,14 @@ inline int readerLeadingPercent() {
 /// Converts plain text to reader HTML: one `<p>` per blank-line-separated
 /// paragraph, single newlines as `<br>`, repeated spaces kept, text escaped,
 /// and strictly valid `http(s)://` URLs turned into `<a href>` links.
-inline QString plainHtml(QString text) {
+/// Paragraphs are `gap` pixels apart, and the last one keeps `last` below it
+/// (the same as `gap` when negative).
+inline QString plainHtml(QString text, int gap = 24, int last = -1) {
     text.replace("\r\n","\n"); text.replace('\r','\n');
     const auto paragraphs=text.trimmed().split(QRegularExpression("\\n[\\t ]*\\n(?:[\\t ]*\\n)*"));
-    QString html;
+    QString html; qsizetype index=0;
     for(const auto &p:paragraphs) {
+        const int below=++index==paragraphs.size() && last>=0 ? last : gap;
         QString rendered;qsizetype end=0;
         auto links=QRegularExpression("https?://[^\\s<>]+",QRegularExpression::CaseInsensitiveOption).globalMatch(p);
         while(links.hasNext()) {
@@ -45,9 +48,33 @@ inline QString plainHtml(QString text) {
         }
         rendered+=p.mid(end).toHtmlEscaped();
         // A blank line between paragraphs keeps one reader line of space.
-        html += "<p style=\"white-space:pre-wrap;margin-top:0;margin-bottom:24px;line-height:"+QString::number(readerLeadingPercent())+"%\">"+rendered.replace('\n',"<br>")+"</p>";
+        html += "<p style=\"white-space:pre-wrap;margin-top:0;margin-bottom:"+QString::number(below)+"px;line-height:"+QString::number(readerLeadingPercent())+"%\">"+rendered.replace('\n',"<br>")+"</p>";
     }
     return html;
+}
+/// Whether a trimmed line opens a forwarded message: Apple Mail's "Begin
+/// forwarded message:" or a "---------- Forwarded message ---------" rule.
+inline bool forwardMarker(const QString &line) {
+    static const QRegularExpression marker("^[-_=\\s]*(?:begin forwarded message|forwarded message)[-_=\\s:]*$",QRegularExpression::CaseInsensitiveOption);
+    return marker.match(line).hasMatch();
+}
+/// How many `>` quote marks open `line`, and the text after them. Indentation
+/// of an unquoted line is kept.
+inline std::pair<int,QString> quoteLevel(const QString &line) {
+    int level=0; qsizetype i=0;
+    for(;;) {
+        qsizetype j=i; while(j<line.size() && line[j]==' ') ++j;
+        if(j>=line.size() || line[j]!='>') break;
+        ++level; i=j+1; if(i<line.size() && line[i]==' ') ++i;
+    }
+    return {level,line.mid(i)};
+}
+/// Whether `text` is a reply attribution such as "On Tuesday, Alex wrote:",
+/// in English or another common client language.
+inline bool attribution(const QString &text) {
+    static const QRegularExpression ending("(?:wrote|a \\x{e9}crit|schrieb|escribi\\x{f3}|scrisse|escreveu|schreef|skrev)\\s*:$",QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression digit("\\d");
+    return text.size()<=400 && ending.match(text).hasMatch() && (text.startsWith("On ") || digit.match(text).hasMatch());
 }
 /// Splits a received body into the sender's new text, dropping quoted reply
 /// history. Uses `html` when non-empty, else `plain`.
@@ -59,17 +86,81 @@ inline QString plainHtml(QString text) {
 /// and a forwarded message is kept whole. `sanitize` turns a rich HTML
 /// fragment into display HTML; plain fragments go through plainHtml().
 ///
-/// Returns rows of {html, parents, quote}. Only new-text rows are emitted,
-/// so `parents` is always empty and `quote` false. Rows whose visible text
-/// is blank are omitted. Nesting is followed at most 32 levels deep.
+/// A plain forward is laid out in rows the reader styles by `kind`:
+/// - `forward`: the "Forwarded message" label;
+/// - `headers`: its From/Date/To/Subject block;
+/// - no kind: the forwarded text;
+/// - `attribution`: an "On … wrote:" line;
+/// - `quote`: history the forward quotes.
+/// `depth` counts quote levels below the forwarded text.
+///
+/// Returns rows of {html, parents, quote}, plus `kind` and `depth` for a
+/// forward's rows. Only new-text rows are emitted, so `parents` is always
+/// empty and `quote` false. Rows whose visible text is blank are omitted.
+/// Nesting is followed at most 32 levels deep.
 inline QVariantList sections(const QString &html,const QString &plain,const std::function<QString(const QString &)> &sanitize) {
     QVariantList rows; int serial=0;
-    auto append=[&](const QString &body,const QVariantList &parents,bool rich) {
-        if(!parents.isEmpty() || body.trimmed().isEmpty())return;
-        const auto rendered=rich?sanitize(body):plainHtml(body);
+    auto row=[&](const QString &rendered,const QString &kind,int depth) {
         // Markup-only fragments (empty divs, spacer tables) have no visible text.
         QTextDocument check; check.setHtml(rendered);
-        if(!check.toPlainText().trimmed().isEmpty())rows.append(QVariantMap{{"html",rendered},{"parents",parents},{"quote",false}});
+        if(check.toPlainText().trimmed().isEmpty())return;
+        QVariantMap entry{{"html",rendered},{"parents",QVariantList{}},{"quote",false}};
+        if(!kind.isEmpty()){entry["kind"]=kind;entry["depth"]=depth;}
+        rows.append(entry);
+    };
+    auto append=[&](const QString &body,const QVariantList &parents,bool rich) {
+        if(!parents.isEmpty() || body.trimmed().isEmpty())return;
+        row(rich?sanitize(body):plainHtml(body),{},0);
+    };
+    // A forward from its marker line on: the label, the forwarded message's
+    // header block and text, and the history it quotes, one row per level.
+    std::function<void(const QStringList &,int)> forward;
+    forward=[&](const QStringList &lines,int depth) {
+        row(QStringLiteral("Forwarded message"),QStringLiteral("forward"),0);
+        int first=1;
+        while(first<lines.size() && quoteLevel(lines[first]).second.trimmed().isEmpty()) ++first;
+        // Clients that quote the forwarded message whole (Apple Mail) put it
+        // one level down; that level becomes the forwarded text's own.
+        const int base=first<lines.size()?quoteLevel(lines[first]).first:0;
+        QList<std::pair<int,QString>> body;
+        for(int i=first;i<lines.size();++i){const auto q=quoteLevel(lines[i]);body.append({std::max(0,q.first-base),q.second});}
+        static const QRegularExpression field("^(From|To|Cc|Bcc|Date|Sent|Subject|Reply-To|Von|An|Datum|Gesendet|Betreff|De|Objet|Envoy\\x{e9}|\\x{c0}|Para|Fecha|Asunto|Enviado|Assunto|Da|Oggetto|Inviato|A)\\s*:\\s*(.*)$",QRegularExpression::CaseInsensitiveOption);
+        static const QRegularExpression sender("^(From|Von|De|Da)$",QRegularExpression::CaseInsensitiveOption);
+        QList<std::pair<QString,QString>> headers; int next=0;
+        while(next<body.size() && body[next].first==0){const auto m=field.match(body[next].second.trimmed());if(!m.hasMatch())break;headers.append({m.captured(1),m.captured(2).trimmed()});++next;}
+        if(headers.size()>=2 && sender.match(headers.first().first).hasMatch()) {
+            QString table="<table cellspacing=\"0\" cellpadding=\"0\">";
+            for(const auto &[label,value]:headers)table+="<tr><td style=\"padding:0 16px 4px 0\"><b>"+label.toHtmlEscaped()+"</b></td><td style=\"padding:0 0 4px 0\">"+value.toHtmlEscaped()+"</td></tr>";
+            row(table+"</table>",QStringLiteral("headers"),0);
+        } else next=0;
+        struct Group { int level; QStringList lines; };
+        QList<Group> groups;
+        for(int i=next;i<body.size();++i) {
+            const auto &[level,text]=body[i];
+            const bool blank=text.trimmed().isEmpty();
+            // A forward inside the forwarded text starts over at its own marker.
+            if(level==0 && depth<32 && forwardMarker(text.trimmed())) {
+                QStringList rest; for(int j=i;j<body.size();++j)rest.append(QString("> ").repeated(body[j].first)+body[j].second);
+                for(const auto &group:std::as_const(groups))row(plainHtml(group.lines.join('\n'),group.level?12:24,group.level?0:-1),group.level?"quote":"",group.level);
+                forward(rest,depth+1); return;
+            }
+            if(groups.isEmpty() || (!blank && groups.last().level!=level))groups.append(Group{blank?0:level,{}});
+            groups.last().lines.append(text);
+        }
+        for(int g=0;g<groups.size();++g) {
+            auto &group=groups[g];
+            // An "On … wrote:" closing a group introduces the deeper quote after it.
+            QString introduction;
+            if(g+1<groups.size() && groups[g+1].level>group.level) {
+                int end=group.lines.size(); while(end>0 && group.lines[end-1].trimmed().isEmpty()) --end;
+                for(int start=end-1;start>=0 && start>=end-3 && !group.lines[start].trimmed().isEmpty();--start) {
+                    const auto joined=group.lines.mid(start,end-start).join(' ').simplified();
+                    if(attribution(joined)){introduction=joined;group.lines=group.lines.mid(0,start);break;}
+                }
+            }
+            row(plainHtml(group.lines.join('\n'),group.level?12:24,group.level?0:-1),group.level?"quote":"",group.level);
+            if(!introduction.isEmpty())row(plainHtml(introduction,0),QStringLiteral("attribution"),group.level);
+        }
     };
     // Callers discard the returned list, so quoted history is never emitted;
     // what matters is `serial`, which counts reply boundaries for htmlFragment.
@@ -91,7 +182,8 @@ inline QVariantList sections(const QString &html,const QString &plain,const std:
                 continue;
             }
             // A forwarded message is itself content the sender chose to send.
-            if (line.contains("Forwarded message",Qt::CaseInsensitive) || line.compare("Begin forwarded message:",Qt::CaseInsensitive)==0) {
+            if (forwardMarker(line)) { append(pending,parents,false); forward(lines.mid(i),depth); return; }
+            if (line.contains("Forwarded message",Qt::CaseInsensitive)) {
                 pending += lines.mid(i).join('\n'); append(pending,parents,false); return;
             }
             int headerEnd=-1;

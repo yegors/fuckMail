@@ -4,6 +4,9 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-09-27
 
+- Emails that are only a subject (a reminder to yourself, "lunch?") are summarized and labelled from the subject instead of failing with "no text to summarize".
+- Forwarded messages read clearly in text mode: a "Forwarded message" caption, the original's From/Date/To/Subject as a compact block, its text, then the history it quotes, indented with a bar per level. HTML-only mail no longer runs lines together in text mode ("Thanks,KrisOn Thursday…"), including mail downloaded earlier; new mail is searched and previewed with the same cleaner text.
+
 - Background updates refresh only the affected Mail areas. Progress, calendar and draft updates avoid unnecessary message preparation; updates arriving while a reader loads remain pending.
 
 - Mail reuses cached message sources without copying them. Attachment thumbnails and the image viewer use display-sized decodes, reducing memory and repeated loading during resizing.

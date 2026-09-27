@@ -81,6 +81,26 @@ int main(int argc, char **argv) {
     require(content(inlineReply,false).contains("New inline answer") && content(inlineReply,false).contains("Another new answer"),"new inline answers survive between quoted blocks");
     require(content(ReplyDocument::receivedBody({},"On Tuesday, Alex wrote:\n> Question\nNew inline answer"),false).trimmed()=="New inline answer","attribution without an address preserves inline replies");
     require(content(ReplyDocument::receivedBody("<p>Please review</p><div class='gmail_quote'><p>---------- Forwarded message ----------</p><blockquote>Forwarded content</blockquote></div>",{}),false).contains("Forwarded content"),"intentional forwarded content remains visible");
+    // Text mode lays a forward out: its label, header block, text, and the
+    // history it quotes, one level deeper per quote.
+    auto kinds=[&](const QVariantList &rows) {
+        QStringList out; for(const auto &value:rows){const auto row=value.toMap();QTextDocument doc;doc.setHtml(row.value("html").toString());out<<row.value("kind").toString()+"@"+QString::number(row.value("depth").toInt())+":"+doc.toPlainText().simplified();}
+        return out;
+    };
+    const auto apple=kinds(ReplyDocument::receivedBody({},"Begin forwarded message:\n\n> From: Panel <panel@example.test>\n> Date: Monday\n> To: Team <team@example.test>\n> Subject: Re: Trial\n>\n> I would like more time.\n>\n> Thanks,\n> Sam\n> On Monday, Team <team@example.test> wrote:\n>\n> > Hi Sam,\n> >\n> > Trial ends tomorrow.\n> > > Older note"));
+    const QStringList appleExpected{"forward@0:Forwarded message","headers@0:From Panel <panel@example.test> Date Monday To Team <team@example.test> Subject Re: Trial",
+        "@0:I would like more time. Thanks, Sam","attribution@0:On Monday, Team <team@example.test> wrote:","quote@1:Hi Sam, Trial ends tomorrow.","quote@2:Older note"};
+    if(apple!=appleExpected)qWarning().noquote()<<apple.join(" | ");
+    require(apple==appleExpected,"a forward quoted whole shows its label, headers, text, attribution and each quote level");
+    const auto plainForward=kinds(ReplyDocument::receivedBody({},"See below.\n\n---------- Forwarded message ---------\nFrom: Alex <alex@example.test>\nDate: Tue, Sep 22, 2026\nSubject: Plan\nTo: <sam@example.test>\n\n\nThe plan is ready.\n\nOn Mon, Sep 21, 2026 at 9:00 AM Sam <sam@example.test>\nwrote:\n> Is the plan ready?"));
+    const QStringList gmailExpected{"@0:See below.","forward@0:Forwarded message","headers@0:From Alex <alex@example.test> Date Tue, Sep 22, 2026 Subject Plan To <sam@example.test>",
+        "@0:The plan is ready.","attribution@0:On Mon, Sep 21, 2026 at 9:00 AM Sam <sam@example.test> wrote:","quote@1:Is the plan ready?"};
+    if(plainForward!=gmailExpected)qWarning().noquote()<<plainForward.join(" | ");
+    require(plainForward==gmailExpected,"a note above a forward stays apart, and a wrapped attribution introduces its quote");
+    const auto prose=kinds(ReplyDocument::receivedBody({},"I saw the forwarded message you sent.\nThanks"));
+    require(prose.size()==1 && prose.first().startsWith("@0:I saw the forwarded message"),"a sentence mentioning a forwarded message is ordinary text");
+    const auto forwardInForward=kinds(ReplyDocument::receivedBody({},"Begin forwarded message:\n\nFrom: A <a@example.test>\nSubject: One\n\nFirst note\n\n---------- Forwarded message ---------\nFrom: B <b@example.test>\nDate: Monday\n\nInner text"));
+    require(forwardInForward.count("forward@0:Forwarded message")==2 && forwardInForward.last()=="@0:Inner text" && forwardInForward.contains("@0:First note"),"a forward inside a forward gets its own label and headers");
     auto compact=ReplyDocument::limitedHtml("<p>One</p><p>&nbsp;</p><p><br></p><p>Two</p>",true);
     require(!compact.contains("&nbsp;") && compact.count("margin-bottom:7px")==2,"received paragraphs use compact controlled gaps without empty spacer blocks");
     QString deep="Deepest quoted text"; for(int i=0;i<70;++i)deep="<blockquote>"+deep+"</blockquote>";

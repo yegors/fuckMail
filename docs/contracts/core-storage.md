@@ -1,5 +1,19 @@
 # Core and storage
 
+## D160 — block-aware reading text (Core82)
+
+- **Reading text from HTML:**
+  - Block elements end lines and paragraphs are a blank line apart.
+  - Inline runs keep one space between them.
+  - List items get `•` or `N.`, and table cells are separated by a space.
+  - `pre` keeps its whitespace; byte-order marks and zero-width spaces go.
+  - Each blockquote level prefixes `> `. A blank line takes the shallower of the levels around it.
+- **Where it applies:** new mail's stored reading copy, search text, composer quotes and remote reads. Stored copies of older mail are not rewritten.
+- **Source reply:** `message_source` adds `body_text` (the reading text as this build extracts it, cut at 256 KiB) and `text_truncated`. When the reply must shrink, the longest of raw, HTML and text is halved.
+- **Previews:** list previews drop `>` marks at line starts.
+
+Consumers: Mail UI111, CLI59 `mail source`, Quality87; schema 40, live0/demo3 and protocol1 unchanged.
+
 ## D159 — whole Gmail messages and draft sources first (Core81)
 
 - A blob may be as large as the largest Gmail source ([`MAX_RAW_MIME`](../../crates/fm-google/src/gmail_api.rs), 160 MiB). This replaces the 64 MiB blob bound; exact size/hash checks and path protections are unchanged.
