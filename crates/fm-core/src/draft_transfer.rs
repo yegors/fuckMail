@@ -54,6 +54,12 @@ pub struct TransferCleanup {
 /// Verifies and loads the draft's retained attachments off the writer.
 pub fn prepare(plan: Box<TransferPlan>, cancel: CancellationToken) -> Result<PreparedTransfer> {
     let files = plan.retained.prepare(&cancel)?;
+    // Destination ownership must survive removal of the source account. A
+    // received part may have been decoded from MIME rather than a file blob.
+    for file in &files {
+        cancelled(&cancel)?;
+        plan.retained.blobs.stage_blob(&file.bytes)?;
+    }
     Ok(PreparedTransfer {
         plan,
         files,

@@ -109,6 +109,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
     // Keep neighbor presentation as stored role data through structural events.
     // Inserted rows already carry their final predecessor; moved/surviving rows
     // retain their old value until this explicit notification changes it.
+    int firstChanged = -1, lastChanged = -1;
     for (int i = 0; i < next.size(); ++i) {
         QList<int> changed;
         if (m_rows[i].value != next[i].value) {
@@ -119,11 +120,15 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             m_rows[i].previousGroup = next[i].previousGroup;
             changed.append(PreviousGroupRole);
         }
-        if (!structural && !changed.isEmpty()) emit dataChanged(index(i, 0), index(i, 0), changed);
+        if (changed.isEmpty()) continue;
+        if (firstChanged < 0) firstChanged = i;
+        lastChanged = i;
+        if (!structural) emit dataChanged(index(i, 0), index(i, 0), changed);
     }
     // A Quick view can cache roles while consuming successive structural
     // changes. Publish the final roles once, after all indexes have settled,
-    // without resetting surviving delegates. Data-only updates stay narrow.
-    if (structural && !m_rows.isEmpty()) emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0), {RowDataRole, PreviousGroupRole});
+    // over the rows whose roles changed: the rest already show their data,
+    // so hiding or showing a section rebinds only the rows around it.
+    if (structural && firstChanged >= 0) emit dataChanged(index(firstChanged, 0), index(lastChanged, 0), {RowDataRole, PreviousGroupRole});
     return true;
 }

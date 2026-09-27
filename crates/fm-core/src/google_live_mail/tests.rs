@@ -1,3 +1,4 @@
+//! Live acquisition, crash recovery and retained source fixtures.
 use super::*;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{
@@ -24,6 +25,74 @@ fn setup() -> (tempfile::TempDir, Store, String) {
         .google_live_begin(&account, "100", 1700000000)
         .unwrap();
     (directory, store, account)
+}
+
+#[test]
+fn staged_attachment_resumes_from_original_without_decoded_blob() {
+    let (directory, mut store, account) = setup();
+    let page = begin_list(
+        &mut store,
+        &account,
+        MailLane::Inventory,
+        &["attached"],
+        None,
+    );
+    let raw=b"From: sender@example.test\r\nTo: reader@example.test\r\nSubject: File\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain\r\n\r\nhello\r\n--x\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=file.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAAH/\r\n--x--\r\n";
+    let item = prepare_google_item(
+        &store.google_blob_store(),
+        &page,
+        "attached",
+        Some(raw_bytes(
+            "attached",
+            "110",
+            raw,
+            &["INBOX"],
+            "1789210800123",
+        )),
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let attachment = item.manifest.message.as_ref().unwrap().attachments[0].clone();
+    assert!(!directory
+        .path()
+        .join("blobs")
+        .join(&attachment.hash)
+        .exists());
+    store.google_live_stage_prepared(&page, &item).unwrap();
+    drop(store);
+    let mut store = Store::open_live(directory.path()).unwrap();
+    let staged = store
+        .google_live_pending(&page, 1)
+        .unwrap()
+        .remove(0)
+        .staged
+        .unwrap();
+    let verified = verify_staged_google_item(
+        &store.google_blob_store(),
+        &page,
+        staged,
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    publish(&mut store, &page, verified);
+    store.google_live_finish_page(&page).unwrap();
+    let aid: String = store
+        .db
+        .query_row(
+            "SELECT id FROM attachments WHERE account=?1",
+            [&account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let result = store
+        .attachment_begin(&account, &json!({"id":aid}))
+        .unwrap()
+        .export()
+        .unwrap();
+    assert_eq!(
+        std::fs::read(result["path"].as_str().unwrap()).unwrap(),
+        b"\0\x01\xff"
+    );
 }
 fn checkpoint(store: &Store, account: &str, lane: MailLane) -> Checkpoint {
     store
@@ -328,6 +397,9 @@ fn oversized_and_malformed_items_do_not_poison_page_or_claim_offline_coverage() 
     assert!(coverage.inventory_complete);
     assert!(!coverage.offline_complete);
     assert_eq!((coverage.observed, coverage.unavailable), (4, 3));
+    // Only the two whose source never arrived will not download; the
+    // unparsable one is kept.
+    assert_eq!((coverage.retained_sources, coverage.undownloadable), (2, 2));
     let gaps = store.google_live_gaps(&account, None, 2).unwrap();
     assert_eq!(
         gaps.iter()
@@ -799,16 +871,22 @@ fn bounded_preparation_retains_attachments_and_remote_drafts_without_publishing_
     );
     assert!(item.issue().is_none());
     publish(&mut store, &page, item);
-    let (hash, size): (String, u64) = store
+    let (hash, size, id): (String, u64, String) = store
         .db
         .query_row(
-            "SELECT blob_hash,size FROM attachments WHERE account=?1",
+            "SELECT blob_hash,size,id FROM attachments WHERE account=?1",
             [&account],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
     assert_eq!(
-        std::fs::read(store.verified_blob(&hash, size).unwrap()).unwrap(),
+        crate::attachment_content::read(
+            &store.google_blob_store(),
+            &hash,
+            size,
+            store.attachment_source(&account, &id).unwrap().as_ref()
+        )
+        .unwrap(),
         [0, 1, 2, 3, 255]
     );
     let draft = prepared(
@@ -976,4 +1054,69 @@ fn spam_is_never_kept_and_leaving_spam_brings_the_message_back() {
     let store = Store::open_live(directory.path()).unwrap();
     assert_eq!(count(&store, &account), 0);
     assert_metrics(&store, &account);
+}
+
+#[test]
+fn large_sources_and_many_attachments_are_published_whole() {
+    let (_directory, mut store, account) = setup();
+    let page = begin_list(
+        &mut store,
+        &account,
+        MailLane::Inventory,
+        &["large", "many"],
+        None,
+    );
+    let mime = |parts: &[(String, Vec<u8>)]| {
+        let mut mime = b"From: sender@example.test\r\nTo: me@example.test\r\nSubject: Files\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=part\r\n\r\n--part\r\nContent-Type: text/plain\r\n\r\nFiles attached\r\n".to_vec();
+        for (name, bytes) in parts {
+            mime.extend_from_slice(format!("--part\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename={name}\r\nContent-Transfer-Encoding: base64\r\n\r\n").as_bytes());
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            for line in encoded.as_bytes().chunks(76) {
+                mime.extend_from_slice(line);
+                mime.extend_from_slice(b"\r\n");
+            }
+        }
+        mime.extend_from_slice(b"--part--\r\n");
+        mime
+    };
+    // Over the earlier 40 MiB bound once encoded.
+    let big: Vec<u8> = (0..31 * 1024 * 1024)
+        .map(|n: usize| (n % 251) as u8)
+        .collect();
+    let large = mime(&[("big.bin".into(), big.clone())]);
+    assert!(large.len() > 40 * 1024 * 1024);
+    // More than the earlier limit of 50 attachments.
+    let files: Vec<(String, Vec<u8>)> = (0..60)
+        .map(|n| (format!("file-{n}.bin"), vec![n as u8; 100]))
+        .collect();
+    let many = mime(&files);
+    for (id, bytes) in [("large", &large), ("many", &many)] {
+        let item = prepared(
+            &store,
+            &page,
+            id,
+            raw_bytes(id, "110", bytes, &["INBOX"], "1789210800123"),
+        );
+        publish(&mut store, &page, item);
+    }
+    store.google_live_finish_page(&page).unwrap();
+    assert_eq!(count(&store, &account), 2);
+    let coverage = store.google_live_coverage(&account).unwrap();
+    assert_eq!(
+        (
+            coverage.retained_sources,
+            coverage.undownloadable,
+            coverage.unavailable
+        ),
+        (2, 0, 0)
+    );
+    let counts: Vec<(i64, i64)> = store
+        .db
+        .prepare("SELECT count(*),max(size) FROM attachments WHERE account=?1 GROUP BY message_id ORDER BY count(*)")
+        .unwrap()
+        .query_map([&account], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(counts, [(1, big.len() as i64), (60, 100)]);
 }

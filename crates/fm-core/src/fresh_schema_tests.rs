@@ -1,3 +1,4 @@
+//! Fresh profile schema, upgrade boundaries and integrity checks.
 use crate::{Store, SCHEMA_VERSION};
 use rusqlite::Connection;
 
@@ -18,7 +19,7 @@ fn new_live_profile_has_direct_strict_schema_and_valid_references() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(strict_tables, 67);
+    assert_eq!(strict_tables, 68);
     let fts_content_tables: i64 = store
         .db
         .query_row(
@@ -173,4 +174,121 @@ fn fresh_profiles_carry_the_calendar_mail_count_date_index() {
         )
         .unwrap();
     assert!(plan.contains("google_mail_coverage_by_date") && plan.contains("internal_date_ms>?"));
+}
+
+#[test]
+fn draft_sources_upgrade_drops_the_key_to_their_own_draft() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    // Rebuild the table as profiles made before the change carry it.
+    let db = Connection::open(temp.path().join("store.sqlite3")).unwrap();
+    let fresh: String = db
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE name='google_draft_sources'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let old = fresh
+        .replace("google_draft_sources(", "old_sources(")
+        .replace(
+            "PRIMARY KEY(account,source_revision),",
+            "PRIMARY KEY(account,source_revision),\n FOREIGN KEY(account,draft_id) REFERENCES drafts(account,draft_id),",
+        );
+    // A source whose draft is missing, as the old key never allowed.
+    db.execute_batch(&format!("PRAGMA foreign_keys=OFF; {old}; DROP TABLE google_draft_sources; ALTER TABLE old_sources RENAME TO google_draft_sources;"))
+        .unwrap();
+    db.execute(
+        "INSERT INTO google_draft_sources VALUES('a',1,'r1','google-draft-1',NULL,1,1,1,1,'{}')",
+        [],
+    )
+    .unwrap();
+    // The version before this change.
+    db.pragma_update(None, "user_version", 38).unwrap();
+    drop(db);
+
+    let store = Store::open_live(temp.path()).unwrap();
+    let version: u32 = store
+        .db
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+    let keys: Vec<String> = store
+        .db
+        .prepare("SELECT \"from\" FROM pragma_foreign_key_list('google_draft_sources')")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(keys, ["account", "linked_local_draft_id"]);
+    let indexes: i64 = store
+        .db
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type='index' AND tbl_name='google_draft_sources' AND sql IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexes, 6);
+    let kept: String = store
+        .db
+        .query_row(
+            "SELECT draft_id FROM google_draft_sources WHERE provider_draft_id='r1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept, "google-draft-1");
+    // A Gmail draft's source goes in before the draft that mirrors it.
+    store
+        .db
+        .execute("INSERT INTO google_draft_sources VALUES('a',2,'r2','google-draft-2',NULL,1,1,1,1,'{}')", [])
+        .unwrap();
+}
+
+#[test]
+fn messages_once_too_large_are_fetched_again_after_upgrade() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let db = Connection::open(temp.path().join("store.sqlite3")).unwrap();
+    db.execute_batch("INSERT INTO accounts(id,name,email,provider) VALUES('a','A','a@example.test','google');
+        INSERT INTO google_accounts(account,google_subject,scopes_json,connection_state,mail_generation) VALUES('a','subject','[]','connected',3);")
+        .unwrap();
+    for (id, issue, deleted) in [
+        ("large", Some("item_too_large"), 0),
+        ("many", Some("attachment_limit"), 0),
+        ("broken", Some("malformed_response"), 0),
+        ("gone", Some("item_too_large"), 1),
+        ("whole", None, 0),
+    ] {
+        db.execute("INSERT INTO google_mail_coverage(account,remote_id,observed_generation,source_state,index_state,attachment_state,issue,deleted) VALUES('a',?1,3,'unavailable','unindexed','incomplete',?2,?3)", rusqlite::params![id, issue, deleted])
+            .unwrap();
+    }
+    db.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+        .unwrap();
+    drop(db);
+
+    let store = Store::open_live(temp.path()).unwrap();
+    let seen: Vec<(String, i64)> = store
+        .db
+        .prepare(
+            "SELECT remote_id,observed_generation FROM google_mail_coverage ORDER BY remote_id",
+        )
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let expected = [
+        ("broken", 3),
+        ("gone", 3),
+        ("large", 0),
+        ("many", 0),
+        ("whole", 3),
+    ];
+    assert_eq!(
+        seen,
+        expected.map(|(id, generation)| (id.to_owned(), generation))
+    );
 }

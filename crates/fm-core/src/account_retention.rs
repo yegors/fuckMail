@@ -47,6 +47,9 @@ pub(crate) fn purge_messages(db: &rusqlite::Connection, account: &str) -> Result
         [],
     )?;
     db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT blob_hash FROM attachments WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages)",[account])?;
+    // A draft may reuse an attachment from another message. Keep its identity
+    // and source reference independently when that received message is pruned.
+    db.execute("UPDATE attachments SET message_id=NULL WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages) AND EXISTS(SELECT 1 FROM drafts d,json_each(d.attachments_json) j WHERE d.account=attachments.account AND j.value=attachments.id)", [account])?;
     db.execute(
         "DELETE FROM message_fts WHERE rowid IN (SELECT source_rowid FROM retention_messages)",
         [],

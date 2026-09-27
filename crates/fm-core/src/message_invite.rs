@@ -29,7 +29,7 @@ pub struct InvitePlan {
     message: String,
     version: String,
     /// Earlier calendar attachments (hash, size), most recently sent first.
-    earlier: Vec<(String, u64)>,
+    earlier: Vec<(String, u64, Option<crate::attachment_content::SourcePart>)>,
 }
 
 /// The parsed invitation (if any) and its previous time, ready for
@@ -135,11 +135,11 @@ impl Store {
                 if !seen.insert(message.clone()) {
                     continue;
                 }
-                let part: Option<(String, i64)> = self.db.query_row(
-                    &format!("SELECT a.blob_hash,a.size FROM attachments a WHERE a.account=?1 AND a.message_id=?2 AND a.state='available' AND a.size BETWEEN 1 AND ?3 AND {CALENDAR_ATTACHMENT} ORDER BY lower(a.mime_type)='text/calendar' DESC,lower(a.mime_type)='application/ics' DESC,a.id LIMIT 1"),
-                    params![account, message, ics::MAX_PART_BYTES as i64], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
-                if let Some((hash, size)) = part {
-                    earlier.push((sent, hash, size as u64));
+                let part: Option<(String, i64, String)> = self.db.query_row(
+                    &format!("SELECT a.blob_hash,a.size,a.id FROM attachments a WHERE a.account=?1 AND a.message_id=?2 AND a.state='available' AND a.size BETWEEN 1 AND ?3 AND {CALENDAR_ATTACHMENT} ORDER BY lower(a.mime_type)='text/calendar' DESC,lower(a.mime_type)='application/ics' DESC,a.id LIMIT 1"),
+                    params![account, message, ics::MAX_PART_BYTES as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
+                if let Some((hash, size, id)) = part {
+                    earlier.push((sent, hash, size as u64, self.attachment_source(account, &id)?));
                 }
             }
         }
@@ -151,7 +151,7 @@ impl Store {
             version,
             earlier: earlier
                 .into_iter()
-                .map(|(_, hash, size)| (hash, size))
+                .map(|(_, hash, size, source)| (hash, size, source))
                 .collect(),
         })
     }
@@ -437,12 +437,14 @@ pub fn prepare(plan: InvitePlan, cancel: &CancellationToken) -> Result<PreparedI
         .filter(|invite| invite.method == "REQUEST" && invite.recurrence != RecurrenceId::Unknown)
     {
         if let Some(current) = invite.times {
-            for (hash, size) in &plan.earlier {
+            for (hash, size, source) in &plan.earlier {
                 if cancel.is_cancelled() {
                     return Err(stopped());
                 }
                 // A missing or changed attachment only loses the earlier time.
-                let Ok(bytes) = crate::local_content::read_blob(&plan.blobs, hash, *size) else {
+                let Ok(bytes) =
+                    crate::attachment_content::read(&plan.blobs, hash, *size, source.as_ref())
+                else {
                     continue;
                 };
                 let Some(earlier) = ics::parse(&String::from_utf8_lossy(&bytes), None) else {

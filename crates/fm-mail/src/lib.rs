@@ -142,6 +142,32 @@ pub enum ComposeError {
     MimeBuildFailed,
 }
 
+impl std::fmt::Display for ComposeError {
+    /// Says what to fix, in words for the person writing the message.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WrongAccount => {
+                f.write_str("the sender or an attachment belongs to another account")
+            }
+            Self::InvalidHeader(field) => {
+                write!(f, "the {field} contains characters mail cannot carry")
+            }
+            Self::InvalidAddress => f.write_str("a recipient address is not valid"),
+            Self::InvalidContentType => f.write_str("an attachment's file type is not valid"),
+            Self::InvalidContentId | Self::DuplicateContentId => {
+                f.write_str("an inline image reference is not valid")
+            }
+            Self::NoRecipients => f.write_str("it has no recipients"),
+            Self::AttachmentNotVerified => {
+                f.write_str("an attachment changed since it was added; attach it again")
+            }
+            Self::LimitExceeded(bound) => write!(f, "it has too many {bound}"),
+            Self::InvalidDate => f.write_str("its date is out of range"),
+            Self::MimeBuildFailed => f.write_str("it could not be assembled"),
+        }
+    }
+}
+
 /// Build once from a persisted draft and persist `raw` before queuing its immutable send
 /// operation. Deterministic boundaries/date/Message-ID make repeated builds reproducible.
 pub fn build_mail(
@@ -375,9 +401,53 @@ fn text_part(bytes: Vec<u8>, content_type: ContentType) -> SinglePart {
         .body(bytes)
 }
 
+/// The media type a file's name implies, for files added without one, or
+/// `application/octet-stream` when the extension is not a common one.
+pub fn attachment_mime(name: &str) -> &'static str {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("heic") => "image/heic",
+        Some("bmp") => "image/bmp",
+        Some("svg") => "image/svg+xml",
+        Some("tif" | "tiff") => "image/tiff",
+        Some("mp4" | "m4v") => "video/mp4",
+        Some("mov") => "video/quicktime",
+        Some("webm") => "video/webm",
+        Some("mkv") => "video/x-matroska",
+        Some("avi") => "video/x-msvideo",
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
+        Some("wav") => "audio/wav",
+        Some("pdf") => "application/pdf",
+        Some("zip") => "application/zip",
+        Some("txt") => "text/plain",
+        Some("csv") => "text/csv",
+        Some("ics") => "text/calendar",
+        Some("doc") => "application/msword",
+        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        Some("xls") => "application/vnd.ms-excel",
+        Some("xlsx") => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        Some("ppt") => "application/vnd.ms-powerpoint",
+        Some("pptx") => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        _ => "application/octet-stream",
+    }
+}
+
 fn attachment_part(part: &StagedAttachment) -> Result<SinglePart, ComposeError> {
-    let content_type: ContentType = part
-        .content_type
+    // Files added without a type carry the one their name implies, so an
+    // image arrives as an image.
+    let declared = if part.content_type == "application/octet-stream" {
+        attachment_mime(&part.filename)
+    } else {
+        part.content_type.as_str()
+    };
+    let content_type: ContentType = declared
         .parse()
         .map_err(|_| ComposeError::InvalidContentType)?;
     let builder = if let Some(cid) = &part.content_id {
@@ -470,12 +540,15 @@ fn message_id(value: &str) -> Result<(), ComposeError> {
     }
     Ok(())
 }
+/// A Message-ID or Content-ID without its angle brackets: RFC 5322 atext,
+/// dots and `@`. Gmail's own IDs use `=` and `_`, so replies must accept
+/// every atext character; spaces, quotes, brackets and controls stay out.
 fn bare_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._@+-".contains(&byte))
+            .all(|byte| byte.is_ascii_alphanumeric() || b".@!#$%&'*+-/=?^_`{|}~".contains(&byte))
 }
 fn checksum(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))

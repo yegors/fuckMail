@@ -13,6 +13,7 @@
 #include "GuiResizeBenchmark.h"
 #include "GuiCalendarBenchmark.h"
 #include "TitleBar.h"
+#include "WindowPlacement.h"
 
 #include <QCommandLineParser>
 #include <QDir>
@@ -340,7 +341,16 @@ int main(int argc, char **argv) {
         qCritical() << "GUI smoke timed out before loading a conversation.";
         QCoreApplication::exit(3);
     });
+    // Normal runs reopen where the window was left; test, capture and benchmark
+    // runs keep the default size so their results stay comparable.
+    std::unique_ptr<WindowPlacement> placement;
+    if (!parser.isSet("smoke") && !parser.isSet("self-test") && !parser.isSet("screenshot") && !parser.isSet("self-test-live-empty") && !benchmarkCount) {
+        placement = std::make_unique<WindowPlacement>(profile, QSize(1000, 650));  // Main.qml minimum
+        engine.setInitialProperties(placement->initialProperties());
+        engine.rootContext()->setContextProperty("windowLayout", placement.get());
+    }
     engine.loadFromModule("FuckMail", "Main");
+    if (placement) placement->track(qobject_cast<QWindow *>(engine.rootObjects().value(0)));
     // The window colour is Theme.canvas, so this follows every theme change.
     if (auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0))) {
         QObject::connect(window, &QQuickWindow::colorChanged, window, [window] { matchTitleBar(window); });

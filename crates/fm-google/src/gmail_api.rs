@@ -10,13 +10,19 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use oauth2::url::Url;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc, time::Duration};
 
 const MAX_JSON: usize = 4 * 1024 * 1024;
-/// Largest decoded message source accepted from Gmail, in bytes.
-pub const MAX_RAW_MIME: usize = 40 * 1024 * 1024;
-// Base64url grows the source by 4/3; the rest is room for the JSON envelope.
-const MAX_RAW_JSON: usize = MAX_RAW_MIME.div_ceil(3) * 4 + 64 * 1024;
+/// Largest decoded message source accepted from Gmail, in bytes: above the
+/// 150 MB Gmail accepts for an imported message, so any message it holds
+/// downloads.
+pub const MAX_RAW_MIME: usize = 160 * 1024 * 1024;
+// Base64url grows the source by 4/3; the rest is room for the JSON envelope,
+// including a full list of label IDs.
+const MAX_RAW_JSON: usize = MAX_RAW_MIME.div_ceil(3) * 4 + 1024 * 1024;
+// A raw read may take this long. The transport's default deadline would need
+// about 15 Mbit/s to fetch the largest source; this needs about 3 Mbit/s.
+const RAW_DEADLINE: Duration = Duration::from_secs(600);
 /// Largest authored MIME, in bytes before encoding, that a draft or send
 /// call will upload.
 pub const MAX_SUBMITTED_MIME: usize = 35_000_000;
@@ -145,14 +151,13 @@ impl GmailCall {
         if !query.is_empty() {
             url.query_pairs_mut().extend_pairs(query.iter().copied());
         }
-        let cap = if matches!(method, GmailMethod::MessageRaw | GmailMethod::DraftGet) {
-            MAX_RAW_JSON
-        } else {
-            MAX_JSON
-        };
+        let raw = matches!(method, GmailMethod::MessageRaw | GmailMethod::DraftGet);
         let mut request = HttpRequest::new(verb, url.as_str())
             .map_err(|_| invalid())?
-            .response_limit(cap);
+            .response_limit(if raw { MAX_RAW_JSON } else { MAX_JSON });
+        if raw {
+            request = request.deadline(RAW_DEADLINE);
+        }
         if let Some(body) = body {
             request = request
                 .body(
@@ -247,6 +252,35 @@ impl GmailCall {
         history_id(start)?;
         let size = page_size(max_results)?;
         let mut params = vec![("startHistoryId", start), ("maxResults", size.as_str())];
+        optional_param(&mut params, "pageToken", page, 4096)?;
+        let mut call = Self::new(
+            account,
+            GmailMethod::HistoryList,
+            HttpMethod::Get,
+            &["history"],
+            &params,
+            None,
+        )?;
+        call.previous_page = page.map(str::to_owned);
+        call.work.class = WorkClass::DeltaRead;
+        Ok(call)
+    }
+    /// `history.list` of message deletions only, from `start`: the messages
+    /// Gmail deleted for good since then. Its pages carry no other change,
+    /// so they must never be published as a history page.
+    pub fn deleted_history(
+        account: &AccountId,
+        start: &str,
+        page: Option<&str>,
+        max_results: u16,
+    ) -> Result<Self, GoogleError> {
+        history_id(start)?;
+        let size = page_size(max_results)?;
+        let mut params = vec![
+            ("startHistoryId", start),
+            ("maxResults", size.as_str()),
+            ("historyTypes", "messageDeleted"),
+        ];
         optional_param(&mut params, "pageToken", page, 4096)?;
         let mut call = Self::new(
             account,
@@ -852,6 +886,12 @@ impl<T: HttpTransport> GmailApi<T> {
                 call.method == GmailMethod::HistoryList,
             ));
         }
+        if call.method == GmailMethod::MessageRaw {
+            return Ok(GmailReply::Raw(raw_outcome(
+                response.body,
+                call.expected_id.as_deref().unwrap(),
+            )));
+        }
         let bytes = &response.body;
         match call.method {
             GmailMethod::Profile => {
@@ -891,10 +931,7 @@ impl<T: HttpTransport> GmailApi<T> {
                 // against the owning checkpoint before any atomic publication.
                 Ok(GmailReply::History(value))
             }
-            GmailMethod::MessageRaw => Ok(GmailReply::Raw(raw_outcome(
-                bytes,
-                call.expected_id.as_deref().unwrap(),
-            ))),
+            GmailMethod::MessageRaw => unreachable!(),
             GmailMethod::MessageState => {
                 let value: GmailMessageState = decode_json(bytes, MAX_JSON)?;
                 checked(&value.id, 256)?;
@@ -1128,35 +1165,80 @@ fn submission(response: Result<HttpResponse, TransportError>) -> GmailSubmission
         )),
     }
 }
-fn raw_outcome(bytes: &[u8], expected: &str) -> RawOutcome {
-    if bytes.len() > MAX_RAW_JSON {
+// A `messages.get` raw reply as it arrives. The source is most of the reply,
+// so it borrows from the reply's bytes while the rest is checked.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawReply<'a> {
+    id: String,
+    thread_id: String,
+    #[serde(default)]
+    label_ids: Vec<String>,
+    history_id: String,
+    #[serde(borrow)]
+    raw: Cow<'a, str>,
+    internal_date: Option<String>,
+    size_estimate: Option<u64>,
+}
+fn raw_outcome(mut body: Vec<u8>, expected: &str) -> RawOutcome {
+    if body.len() > MAX_RAW_JSON {
         return RawOutcome::TooLarge;
     }
-    let Ok(value) = decode_json::<RawItem>(bytes, MAX_RAW_JSON) else {
+    let Ok(reply) = serde_json::from_slice::<RawReply>(&body) else {
         return RawOutcome::Malformed;
     };
-    if value.message.raw.len() > MAX_RAW_MIME.div_ceil(3) * 4 {
+    if reply.raw.len() > MAX_RAW_MIME.div_ceil(3) * 4 {
         return RawOutcome::TooLarge;
     }
-    if value.message.id != expected
-        || checked(&value.message.id, 256).is_err()
-        || checked(&value.message.thread_id, 256).is_err()
-        || history_id(&value.message.history_id).is_err()
-        || value.message.label_ids.len() > 1000
-        || value
-            .message
-            .label_ids
-            .iter()
-            .any(|v| checked(v, 256).is_err())
-        || value
+    if reply.id != expected
+        || checked(&reply.id, 256).is_err()
+        || checked(&reply.thread_id, 256).is_err()
+        || history_id(&reply.history_id).is_err()
+        || reply.label_ids.len() > 1000
+        || reply.label_ids.iter().any(|v| checked(v, 256).is_err())
+        || reply
             .internal_date
             .as_ref()
             .is_some_and(|v| v.parse::<i64>().is_err())
-        || !valid_raw_encoding(&value.message.raw)
+        || !valid_raw_encoding(&reply.raw)
     {
         return RawOutcome::Malformed;
     }
-    RawOutcome::Available(value)
+    let RawReply {
+        id,
+        thread_id,
+        label_ids,
+        history_id,
+        raw,
+        internal_date,
+        size_estimate,
+    } = reply;
+    // Move the source to the front of the reply's own buffer rather than
+    // copying it, so a large message is held once instead of twice.
+    let raw = match raw {
+        Cow::Owned(raw) => raw,
+        Cow::Borrowed(raw) => {
+            let start = raw.as_ptr() as usize - body.as_ptr() as usize;
+            let length = raw.len();
+            body.copy_within(start..start + length, 0);
+            body.truncate(length);
+            match String::from_utf8(body) {
+                Ok(raw) => raw,
+                Err(_) => return RawOutcome::Malformed,
+            }
+        }
+    };
+    RawOutcome::Available(RawItem {
+        message: RawMessage {
+            id,
+            thread_id,
+            label_ids,
+            history_id,
+            raw,
+        },
+        internal_date,
+        size_estimate,
+    })
 }
 fn validate_draft(
     draft: &GmailDraft,

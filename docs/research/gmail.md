@@ -97,7 +97,7 @@ RAW is the full base64url-encoded RFC message; thread IDs and labels remain mess
 
 Snapshot existing message IDs for read-on-open, Done and Delay; only deliberate GUI open writes read state. Prefetch, hydration and CLI queries do not. Retry journaled label changes on those exact IDs and reconcile receipts; don't use thread mutations that could accidentally include a later arrival. Category destination changes preserve unrelated labels and read/star state; Inbox removal stays explicit policy.
 
-**Concrete current-code blocker:** `crates/fm-google/src/sync.rs` rejects decoded MIME above 40 MiB; `crates/fm-core/src/google_store.rs` rejects text above 256 KiB and more than 50 attachments, plus header bounds. Google Workspace can receive larger messages and up to 500 attachments. Revise streaming/storage/parser bounds and explicit unavailable/error behavior before arbitrary live mail; do not blindly raise all allocation caps or silently truncate retained source. [Receiving limits](https://knowledge.workspace.google.com/admin/gmail/gmail-receiving-limits-in-google-workspace)
+**Size and attachment bounds:** the 40 MiB source and 50-attachment limits were raised to Gmail's own limits; see [Large messages](#large-messages-2026-09-27). The 256 KiB text cap and header bounds remain. [Receiving limits](https://knowledge.workspace.google.com/admin/gmail/gmail-receiving-limits-in-google-workspace)
 
 ### Composition, draft synchronization and uncertain send
 
@@ -164,3 +164,29 @@ Retain exact RAW and decoded attachments using existing blobs and nullable-messa
 Core must reject save, attachment mutation, upload, Send and destructive discard of a read-only imported snapshot; UI disabling alone is insufficient. Fit the existing Drafts list, composer and compact status area. Keep accepted local send records reachable until the existing draft-history/Inspect surface gains typed Google receipts; hiding those rows first would strand their history. A subsequent **B3B** must complete supported authoring/adoption, cross-client conflict decisions and explicit remote-draft deletion. Draft deletion is permanent and distinct from received-message Trash or observed absence. [Draft deletion](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.drafts/delete).
 
 Required evidence includes two accounts and multiple pages; duplicate/replaced IDs, cancellation/resume, expired tokens, revoked generations and exact-target 404; exact RAW/routing/HTML/binary/CID retention and malformed/unsupported previews; zero import/view/attempted-edit writes or received arrivals; B1/B2 race/receipt preservation; bounded memory and cached-query progress; paired actual CLI/native offline reopen and unchanged navigation budgets. This is a concrete next-packet proposal, not an implementation or complete remote-Drafts claim. Schema and shared contract revisions are to be fixed at its start.
+
+## Large messages (2026-09-27)
+
+The founder's profile had two messages in one account recorded as `item_too_large` with no source. Their size was never recorded, because the transport refused the declared length before reading. A read-only trace found these limits in path order:
+
+| Limit | Where | Effect when exceeded |
+|---|---|---|
+| 64 MiB transport response ceiling (hard maximum 128 MiB) | `fm-google/src/transport.rs` | `ResponseTooLarge` |
+| About 53 MiB raw reply cap (40 MiB of source as base64url, plus 64 KiB) | `gmail_api.rs` | `item_too_large`, source unavailable (the cause here) |
+| A second hard-coded 40 MiB decode check | `sync.rs` | `malformed_response` |
+| 64 MiB blob cap | `content.rs` | `content_too_large`, which stops the mail worker |
+| 120 s whole-request deadline | transport | endless retries on slower links |
+| 50 received attachments | `google_store.rs` | `attachment_limit`: source kept, message never listed |
+
+Gmail accepts imported messages up to 150 MB ([upload limits](https://developers.google.com/workspace/gmail/api/guides/uploads)). Workspace receives messages with up to 500 attachments ([receiving limits](https://knowledge.workspace.google.com/admin/gmail/gmail-receiving-limits-in-google-workspace)). The bounds were raised together: 160 MiB of source, 256 MiB transport ceiling, the blob cap equal to the source bound, 500 attachments, and a 10-minute raw deadline.
+
+**Memory.** These figures are arithmetic, not measurements. A source of S bytes arrives as about 1.33·S of JSON.
+- **Before:** the reply buffer (grown by doubling), a copied base64url string and the decoded source were all live, about 3.3·S plus up to 1.33·S of regrowth.
+- **Now:** the buffer is sized by the declared length, the string reuses it, and decoding runs in place. That is about 1.33·S, plus the parser's decoded attachment parts (up to about S).
+- **Concurrency:** at most two raw bodies are prepared at once, through the engine's two preparation permits.
+
+**Still open:**
+- Re-preparing a retained source base64-encodes it again, about 2.3·S at peak.
+- Raw downloads still buffer in memory rather than streaming to disk.
+- Extracted text stays capped at 256 KiB, with the source kept whole.
+- Header bounds still hold a message back as `header_limit`.

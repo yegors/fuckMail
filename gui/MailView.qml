@@ -34,17 +34,20 @@ Item {
     property var replyStates: ({})
     property string hydratedDraftIdentity: ""
     property bool restoring: false
+    // Window layout kept outside the engine (WindowPlacement); absent in tests.
+    readonly property QtObject layoutStore: typeof windowLayout !== "undefined" ? windowLayout : null
     property var expandedMembers: ({})
     property var collapsedGroups: ({})
     // One JS copy of the list per change. Each read of backend.conversations
     // converts the whole list again, and rows read it once per delegate.
     readonly property var rows: backend.conversations
     property string loadedConversation: ""
+    property string loadedThread: ""
     property string pendingReveal: ""
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || textMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     // Spam is listed and read live from Gmail; none of it is stored. Spam and
@@ -324,7 +327,14 @@ Item {
         if (days > 1 && days < 7) return Qt.formatDate(date,"dddd")
         return Qt.formatDate(date,"MMMM yyyy")
     }
-    function groupOf(row) { return dateGroups && row ? dateGroup(row) : row ? row.section || row.display_group || row.group || "done" : "done" }
+    // Sent and Drafts group by day. Each row's group and each group's size are
+    // worked out once per list, not again for every header and row.
+    readonly property var dateGrouping: {
+        const of = {}, counts = {}
+        if (dateGroups) for (const row of mail.rows) { const group = dateGroup(row); of[row.id] = group; counts[group] = (counts[group] || 0) + 1 }
+        return {of: of, counts: counts}
+    }
+    function groupOf(row) { return dateGroups && row ? dateGrouping.of[row.id] || dateGroup(row) : row ? row.section || row.display_group || row.group || "done" : "done" }
     function groupTitle(group) {
         const fixed = {review:"To review",held:"Delayed",done:"Done","done:undated":"Undated"}[group]
         if (fixed) return fixed
@@ -363,7 +373,7 @@ Item {
         return month ? "2" + ("00000000" + (99999999 - (Number(month[1]) * 12 + Number(month[2])))).slice(-8) : "3"
     }
     function sectionCount(key) { const section = inboxSections.find(function(s) { return s.key === key }); return section ? section.count : 0 }
-    function groupCount(group) { return dateGroups ? mail.rows.filter(function(row) { return mail.groupOf(row) === group }).length : backend.folder === "inbox" ? sectionCount(group) : (backend.querySummary.filtered_group_counts || {})[group] || 0 }
+    function groupCount(group) { return dateGroups ? dateGrouping.counts[group] || 0 : backend.folder === "inbox" ? sectionCount(group) : (backend.querySummary.filtered_group_counts || {})[group] || 0 }
     function groupKey(group) { return backend.account + "/" + backend.folder + "/" + group }
     // Inbox sections keep their collapsed state in the account's saved view.
     function groupCollapsed(group) { return backend.folder === "inbox" ? backend.collapsedGroups.indexOf(group) >= 0 : collapsedGroups[groupKey(group)] === true }
@@ -372,18 +382,40 @@ Item {
         if (backend.folder === "inbox") {
             const next = backend.collapsedGroups.filter(function(key) { return key !== group })
             if (next.length === backend.collapsedGroups.length) next.push(group)
-            // Rows in memory hide or show at once; keep the header in place
-            // now and again once the refresh lands.
-            backend.setCollapsedGroups(next); restoreSectionAnchor(true); return
+            // Rows in memory hide or show at once, just after this click
+            // returns: the row drawing the clicked header may leave the list.
+            // The header is put back before that frame paints, and again once
+            // the refresh lands.
+            Qt.callLater(function() { backend.setCollapsedGroups(next); mail.anchorAfterChange(false) })
+            return
         }
         const next = Object.assign({}, collapsedGroups); next[groupKey(group)] = !groupCollapsed(group); collapsedGroups = next
-        Qt.callLater(restoreSectionAnchor)
+        anchorAfterChange(true)
     }
     // A clicked section header stays where it was on screen while its rows
-    // collapse or expand, as on a page. Inbox rows reload after the click.
+    // collapse or expand, as on a page. Inbox rows reload after the click; the
+    // header holds until that refresh lands, however long sync delays it, and
+    // lets go as soon as the list is scrolled.
     property string anchoredSection: ""
     property real anchoredOffset: 0
-    Timer { id: anchorExpiry; interval: 2000; onTriggered: mail.anchoredSection = "" }
+    // Rows changed under the anchor: it is restored after bindings settle and
+    // before the next frame paints. A release restores it one last time.
+    property bool anchorPending: false
+    property bool anchorRelease: false
+    function anchorAfterChange(release) {
+        anchorPending = true; if (release) anchorRelease = true
+        if (Window.window) Window.window.update()
+    }
+    Connections {
+        target: mail.Window.window
+        function onAfterAnimating() {
+            if (!mail.anchorPending) return
+            const release = mail.anchorRelease
+            mail.anchorPending = false; mail.anchorRelease = false
+            if (mail.anchoredSection) mail.restoreSectionAnchor(!release)
+        }
+    }
+    Timer { id: anchorExpiry; interval: 15000; onTriggered: mail.anchoredSection = "" }
     function findNamed(item, name) {
         if (!item) return null
         if (item.objectName === name && item.visible) return item
@@ -422,6 +454,33 @@ Item {
         if (backend.folder !== "inbox" || index < 0 || (index > 0 && previous === current)) return []
         return sectionsBetween(index > 0 ? previous : undefined, current)
     }
+    // The height the rows not loaded yet will take, from Core's counts, so the
+    // list is its full length from the start and its scrollbar never jumps as
+    // older pages arrive. Inbox counts are exact per section; Sent's day
+    // headers are estimated from the rows already shown.
+    readonly property real unloadedHeight: {
+        if (!backend.hasMore) return 0
+        const shown = {}
+        let rowCount = 0
+        for (const row of mail.rows) if (!row.leaving) { const group = mail.groupOf(row); shown[group] = (shown[group] || 0) + 1; ++rowCount }
+        if (backend.folder === "inbox" && inboxSections.length) {
+            const last = rowCount ? mail.groupOf(mail.rows[mail.rows.length - 1]) : undefined
+            let after = last === undefined, height = 0
+            for (const section of inboxSections) {
+                const open = !mail.groupCollapsed(section.key)
+                if (section.key === last) { after = true; if (open) height += Math.max(0, section.count - (shown[section.key] || 0)) * mail.rowHeight; continue }
+                if (after) height += 44 + (open ? section.count * mail.rowHeight : 0)
+            }
+            return height
+        }
+        const left = Math.max(0, Number(backend.querySummary.filtered_conversation_count || 0) - rowCount)
+        const headers = mail.dateGroups && rowCount ? Object.keys(mail.dateGrouping.counts).length / rowCount : 0
+        return left * (mail.rowHeight + headers * 44)
+    }
+    // How many rows reach the bottom of the view, for a scroll past the loaded ones.
+    function rowsThrough(viewBottom, loadedBottom) {
+        return mail.rows.length + Math.ceil(Math.max(0, viewBottom - loadedBottom) / mail.rowHeight) + 100
+    }
     readonly property var trailingSections: {
         if (backend.folder !== "inbox") return []
         const after = sectionsBetween(mail.rows.length ? groupOf(mail.rows[mail.rows.length - 1]) : undefined, undefined)
@@ -448,7 +507,7 @@ Item {
         font.pointSize: Theme.fontPoints(11.5); font.weight: Font.Normal
         implicitHeight: Math.round(Theme.fontSize(11.5) * 1.4) + 8; leftPadding: 9; rightPadding: 9; topPadding: 0; bottomPadding: 0
         foreground: Theme.text
-        background: Rectangle { radius: 4; color: headerLabel.hovered ? Theme.surface : "transparent"; border.color: headerLabel.activeFocus ? Theme.focusBorder : Theme.inkAlpha(.35) }
+        background: Rectangle { radius: 4; color: headerLabel.hovered ? Theme.surface : "transparent"; border.color: headerLabel.visualFocus ? Theme.focusBorder : Theme.inkAlpha(.35) }
     }
     // Scope tab: 20px title, dimmed until chosen.
     component ScopeTab: FmButton {
@@ -498,7 +557,7 @@ Item {
             }
             Rectangle { y: toggleRow.y + toggleRow.height + 4; width: toggleRow.width; height: Theme.ruleWidth; color: railToggle.selected ? Theme.accent : "transparent" }
         }
-        background: Rectangle { color: "transparent"; radius: 3; border.width: railToggle.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+        background: Rectangle { color: "transparent"; radius: 3; border.width: railToggle.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
     }
     // Category rail chip: name plus a smaller, dimmed count.
     component RailChip: FmButton {
@@ -514,7 +573,7 @@ Item {
             Text { id: chipName; anchors.verticalCenter: parent.verticalCenter; text: railChip.label; color: railChip.foreground; font: railChip.font; textFormat: Text.PlainText }
             Text { id: chipCount; x: chipName.implicitWidth + 6; anchors.baseline: chipName.baseline; text: railChip.count; color: railChip.foreground; opacity: .55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
         }
-        background: Rectangle { radius: height / 2; color: railChip.selected ? Theme.text : railChip.hovered ? Theme.surface : "transparent"; border.color: railChip.activeFocus ? Theme.accent : railChip.selected ? Theme.text : Theme.controlBorder }
+        background: Rectangle { radius: height / 2; color: railChip.selected ? Theme.text : railChip.hovered ? Theme.surface : "transparent"; border.color: railChip.visualFocus ? Theme.accent : railChip.selected ? Theme.text : Theme.controlBorder }
     }
     component GroupHeader: ItemDelegate {
         id: heading
@@ -626,7 +685,7 @@ Item {
         onClicked: senderCard.showSender(email, personName, pill)
         background: Rectangle {
             radius: 12; color: pill.open && pill.hovered ? Theme.bg4 : "transparent"
-            border.width: pill.activeFocus ? 1 : 0; border.color: Theme.focusBorder
+            border.width: pill.visualFocus ? 1 : 0; border.color: Theme.focusBorder
             Behavior on color { ColorAnimation { duration: 120 } }
         }
         contentItem: Item {
@@ -781,6 +840,13 @@ Item {
         }
         return false
     }
+    // Attachment cards a click folded away, by message, for this session.
+    property var collapsedAttachments: ({})
+    function attachmentsCollapsed(id) { return collapsedAttachments[expansionKey + id] === true }
+    function toggleAttachments(id) {
+        const next = Object.assign({}, collapsedAttachments), key = expansionKey + id
+        next[key] = !attachmentsCollapsed(id); collapsedAttachments = next
+    }
     function memberIsExpanded(id, index) {
         const state = expandedMembers[expansionKey + id]
         return state === undefined ? index === members.length - 1 : state === true
@@ -894,47 +960,110 @@ Item {
         const next = Object.assign({},replyStates); next[identity] = value; replyStates = next
         replyOpen = value; backend.remember("replyOpen",value)
     }
+    // This conversation's reply that is on its way to Gmail or already sent.
+    function replyOnItsWay() {
+        const draft = backend.draft.draft_id || ""
+        return !!draft && members.some(function(m) { return m.is_outgoing && m.draft_id === draft })
+    }
+    // A discard closes the reply once. Reply may then reopen the discarded draft,
+    // which typing or a file revives; later refreshes of it leave it open, and
+    // only a new discard (a new revision) closes it again.
+    property string closedDiscard: ""
+    function discardClosesReply() {
+        const key = backend.draftStatus === "Draft discarded" ? backend.account + "/" + (backend.draft.draft_id || backend.selectedId) + "/" + (backend.draft.revision || 0) : ""
+        const fresh = key.length > 0 && key !== closedDiscard
+        closedDiscard = key
+        return fresh
+    }
+    // The kind of message being written under this thread, if any.
+    readonly property string composingMode: replyOpen && members.length > 0 ? (backend.draft.mode || "reply") : ""
+    // Reply all shows while the thread's reply offers it; writing a forward,
+    // whose draft cannot say, does not hide it.
+    property var replyAllThreads: ({})
+    readonly property bool replyAllAvailable: {
+        const mode = backend.draft.mode || "reply"
+        if (backend.draft.reply_all_available !== undefined && (mode === "reply" || mode === "reply_all")) return backend.draft.reply_all_available === true
+        return replyAllThreads[backend.account + "/" + backend.selectedId] === true
+    }
+    function noteReplyAll() {
+        const mode = backend.draft.mode || "reply", key = backend.account + "/" + backend.selectedId
+        if (backend.draft.reply_all_available === undefined || (mode !== "reply" && mode !== "reply_all") || replyAllThreads[key] === (backend.draft.reply_all_available === true)) return
+        const next = Object.assign({}, replyAllThreads); next[key] = backend.draft.reply_all_available === true; replyAllThreads = next
+    }
+    // Reply, Reply all and Forward stay under the thread while one is being
+    // written. The one being written brings it into view; another turns it
+    // into that kind, keeping the words written so far. With the box closed,
+    // each starts its own draft. A save under way finishes first.
+    function compose(mode) {
+        if (backend.accountArchived || backend.unsavedAccountBuffer) return
+        if (composingMode === mode && !sentReplyDone && !replyOnItsWay()) { revealReply(); return }
+        if (mode === "reply") openReply(); else if (replyOpen) backend.switchDraft(mode); else backend.beginDraft(mode)
+    }
     function openReply() {
         if (backend.accountArchived || backend.unsavedAccountBuffer) return
-        // Once a reply has gone out, Reply writes a new one. The sent draft
-        // reopens only if a follow-up was being written in it.
-        if ((backend.draft.mode && backend.draft.mode !== "reply") || mail.sentReplyDone) { backend.beginDraft("reply"); return }
+        // Once a reply has gone out, or while it is still going, Reply writes
+        // a new one. The sent draft reopens only if a follow-up was being
+        // written in it.
+        if ((backend.draft.mode && backend.draft.mode !== "reply") || mail.sentReplyDone || replyOnItsWay()) { if (mail.replyOpen) backend.switchDraft("reply"); else backend.beginDraft("reply"); return }
         resumeDraft()
     }
     function resumeDraft() {
         setReplyOpen(true)
+        revealReply()
+    }
+    function revealReply() {
+        // A reply turned into a forward, or back, fades in as it changes.
+        if (replyRevealIdentity !== composerIdentity && reply.visible) replyOpening.restart()
         replyRevealIdentity = composerIdentity
-        replyReveal.pass = 0; replyReveal.stable = 0; replyReveal.lastTop = -1; replyReveal.lastHeight = -1
+        replyReveal.pass = 0; replyReveal.stable = 0; replyReveal.lastHeight = -1; replyReveal.focused = false; replyReveal.scrolled = false
         replyReveal.restart()
     }
+    // The first move to the reply glides; later ones, as the thread lays out, follow at once.
+    NumberAnimation { id: revealScroll; target: reader; property: "contentY"; duration: 200; easing.type: Easing.OutCubic }
+    // An opened reply shows whole, at the end of the thread. The reader keeps
+    // it there while the thread above finishes loading and laying out, until
+    // the height has held for 250 ms (3 s at most) or the reader is scrolled.
     Timer {
         id: replyReveal
         objectName: "replyReveal"
         interval: 16; repeat: true
         property int pass: 0
         property int stable: 0
-        property real lastTop: -1
         property real lastHeight: -1
+        property bool focused: false
+        property bool scrolled: false
         onTriggered: {
             if (!mail.visible || !mail.replyOpen || mail.replyRevealIdentity !== mail.composerIdentity) { stop(); return }
             ++pass
-            const top = reply.mapToItem(reader.contentItem,0,0).y
             const height = reader.contentHeight
-            stable = top === lastTop && height === lastHeight ? stable+1 : 0
-            lastTop = top; lastHeight = height
-            if (reply.visible && reply.height>0 && height>=top+reply.height-1 && (stable>=1 || pass>=12)) {
-                reader.cancelFlick()
-                reader.contentY = Math.max(0,Math.min(height-reader.height,top-12))
-                backend.remember("readerY",reader.contentY)
-                reply.focusEditor()
-                if (stable>=2 || pass>=12) stop()
-            } else if (pass>=12) stop()
+            stable = height === lastHeight ? stable+1 : 0
+            lastHeight = height
+            if (reply.visible && reply.height > 0) {
+                const bottom = Math.max(0, height - reader.height)
+                // Where the form settles, without its opening slide.
+                const top = reply.mapToItem(reader.contentItem,0,0).y - replyShift.y
+                // The thread scrolls down until the form's footer is in view
+                // with 24px to spare. A form already that far up stays put,
+                // and a new message does not scroll.
+                const target = reply.mode === "new" ? reader.contentY
+                    : Math.max(reader.contentY, Math.min(bottom, top + reply.height + 24 - reader.height))
+                if (revealScroll.running) {
+                    if (Math.abs(revealScroll.to - target) > .5) { revealScroll.stop(); revealScroll.from = reader.contentY; revealScroll.to = target; revealScroll.start() }
+                } else if (Math.abs(reader.contentY - target) > .5) {
+                    reader.cancelFlick()
+                    if (scrolled) reader.contentY = target
+                    else { revealScroll.from = reader.contentY; revealScroll.to = target; revealScroll.start() }
+                }
+                scrolled = true
+                backend.remember("readerY", target)
+                if (!focused) { reply.focusEditor(); focused = true }
+            }
+            if (((stable >= 15 && mail.members.length > 0) || pass >= 190) && !revealScroll.running) stop()
         }
     }
     function restorePosition() {
         restoring = true
         const view = backend.presentation
-        if (view.splitWidth) leftPane.SplitView.preferredWidth = Math.max(340,Math.min(mail.width-470,view.splitWidth))
         expanded = view.expanded || false
         const identity = composerIdentity
         const sameDraft = backend.activeDraftId.length ? view.selectedDraft === backend.activeDraftId : !view.selectedDraft && view.selected === backend.selectedId
@@ -953,19 +1082,25 @@ Item {
         function onAccountChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.pendingComposeId = "" }
         function onQueryChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close() }
         function onPresentationChanged() { Qt.callLater(mail.restorePosition) }
-        function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart(); if (mail.anchoredSection) Qt.callLater(mail.restoreSectionAnchor) }
+        // The header is put back before the changed rows paint, never a frame later.
+        function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart(); if (mail.anchoredSection) mail.anchorAfterChange(false) }
         function onLoadingChanged() {
             if (!backend.loading) mail.settledScope = mail.listScope
-            if (!backend.loading && mail.anchoredSection) Qt.callLater(mail.restoreSectionAnchor)
+            if (!backend.loading && mail.anchoredSection) mail.anchorAfterChange(true)
         }
         function onConversationChanged() {
             mail.completeMenuCompose()
-            const identity = mail.currentComposerIdentity()
+            const identity = mail.currentComposerIdentity(), thread = backend.account + "/" + backend.selectedId
             if (identity !== mail.loadedConversation) {
-                mail.loadedConversation = identity; mail.expanded = false; mail.hydratedDraftIdentity = ""
+                // A reply or forward started in the thread on screen keeps its
+                // place and unfolded messages; only another thread starts over.
+                const sameThread = thread === mail.loadedThread && backend.selectedId.length > 0 && mail.members.length > 0
+                mail.loadedConversation = identity; mail.hydratedDraftIdentity = ""
+                if (!sameThread) mail.expanded = false
                 mail.replyOpen = mail.replyStates[identity] === true
-                reader.contentY = Math.max(0,backend.presentation.readerY||0)
+                if (!replyReveal.running && !sameThread) reader.contentY = Math.max(0,backend.presentation.readerY||0)
             }
+            mail.loadedThread = thread
             if (mail.members.length) {
                 const selected = backend.presentation.selectedMember || ""
                 if (selected && mail.members.some(function(m) { return m.id === selected })) {
@@ -975,9 +1110,11 @@ Item {
             }
         }
         function onDraftChanged() {
+            mail.noteReplyAll()
+            const discarded = backend.draftStatus === "Draft discarded", closing = mail.discardClosesReply()
             if (backend.googleSend.sent_current || mail.sentReplyDone) { mail.setReplyOpen(false); return }
             if (backend.activeDraftId.length && Object.keys(backend.draft).length) {
-                if (backend.draftStatus === "Draft discarded") mail.replyOpen = false
+                if (discarded) { if (closing) mail.setReplyOpen(false) }
                 else if (mail.hydratedDraftIdentity !== backend.account+"/draft/"+backend.activeDraftId) {
                     const identity = mail.currentComposerIdentity()
                     mail.hydratedDraftIdentity = identity
@@ -985,14 +1122,13 @@ Item {
                     const opened = backend.presentation.selectedDraft !== backend.activeDraftId || backend.presentation.replyOpen !== false
                     const replies = Object.assign({}, mail.replyStates); replies[identity] = opened; mail.replyStates = replies
                     mail.replyOpen = opened
-                    mail.replyRevealIdentity = mail.composerIdentity
-                    if (mail.replyOpen) { replyReveal.pass=0; replyReveal.stable=0; replyReveal.lastTop=-1; replyReveal.lastHeight=-1; replyReveal.restart() }
+                    if (mail.replyOpen) mail.revealReply()
                 }
                 return
             }
             if (!backend.selectedId.length || !Object.keys(backend.draft).length) return
             const identity = backend.account + "/" + backend.selectedId
-            if (backend.draftStatus === "Draft discarded") { mail.setReplyOpen(false); return }
+            if (discarded) { if (closing) mail.setReplyOpen(false); return }
             if (mail.hydratedDraftIdentity !== identity) {
                 mail.hydratedDraftIdentity = identity
                 if (mail.replyStates[identity] === undefined)
@@ -1004,6 +1140,7 @@ Item {
     SplitView {
         id: split
         anchors.fill: parent; orientation: Qt.Horizontal
+        onResizingChanged: if (!resizing && mail.layoutStore) mail.layoutStore.mailSplitWidth = leftPane.width
         handle: Item {
             id: splitHandle
             implicitWidth: 1
@@ -1013,8 +1150,14 @@ Item {
         }
         Item {
             id: leftPane
+            objectName: "mailListPane"
+            // One divider position for the whole app, set once at startup and saved
+            // when a drag ends, so switching accounts never relays out the panes.
             SplitView.preferredWidth: mail.width * 0.50; SplitView.minimumWidth: 340
-            onWidthChanged: if (!mail.restoring && width > 0) backend.remember("splitWidth",width)
+            Component.onCompleted: {
+                const saved = mail.layoutStore ? mail.layoutStore.mailSplitWidth : 0
+                if (saved > 0) SplitView.preferredWidth = mail.width > 0 ? Math.max(340, Math.min(mail.width - 470, saved)) : saved
+            }
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
                 ColumnLayout {
@@ -1061,8 +1204,11 @@ Item {
                                 font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
                                 foreground: mail.binMode || hovered ? Theme.text : Theme.inkAlpha(.4)
                                 tip: "Spam and Trash"
-                                background: Rectangle { radius: 4; color: binMenu.opened || binMenuButton.hovered ? Theme.bg4 : "transparent"; border.width: binMenuButton.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
-                                onClicked: binMenu.opened ? binMenu.close() : binMenu.open()
+                                background: Rectangle { radius: 4; color: binMenu.opened || binMenuButton.hovered ? Theme.bg4 : "transparent"; border.width: binMenuButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                                // The press that reached this button already closed the menu.
+                                property bool pressClosedMenu: false
+                                onPressed: pressClosedMenu = !binMenu.opened && Date.now() - binMenu.closedAt < 50
+                                onClicked: { if (binMenu.opened) binMenu.close(); else if (!pressClosedMenu) binMenu.open(); pressClosedMenu = false }
                             }
                             Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
                         }
@@ -1127,7 +1273,6 @@ Item {
                                     required property var modelData
                                     objectName: "railLabel_" + modelData.id
                                     label: modelData.name; count: modelData.conversation_count; selected: mail.categoryOn(modelData.id)
-                                    tip: modelData.conversation_count + " conversations labelled " + modelData.name + (selected ? " · click to turn off" : "")
                                     onHoveredChanged: if (hovered) backend.prefetchCategory(mail.toggledCategory(modelData.id))
                                     onClicked: mail.toggleCategory(modelData.id)
                                 }
@@ -1146,7 +1291,7 @@ Item {
                                     width: 26; height: 22; implicitWidth: 26; leftPadding: 0; rightPadding: 0
                                     selected: backend.filters.kind === modelData; foreground: selected ? Theme.canvas : Theme.muted
                                     tip: (modelData === "people" ? "People only" : "Automated only") + (selected ? " · click again to show all kinds" : "")
-                                    background: Rectangle { radius: 11; color: kindButton.selected ? Theme.text : kindButton.hovered ? Theme.hover : "transparent"; border.color: kindButton.activeFocus ? Theme.accent : "transparent" }
+                                    background: Rectangle { radius: 11; color: kindButton.selected ? Theme.text : kindButton.hovered ? Theme.hover : "transparent"; border.color: kindButton.visualFocus ? Theme.accent : "transparent" }
                                     onHoveredChanged: if (hovered) backend.prefetchFilters(mail.kindFilters(modelData))
                                     onClicked: mail.setKind(modelData)
                                 }
@@ -1217,11 +1362,17 @@ Item {
                     onOriginYChanged: if (!mail.restoring && !list.moving) backend.remember("listY", contentY - originY)
                     Timer {
                         id: prefetchTimer; interval: 40
-                        onTriggered: if (mail.visible && !mail.draftsMode && list.count > 0 && backend.hasMore && !backend.loading
-                            && list.contentY + list.height * 4 >= list.originY + list.contentHeight) backend.prefetchMore()
+                        // Older rows load while the view is within four screens of
+                        // the loaded ones; a jump past them loads through the view.
+                        onTriggered: {
+                            if (!mail.visible || list.count === 0 || !backend.hasMore || backend.loading || list.contentY + list.height * 4 < list.loadedBottom) return
+                            if (list.contentY + list.height > list.loadedBottom) backend.loadThrough(mail.rowsThrough(list.contentY + list.height, list.loadedBottom))
+                            else backend.prefetchMore()
+                        }
                     }
                     Connections { target: backend; function onLoadingChanged() { if (!backend.loading) prefetchTimer.restart() } }
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY - originY)
+                    onMovementStarted: mail.anchoredSection = ""
                     delegate: Item {
                         id: groupedRow
                         required property var rowData
@@ -1401,15 +1552,6 @@ Item {
                                         }
                                     }
                                 }
-                                FmButton {
-                                    objectName: "discardDraftRow_" + groupedRow.modelData.id
-                                    visible: mail.draftsMode && !groupedRow.modelData.is_outgoing
-                                    text: "Discard"; tip: "Discard this draft"; implicitHeight: 20; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                                    font.pointSize: Theme.fontPoints(11.5); foreground: hovered ? Theme.text : Theme.subtle
-                                    background: Item {}
-                                    enabled: mail.canMutate && !backend.draftBusy
-                                    onClicked: { discardSelection.rows = backend.snapshotMailRows([groupedRow.modelData.id]); if (discardSelection.rows.length) discardSelection.open() }
-                                }
                                 Rectangle {
                                     visible: !row.outgoingScope && (groupedRow.modelData.categories||[]).length>0
                                     implicitWidth: Math.min(rowCategory.implicitWidth+16, leftPane.width > 480 ? 120 : 68); implicitHeight: Math.round(Theme.fontSize(11.5)*1.4)+6; radius: 4; color: "transparent"; border.color: Theme.line
@@ -1419,15 +1561,37 @@ Item {
                             }
                         }
                     }
+                    // Where the loaded rows end, in content coordinates.
+                    readonly property real loadedBottom: footerItem ? footerItem.y + footerItem.unloadedTop : contentHeight
                     footer: Column {
+                        readonly property real unloadedTop: unloadedRows.y
                         width: list.width
                         Repeater { model: mail.trailingSections; SectionBlock { required property var modelData; required property int index; section: modelData; first: list.count === 0 && index === 0; width: list.width } }
+                        // Room for the rows still to load. Where the view reaches
+                        // it, faint placeholder rows stand in until they arrive.
                         Item {
-                            width: list.width; height: backend.hasMore || (backend.folder==="sent" && backend.captures.length) ? 48 : 0
-                            Row { anchors.centerIn: parent; spacing: 12
-                                FmButton { objectName: "loadMoreConversations"; visible: backend.hasMore && (list.count > 0 || !backend.loading); text: backend.loading ? "Loading…" : backend.listError ? "Retry loading" : "Load more"; tip: backend.listError; enabled: !backend.loading; onClicked: backend.loadMore() }
-                                FmButton { objectName: "localCapturesButton"; visible: backend.folder==="sent" && backend.captures.length>0; text: "Local captures"; font.pointSize: Theme.fontPoints(12); onClicked: capturePopup.open() }
+                            id: unloadedRows; objectName: "unloadedRows"
+                            width: list.width; height: mail.unloadedHeight
+                            readonly property real loadedTop: list.loadedBottom
+                            readonly property int first: Math.max(0, Math.floor((list.contentY - loadedTop) / mail.rowHeight))
+                            Repeater {
+                                model: unloadedRows.height > 0 && list.contentY + list.height > unloadedRows.loadedTop ? Math.ceil(list.height / mail.rowHeight) + 1 : 0
+                                Item {
+                                    required property int index
+                                    readonly property int place: unloadedRows.first + index
+                                    readonly property real nameWidth: Math.min(160, width * .2)
+                                    visible: (place + 1) * mail.rowHeight <= unloadedRows.height
+                                    y: place * mail.rowHeight; width: unloadedRows.width; height: mail.rowHeight
+                                    Rectangle { x: 24; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 28; radius: 14; color: Theme.inkAlpha(.04) }
+                                    Rectangle { x: 68; anchors.verticalCenter: parent.verticalCenter; width: parent.nameWidth; height: 8; radius: 4; color: Theme.inkAlpha(.05) }
+                                    Rectangle { x: 92 + parent.nameWidth; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - x - 84); height: 8; radius: 4; color: Theme.inkAlpha(.035) }
+                                }
                             }
+                            FmButton { objectName: "retryLoadingConversations"; visible: !!backend.listError; y: 8; anchors.horizontalCenter: parent.horizontalCenter; text: "Retry loading"; tip: backend.listError; onClicked: backend.loadMore() }
+                        }
+                        Item {
+                            width: list.width; height: backend.folder==="sent" && backend.captures.length ? 48 : 0
+                            FmButton { objectName: "localCapturesButton"; anchors.centerIn: parent; visible: parent.height > 0; text: "Local captures"; font.pointSize: Theme.fontPoints(12); onClicked: capturePopup.open() }
                         }
                     }
                     Text {
@@ -1525,6 +1689,8 @@ Item {
                     contentWidth: width; contentHeight: readerColumn.implicitHeight + (mail.chipsVisible ? 64 : 40); clip: true; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
+                    // Scrolling takes over from a reply being brought into view.
+                    onMovementStarted: { replyReveal.stop(); revealScroll.stop() }
                     ColumnLayout {
                         id: readerColumn
                         x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
@@ -1537,7 +1703,7 @@ Item {
                                 tip: mail.expanded ? "Collapse the thread to the latest message" : "Show the whole thread"
                                 font.pointSize: Theme.fontPoints(12); implicitHeight: Math.round(Theme.fontSize(12) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                 foreground: hovered ? Theme.text : Theme.inkAlpha(.5)
-                                background: Rectangle { color: "transparent"; radius: 3; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+                                background: Rectangle { color: "transparent"; radius: 3; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
                                 onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded) }
                             }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -1593,6 +1759,28 @@ Item {
                                     }
                                 }
                                 MessageSource { id: messageSource; message: member.modelData; active: member.isExpanded && member.visible; visible: false; onMetadataChanged: mail.recordMetadata(member.modelData.id, metadata) }
+                                // A reply on its way to Gmail: a hairline along the bottom of the
+                                // reply that fills as it uploads, sweeping until the size is known.
+                                Item {
+                                    id: sendTrack
+                                    objectName: "messageSendProgress_" + member.modelData.id
+                                    readonly property var share: backend.sendProgress[member.modelData.request_id || ""]
+                                    visible: !!member.modelData.is_outgoing && ["queued","preparing","in_flight"].indexOf(member.modelData.outgoing_state) >= 0
+                                    y: member.height - (member.isExpanded ? 12 : 2); width: memberColumn.width; height: 2; clip: true; z: 1
+                                    Rectangle { anchors.fill: parent; radius: 1; color: Theme.inkAlpha(.06) }
+                                    Rectangle {
+                                        id: sendFill
+                                        readonly property bool known: sendTrack.share !== undefined
+                                        height: parent.height; radius: 1; color: Theme.accent
+                                        width: known ? sendTrack.width * Math.max(.03, sendTrack.share) : sendTrack.width * .2
+                                        onKnownChanged: if (known) x = 0
+                                        Behavior on width { enabled: sendFill.known; NumberAnimation { duration: 140 } }
+                                        NumberAnimation on x {
+                                            running: sendTrack.visible && !sendFill.known; loops: Animation.Infinite
+                                            from: -sendTrack.width * .2; to: sendTrack.width; duration: 1100; easing.type: Easing.InOutQuad
+                                        }
+                                    }
+                                }
                                 ColumnLayout {
                                 id: memberColumn
                                 width: parent.width; spacing: 0
@@ -1606,8 +1794,8 @@ Item {
                                     hoverEnabled: !member.isExpanded
                                     Accessible.name: (member.isExpanded ? "Message from " : "Expand message from ") + (member.modelData.sender_name || member.modelData.sender_email)
                                     onClicked: if (!member.isExpanded) mail.toggleMember(member.modelData.id,member.index)
-                                    // Outline on hover while folded, or for keyboard focus; never left behind by a click.
-                                    background: Rectangle { x: -12; width: memberHeading.width + 24; height: memberHeading.height; color: "transparent"; border.color: memberHeading.visualFocus || (!member.isExpanded && memberHeading.hovered) ? Theme.accent : "transparent"; radius: 8 }
+                                    // Hover is the message's wash alone; the outline is for keyboard focus.
+                                    background: Rectangle { x: -12; width: memberHeading.width + 24; height: memberHeading.height; color: "transparent"; border.color: memberHeading.visualFocus ? Theme.accent : "transparent"; radius: 8 }
                                     contentItem: RowLayout {
                                         spacing: 10
                                         RowLayout {
@@ -1654,6 +1842,13 @@ Item {
                                         RowLayout {
                                             id: headerActions; Layout.fillWidth: false; spacing: 2
                                             FmIcon { visible: !member.isExpanded && member.attachmentCount > 0; name: "attachment"; size: 10; color: Theme.inkAlpha(.4); Layout.rightMargin: 8 }
+                                            // Gmail accepted this reply; its own copy replaces it once synced.
+                                            FmIcon {
+                                                objectName: "messageSent_" + member.modelData.id
+                                                visible: opacity > 0; opacity: member.modelData.is_outgoing && member.modelData.outgoing_state === "accepted" ? 1 : 0
+                                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                                                name: "check"; size: 11; color: Theme.accent; Layout.rightMargin: 4
+                                            }
                                             Text {
                                                 objectName: "messageShortDate_" + member.modelData.id
                                                 text: mail.messageTime(member.modelData.sent_at, member.isLast && !member.modelData.sent)
@@ -1664,9 +1859,9 @@ Item {
                                             }
                                             MessageHeaderButton {
                                                 objectName: "messageFormatToggle_" + member.modelData.id
-                                                visible: member.isExpanded && messageSource.hasHtml
+                                                visible: member.isExpanded && messageSource.hasHtml && messageSource.canChoose
                                                 text: messageSource.plain ? "TEXT" : "HTML"
-                                                tip: messageSource.plain ? "Showing plain text — click to show HTML in every message" : "Showing HTML — click to show plain text in every message"
+                                                tip: (messageSource.plain ? "Showing plain text — click to show HTML" : "Showing HTML — click to show plain text") + " for all mail from " + messageSource.sender
                                                 onClicked: messageSource.setPlain(!messageSource.plain)
                                             }
                                             SummarizeAction {
@@ -1807,6 +2002,9 @@ Item {
                                             leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
                                             Accessible.name: "Message from " + member.modelData.sender_name
                                             onLinkActivated: function(link) { mail.openBodyLink(link) }
+                                            // The app's own text menu, not Qt's.
+                                            ContextMenu.menu: null
+                                            TapHandler { acceptedButtons: Qt.RightButton; onTapped: function(point) { textMenu.show(bodyText, point.position.x, point.position.y) } }
                                             HoverHandler { id: bodyHover }
                                             onHoveredLinkChanged: {
                                                 if (!hoveredLink) { linkCard.scheduleHide(); return }
@@ -1817,18 +2015,31 @@ Item {
                                         }
                                     }
                                 }
-                                // "4 ATTACHMENTS" and a hairline to the edge, 24px above the cards.
-                                RowLayout {
+                                // "4 ATTACHMENTS", a hairline to the edge and a chevron, 24px above
+                                // the cards. Like a month header, a click folds the cards away.
+                                AbstractButton {
+                                    id: attachmentsHeading
                                     objectName: "messageAttachmentsCaption_" + member.modelData.id
-                                    visible: member.isExpanded && member.attachmentCount > 0; Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: 10; spacing: 10
-                                    Text { text: (member.attachmentCount === 1 ? "1 attachment" : member.attachmentCount + " attachments").toUpperCase(); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.letterSpacing: .55 }
-                                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                    readonly property bool collapsed: mail.attachmentsCollapsed(member.modelData.id)
+                                    readonly property color tone: hovered ? Theme.text : Theme.inkAlpha(.4)
+                                    visible: member.isExpanded && member.attachmentCount > 0; Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: collapsed ? 0 : 10
+                                    implicitHeight: 20; hoverEnabled: true; padding: 0
+                                    Accessible.name: (member.attachmentCount === 1 ? "1 attachment, " : member.attachmentCount + " attachments, ") + (collapsed ? "collapsed" : "expanded")
+                                    onClicked: mail.toggleAttachments(member.modelData.id)
+                                    background: Item {}
+                                    contentItem: RowLayout {
+                                        spacing: 10
+                                        Text { text: (member.attachmentCount === 1 ? "1 attachment" : member.attachmentCount + " attachments").toUpperCase(); color: attachmentsHeading.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.letterSpacing: .55 }
+                                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                        FmIcon { name: "down"; size: 10; color: attachmentsHeading.tone; rotation: attachmentsHeading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: 180 } } }
+                                    }
                                 }
                                 Flow {
                                     id: attachmentFlow
+                                    objectName: "messageAttachments_" + member.modelData.id
                                     opacity: visible ? 1 : 0
                                     Behavior on opacity { NumberAnimation {duration:140} }
-                                    visible: member.isExpanded && member.attachmentCount > 0; Layout.fillWidth: true; Layout.maximumWidth: 798; spacing: 10
+                                    visible: member.isExpanded && member.attachmentCount > 0 && !attachmentsHeading.collapsed; Layout.fillWidth: true; Layout.maximumWidth: 798; spacing: 10
                                     Repeater {
                                         id: attachmentRepeater
                                         model: member.modelData.attachments||[]
@@ -1836,10 +2047,13 @@ Item {
                                             required property var modelData
                                             attachment: modelData; account: backend.account
                                             // A server-only attachment is fetched when opened, not to preview.
-                                            previewActive: { const scroll=reader.contentY; const pos=mapToItem(reader,0,0);return mail.visible && member.isExpanded && modelData.state !== "remote" && pos.y+height>0 && pos.y<reader.height }
+                                            // Re-checked on scrolling and on any layout change above, so a card
+                                            // placed before the thread settled still loads once it is on screen.
+                                            previewActive: { const scroll=reader.contentY, extent=reader.contentHeight, frame=reader.height, placed=y+attachmentFlow.y+memberLoader.y; const pos=mapToItem(reader,0,0);return mail.visible && member.isExpanded && attachmentFlow.visible && modelData.state !== "remote" && pos.y+height>0 && pos.y<reader.height }
                                             maximumWidth: (attachmentFlow.width - (Math.max(1,Math.floor((attachmentFlow.width+10)/210))-1)*10)/Math.max(1,Math.floor((attachmentFlow.width+10)/210))
                                             onOpenMedia: function(attachment) { mail.showAttachment(attachment) }
-                                            available: !member.modelData.is_outgoing && (modelData.state === "available" || modelData.state === "remote")
+                                            // A message still on its way to Gmail previews the copies it was sent from.
+                                            available: modelData.state === "available" || modelData.state === "remote"
                                         }
                                     }
                                 }
@@ -1849,15 +2063,15 @@ Item {
                         }
                         Item {
                             id: readerActions; objectName: "conversationActionsRow"
-                            visible: mail.members.length > 0 && !mail.replyOpen && !mail.thread.is_outgoing && !mail.thread.remote && !mail.binMode
+                            visible: mail.members.length > 0 && !mail.thread.is_outgoing && !mail.thread.remote && !mail.binMode
                             Layout.fillWidth: true; Layout.bottomMargin: visible ? 8 : 0
                             implicitHeight: readerButtons.implicitHeight + 25
                             Rectangle { width: parent.width; height: 1; color: Theme.inkAlpha(.07) }
                             Flow {
                                 id: readerButtons; y: 25; width: parent.width; spacing: 6
-                                ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; prominent: true; visible: backend.folder !== "sent"; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.openReply() }
-                                ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true && backend.folder !== "sent"; text: "Reply all"; iconName: "replyAll"; outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
-                                ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("forward") }
+                                ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; prominent: mail.composingMode === "" || mail.composingMode === "reply"; outlined: !prominent; visible: backend.folder !== "sent"; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply") }
+                                ReaderAction { objectName: "replyAllButton"; visible: mail.replyAllAvailable && backend.folder !== "sent"; text: "Reply all"; iconName: "replyAll"; prominent: mail.composingMode === "reply_all"; outlined: !prominent; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply_all") }
+                                ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; prominent: mail.composingMode === "forward"; outlined: !prominent; enabled: mail.newMessageAvailable; onClicked: mail.compose("forward") }
                                 Item { width: 13; height: 32; Rectangle { x: 6; y: 6; width: 1; height: 20; color: Theme.line2 } }
                                 ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred && backend.folder !== "sent"; text: "Delay"; iconName: "clock"; outlined: true; enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later · D"; onClicked: backend.setStarred(true) }
                                 ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred && backend.folder !== "sent"; text: "Done"; iconName: "check"; outlined: true; enabled: !backend.mutationInFlight && mail.canMutate; tip: "Clear unread and stars · E"; onClicked: backend.doneConversation() }
@@ -1867,7 +2081,7 @@ Item {
                         // arriving later never moves the thread.
                         Text {
                             objectName: "readerNote"
-                            visible: mail.members.length > 0 && !mail.replyOpen && !mail.binMode && (readerActions.visible || text.length > 0)
+                            visible: mail.members.length > 0 && !mail.binMode && (readerActions.visible || text.length > 0)
                             Layout.fillWidth: true; Layout.preferredHeight: Math.ceil(Theme.fontSize(12) * 1.5); Layout.bottomMargin: visible ? 8 : 0
                             text: mail.readerNote
                             color: text === mail.failureNote ? Theme.error : Theme.subtle
@@ -1896,7 +2110,7 @@ Item {
                                     id: purgeButton; objectName: "deleteForeverButton"
                                     text: "Delete permanently"; iconName: "bin"; enabled: !backend.binBusy
                                     foreground: Theme.error
-                                    background: Rectangle { radius: 5; color: purgeButton.hovered ? Theme.withAlpha(Theme.error, .08) : "transparent"; border.width: 1; border.color: purgeButton.activeFocus ? Theme.focusBorder : Theme.withAlpha(Theme.error, .4) }
+                                    background: Rectangle { radius: 5; color: purgeButton.hovered ? Theme.withAlpha(Theme.error, .08) : "transparent"; border.width: 1; border.color: purgeButton.visualFocus ? Theme.focusBorder : Theme.withAlpha(Theme.error, .4) }
                                     onClicked: binConfirm.ask("delete")
                                 }
                             }
@@ -1904,8 +2118,16 @@ Item {
                         ReplyComposer {
                             id: reply
                             objectName: "replyPanel"
-                            Layout.fillWidth: true; Layout.topMargin: visible ? (mail.members.length ? 36 : 24) : 0
+                            Layout.fillWidth: true; Layout.topMargin: visible ? (mail.members.length ? 12 : 24) : 0
                             visible: mail.replyOpen
+                            // Opening, it fades in and settles 10px up over 200 ms.
+                            transform: Translate { id: replyShift }
+                            onVisibleChanged: if (visible) replyOpening.restart()
+                            ParallelAnimation {
+                                id: replyOpening
+                                NumberAnimation { target: reply; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+                                NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                            }
                             minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
                             onDismissed: mail.setReplyOpen(false)
                             onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
@@ -2004,7 +2226,7 @@ Item {
                 Accessible.name: "Draft: " + mail.chipSubject(modelData)
                 FmToolTip { shown: chip.hovered; text: mail.chipTip(chip.modelData) }
                 onClicked: mail.openDraftChip(modelData)
-                background: Rectangle { radius: 13; color: chip.hovered ? Theme.bg4 : Theme.canvasAlpha(.85); border.width: chip.activeFocus ? 1 : 0; border.color: Theme.focusBorder; Behavior on color { ColorAnimation { duration: 150 } } }
+                background: Rectangle { radius: 13; color: chip.hovered ? Theme.bg4 : Theme.canvasAlpha(.85); border.width: chip.visualFocus ? 1 : 0; border.color: Theme.focusBorder; Behavior on color { ColorAnimation { duration: 150 } } }
                 contentItem: RowLayout {
                     spacing: 7
                     FmIcon { name: chip.modelData.mode !== "new" && chip.modelData.conversation_id ? "reply" : "edit"; size: 11; color: Theme.accent }
@@ -2018,7 +2240,13 @@ Item {
         id: binMenu; objectName: "binMenu"
         parent: Overlay.overlay; padding: 4; focus: true
         width: Math.max(150, binChoices.implicitWidth + 8)
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        // Any press outside closes it, and so does moving to another mailbox
+        // or filter by any means. A press on its own button closes it too,
+        // so that button's click must not open it again.
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        property double closedAt: 0
+        onClosed: closedAt = Date.now()
+        Connections { target: backend; function onQueryChanged() { binMenu.close() } }
         onAboutToShow: { const point = binMenuButton.mapToItem(parent, 0, binMenuButton.height + 6); x = point.x; y = point.y; backend.loadBinMenuCounts() }
         background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
         contentItem: Column {
@@ -2179,7 +2407,7 @@ Item {
                 foreground: !enabled ? Theme.faint : Theme.ai
                 onClicked: { const panel = mail.messageMenuAssistance; morePopup.close(); panel.summarize() }
             }
-            FmMenuItem { id: formatMenuButton; objectName: "contextFormat"; visible: !!mail.messageMenuSource && mail.messageMenuSource.hasHtml; text: "Format"; shortcut: "‹"; onClicked: formatMenu.open(); onHoveredChanged: if (hovered && !formatMenu.opened) { labelMenu.close(); formatMenu.open() } }
+            FmMenuItem { id: formatMenuButton; objectName: "contextFormat"; visible: !!mail.messageMenuSource && mail.messageMenuSource.hasHtml && mail.messageMenuSource.canChoose; text: "Format"; tip: mail.messageMenuSource ? "For all mail from " + mail.messageMenuSource.sender : ""; shortcut: "‹"; onClicked: formatMenu.open(); onHoveredChanged: if (hovered && !formatMenu.opened) { labelMenu.close(); formatMenu.open() } }
             FmMenuItem { objectName: "contextMessageSource"; visible: !!mail.messageMenuSource; text: "View source"; onClicked: { const source = mail.messageMenuSource; morePopup.close(); source.show() } }
             FmMenuItem { objectName: "archiveConversation"; visible: morePopup.mailRows && !backend.syntheticProfile && backend.folder !== "trash"; separatorAbove: true; text: "Archive in Gmail"; enabled: mail.selectionMutable; onClicked: mail.selectionAction("archive") }
             FmMenuItem { objectName: "trashConversation"; visible: morePopup.mailRows && !backend.syntheticProfile && backend.folder !== "trash"; text: "Delete"; shortcut: mail.menuKey("delete"); danger: true; tip: "Move to Trash in Gmail"; enabled: mail.selectionMutable; onClicked: mail.selectionAction("trash") }
@@ -2197,6 +2425,7 @@ Item {
             FmMenuItem { objectName: "messageFormatPlain"; text: "Plain text"; markable: true; marked: !!mail.messageMenuSource && mail.messageMenuSource.plain; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.setPlain(true); morePopup.close() } }
         }
     }
+    TextMenu { id: textMenu }
     FmMenu {
         id: labelMenu; objectName: "mailLabelSubmenu"; parent: morePopup.contentItem; minimumWidth: 172; keepInside: false
         readonly property bool flip: morePopup.x + morePopup.width + 180 > (mail.Overlay.overlay ? mail.Overlay.overlay.width : mail.width) - 8
@@ -2311,9 +2540,9 @@ Item {
     Shortcut { sequence: "Shift+Up"; enabled: ShortcutRegistry.unassigned("Shift+Up","mail",backend.preferences) && mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(-1,true) }
     Shortcut { sequence: ShortcutRegistry.sequence("unread",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && mail.canMutate; onActivated: mail.selectionAction(mail.hasSelection ? (mail.selectionRows.every(function(row) { return row.unread }) ? "read" : "unread") : mail.anyUnread ? "read" : "unread") }
     Shortcut { sequence: ShortcutRegistry.sequence("compose",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: mail.newMessage() }
-    Shortcut { sequence: ShortcutRegistry.sequence("reply",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.openReply() }
-    Shortcut { sequence: ShortcutRegistry.sequence("replyAll",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && backend.draft.reply_all_available === true; onActivated: backend.beginDraft("reply_all") }
-    Shortcut { sequence: ShortcutRegistry.sequence("forward",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: backend.beginDraft("forward") }
+    Shortcut { sequence: ShortcutRegistry.sequence("reply",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.compose("reply") }
+    Shortcut { sequence: ShortcutRegistry.sequence("replyAll",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && mail.replyAllAvailable; onActivated: mail.compose("reply_all") }
+    Shortcut { sequence: ShortcutRegistry.sequence("forward",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.compose("forward") }
     Shortcut { sequence: ShortcutRegistry.sequence("done",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction("done") }
     Shortcut { sequence: ShortcutRegistry.sequence("delay",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction(mail.hasSelection || !mail.anyStarred ? "delay" : "undelay") }
     Shortcut { sequence: ShortcutRegistry.sequence("scopes",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: { const next = backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox"; mail.leaveComposerFor(function() { backend.folder = next }, next === "drafts") } }

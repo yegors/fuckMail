@@ -280,7 +280,13 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
     const auto latest = members.last().toMap(); const auto mid = latest["id"].toString();
     // Inspect every unquoted body document. Fixture quotations use '>' lines;
     // original source hashes are checked separately by the SQLite verifier.
-    const auto sections = latest.value("reader_sections").toList();
+    // The reader shows HTML only for senders chosen for it (html_senders).
+    const bool hasHtml = !latest.value("reader_source").toMap().value("body_html").toString().isEmpty();
+    const auto sender = latest.value("sender_email").toString().trimmed().toLower();
+    bool htmlSender = false;
+    for (const auto &entry : m_backend.preferences().value("html_senders").toList())
+        htmlSender = htmlSender || (entry.toMap().value("account") == m_backend.account() && entry.toMap().value("email") == sender);
+    const auto sections = latest.value(hasHtml && !htmlSender ? "reader_plain_sections" : "reader_sections").toList();
     auto member = findItem(m_window->contentItem(), "messageMember_" + mid);
     if (!member || visibleRect(member, m_window).isEmpty()) return false;
     QQuickItem *body = nullptr; QStringList bodyParts, expectedParts;
@@ -298,11 +304,10 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
         if (!body && visibleRect(part, m_window).width() > 16 && visibleRect(part, m_window).height() > 8) body = part;
     }
     const auto text = bodyParts.join('\n');
-    const bool html = !latest.value("reader_source").toMap().value("body_html").toString().isEmpty();
     // HTML and plain alternatives can legitimately differ. Check the actual
     // rendered document against the prepared sections for this exact message;
     // retain the original independent source-text oracle for plain mail.
-    const auto expected = html ? expectedParts.join('\n') : unquotedText(latest["text"].toString());
+    const auto expected = hasHtml ? expectedParts.join('\n') : unquotedText(latest["text"].toString());
     if (!body || contentCharacters(text) != contentCharacters(expected)) return false;
     QJsonArray memberIds, visibleMembers;
     for (const auto &value : members) memberIds.append(value.toMap()["id"].toString());
@@ -314,7 +319,7 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
     snapshot = {{"account", m_backend.account()}, {"selected_id", m_backend.selectedId()}, {"row_ids", ids}, {"visible_row_ids", visibleRows},
         {"member_ids", memberIds}, {"visible_member_ids", visibleMembers}, {"message_id", mid},
         {"body_sha256", QString::fromLatin1(QCryptographicHash::hash(latest["text"].toString().toUtf8(), QCryptographicHash::Sha256).toHex())},
-        {"rendered_body_text", text}, {"body_oracle", html ? "prepared_html_document_text" : "rich_document_unquoted_text"}, {"expected_rendered_body_text",expected},
+        {"rendered_body_text", text}, {"body_oracle", !hasHtml ? "rich_document_unquoted_text" : htmlSender ? "prepared_html_document_text" : "prepared_plain_document_text"}, {"expected_rendered_body_text",expected},
         {"body_length", text.size()}, {"qml_visible_row_count", visibleRows.size()}, {"qml_visible_member_count", visibleMembers.size()},
         {"qml_body_type", body->metaObject()->className()}, {"qml_member_object", member->objectName()}};
     return true;

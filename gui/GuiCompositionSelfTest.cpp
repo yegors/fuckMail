@@ -377,9 +377,11 @@ void GuiCompositionSelfTest::step() {
         m_stage=20; m_mode=1; cli({"mail","read",sourceConversation},[this](auto result) { m_sourceBefore=result; }); break;
     case 20: {
         if (!saved()) return;
-        // The reader's actions hide while a reply is open; collapse it first.
+        // Each kind starts from a closed composer, so it is a draft of its own
+        // rather than the open one switched to it.
         const QString action=m_mode==1 ? "replyAllButton" : m_mode==2 ? "forwardButton" : "replyButton";
-        if (!item(action)) { QMetaObject::invokeMethod(item("mailWorkspace"), "minimizeComposer"); return; }
+        if (item("mailWorkspace")->property("replyOpen").toBool()) { QMetaObject::invokeMethod(item("mailWorkspace"), "minimizeComposer"); return; }
+        if (!item(action)) return;
         if (!click(action)) return;
         m_stage=21; break;
     }

@@ -9,7 +9,8 @@ import QtQuick.Shapes
 // slot so the bars in a card start at the same x.
 Rectangle {
     id: card
-    required property var modelData
+    required property var rowData
+    readonly property var modelData: rowData
     property var progress: null
     property var policy: null
     property var analysis: null
@@ -61,7 +62,7 @@ Rectangle {
         implicitWidth: boxSize; implicitHeight: boxSize
         hoverEnabled: true
         onSpinningChanged: if (!spinning) spinIcon.rotation = 0
-        background: Rectangle { radius: 5; color: iconButton.hovered && iconButton.enabled ? (iconButton.framed ? Theme.bg2 : Theme.withAlpha(Theme.ai, .12)) : "transparent"; border.color: iconButton.framed ? (iconButton.activeFocus ? Theme.focusBorder : Theme.line2) : "transparent" }
+        background: Rectangle { radius: 5; color: iconButton.hovered && iconButton.enabled ? (iconButton.framed ? Theme.bg2 : Theme.withAlpha(Theme.ai, .12)) : "transparent"; border.color: iconButton.framed ? (iconButton.visualFocus ? Theme.focusBorder : Theme.line2) : "transparent" }
         contentItem: Item {
             FmIcon {
                 id: spinIcon

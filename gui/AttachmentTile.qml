@@ -2,6 +2,7 @@
 // thumbnail, a video poster frame or a file-type badge, plus Download. Images
 // and videos emit openMedia() for AttachmentViewer; other files go to backend.openAttachment().
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtMultimedia
@@ -13,6 +14,9 @@ Rectangle {
     property bool previewActive:visible
     property bool available: attachment.state === "available"
     property real maximumWidth: 280
+    // The grid wraps before a preview exceeds 400 logical pixels. A fixed
+    // per-screen size avoids decoding again on every divider/window resize.
+    readonly property size thumbnailSize: Qt.size(Math.ceil(400 * Screen.devicePixelRatio), Math.ceil(250 * Screen.devicePixelRatio))
     readonly property bool isImage: /^image\//i.test(attachment.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(attachment.name || "")
     readonly property bool isVideo: /^video\//i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(attachment.name || "")
     readonly property bool popupOpen: false
@@ -27,6 +31,12 @@ Rectangle {
     property int imageWidth: 0
     property int imageHeight: 0
     property int videoDuration: 0
+    // The video's first frame, kept by the backend once shown, so the decoder
+    // can go and the card shows it again at once when scrolled back into view.
+    property string posterUrl: ""
+    // Set when this card's own decoder kept the poster: the decoder stays until
+    // the kept picture is ready to show, so the card never blinks empty.
+    property bool posterKept: false
     readonly property string identity: account+"/"+attachment.id
     signal openMedia(var attachment)
     objectName: "attachment_"+attachment.id
@@ -38,7 +48,7 @@ Rectangle {
     function loadPreview() {if(previewActive && available && (isImage || isVideo) && !previewTicket && !previewFinished)previewTicket=backend.requestAttachmentPreview(account,attachment.id)}
     function open() {if (!available) return;if(isImage || isVideo)openMedia(attachment);else backend.openAttachment(attachment.id)}
     Component.onCompleted: loadPreview()
-    onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;videoDuration=0;loadPreview()}
+    onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;videoDuration=0;posterUrl="";posterKept=false;loadPreview()}
     onPreviewActiveChanged: loadPreview()
     onAvailableChanged: loadPreview()
     Connections {
@@ -46,7 +56,12 @@ Rectangle {
         function onAttachmentPreviewReady(ticket,result,ok) {
             if(ticket!==tile.previewTicket)return
             tile.previewTicket="";tile.previewFinished=true
-            if(ok && result.account===tile.account && result.id===tile.attachment.id) {tile.previewUrl=result.preview_url||"";tile.imageWidth=result.width||0;tile.imageHeight=result.height||0}
+            if(ok && result.account===tile.account && result.id===tile.attachment.id) {
+                // A poster kept earlier this run shows without decoding again.
+                const kept=tile.isVideo && result.preview_url ? backend.videoPoster(tile.account,tile.attachment.id) : ({})
+                if(kept.url) {tile.posterUrl=kept.url;tile.videoDuration=kept.duration||0}
+                tile.previewUrl=result.preview_url||"";tile.imageWidth=result.width||0;tile.imageHeight=result.height||0
+            }
         }
         function onAttachmentSaved(ticket,error) {if(ticket!==tile.saveTicket)return;tile.saveTicket="";tile.saveFailed=!!error;tile.feedback=error}
     }
@@ -59,24 +74,28 @@ Rectangle {
             Accessible.name:"Open "+tile.attachment.name
             background:Rectangle {radius:5;color:tile.isImage || tile.isVideo ? Theme.bg4 : Theme.bg2;border.color:Theme.line}
             contentItem:Item {
-                Image {id:thumbnail;objectName:"attachmentThumbnail_"+tile.attachment.id;anchors.fill:parent;visible:tile.isImage;source:tile.isImage ? tile.previewUrl : "";asynchronous:true;autoTransform:true;sourceSize:Qt.size(760,475);fillMode:Image.PreserveAspectCrop}
+                Image {id:thumbnail;objectName:"attachmentThumbnail_"+tile.attachment.id;anchors.fill:parent;visible:tile.isImage;source:tile.isImage ? tile.previewUrl : "";asynchronous:true;autoTransform:true;sourceSize:tile.thumbnailSize;fillMode:Image.PreserveAspectCrop}
+                Image {id:posterImage;objectName:"attachmentPosterFrame_"+tile.attachment.id;anchors.fill:parent;visible:tile.isVideo && !!tile.posterUrl;source:tile.posterUrl;asynchronous:true;sourceSize:tile.thumbnailSize;fillMode:Image.PreserveAspectCrop}
                 Loader {
-                    id:videoPoster;anchors.fill:parent;active:tile.previewActive && tile.isVideo && !!tile.previewUrl
+                    id:videoPoster;anchors.fill:parent;active:tile.previewActive && tile.isVideo && !!tile.previewUrl && (!tile.posterUrl || (tile.posterKept && posterImage.status!==Image.Ready))
                     sourceComponent:Component {
                         VideoOutput {
-                            id:poster;fillMode:VideoOutput.PreserveAspectCrop
-                            // The decoder runs only until the poster frame arrives; the output keeps that frame.
+                            id:poster;objectName:"attachmentPoster_"+tile.attachment.id;fillMode:VideoOutput.PreserveAspectCrop
+                            // Decode until the first frame shows, however long that takes while
+                            // other videos decode, then keep it and let the decoder go.
                             property bool framed:false
-                            Connections {target:poster.videoSink;function onVideoFrameChanged() {poster.framed=true}}
+                            Connections {target:poster.videoSink;function onVideoFrameChanged() {if(!poster.framed && poster.videoSink.videoSize.width>0){poster.framed=true;posterStop.start()}}}
                             Loader {
-                                id:decoder;active:!(poster.framed && posterStop.done)
+                                id:decoder;objectName:"attachmentPosterDecoder";active:!posterStop.done
                                 sourceComponent:MediaPlayer {
                                     source:tile.previewUrl;videoOutput:poster
-                                    onDurationChanged:tile.videoDuration=duration
-                                    onMediaStatusChanged:if(mediaStatus===MediaPlayer.LoadedMedia) {play();posterStop.start()}
+                                    onDurationChanged:function() {tile.videoDuration=duration}
+                                    onMediaStatusChanged:function() {if(mediaStatus===MediaPlayer.LoadedMedia) play();else if(mediaStatus===MediaPlayer.EndOfMedia || mediaStatus===MediaPlayer.InvalidMedia) posterStop.done=true}
+                                    onErrorOccurred:posterStop.done=true
                                 }
                             }
-                            Timer {id:posterStop;interval:100;property bool done:false;onTriggered:{if(decoder.item)decoder.item.pause();done=true}}
+                            // If the frame cannot be kept, the paused player goes on showing it.
+                            Timer {id:posterStop;interval:100;property bool done:false;onTriggered:{if(decoder.item)decoder.item.pause();const kept=backend.keepVideoPoster(poster.videoSink,tile.account,tile.attachment.id,tile.videoDuration);if(kept.url){tile.posterKept=true;tile.posterUrl=kept.url}}}
                         }
                     }
                 }

@@ -46,9 +46,14 @@ fn scan(
     account: Option<&str>,
     mut visit: impl FnMut(String),
 ) -> Result<()> {
+    let selection = if table == "attachments" {
+        "SELECT account,id,message_id,name,mime_type,size,state,CASE WHEN EXISTS(SELECT 1 FROM attachment_sources s WHERE s.account=attachments.account AND s.id=attachments.id) THEN NULL ELSE blob_hash END FROM attachments".to_owned()
+    } else {
+        format!("SELECT * FROM {}", quote(table))
+    };
     let sql = format!(
-        "SELECT * FROM {}{}",
-        quote(table),
+        "{}{}",
+        selection,
         if account.is_some() {
             " WHERE account=?1"
         } else {

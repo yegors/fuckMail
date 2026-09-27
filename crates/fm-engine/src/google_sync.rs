@@ -237,7 +237,7 @@ impl SyncContext {
                 "Only draft create/update is admitted",
             ));
         }
-        self.gmail_upload_request(method, WorkClass::DraftMutation)
+        self.gmail_upload_request(method, WorkClass::DraftMutation, None)
             .await
     }
     /// Admits one `messages.send` or `drafts.send`, returning the same triple
@@ -257,7 +257,28 @@ impl SyncContext {
                 "Only explicit message/draft submission is admitted",
             ));
         }
-        self.gmail_upload_request(method, WorkClass::Submission)
+        self.gmail_upload_request(method, WorkClass::Submission, None)
+            .await
+    }
+    /// Same as [`SyncContext::gmail_send_request`], counting the upload's
+    /// bytes in `upload` for `google_send_progress`.
+    pub(crate) async fn gmail_submit_request(
+        &self,
+        method: fm_google::gmail_api::GmailMethod,
+        upload: Arc<send::Upload>,
+    ) -> Result<(
+        GmailApi<QuotaTransport>,
+        OwnedSemaphorePermit,
+        Arc<AtomicBool>,
+    )> {
+        use fm_google::gmail_api::GmailMethod;
+        if !matches!(method, GmailMethod::MessageSend | GmailMethod::DraftSend) {
+            return Err(failure(
+                "invalid_request",
+                "Only explicit message/draft submission is admitted",
+            ));
+        }
+        self.gmail_upload_request(method, WorkClass::Submission, Some(upload))
             .await
     }
     /// Admits one `drafts.delete` for exactly `target`, returning the same
@@ -295,6 +316,7 @@ impl SyncContext {
         &self,
         method: fm_google::gmail_api::GmailMethod,
         class: WorkClass,
+        upload: Option<Arc<send::Upload>>,
     ) -> Result<(
         GmailApi<QuotaTransport>,
         OwnedSemaphorePermit,
@@ -319,6 +341,7 @@ impl SyncContext {
         http.permit = Mutex::new(Some(quota));
         let dispatched = Arc::new(AtomicBool::new(false));
         http.dispatched = Some(dispatched.clone());
+        http.upload = upload;
         Ok((
             GmailApi::new(self.account.clone(), Arc::new(http)),
             memory,
@@ -402,6 +425,7 @@ impl SyncContext {
             used: AtomicBool::new(false),
             dispatched: None,
             exact_delete_url: None,
+            upload: None,
         }
     }
     #[cfg(test)]
@@ -454,6 +478,8 @@ pub(crate) struct QuotaTransport {
     dispatched: Option<Arc<AtomicBool>>,
     /// Restricts a draft-delete lease to this exact URL.
     exact_delete_url: Option<String>,
+    /// Counts a submission's body bytes as they go out.
+    upload: Option<Arc<send::Upload>>,
 }
 impl HttpTransport for QuotaTransport {
     fn execute<'a>(
@@ -518,7 +544,13 @@ impl HttpTransport for QuotaTransport {
                     }
                     TransportError::Cancelled
                 })?;
-            let request = request.header("authorization", &format!("Bearer {token}"))?;
+            let mut request = request.header("authorization", &format!("Bearer {token}"))?;
+            if let Some(upload) = &self.upload {
+                upload
+                    .total
+                    .store(request.body_bytes().len() as u64, Ordering::Release);
+                request = request.progress(upload.sent.clone());
+            }
             // Quota is charged here, not at admission. Past this point the
             // provider may act on the request, so `dispatched` is set first.
             permit.dispatch(cancel)?;
@@ -759,6 +791,7 @@ impl Runtime {
                 | "google_draft_delete_abandon"
                 | "google_send"
                 | "google_send_status"
+                | "google_send_progress"
                 | "google_send_reconcile"
                 | "google_send_abandon"
                 | "google_spam_list"
@@ -1073,6 +1106,12 @@ impl Runtime {
                     error
                 }
             })?;
+            if method == "google_send_progress" {
+                return Ok(send::progress(
+                    &account,
+                    params["request_id"].as_str().unwrap(),
+                ));
+            }
             if method == "google_send_status" {
                 let request_id = params["request_id"].as_str().unwrap().to_owned();
                 return self

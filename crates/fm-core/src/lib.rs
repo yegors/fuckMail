@@ -32,6 +32,7 @@ pub mod account_lifecycle;
 mod account_retention;
 pub mod assist_backlog;
 pub mod assist_store;
+pub mod attachment_content;
 #[cfg(test)]
 mod benchmark;
 mod calendar_editor_options;
@@ -93,7 +94,11 @@ pub mod view_cache;
 const RESET_BASELINE_VERSION: u32 = 37;
 // Append one SQL step per version after the fresh baseline. Each step commits
 // with its own user_version update before normal recovery begins.
-const POST_RESET_MIGRATIONS: &[&str] = &[];
+const POST_RESET_MIGRATIONS: &[&str] = &[
+    include_str!("migration-038.sql"),
+    include_str!("migration-039.sql"),
+    include_str!("migration-040.sql"),
+];
 /// The SQLite `user_version` this build creates and opens.
 ///
 /// A profile with a newer version is refused as `schema_mismatch`; one older
@@ -167,6 +172,7 @@ pub struct Store {
     pub(crate) conversation_cache: queries::ConversationCache,
     pub(crate) projection_cache: queries::ProjectionCache,
     pub(crate) coverage_cache: queries::CoverageCache,
+    pub(crate) model_progress_cache: assist_backlog::ProgressCache,
     pub(crate) mail_changes: queries::MailChanges,
     pub(crate) planner_refreshed_at: std::cell::Cell<Option<std::time::Instant>>,
     /// Full conversation-state scans since open (diagnostics and tests).
@@ -303,6 +309,7 @@ impl Store {
             _lock: lock,
             projection_cache: Default::default(),
             coverage_cache: Default::default(),
+            model_progress_cache: Default::default(),
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
             state_scans: Default::default(),
@@ -424,6 +431,7 @@ impl Store {
                 "revision": self.revision()?,
                 "calendar_generation": self.mail_changes.calendar_generation(),
                 "mail_generation": self.mail_generation(),
+                "ui_generations": self.mail_changes.ui_generations(&self.db),
                 "preferences_revision": self.preferences_revision()?,
                 "synthetic": synthetic,
                 "profile_kind": if synthetic { "synthetic" } else { "live" },
@@ -556,10 +564,7 @@ impl Store {
                 self.categories(account)
             }
             "calendar" => self.calendar(account, &params),
-            "attachment" => {
-                fields(&params, &["id"])?;
-                self.attachment(account, string(&params, "id")?)
-            }
+            "attachment" => self.attachment_begin(account, &params)?.export(),
             "google_drafts_status" => {
                 fields(&params, &[])?;
                 self.google_draft_inventory_status(account)

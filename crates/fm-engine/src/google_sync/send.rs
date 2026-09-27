@@ -12,11 +12,55 @@ use fm_google::{
     send::SubmissionResult,
     GoogleError,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
-    sync::{atomic::Ordering, Arc},
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
+
+/// Body bytes of one submission handed to the network, and its size once
+/// the request is built.
+#[derive(Default)]
+pub(crate) struct Upload {
+    pub(crate) sent: Arc<AtomicU64>,
+    pub(crate) total: AtomicU64,
+}
+
+/// Submissions on their way to Gmail, by account and request id.
+static UPLOADS: Mutex<BTreeMap<(String, String), Arc<Upload>>> = Mutex::new(BTreeMap::new());
+
+/// Keeps one submission in [`UPLOADS`] until it has an outcome.
+struct Uploading((String, String));
+impl Uploading {
+    fn new(account: &str, request_id: &str, upload: Arc<Upload>) -> Self {
+        let key = (account.to_owned(), request_id.to_owned());
+        UPLOADS.lock().unwrap().insert(key.clone(), upload);
+        Self(key)
+    }
+}
+impl Drop for Uploading {
+    fn drop(&mut self) {
+        UPLOADS.lock().unwrap().remove(&self.0);
+    }
+}
+
+/// Handles `google_send_progress`: how much of a send's message has gone
+/// out. Reads memory only, so it can be polled while the upload runs.
+pub(crate) fn progress(account: &str, request_id: &str) -> Value {
+    let upload = UPLOADS
+        .lock()
+        .unwrap()
+        .get(&(account.to_owned(), request_id.to_owned()))
+        .cloned();
+    let (sent, total) = upload.map_or((0, 0), |upload| {
+        let total = upload.total.load(Ordering::Acquire);
+        (upload.sent.load(Ordering::Acquire).min(total), total)
+    });
+    json!({"account":account,"request_id":request_id,"uploading":total > 0,"sent":sent,"total":total})
+}
 
 /// Handles `google_send`: submits a saved draft once, from a frozen MIME
 /// snapshot, with `drafts.send` when it has a linked Gmail draft and
@@ -78,7 +122,8 @@ async fn execute_inner(ctx: &SyncContext, request: Value, claimed: &mut bool) ->
     };
     // The queued request contains identifiers/revisions only. Admission holds
     // the same 100-unit account mutation lease through the actual HTTP call.
-    let (api, permit, dispatched) = ctx.gmail_send_request(method).await?;
+    let upload = Arc::new(Upload::default());
+    let (api, permit, dispatched) = ctx.gmail_submit_request(method, upload.clone()).await?;
     let memory = Arc::new(permit);
     match intent(ctx, &scope, &request).await? {
         GoogleSendIntent::Reply(reply) => return Ok(reply),
@@ -121,6 +166,7 @@ async fn execute_inner(ctx: &SyncContext, request: Value, claimed: &mut bool) ->
             "The prepared send revision is missing",
         )
     })?;
+    let _uploading = Uploading::new(ctx.account.as_str(), &request_id, upload);
     let lease = drafts::memory_core(ctx, &memory, move |store| {
         store.google_send_claim(&scope, &request_id, revision)
     })
@@ -365,7 +411,7 @@ pub(crate) fn validate(method: &str, params: &Value) -> Result<()> {
             "expected_google_revision",
             "request_id",
         ],
-        "google_send_status" | "google_send_reconcile" => &["request_id"],
+        "google_send_status" | "google_send_reconcile" | "google_send_progress" => &["request_id"],
         "google_send_abandon" => &["request_id", "expected_revision"],
         _ => return Err(failure("invalid_request", "Unknown Google send operation")),
     };

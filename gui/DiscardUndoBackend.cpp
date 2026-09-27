@@ -55,6 +55,7 @@ void MailBackend::discardDraft(const QVariantMap &context) {
             if (token.isEmpty()) showActionToast("Draft discarded"); else offerDiscardUndo({token}, issued);
             loadAccounts(); if (m_folder == "drafts") loadDraftRows(false);
             if (m_afterDraftSave) saveDraft();
+            else if (account == m_account) leaveDiscardedNewDraft();
         }
         if (m_shutdown) finishShutdown();
     });

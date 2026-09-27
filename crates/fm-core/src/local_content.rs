@@ -67,6 +67,7 @@ struct AttachmentRef {
     mime_type: String,
     size: u64,
     hash: String,
+    source: Option<crate::attachment_content::SourcePart>,
 }
 
 /// SQL-only frozen saved-draft selection shared by capture and provider drafts.
@@ -127,7 +128,13 @@ impl RetainedDraft {
                     account_id: self.account.clone(),
                     filename: file.name.clone(),
                     content_type: file.mime_type.clone(),
-                    bytes: read_blob(&self.blobs, &file.hash, file.size)?,
+                    bytes: crate::attachment_content::read_cached(
+                        &self.blobs,
+                        &file.hash,
+                        file.size,
+                        &file.name,
+                        file.source.as_ref(),
+                    )?,
                     sha256: file.hash.clone(),
                     content_id: None,
                 })
@@ -557,6 +564,7 @@ impl Store {
                 ));
             }
             files.push(AttachmentRef {
+                source: self.attachment_source(account, aid)?,
                 id: aid.into(),
                 name,
                 mime_type,
@@ -629,7 +637,13 @@ fn prepare_after_import_metadata(
     for file in &plan.attachments {
         cancelled(cancel)?;
         if plan.method == "draft_capture" {
-            let bytes = read_blob(&plan.blobs, &file.hash, file.size)?;
+            let bytes = crate::attachment_content::read_cached(
+                &plan.blobs,
+                &file.hash,
+                file.size,
+                &file.name,
+                file.source.as_ref(),
+            )?;
             parts.push(StagedAttachment {
                 account_id: plan.account.clone(),
                 filename: file.name.clone(),
@@ -639,7 +653,13 @@ fn prepare_after_import_metadata(
                 content_id: None,
             });
         } else {
-            plan.blobs.verified_blob(&file.hash, file.size)?;
+            crate::attachment_content::verify(
+                &plan.blobs,
+                &file.hash,
+                file.size,
+                &file.name,
+                file.source.as_ref(),
+            )?;
         }
     }
     let imported = if plan.method == "draft_attachment_import" {
@@ -683,14 +703,15 @@ fn prepare_after_import_metadata(
         cancelled(cancel)?;
         let hash = plan.blobs.stage_blob(&bytes)?;
         Some(AttachmentRef {
+            source: None,
             id: format!(
                 "local-attachment-{:x}",
                 Sha256::digest(
                     format!("{}\0{}", plan.account, string(&plan.params, "request_id")?).as_bytes()
                 )
             ),
+            mime_type: fm_mail::attachment_mime(&name).into(),
             name,
-            mime_type: "application/octet-stream".into(),
             size: bytes.len() as u64,
             hash,
         })
@@ -748,18 +769,7 @@ pub(crate) fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<
 /// bytes actually read, since the file could change after the path check.
 /// Fails with `content_unavailable`.
 pub(crate) fn read_blob(blobs: &content::BlobStore, hash: &str, size: u64) -> Result<Vec<u8>> {
-    let path = blobs.verified_blob(hash, size)?;
-    let mut bytes = Vec::new();
-    content::open_regular(&path)?
-        .take(size + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != hash {
-        return Err(err(
-            "content_unavailable",
-            "Retained content failed verification",
-        ));
-    }
-    Ok(bytes)
+    blobs.read_verified(hash, size)
 }
 
 fn cancelled(cancel: &CancellationToken) -> Result<()> {

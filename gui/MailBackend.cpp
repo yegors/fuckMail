@@ -68,15 +68,25 @@ bool rowLabelled(const QVariantMap &row, const QStringList &labels) {
 }
 
 MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock, bool liveProfile)
-    : QObject(parent), m_accountModel(this), m_conversationModel(this), m_messageModel(this), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
+    : QObject(parent), m_accountModel(this), m_allAccountModel(this), m_conversationModel(this), m_messageModel(this), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
     initializeCalendarSearch();
     initializeSendUndo();
     m_readerPool.setMaxThreadCount(1);
+    connect(this, &MailBackend::accountsChanged, this, [this] { m_allAccountModel.replace(QStringLiteral("account-settings"), m_allAccounts); });
     m_readerPrefetchTimer.setSingleShot(true); m_readerPrefetchTimer.setInterval(60);
     // Just past the list's 170 ms collapse; then the row takes its new place.
     m_leavingTimer.setSingleShot(true); m_leavingTimer.setInterval(190);
     connect(&m_leavingTimer, &QTimer::timeout, this, [this] {
+        const auto leaving = m_leavingRow.value("id").toString();
         m_leavingRow.clear(); m_leavingIndex = -1;
+        // The folded row goes now, so its section shows its final state at
+        // once (the last one in To review leaves "Inbox zero"); the refresh
+        // then reconciles the list with Core.
+        auto rows = m_conversations;
+        const auto before = rows.size();
+        rows.erase(std::remove_if(rows.begin(), rows.end(), [&leaving](const QVariant &value) {
+            const auto row = value.toMap(); return row.value("leaving").toBool() && row.value("id").toString() == leaving; }), rows.end());
+        if (rows.size() != before && publishConversations(std::move(rows))) emit conversationsChanged();
         if (m_connected && !m_shutdown) loadConversations(false, true);
     });
     connect(&m_readerPrefetchTimer, &QTimer::timeout, this, [this] {
@@ -111,6 +121,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (!m_googleSendPending.isEmpty() && m_googleSendPending["authored"].toObject() != googleSendAuthorSnapshot())
             cancelPendingGoogleSend("The draft changed before sending. Review it and press Send again.");
     });
+    m_sendProgressTimer.setInterval(150);
+    connect(&m_sendProgressTimer, &QTimer::timeout, this, &MailBackend::pollSendProgress);
     m_googleSendWaitTimer.setInterval(1000);
     connect(&m_googleSendWaitTimer, &QTimer::timeout, this, [this] {
         if (m_googleSendPending.isEmpty() || !m_googleSendPending.contains("waiting_since")) { m_googleSendWaitTimer.stop(); return; }
@@ -153,6 +165,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             m_connectTimer.stop();
             m_connected = true; m_error.clear();
             m_calendarRevision = -1; m_mailRevision = -1;
+            m_uiGenerations = {};
             emit connectedChanged(); emit errorChanged();
             loadPreferences(); loadCalendarSources();
             if (m_account.isEmpty()) loadAccounts();
@@ -194,31 +207,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (m_pending.size() > 12 || m_shutdown) return;
         if (!m_syntheticProfile && (!m_queryActivity.isValid() || m_queryActivity.elapsed() >= 500)) { pollGoogleSync(); pollMailDelivery(); }
         request("status", {}, {}, [this](auto result, bool ok) {
-            if (!ok) return;
-            const auto diagnostics = result.toVariantMap();
-            if (diagnostics != m_diagnostics) { m_diagnostics = diagnostics; emit diagnosticsChanged(); }
-            auto revision = result["revision"].toInteger();
-            const auto calendarRevision = result["calendar_generation"].toInteger(-1);
-            const bool calendarChanged = calendarRevision < 0 || calendarRevision != m_calendarRevision;
-            if (calendarChanged) loadCalendarSources();
-            const bool changed = m_revision != revision;
-            const auto mailRevision = result["mail_generation"].toInteger(-1);
-            if (mailRevision < 0 ? changed : mailRevision != m_mailRevision) m_listRefreshPending = true;
-            m_mailRevision = mailRevision;
-            // A foreground query already reads current store state. Between
-            // successive inputs, do not place another expensive background
-            // query ahead of the next input on this serial socket. Retain the
-            // invalidation and deliver it once editing has settled.
-            const bool editing = m_queryActivity.isValid() && m_queryActivity.elapsed() < 500;
-            const bool refreshList = m_listRefreshPending && !m_loading && !m_searchTimer.isActive() && !editing && !m_browsingOlder;
-            if (refreshList) m_listRefreshPending = false;
-            if (changed) refreshState(refreshList, calendarChanged, true);
-            else {
-                if (refreshList) { QScopedValueRollback<bool> origin(m_automaticReadScope, true); loadConversations(false, true); }
-                if (calendarChanged) loadCalendar();
-            }
-            m_revision = revision;
-            m_calendarRevision = calendarRevision;
+            if (ok) refreshFromStatus(result);
         });
     });
     // Coalesce an input burst without spending most of the paint budget waiting.
@@ -322,7 +311,7 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     if (blockArchivedRequest(method, account)) {
         callback({{"code", "account_removed"}, {"message", "This account is a read-only archive. Restore it explicitly before making changes."}}, false); return;
     }
-    const bool automaticRead = method == "status" || method == "message_source" || method == "message_invite" || method == "assist_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
+    const bool automaticRead = method == "status" || method == "message_source" || method == "message_invite" || method == "assist_progress" || method == "google_send_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
         || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
         || method == "google_sync_status" || method == "google_mail_mutation_status" || method == "conversations" || method == "google_sent" || method == "google_sent_message"));
     // Synchronous cancellation/error callbacks can issue user work. The caller's
@@ -855,6 +844,7 @@ void MailBackend::cacheConversation(const QString &account, const QString &id, c
     const auto key = qMakePair(account, id);
     const auto prior = m_readerCache.object(key);
     if (prior && prior->lifecycle == lifecycle && prior->data.value("revision").toLongLong() > data.value("revision").toLongLong()) return;
+    if (prior && prior->lifecycle == lifecycle && prior->data == data) return;
     const auto bytes = QJsonDocument::fromVariant(data).toJson(QJsonDocument::Compact).size();
     if (bytes > maxFrame) return;
     m_readerCache.insert(key, new ReaderSnapshot{data, lifecycle}, int(bytes + 128));
@@ -1012,7 +1002,11 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (append && !m_nextCursor.isEmpty()) { params.remove("offset"); params["cursor"] = m_nextCursor; }
     // Keep visible rows until a refresh has recovered the same page count. Each
     // IPC response remains bounded; a view-state write must not collapse paging.
-    const int desired = append ? int(m_conversations.size()) + 100 : preserveLoaded ? std::max({100, int(m_conversations.size()), m_desiredConversationCount}) : 100;
+    // A scroll far past the loaded rows asks for them in one publish, bounded
+    // so each stays quick.
+    constexpr int maxLoadThrough = 2000;
+    const int loaded = int(m_conversations.size());
+    const int desired = append ? std::clamp(m_loadThrough, loaded + 100, loaded + maxLoadThrough) : preserveLoaded ? std::max({100, int(m_conversations.size()), m_desiredConversationCount}) : 100;
     m_desiredConversationCount = desired;
     loadConversationPage(account, generation, params, append ? m_conversations : QVariantList{}, desired);
 }
@@ -1153,6 +1147,11 @@ void MailBackend::prefetchMore() {
     QScopedValueRollback<bool> origin(m_automaticReadScope, true);
     loadMore();
 }
+void MailBackend::loadThrough(int count) {
+    if (!m_listError.isEmpty() || m_loading) return;
+    QScopedValueRollback<int> through(m_loadThrough, count);
+    prefetchMore();
+}
 
 void MailBackend::selectConversation(const QString &id) {
     selectConversationInternal(id, false);
@@ -1191,6 +1190,16 @@ QVariantMap MailBackend::retainReaderPresentation(QVariantMap data) const {
     if (m_conversation.contains("assistance_failures")) data["assistance_failures"] = m_conversation.value("assistance_failures");
     if (m_conversation.contains("assistance_settings")) data["assistance_settings"] = m_conversation.value("assistance_settings");
     data["reader_prepared"] = m_conversation.value("reader_prepared");
+    return keepUnsubscribe(data);
+}
+// An unsubscribe answered moments ago outlives a read of the conversation
+// that was already on its way; it cannot be undone, so it is never older.
+QVariantMap MailBackend::keepUnsubscribe(QVariantMap data) const {
+    if (data.value("id") != m_conversation.value("id")) return data;
+    const auto kept = m_conversation.value("mailing_list").toMap().value("unsubscribed");
+    auto list = data.value("mailing_list").toMap();
+    if (kept.toMap().isEmpty() || list.isEmpty() || !list.value("unsubscribed").toMap().isEmpty()) return data;
+    list["unsubscribed"] = kept; data["mailing_list"] = list;
     return data;
 }
 
@@ -1273,24 +1282,27 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
     const auto message = latest.value("id").toString(), version = latest.value("source_version").toString();
     if (!latest.value("source_available").toBool() || version.isEmpty()) { summaries(); return; }
     const auto key = account + '\n' + message + '\n' + version;
-    const auto sourceReady = [this, snapshot, account, message, version, key, lifecycle, current, summaries](auto result, bool ok) {
+    const auto sourceReady = [this, snapshot, account, message, version, key, lifecycle, current, summaries](const QVariantMap &source, bool ok, bool cache) {
         if (!current()) return;
         auto members = snapshot->value("messages").toList();
         auto latest = members.last().toMap();
-        if (ok && result.value("account").toString() == account && result.value("id").toString() == message
-            && result.value("source_version").toString() == version) {
-            const auto prepared = withoutRaw(result);
-            const auto source = prepared.toVariantMap();
-            const auto bytes = QJsonDocument(prepared).toJson(QJsonDocument::Compact).size();
-            m_sourceCache.insert(key, new ReaderSnapshot{source, lifecycle}, int(bytes + 128));
+        if (ok && source.value("account").toString() == account && source.value("id").toString() == message
+            && source.value("source_version").toString() == version) {
+            // A hit shares its immutable strings/maps with the reader. Converting
+            // through JSON would allocate another full source and replace the hit.
+            if (cache) {
+                const auto bytes = QJsonDocument::fromVariant(source).toJson(QJsonDocument::Compact).size();
+                m_sourceCache.insert(key, new ReaderSnapshot{source, lifecycle}, int(bytes + 128));
+            }
             latest["reader_source"] = source; latest["metadata"] = source.value("metadata");
-        } else latest["reader_error"] = result.value("message").toString("Message source is unavailable.");
+        } else latest["reader_error"] = source.value("message", "Message source is unavailable.").toString();
         members.last() = latest; (*snapshot)["messages"] = members;
         summaries();
     };
     if (const auto cached = m_sourceCache.object(key); cached && cached->lifecycle == lifecycle)
-        sourceReady(QJsonObject::fromVariantMap(cached->data), true);
-    else requestReader(account, {{"id", message}, {"source_version", version}}, sourceReady, "message_source", prefetch);
+        sourceReady(cached->data, true, false);
+    else requestReader(account, {{"id", message}, {"source_version", version}},
+        [sourceReady](auto result, bool ok) { sourceReady(withoutRaw(result).toVariantMap(), ok, true); }, "message_source", prefetch);
 }
 
 void MailBackend::selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow, int clickedIndex) {
@@ -1366,6 +1378,7 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
         const bool reviewOnLoad = m_readerReviewPending;
         m_readerLoadingGeneration = -1; m_readerReviewPending = false;
         if (m_conversation.value("revision").toLongLong() > data.value("revision").toLongLong()) return;
+        data = keepUnsubscribe(data);
         cacheConversation(account, id, data, lifecycle);
         if (m_conversation != data) { m_conversation = data; emit conversationChanged(); }
         loadOutgoingThread();
@@ -1384,8 +1397,14 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
         if (selected != m_conversations.cend() && std::next(selected) != m_conversations.cend()) prefetchConversation(std::next(selected)->toMap().value("id").toString());
         });
     });
-    if (loadDraft && !m_activeDraft.isEmpty()) { loadActiveDraft(); return; }
-    if (loadDraft) request("draft_get", account, {{"conversation_id", id}}, [this, id, account, generation](auto result, bool ok) {
+    if (loadDraft) loadCurrentDraft();
+}
+
+void MailBackend::loadCurrentDraft() {
+    if (!m_activeDraft.isEmpty()) { loadActiveDraft(); return; }
+    if (m_selected.isEmpty() || m_selected.startsWith("remote:") || m_selected.startsWith("outgoing:")) return;
+    const auto id = m_selected, account = m_account; const int generation = m_generation;
+    request("draft_get", account, {{"conversation_id", id}}, [this, id, account, generation](auto result, bool ok) {
         if (!ok || id != m_selected || account != m_account || generation != m_generation
             || result["account"].toString() != account || result["conversation_id"].toString() != id) return;
         const bool sendChanged = mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
@@ -1544,7 +1563,8 @@ void MailBackend::applyMailSelection(const QVariantList &rows, const QString &ac
     m_bulkCommands = std::move(commands); m_bulkIndex = 0; m_bulkAccount = m_account; m_bulkLifecycle = lifecycle;
     m_bulkIssuedAt = m_actionClock.elapsed(); m_bulkDiscardUndo.clear(); m_bulkDiscardTargets.clear();
     for (const auto &command : m_bulkCommands) if (command["method"] == "draft_discard") m_bulkDiscardTargets.insert(m_bulkAccount + '\n' + command["params"].toObject()["draft_id"].toString());
-    m_mutatingConversation = true; m_mailSelectionStatus = "Applying to " + QString::number(rows.size()) + " selected conversations…";
+    // The rows themselves show the action; only a problem gets a line.
+    m_mutatingConversation = true; m_mailSelectionStatus.clear();
     emit mutationChanged(); runMailSelection();
 }
 
@@ -1553,8 +1573,9 @@ void MailBackend::runMailSelection() {
         && accountCapability(m_bulkAccount, "mail_write")
         && lifecycleAccount(m_bulkAccount).value("lifecycle").toMap().value("revision").toLongLong() == m_bulkLifecycle;
     if (!valid || m_bulkIndex >= m_bulkCommands.size()) {
-        m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
-            + (valid ? (m_syntheticProfile ? " updated locally." : " saved locally. Google sync reports delivery separately.") : " updated. Remaining actions stopped after the account or session changed.");
+        // Done needs no line: the rows move and Undo is offered.
+        m_mailSelectionStatus = valid ? QString() : QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
+            + " updated. Remaining actions stopped after the account or session changed.";
         m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo();
         if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
         m_bulkMailUndo.clear();
@@ -1973,6 +1994,71 @@ void MailBackend::showFixtureWeek() {
     m_calendarView = "week"; m_calendarDate = m_fixtureToday; showCalendarRange();
 }
 void MailBackend::refresh() { m_listRefreshPending = false; refreshState(true, true); }
+void MailBackend::refreshFromStatus(const QJsonObject &status) {
+    const auto diagnostics = status.toVariantMap();
+    if (diagnostics != m_diagnostics) { m_diagnostics = diagnostics; emit diagnosticsChanged(); }
+    const auto revision = status["revision"].toInteger();
+    const bool changed = revision != m_revision;
+    const auto calendarRevision = status["calendar_generation"].toInteger(-1);
+    const bool calendarChanged = calendarRevision < 0 || calendarRevision != m_calendarRevision;
+    const auto mailRevision = status["mail_generation"].toInteger(-1);
+    if (mailRevision < 0 ? changed : mailRevision != m_mailRevision) m_listRefreshPending = true;
+
+    const auto generations = status["ui_generations"].toObject();
+    bool scoped = !generations["epoch"].toString().isEmpty();
+    for (const auto *key : {"accounts", "categories", "reader", "drafts", "captures"})
+        scoped &= generations[key].isDouble() && generations[key].toInteger(-1) >= 0;
+    const auto areaChanged = [&](const char *key) {
+        return generations["epoch"] != m_uiGenerations["epoch"] || generations[key] != m_uiGenerations[key];
+    };
+    const bool draftsChanged = scoped && areaChanged("drafts");
+    if (draftsChanged && (m_folder == "drafts" || m_folder == "sent")) m_listRefreshPending = true;
+
+    // Preserve deferred list invalidations while typing, loading or browsing
+    // older pages. A later poll delivers them even with unchanged counters.
+    const bool editing = m_queryActivity.isValid() && m_queryActivity.elapsed() < 500;
+    const bool refreshList = m_listRefreshPending && !m_loading && !m_searchTimer.isActive() && !editing && !m_browsingOlder;
+    if (refreshList) m_listRefreshPending = false;
+    if (calendarChanged) loadCalendarSources();
+    if (!scoped) {
+        // Older engines and incomplete status replies retain the full refresh.
+        if (changed) refreshState(refreshList, calendarChanged, true);
+        else {
+            if (refreshList) { QScopedValueRollback<bool> origin(m_automaticReadScope, true); loadConversations(false, true); }
+            if (calendarChanged) loadCalendar();
+        }
+        m_uiGenerations = {};
+    } else {
+        const bool deferReader = areaChanged("reader") && m_readerLoadingGeneration == m_generation;
+        {
+            QScopedValueRollback<bool> origin(m_automaticReadScope, true);
+            if (areaChanged("accounts")) loadAccounts();
+            const auto savedRevision = status["preferences_revision"];
+            if (!m_initialPreferencesLoaded || !savedRevision.isDouble() || savedRevision.toInteger() != m_preferencesRevision) loadPreferences();
+            if (areaChanged("categories")) loadCategories();
+            if (refreshList) loadConversations(false, true);
+            const bool refreshDraft = draftsChanged && (!m_syntheticProfile || (!m_draftDirty && !draftBusy()));
+            if (areaChanged("reader") && !deferReader) {
+                loadConversation(refreshDraft);
+                if (m_selected.isEmpty() && refreshDraft) loadCurrentDraft();
+            } else if (draftsChanged) {
+                if (refreshDraft) loadCurrentDraft();
+                // Delivery belongs to the draft, but its preview appears in the
+                // reader. Keep it fresh without re-preparing received messages.
+                loadOutgoingThread();
+                if (m_selected.startsWith("outgoing:")) loadConversation(refreshDraft);
+            }
+            if (draftsChanged) m_draftChipsTimer.start();
+            if (areaChanged("captures")) loadCaptures();
+        }
+        if (calendarChanged) loadCalendar();
+        m_uiGenerations = generations;
+        if (deferReader) m_uiGenerations.remove("reader");
+    }
+    m_revision = revision;
+    m_calendarRevision = calendarRevision;
+    m_mailRevision = mailRevision;
+}
 void MailBackend::refreshState(bool refreshList, bool refreshCalendar, bool automatic) {
     {
         QScopedValueRollback<bool> origin(m_automaticReadScope, automatic);

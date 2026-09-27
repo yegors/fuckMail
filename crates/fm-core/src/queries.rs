@@ -9,6 +9,7 @@
 //! derived caches (counts, coverage, the first list page) and that clients
 //! poll through `status`.
 use crate::*;
+mod ui_changes;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::{
@@ -175,6 +176,8 @@ pub(crate) struct CoverageProjection {
 pub(crate) type CoverageCache = RefCell<HashMap<String, CoverageProjection>>;
 /// A consistent copy of `Changes` taken by `MailChanges::snapshot`.
 struct ChangeSnapshot {
+    ui: ui_changes::UiChanges,
+    model_progress: u64,
     messages: u64,
     coverage: u64,
     search: u64,
@@ -189,6 +192,9 @@ struct ChangeSnapshot {
 /// generation is still `g`.
 #[derive(Default)]
 struct Changes {
+    ui: ui_changes::UiChanges,
+    /// Mail/model rows used by the local model's progress counts.
+    model_progress: u64,
     /// Update-hook calls, compared with `total_changes()` to detect writes
     /// the hook never saw.
     hooks: u64,
@@ -228,6 +234,17 @@ impl MailChanges {
         db.update_hook(Some(move |action, _: &str, table: &str, rowid| {
             let mut c = hook.lock().unwrap();
             c.hooks += 1;
+            c.ui.observe(table);
+            if matches!(
+                table,
+                "messages"
+                    | "google_message_state"
+                    | "local_model_results"
+                    | "local_model_failures"
+                    | "accounts"
+            ) {
+                c.model_progress += 1;
+            }
             if table == "calendar_publication" {
                 c.calendar += 1;
             }
@@ -310,6 +327,8 @@ impl MailChanges {
         let total = db.total_changes();
         let (old_total, old_hooks, old_messages) = c.observed;
         if total - old_total != c.hooks - old_hooks {
+            c.ui.invalidate();
+            c.model_progress += 1;
             // Virtual tables and SQLite's truncate optimization can change rows
             // without a corresponding hook. An observed message-insert delta is
             // safe only after inventory validation below; otherwise rebuild.
@@ -323,6 +342,8 @@ impl MailChanges {
         }
         let in_transaction = !db.is_autocommit();
         if in_transaction || c.observed_in_transaction {
+            c.ui.invalidate();
+            c.model_progress += 1;
             // SQLite hooks/total_changes are not reversed on rollback. Never
             // reuse a projection read inside a transaction or after its exit,
             // including SAVEPOINT/ROLLBACK TO without an outer rollback hook.
@@ -337,6 +358,8 @@ impl MailChanges {
         c.observed_in_transaction = in_transaction;
         c.observed = (total, c.hooks, c.messages);
         ChangeSnapshot {
+            ui: c.ui,
+            model_progress: c.model_progress,
             messages: c.messages,
             coverage: c.coverage,
             search: c.search,
@@ -345,6 +368,16 @@ impl MailChanges {
             coverage_reset_after: c.coverage_reset_after,
             documents: c.documents.iter().copied().collect(),
         }
+    }
+
+    /// Uses the same conservative handling of missed hooks and transactions as
+    /// the mail projections. Policy and time bounds are checked by the caller.
+    pub(crate) fn model_progress_generation(&self, db: &Connection) -> u64 {
+        self.snapshot(db).model_progress
+    }
+
+    pub(crate) fn ui_generations(&self, db: &Connection) -> Value {
+        self.snapshot(db).ui.json(&self.1)
     }
 }
 impl Store {
@@ -682,7 +715,7 @@ impl Store {
                 "messages":coverage.observed,"indexed_messages":coverage.indexed,"text_index_complete":coverage.indexed==coverage.observed,
                 "retained_source_records":coverage.retained_sources,"retained_sources":coverage.retained_sources,"source_verification":"verified_on_acquisition",
                 "attachments":null,"recorded_available_attachments":null,"complete_attachments":null,"verified_attachments":null,"attachment_verification":"verified_on_acquisition",
-                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"offline_complete":coverage.offline_complete,
+                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"undownloadable_messages":coverage.undownloadable,"offline_complete":coverage.offline_complete,
                 "text":format!("Cached text: {}/{} observed messages. {} source records retained; {} items need attention. {}",coverage.indexed,coverage.observed,coverage.retained_sources,coverage.unavailable,if coverage.offline_complete {"Inventory and catch-up are complete at the last sync."} else {"Full offline acquisition is incomplete."})}),
             );
         }

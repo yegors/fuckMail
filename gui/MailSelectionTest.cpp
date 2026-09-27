@@ -5,11 +5,15 @@
 #include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
+#include "WindowPlacement.h"
 #include <QGuiApplication>
 #include <QFontInfo>
 #include <QFontDatabase>
 #include <QJsonArray>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
+#include <QLocale>
+#include <QSGRendererInterface>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
@@ -26,6 +30,7 @@
 #include <QColor>
 #include <algorithm>
 #include <QTest>
+#include <QtMath>
 using namespace GoogleOperationFixture;
 
 class MailSelectionTest {
@@ -40,6 +45,40 @@ class MailSelectionTest {
         QList<QJsonObject> remoteSearches;
         QVariantList rows;
         QJsonObject summary; // Core's section counts, merged into list replies
+        // Like Core, leave collapsed Done months out of list replies; while
+        // holdLists is set, replies wait for releaseLists(), as behind a busy sync.
+        bool filterCollapsed = false, holdLists = false;
+        // Pages list replies like Core when set: this many rows per offset.
+        int pageSize = 0;
+        QJsonValue unsubscribed = QJsonValue::Null; // Core keeps a list's unsubscribe
+        // Reply drafts by draft ID; a conversation's own reply uses its ID, as in Core.
+        QHash<QString,QJsonObject> drafts;
+        QList<Held> heldLists;
+        QJsonObject listReply(const QJsonObject &params) const {
+            QJsonArray shown;
+            const auto months = params["collapsed_months"].toArray();
+            for (const auto &value : rows) {
+                const auto row = value.toMap();
+                const auto month = row.value("latest_at").toString().left(7);
+                if (filterCollapsed && row.value("group") == "done" && months.contains(month)) continue;
+                shown.append(QJsonObject::fromVariantMap(row));
+            }
+            QJsonValue next = QJsonValue::Null;
+            int total = 3;
+            if (pageSize > 0) {
+                const int offset = params["offset"].toInt(), all = int(shown.size());
+                QJsonArray page; for (int i = offset; i < std::min(all, offset + pageSize); ++i) page.append(shown[i]);
+                if (offset + pageSize < all) next = offset + pageSize;
+                shown = page; total = all;
+            }
+            QJsonObject result{{"conversations",shown},{"revision",3},{"filtered_conversation_count",total},{"folder_conversation_count",total},{"next_offset",next}};
+            for (auto it=summary.begin(); it!=summary.end(); ++it) result[it.key()]=it.value();
+            return result;
+        }
+        void releaseLists() {
+            for (const auto &held : std::as_const(heldLists)) if (held.peer) held.peer->write(reply(held.request["id"].toString(),listReply(held.request["params"].toObject())));
+            heldLists.clear();
+        }
         Harness() {
             backend.m_account = "personal";
             backend.m_syntheticProfile = false;
@@ -57,11 +96,21 @@ class MailSelectionTest {
             backend.m_querySummary = {{"filtered_conversation_count",3},{"filtered_group_counts",QVariantMap{{"review",3}}}};
             engine.customRequest = [this](auto *peer, const auto &request) {
                 const auto method = request["method"].toString(); methods.append(method);
-                if (method == "flag" || method == "set_category" || method == "mail_filing" || method == "draft_discard" || method == "mail_undo") writes.append({peer,request});
+                const auto draftId = request["params"].toObject()["draft_id"].toString(request["params"].toObject()["conversation_id"].toString());
+                if (method == "draft_discard" && drafts.contains(draftId)) {
+                    auto draft = drafts[draftId]; draft["discarded"] = true; draft["body"] = "";
+                    draft["revision"] = request["params"].toObject()["expected_revision"].toInteger()+1; drafts[draftId] = draft;
+                    peer->write(reply(request["id"].toString(),draft));
+                }
+                else if (method == "flag" || method == "set_category" || method == "mail_filing" || method == "draft_discard" || method == "mail_undo") writes.append({peer,request});
                 else {
                     QJsonObject result;
                     if (method == "accounts") result["accounts"] = QJsonArray::fromVariantList(backend.m_allAccounts);
-                    else if (method == "conversations") { lastQuery = request["params"].toObject(); result = {{"conversations",QJsonArray::fromVariantList(rows)},{"revision",3},{"filtered_conversation_count",3},{"folder_conversation_count",3},{"next_offset",QJsonValue::Null}}; for (auto it=summary.begin(); it!=summary.end(); ++it) result[it.key()]=it.value(); }
+                    else if (method == "conversations") {
+                        lastQuery = request["params"].toObject();
+                        if (holdLists) { heldLists.append({peer,request}); return true; }
+                        result = listReply(lastQuery);
+                    }
                     else if (method == "assist_results") result={{"items",QJsonArray{QJsonObject{{"task","summary"},{"target","a-original"},{"stale",false},{"partial",false},{"source_ids",QJsonArray{"a-original"}},{"schema",2},{"output",QJsonObject{{"summary","You granted Example Mail access to your account data. Review access if you did not authorize it."},{"source_ids",QJsonArray{"a-original"}}}},{"model",QJsonObject{{"name","gemma4:e4b"}}}}}}};
                     else if (method == "assist_settings_get") result={{"revision",0},{"settings",QJsonObject{{"accounts",QJsonObject{}},{"model",QJsonObject{{"name","example.registry/team/a-very-long-qualified-model-name:large"},{"digest","synthetic"}}}}}};
                     else if (method == "message_source") {
@@ -79,15 +128,29 @@ class MailSelectionTest {
                         QJsonObject{{"id","remote-m1"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-04T09:00:00Z"},{"text","First"},{"remote",true},{"source_available",false},{"source_version",""},{"attachments",QJsonArray{}},{"sent",false}},
                         QJsonObject{{"id","remote-m2"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-05T09:00:00Z"},{"text","Invoice attached"},{"body_html","<p><b>Invoice</b> attached</p>"},{"remote",true},{"source_available",false},{"source_version",""},{"sent",false},
                             {"attachments",QJsonArray{QJsonObject{{"id","remote-att:m2:0"},{"name","invoice.pdf"},{"mime_type","application/pdf"},{"size",4},{"state","remote"}}}}}}}};
-                    else if (method == "message_unsubscribe") result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}};
-                    else if (method == "google_unsubscribe_mail") result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}};
+                    else if (method == "message_unsubscribe") { result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; }
+                    else if (method == "google_unsubscribe_mail") { result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","mailto"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
                     else if (method == "view_save") result["revision"] = 1;
+                    else if (method == "draft_get" && drafts.contains(draftId)) result = drafts[draftId];
                     else if (method == "draft_get") result = {{"conversation_id",request["params"].toObject()["conversation_id"]},{"account","personal"},{"revision",0}};
+                    else if (method == "draft_save" && drafts.contains(draftId)) {
+                        const auto params = request["params"].toObject(); auto draft = drafts[draftId];
+                        draft["body"] = params["body"]; draft["discarded"] = false; draft["revision"] = params["expected_revision"].toInteger()+1; drafts[draftId] = draft; result = draft;
+                    }
+                    else if (method == "draft_create") {
+                        const auto params = request["params"].toObject(); const auto id = QString("reply-%1").arg(drafts.size());
+                        const auto body = params["mode"]=="forward" ? QString("\n\n---------- Forwarded message ----------\n> Retained plain body") : QString();
+                        result = {{"account","personal"},{"draft_id",id},{"conversation_id",params["conversation_id"]},{"mode",params["mode"]},{"source_message_id",params["source_message_id"]},
+                            {"revision",1},{"discarded",false},{"body",body},{"subject",params["mode"]=="new" ? "" : "Re: Labeled message a"},
+                            {"to_recipients",params["mode"]=="new" ? QJsonArray{} : QJsonArray{QJsonObject{{"email","sender@example.test"},{"name","Sender"}}}},
+                            {"cc_recipients",QJsonArray{}},{"bcc_recipients",QJsonArray{}},{"attachment_ids",QJsonArray{}},{"attachments",QJsonArray{}}};
+                        drafts[id] = result;
+                    }
                     else if (method == "conversation") {
                         const auto id = request["params"].toObject()["id"].toString();
                         result = {{"id",id},{"revision",3},{"message_ids",QJsonArray{id+"-original"}},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
-                            {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",QJsonValue()}}}};
+                            {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
                     }
                     peer->write(reply(request["id"].toString(),result));
                 }
@@ -113,6 +176,122 @@ class MailSelectionTest {
             else held.peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",held.request["id"]},{"ok",false},{"error",QJsonObject{{"code","stale_revision"},{"message","Conversation changed"}}}}).toJson(QJsonDocument::Compact)+'\n');
         }
     };
+    static void readerMemorySharing() {
+        Harness h;
+        h.backend.m_selected="a";
+        const auto version=QString(64,'a'), key=QString("personal\na-original\n")+version;
+        const QVariantMap source{{"account","personal"},{"id","a-original"},{"source_version",version},
+            {"body_html",QString("<p>Generated retained source.</p>").repeated(6000)},
+            {"metadata",QVariantList{QVariantMap{{"label","From"},{"value","sender@example.test"}}}}};
+        h.backend.m_sourceCache.insert(key,new MailBackend::ReaderSnapshot{source,1},400000);
+        const QVariantMap member{{"id","a-original"},{"source_available",true},{"source_version",version},
+            {"text","Generated body"},{"reader_sections",QVariantList{}},{"reader_plain_sections",QVariantList{}}};
+        const QVariantMap data{{"id","a"},{"revision",3},{"messages",QVariantList{member}}};
+        const auto requests=h.methods.count("message_source");
+        for(int round=0;round<12;++round) {
+            QVariantMap prepared; bool ready=false;
+            h.backend.prepareReader("personal","a",data,h.backend.m_generation,1,false,[&](auto value){prepared=value;ready=true;});
+            await([&]{return ready;},"cached reader prepares");
+            const auto kept=prepared.value("messages").toList().last().toMap().value("reader_source").toMap();
+            require(kept==source && kept.isSharedWith(source),"reader retains the exact cached source without copying its map");
+            require(kept.value("body_html").toString().constData()==source.value("body_html").toString().constData(),"large source text shares its allocation");
+            require(h.backend.m_sourceCache.object(key)->data.isSharedWith(source),"preparing a cache hit preserves the cached source");
+            h.backend.cacheConversation("personal","a",prepared,1);
+            const auto cached=h.backend.m_readerCache.object(qMakePair(QString("personal"),QString("a")));
+            h.backend.cacheConversation("personal","a",prepared,1);
+            require(h.backend.m_readerCache.object(qMakePair(QString("personal"),QString("a")))==cached,"an unchanged reader is kept in place");
+        }
+        require(h.methods.count("message_source")==requests,"cache reuse adds no source request");
+        auto changed=data; changed["subject"]="Fresh metadata at the same revision";
+        h.backend.cacheConversation("personal","a",changed,1);
+        require(h.backend.m_readerCache.object(qMakePair(QString("personal"),QString("a")))->data==changed,"same-revision metadata changes still refresh the reader");
+        auto older=changed;older["revision"]=2;
+        h.backend.cacheConversation("personal","a",older,1);
+        require(h.backend.m_readerCache.object(qMakePair(QString("personal"),QString("a")))->data==changed,"older replies cannot overwrite cached data");
+        qInfo()<<"Repeated reader preparations share"<<source.value("body_html").toString().size()*2<<"source-text bytes and preserve cached replies.";
+    }
+    static void scopedRefreshes() {
+        Harness h;
+        auto &backend = h.backend;
+        backend.m_selected = "a";
+        backend.m_calendarRevision = 0; backend.m_mailRevision = 0; backend.m_revision = 0;
+        QJsonObject generations{{"epoch","synthetic-store"},{"accounts",0},{"categories",0},{"reader",0},{"drafts",0},{"captures",0}};
+        backend.m_uiGenerations = generations;
+        QJsonObject status{{"revision",0},{"calendar_generation",0},{"mail_generation",0},{"preferences_revision",0},{"ui_generations",generations}};
+        const auto settle = [&] {
+            await([&]{ return backend.m_pending.isEmpty() && backend.m_readerLoadingGeneration < 0; }, "scoped refresh finishes");
+            backend.m_draftChipsTimer.stop();
+        };
+        const auto poll = [&](const QString &area) {
+            settle(); h.methods.clear();
+            if (!area.isEmpty()) generations[area] = generations[area].toInteger() + 1;
+            status["revision"] = status["revision"].toInteger() + 1;
+            status["ui_generations"] = generations;
+            backend.refreshFromStatus(status); settle();
+        };
+        poll({});
+        require(h.methods.isEmpty(), "global revision alone does not reload independent projections");
+        poll("accounts");
+        require(h.methods == QStringList{"accounts"}, "sync/account metadata only refreshes accounts");
+        poll("categories");
+        require(h.methods == QStringList{"categories"}, "category generation only requests category projection");
+        poll("captures");
+        require(h.methods == QStringList{"capture_history"}, "capture generation only requests history");
+        poll("drafts");
+        require(h.methods.contains("draft_get") && h.methods.contains("google_sent")
+            && !h.methods.contains("conversation") && !h.methods.contains("assist_results") && !h.methods.contains("capture_history"),
+            "draft updates retain send status without preparing the received reader");
+        backend.m_draftDirty = true; backend.m_draft["body"] = "Unsaved human text";
+        poll("drafts");
+        require(backend.m_draft.value("body") == "Unsaved human text" && backend.m_draftDirty,
+            "external draft polling cannot overwrite unsaved typing");
+        backend.m_draftDirty = false;
+        poll("reader");
+        require(h.methods.contains("conversation") && h.methods.contains("assist_results")
+            && !h.methods.contains("draft_get") && !h.methods.contains("capture_history") && h.writes.isEmpty(),
+            "changed mail refreshes the reader without marking it read or reloading unchanged drafts");
+        require(backend.m_conversation.value("id") == "a", "changed reader is published");
+
+        backend.m_readerLoadingGeneration = backend.m_generation;
+        generations["reader"] = generations["reader"].toInteger() + 1;
+        status["ui_generations"] = generations; h.methods.clear();
+        backend.refreshFromStatus(status);
+        require(!backend.m_uiGenerations.contains("reader") && !h.methods.contains("conversation"),
+            "a busy reader keeps its invalidation instead of losing a change");
+        backend.m_readerLoadingGeneration = -1; poll({});
+        require(h.methods.contains("conversation"), "a later unchanged poll refreshes the deferred reader");
+
+        backend.m_queryActivity.start(); status["mail_generation"] = 1;
+        poll({});
+        require(backend.m_listRefreshPending && !h.methods.contains("conversations"), "typing defers a changed list");
+        backend.m_queryActivity.invalidate(); poll({});
+        require(!backend.m_listRefreshPending && h.methods.contains("conversations"), "unchanged later status delivers the deferred list");
+        backend.m_browsingOlder = true; status["mail_generation"] = 2; poll({});
+        require(backend.m_listRefreshPending && !h.methods.contains("conversations"), "older pages retain deferred invalidation");
+        backend.m_browsingOlder = false; poll({});
+        require(!backend.m_listRefreshPending && h.methods.contains("conversations"), "returning from older pages delivers invalidation");
+        generations["epoch"] = "reopened-store"; poll({});
+        for (const auto *method : {"accounts","categories","conversation","draft_get","capture_history"})
+            require(h.methods.contains(method), "a new store epoch refreshes every projection");
+        h.methods.clear(); status.remove("ui_generations"); status["revision"] = status["revision"].toInteger() + 1;
+        backend.refreshFromStatus(status); settle();
+        for (const auto *method : {"accounts","categories","conversation","draft_get","capture_history"})
+            require(h.methods.contains(method), "legacy status retains conservative full refresh");
+        require(h.writes.isEmpty(), "background refresh never marks mail read or sends it");
+        qInfo() << "Scoped refresh: account-only poll requests 1 projection; unrelated global revision requests 0. Reader, draft, delivery, deferred list and reconnect checks pass.";
+    }
+    // Copies the production QML into a private SelectionTest module.
+    static void copyModule(const QTemporaryDir &copy) {
+        const auto modulePath=copy.filePath("SelectionTest"); require(QDir().mkpath(modulePath),"private QML module");
+        QByteArray module("module SelectionTest\nsingleton Theme 1.0 Theme.qml\n");
+        for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
+            require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"unchanged production QML");
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+        }
+        QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"module registration"); registration.write(module); registration.close();
+        qmlRegisterType<ReplyDocument>("SelectionTest",1,0,"ReplyDocument");
+    }
     static void mutations() {
         Harness h;
         h.backend.loadConversations(); await([&]{return !h.backend.m_loading;},"account mailbox loads");
@@ -201,14 +380,7 @@ class MailSelectionTest {
         h.rows={make("r1","review",true,false,"2026-09-14T12:00:00Z"),make("r2","review",true,false,"2026-09-14T11:00:00Z"),make("h1","held",false,true,"2026-09-14T09:00:00Z"),
             make("r3","review",true,false,"2026-09-14T08:00:00Z"),make("d1","done",false,false,"2026-09-10T10:00:00Z")};
         order({"r1","r2","r3","h1","d1"}); counts(3,1,1);
-        QTemporaryDir copy; const auto modulePath=copy.filePath("SelectionTest"); require(QDir().mkpath(modulePath),"review QML module");
-        QByteArray module("module SelectionTest\nsingleton Theme 1.0 Theme.qml\n");
-        for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
-            require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"unchanged production QML");
-            if(name=="ShortcutRegistry.qml") module+="singleton ";
-            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
-        }
-        QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"review registration"); registration.write(module); registration.close();
+        QTemporaryDir copy; copyModule(copy);
         QQmlApplicationEngine qml; FmIconItem::registerType();
         QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){for(const auto &error:errors) qWarning()<<error.toString();});
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
@@ -358,6 +530,23 @@ class MailSelectionTest {
             require(leaving()==QStringList{rows[2].toMap()["id"].toString()} && !ids().contains(rows[1].toMap()["id"].toString()),"only the latest row collapses; the earlier one goes at once");
             await([&]{return leaving().isEmpty() && !h.backend.m_loading && ids().size()==5;},"after the collapse the list settles with every row");
         }
+        // The last conversation to review, read and then left, leaves Inbox
+        // zero as soon as it has folded away, not when the refresh lands.
+        {
+            for (const auto &id : {"r1","r2","r3","h1","d1"}) set(id,"done",false,false);
+            order({"r1","r2","r3","h1","d1"}); counts(0,0,5);
+            h.backend.loadConversations(false,true); await([&]{return !h.backend.m_loading;},"every row is Done");
+            auto rows=h.backend.conversations(); auto kept=rows[0].toMap();
+            kept["pinned"]=true; kept["display_group"]="review"; kept["pinned_from"]="done"; rows[0]=kept;
+            h.backend.publishConversations(rows); emit h.backend.conversationsChanged(); settle();
+            require(shownCount("mailSectionEmpty_review")==0,"the read one still stands in To review");
+            h.holdLists=true;
+            h.backend.startLeaving(h.backend.conversations()[0].toMap(),0);
+            QElapsedTimer folded; folded.start(); while(folded.elapsed()<330) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(shownCount("mailSectionEmpty_review")==1,"Inbox zero shows once the last row has folded away");
+            h.holdLists=false; h.releaseLists(); await([&]{return !h.backend.m_loading;},"the refresh after it lands");
+            require(shownCount("mailSectionEmpty_review")==1,"and stays when the refresh lands");
+        }
         // Collapsing the only loaded month while older mail isn't loaded keeps
         // the headers, and refreshes never show a loading text.
         {
@@ -366,9 +555,8 @@ class MailSelectionTest {
             h.backend.loadConversations(false,true); await([&]{return !h.backend.m_loading;},"every row in one month");
             settle();
             auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail workspace");
-            // Load more's own "Loading…" is paging feedback, not a refresh.
+            // Neither a refresh nor paging older mail says Loading.
             const auto loadingText=[&]{ bool found=false; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){
-                if (item->objectName()=="loadMoreConversations") return;
                 const auto text=item->property("text").toString();
                 if (item->isVisible() && (text==QStringLiteral("Searching\u2026") || text==QStringLiteral("Loading\u2026"))) found=true;
                 for (auto *child:item->childItems()) walk(child); };
@@ -434,18 +622,14 @@ class MailSelectionTest {
     }
     static void controls() {
         Harness h;
-        QTemporaryDir copy; const auto modulePath=copy.filePath("SelectionTest"); require(QDir().mkpath(modulePath),"selection QML module");
-        QByteArray module("module SelectionTest\nsingleton Theme 1.0 Theme.qml\n");
-        for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
-            require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"unchanged production QML");
-            if(name=="ShortcutRegistry.qml") module+="singleton ";
-            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
-        }
-        QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"selection registration"); registration.write(module); registration.close();
-        qmlRegisterType<ReplyDocument>("SelectionTest",1,0,"ReplyDocument");
+        QTemporaryDir copy; copyModule(copy);
         QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings=false;
         QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors) qWarning()<<error.toString();});
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        // The list/reader divider is one app-wide width kept with the window's place.
+        QTemporaryDir layoutProfile; require(layoutProfile.isValid(),"layout profile");
+        WindowPlacement splitLayout(layoutProfile.path(), {1000,650}); splitLayout.setMailSplitWidth(520);
+        qml.rootContext()->setContextProperty("windowLayout",&splitLayout);
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; function present(theme,size) { Theme.themeId=theme; Theme.textSize=size } MailView { anchors.fill:parent } StartupOverlay { id:splash; anchors.fill:parent; startupReady:true } }",QUrl::fromLocalFile(copy.filePath("Test.qml")));
         require(!qml.rootObjects().isEmpty(),"actual MailView and splash load");
         auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
@@ -456,6 +640,22 @@ class MailSelectionTest {
         require(!splash->property("dismissed").toBool() && splash->opacity()==1,"fast startup displays complete lettering before fade");
         await([&]{return splash->property("dismissed").toBool();},"splash eventually releases input");
         require(elapsed.elapsed()>=1700,"minimum splash hold respected");
+        {
+            auto pane=find(window->contentItem(),"mailListPane"); require(pane,"list pane");
+            await([&]{return qAbs(pane->width()-520)<1;},"the saved divider applies at startup");
+            // An account's old per-account width no longer moves the divider.
+            auto views=h.backend.m_views; auto view=views.value("personal").toMap(); view["splitWidth"]=900; views["personal"]=view; h.backend.m_views=views;
+            emit h.backend.presentationChanged();
+            QElapsedTimer settle; settle.start(); while(settle.elapsed()<150) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(qAbs(pane->width()-520)<1,"view state leaves the divider alone");
+            // Dragging the divider saves one width when the drag ends.
+            const QPoint from=pane->mapToScene(QPointF(pane->width(),pane->height()/2)).toPoint(), to=from+QPoint(80,0);
+            QTest::mousePress(window,Qt::LeftButton,Qt::NoModifier,from);
+            for(int step=1;step<=8;++step){QTest::mouseMove(window,from+QPoint(step*10,0));QCoreApplication::processEvents();}
+            require(qAbs(splitLayout.mailSplitWidth()-520)<1,"nothing is saved mid-drag");
+            QTest::mouseRelease(window,Qt::LeftButton,Qt::NoModifier,to);
+            await([&]{return qAbs(splitLayout.mailSplitWidth()-pane->width())<1 && pane->width()>560;},"the dragged width is saved on release");
+        }
         auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"actual mail workspace");
         auto summaryRow=h.rows[0].toMap(); summaryRow["summary"]="Review the design by Friday."; summaryRow["snippet"]="Original body preview";
         summaryRow["others"]=2; summaryRow["other_names"]=QVariantList{"Ann","Bob"}; summaryRow["message_count"]=3; summaryRow["attachment_count"]=1; h.rows[0]=summaryRow;
@@ -501,7 +701,7 @@ class MailSelectionTest {
         click(window,find(window->contentItem(),"contextDone"),Qt::LeftButton);
         for(int i=0;i<3;++i) h.finish(h.take());
         await([&]{return !h.backend.m_mutatingConversation;},"native bulk Done completes");
-        require(h.backend.mailSelectionStatus().startsWith("3 of 3"),"native selection result visible");
+        require(h.backend.mailSelectionStatus().isEmpty(),"a finished selection action leaves no status line");
         h.backend.loadCategories();
         await([&]{return !h.backend.categories().isEmpty();},"label catalog available");
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::RightButton);
@@ -563,6 +763,15 @@ class MailSelectionTest {
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
         h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(97))},{"sent",false}}}}};
         emit h.backend.conversationChanged();
+        // Plain text until the sender is chosen for HTML; the badge chooses it for all their mail.
+        await([&]{auto item=find(window->contentItem(),"messageFormatToggle_a-original");return item && item->isVisible() && item->property("text")=="TEXT";},"plain text by default once the HTML is known");
+        require(shown(window->contentItem(),"messageBody_a-original")->property("text").toString().contains("Retained plain body"),"the default body is the extracted text");
+        require(find(window->contentItem(),"messageFormatToggle_a-original")->property("tip").toString().endsWith("for all mail from sender@example.test"),"the badge names the sender it changes");
+        click(window,find(window->contentItem(),"messageFormatToggle_a-original"),Qt::LeftButton);
+        {
+            const auto chosen=h.backend.preferences().value("html_senders").toList();
+            require(chosen.size()==1 && chosen.first().toMap().value("account")=="personal" && chosen.first().toMap().value("email")=="sender@example.test","HTML is saved for this sender in this account");
+        }
         await([&]{auto item=shown(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained HTML");},"received HTML loads for the expanded message");
         require(h.writes.isEmpty(),"source inspection queues no mutations");
         auto body=shown(window->contentItem(),"messageBody_a-original")->property("text").toString();
@@ -577,6 +786,7 @@ class MailSelectionTest {
         layout.restart(); while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageFormatPlain"),Qt::LeftButton);
         await([&]{auto item=shown(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained plain body");},"plain format uses retained extracted body");
+        require(h.backend.preferences().value("html_senders").toList().isEmpty(),"choosing plain text forgets the sender's HTML choice");
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("a-original")));
         layout.restart(); while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageMore_a-original"),Qt::LeftButton);
@@ -631,6 +841,34 @@ class MailSelectionTest {
         require(formatted(localMidnight.toUTC().toString(Qt::ISODate))=="Saturday 12 September 2026, 00:03","date follows local midnight rather than the source UTC calendar date");
         require(!find(window->contentItem(),"quotedReply_last_1") && !find(window->contentItem(),"messageBodyPart_last_5"),"quoted history creates neither controls nor hidden body delegates");
         require(find(window->contentItem(),"messageBody_last")->property("text").toString().contains("Final release notes are ready"),"thread reader retains the new contribution");
+        {
+            // Reply shows the whole reply at the end of the thread, and keeps it
+            // there while the thread above it grows.
+            auto *reader=find(window->contentItem(),"reader"); require(reader,"reader");
+            const auto thread=h.backend.m_conversation;
+            const int windowHeight=window->height(); window->setHeight(560);
+            layout.restart();while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            reader->setProperty("contentY",0);
+            QMetaObject::invokeMethod(mail,"openReply");
+            layout.restart();while(layout.elapsed()<60)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            auto grown=thread; auto messages=grown["messages"].toList(); auto later=messages.first().toMap();
+            later["id"]="later"; later["text"]=QString("A longer message that lays out after Reply.\n").repeated(40); messages.insert(1,later); grown["messages"]=messages;
+            h.backend.m_conversation=grown; emit h.backend.conversationChanged();
+            auto *reveal=window->findChild<QObject*>("replyReveal"); require(reveal,"reply reveal");
+            await([&]{return !reveal->property("running").toBool();},"the reply finishes coming into view");
+            auto *panel=find(window->contentItem(),"replyPanel"); require(panel && panel->isVisible() && panel->height()>0,"Reply opens the composer");
+            const auto bottom=qMax(0.0,reader->property("contentHeight").toDouble()-reader->height());
+            require(reader->property("contentHeight").toDouble()>reader->height()+40,"the thread is longer than the reader");
+            const auto footer=panel->mapToItem(reader,QPointF(0,panel->height())).y();
+            if (qAbs(reader->height()-footer-24)>=1 && qAbs(reader->property("contentY").toDouble()-bottom)>=1) qWarning()<<"reply footer at"<<footer<<"of"<<reader->height();
+            require(qAbs(reader->height()-footer-24)<1 || qAbs(reader->property("contentY").toDouble()-bottom)<1,"Reply brings its footer into view with 24px to spare");
+            const auto top=panel->mapToItem(reader,QPointF(0,0)).y(), end=panel->mapToItem(reader,QPointF(0,panel->height())).y();
+            require(top>=-1 && end<=reader->height()+1,"the whole reply shows");
+            QMetaObject::invokeMethod(mail,"setReplyOpen",Q_ARG(QVariant,false));
+            h.backend.m_conversation=thread; emit h.backend.conversationChanged(); window->setHeight(windowHeight);
+            find(window->contentItem(),"conversationList")->forceActiveFocus();
+            layout.restart();while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        }
         auto popup=[&]()->QObject* {for(auto object:window->findChildren<QObject *>("senderCard"))if(object->property("opened").toBool())return object;return nullptr;};
         auto move=[&](const QPointF &p) {QMouseEvent event(QEvent::MouseMove,p,window->mapToGlobal(p.toPoint()),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);};
         require(!find(window->contentItem(),"participantAvatar_self"),"thread summary lists the other people, not the user");
@@ -746,12 +984,66 @@ class MailSelectionTest {
         const auto avi=aviChunk("RIFF",QByteArray("AVI ")+aviHeader+aviChunk("LIST",aviFrames));
         const auto videoPath=copy.filePath("motion.avi");QFile videoFile(videoPath);require(videoFile.open(QIODevice::WriteOnly) && videoFile.write(avi)==avi.size(),"synthetic video written");videoFile.close();
         addAttachment("video",videoPath,"video/x-msvideo");
+        const auto secondVideoPath=copy.filePath("second motion.avi");require(QFile::copy(videoPath,secondVideoPath),"second synthetic video");
+        addAttachment("video2",secondVideoPath,"video/x-msvideo");
+        {
+            // A card first laid out below the reader loads once a change above it
+            // brings it on screen, with no scrolling: here the long message folds.
+            const auto photo=QVariantMap{{"id","photo"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Image and binary attachment."},{"sent",false},{"attachments",QVariantList{h.attachments["image"].toVariantMap(),h.attachments["binary"].toVariantMap()}}};
+            const auto above=QVariantMap{{"id","above"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-13T10:00:00Z"},{"text",QString("A line of text above the attachments.").append(QChar('\n')).repeated(160)},{"sent",false}};
+            const auto key=mail->property("expansionKey").toString();
+            mail->setProperty("expandedMembers",QVariantMap{{key+"above",true},{key+"photo",false}});
+            h.backend.m_conversation={{"id","a"},{"subject","Attachment preview"},{"revision",3},{"messages",QVariantList{above,photo}}}; emit h.backend.conversationChanged();
+            mail->setProperty("expanded",true);
+            auto *reader=find(window->contentItem(),"reader"); require(reader,"reader"); reader->setProperty("contentY",0);
+            layout.restart();while(layout.elapsed()<250)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            // Opened under the long message, its cards lay out below the reader.
+            QMetaObject::invokeMethod(mail,"toggleMember",Q_ARG(QVariant,QString("photo")),Q_ARG(QVariant,1));
+            layout.restart();while(layout.elapsed()<250)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            auto *card=find(window->contentItem(),"attachment_image");
+            require(card && card->isVisible() && card->mapToItem(reader,QPointF(0,0)).y()>=reader->height() && card->property("previewUrl").toString().isEmpty(),"a card below the reader loads nothing yet");
+            require(reader->property("contentY").toDouble()==0,"the reader has not moved");
+            QMetaObject::invokeMethod(mail,"toggleMember",Q_ARG(QVariant,QString("above")),Q_ARG(QVariant,0));
+            await([&]{return !card->property("previewUrl").toString().isEmpty();},"the card loads once the fold above brings it on screen");
+            require(reader->property("contentY").toDouble()==0,"nothing scrolled the reader");
+            mail->setProperty("expandedMembers",QVariantMap{});
+        }
+        {
+            // A video card shows its first frame as a poster, and keeps it once
+            // the decoder is released.
+            const auto clip=QVariantMap{{"id","clip"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","A clip."},{"sent",false},{"attachments",QVariantList{h.attachments["video"].toVariantMap()}}};
+            h.backend.m_conversation={{"id","a"},{"subject","Clip"},{"revision",3},{"messages",QVariantList{clip}}}; emit h.backend.conversationChanged();
+            QQuickItem *tile=nullptr;
+            await([&]{tile=find(window->contentItem(),"attachment_video");return tile && tile->property("videoDuration").toInt()>0;},"the video card reads its length");
+            await([&]{return !tile->property("posterUrl").toString().isEmpty() && !find(tile,"attachmentPoster_video");},"the first frame is kept and the decoder released");
+            layout.restart();while(layout.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            auto *preview=find(tile,"attachmentPreview_video"); require(preview,"the card's preview");
+            const auto frame=window->grabWindow();
+            const auto at=preview->mapToScene(QPointF(preview->width()*.18,preview->height()*.22))*window->effectiveDevicePixelRatio();
+            const QColor painted=frame.pixelColor(at.toPoint()), expected("#94659e");
+            if (qAbs(painted.red()-expected.red())>40 || qAbs(painted.green()-expected.green())>40 || qAbs(painted.blue()-expected.blue())>40) qWarning()<<"poster pixel"<<painted.name();
+            require(qAbs(painted.red()-expected.red())<=40 && qAbs(painted.green()-expected.green())<=40 && qAbs(painted.blue()-expected.blue())<=40,"the poster shows the video's first frame");
+        }
         h.backend.m_conversation={{"id","a"},{"subject","Attachment preview"},{"revision",3},{"messages",QVariantList{QVariantMap{{"id","photo"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Image and binary attachment."},{"sent",false},{"attachments",QVariantList{h.attachments["image"].toVariantMap(),h.attachments["binary"].toVariantMap()}}}}}};
         emit h.backend.conversationChanged();
         await([&]{auto item=find(window->contentItem(),"attachmentPreview_image");return item && item->isEnabled();},"retained image renders in thumbnail");
         auto tile=find(window->contentItem(),"attachment_image");
         await([&]{return tile && tile->property("imageWidth").toInt()==1600;},"decoded image dimensions retained");
+        const auto thumb=find(tile,"attachmentThumbnail_image"); require(thumb,"image thumbnail");
+        const auto thumbSize=thumb->property("sourceSize").toSize();
+        const auto pixelRatio=window->effectiveDevicePixelRatio();
+        require(thumbSize.width()>=thumb->width()*pixelRatio && thumbSize.height()>=thumb->height()*pixelRatio,"thumbnail covers the physical display pixels");
+        require(thumbSize.width()==qCeil(400*pixelRatio),"thumbnail avoids fixed oversized decode");
+        tile->setProperty("maximumWidth",tile->width()-10);
+        require(thumb->property("sourceSize").toSize()==thumbSize,"small card resizes reuse the decoded image");
         require(find(window->contentItem(),"attachmentSave_binary")->isEnabled(),"non-image has a save button");
+        {
+            // The attachments header folds the cards away and back, like a month header.
+            auto *caption=find(window->contentItem(),"messageAttachmentsCaption_photo"); require(caption && caption->isVisible(),"attachments header");
+            const auto cards=[&]{auto *flow=find(window->contentItem(),"messageAttachments_photo");return flow && flow->isVisible();};
+            click(window,caption,Qt::LeftButton); await([&]{return !cards();},"the attachments header folds the cards away");
+            click(window,caption,Qt::LeftButton); await(cards,"the attachments header shows them again");
+        }
         const auto tileHeight=tile->height();
         for (const auto &feedback: {QString("Saving…"),QString("Saved"),QString("Could not save here. Choose another location and try again.")}) {
             tile->setProperty("feedback",feedback);tile->setProperty("saveFailed",feedback.startsWith("Could"));
@@ -771,6 +1063,10 @@ class MailSelectionTest {
         require(mail->property("popupOpen").toBool(),"image modal blocks reader shortcuts");
         await([&]{return viewer->property("ratio").toDouble()==1.6;},"viewer uses the real image aspect ratio");
         require(viewer->property("width").toInt()==window->width() && viewer->property("height").toInt()==window->height(),"media overlay fills viewport");
+        const auto viewerImage=viewer->findChild<QQuickItem *>("attachmentViewerImage");require(viewerImage,"viewer image");
+        const auto decoded=viewerImage->property("sourceSize").toSize();
+        require(decoded.width()>=viewerImage->width()*pixelRatio && decoded.height()>=viewerImage->height()*pixelRatio,"viewer covers physical display pixels");
+        require(decoded.width()<viewerImage->width()*pixelRatio+128 && decoded.height()<viewerImage->height()*pixelRatio+128,"viewer decode rounds up by at most one bucket");
         const auto attachmentCapture=qEnvironmentVariable("FM_ATTACHMENT_CAPTURE");
         if(!attachmentCapture.isEmpty()){layout.restart();while(layout.elapsed()<150)QCoreApplication::processEvents(QEventLoop::AllEvents,10);require(window->grabWindow().save(attachmentCapture),"attachment viewer capture");}
         QMetaObject::invokeMethod(viewer,"close");
@@ -787,6 +1083,24 @@ class MailSelectionTest {
         QMetaObject::invokeMethod(viewer,"step",Q_ARG(QVariant,1));
         await([&]{return !viewer->property("video").toBool() && player->property("source").toUrl().isEmpty();},"next media releases the video source");
         QMetaObject::invokeMethod(viewer,"close");
+        {
+            // Arrowing from a playing video to the next one plays that one too.
+            await([&]{return !viewer->property("visible").toBool();},"the viewer closes");
+            const QVariant videos=QVariantList{h.attachments["video"].toVariantMap(),h.attachments["video2"].toVariantMap()};
+            QMetaObject::invokeMethod(viewer,"show",Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,videos),Q_ARG(QVariant,0));
+            // The viewer's own player: a closed viewing's one may linger until deleted.
+            const auto current=[&]{return viewer->property("player").value<QObject *>();};
+            await([&]{auto *first=current();return first && first->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool();},"the first video loads");
+            QMetaObject::invokeMethod(viewer,"togglePlayback");await([&]{return current()->property("position").toInt()>100;},"the first video plays");
+            QKeyEvent right(QEvent::KeyPress,Qt::Key_Right,Qt::NoModifier);QCoreApplication::sendEvent(window,&right);
+            await([&]{return viewer->property("index").toInt()==1;},"Right moves to the next video");
+            await([&]{auto *next=current();return !viewer->property("error").toString().isEmpty() || (next && next->property("source").toUrl().fileName()=="second motion.avi" && next->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool());},"the next video loads");
+            if(!viewer->property("error").toString().isEmpty()) qWarning()<<"viewer error"<<viewer->property("error");
+            require(viewer->property("error").toString().isEmpty(),"the next video has no error");
+            QMetaObject::invokeMethod(viewer,"togglePlayback");
+            await([&]{return current()->property("position").toInt()>100;},"the next video plays");
+            QMetaObject::invokeMethod(viewer,"close");
+        }
         QHash<QString,QString> saves;
         const auto savedConnection=QObject::connect(&h.backend,&MailBackend::attachmentSaved,[&](const auto &ticket,const auto &error){saves[ticket]=error;});
         const auto destination=copy.filePath("saved.bin");QFile previous(destination);require(previous.open(QIODevice::WriteOnly),"existing target opens");previous.write("previous");previous.close();
@@ -844,13 +1158,31 @@ class MailSelectionTest {
         press(Qt::Key_Home,Qt::ShiftModifier);
         require(mail->property("selectionRows").toList().size()==1,"Shift Home returns to the first row");
         QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"),Q_ARG(QVariant,QVariant()));
+        QCoreApplication::processEvents(); // The toggle applies just after the click returns.
         press(Qt::Key_End,Qt::ShiftModifier);
         require(mail->property("selectionCursor").toString()=="page-19","End skips collapsed groups");
         QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"),Q_ARG(QVariant,QVariant()));
+        QCoreApplication::processEvents();
         QMetaObject::invokeMethod(mail,"clearSelection");h.rows=originalRows;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         {
             // Spam is listed and opened live through Google operations; nothing asks Core for it.
             const auto pid=h.backend.m_enginePid; h.backend.m_enginePid=QCoreApplication::applicationPid();
+            {
+                // The Spam and Trash menu closes on a press anywhere else, its
+                // button closes it again, and a mailbox change closes it.
+                const auto menuShown=[&]{auto item=find(window->contentItem(),"spamScopeButton");return item&&item->isVisible();};
+                const auto settle=[&]{QElapsedTimer t;t.start();while(t.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);};
+                click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); await(menuShown,"the menu opens");
+                click(window,find(window->contentItem(),"scopeStatCount"),Qt::LeftButton); settle();
+                require(!menuShown(),"a press outside closes the Spam and Trash menu");
+                click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); await(menuShown,"the menu opens again");
+                click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); settle();
+                require(!menuShown(),"its button closes it rather than reopening it");
+                click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); await(menuShown,"the menu opens once more");
+                h.backend.setFolder("sent"); settle();
+                require(!menuShown(),"moving to another mailbox closes it");
+                h.backend.setFolder("inbox"); settle();
+            }
             // Spam sits behind the menu after Drafts; its rows use the normal list, one per thread.
             click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton);
             await([&]{auto item=find(window->contentItem(),"spamScopeButton");return item&&item->isVisible();},"the menu after Drafts lists Spam");
@@ -912,7 +1244,7 @@ public:
     static void accountControls() {
         Harness h;
         auto ordinary=h.engine.customRequest;
-        int scans=0,starts=0,stops=0,preferenceWrites=0,settingsRevision=0;QJsonObject savedAccount,savedPreferences,savedAssist; bool stopped=false; QString requestedAccount,requestedRange;
+        int scans=0,starts=0,stops=0,preferenceWrites=0,settingsRevision=0,labelReads=0;QJsonObject savedAccount,savedPreferences,savedAssist; bool stopped=false; QString requestedAccount,requestedRange;
         h.engine.customRequest=[&](auto *peer,const auto &request) {
             const auto method=request["method"].toString();QJsonObject result;
             if(method=="preferences_save") {++preferenceWrites;savedPreferences=request["params"].toObject()["preferences"].toObject();result={{"revision",preferenceWrites},{"preferences",savedPreferences}};}
@@ -929,6 +1261,7 @@ public:
             else if(method=="assist_jobs")result={{"items",QJsonArray{}}};
             else if(method=="assist_catch_up") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"accounts",QJsonArray{}}};}
             else if(method=="assist_cancel") {++stops;stopped=true;result={{"status","canceled"}};}
+            else if(method=="label_catalog") {++labelReads;result={{"categories",QJsonArray{QJsonObject{{"id","receipts"},{"name","Receipts"},{"conversation_count",2}}}}};}
             else return ordinary(peer,request);
             peer->write(reply(request["id"].toString(),result));return true;
         };
@@ -950,6 +1283,22 @@ public:
         h.backend.m_googleSync={{"personal",QVariantMap{{"account","personal"},{"active",true},{"owned",true}}}};emit h.backend.googleSyncChanged();
         await([&]{auto *button=find(window->contentItem(),"accountBacklog_personal");return button&&button->isVisible()&&button->isEnabled();},"unprocessed mail offers Catch up");
         require(scans==0 && starts==0,"viewing Accounts reads cheap progress: no mail scan and no inference");
+        {
+            // Sync refreshing the account's counts updates its card in place: the
+            // same card, its labels shown throughout and not read again.
+            await([&]{auto *labels=find(window->contentItem(),"accountLabels_personal");return labels && labels->property("text")=="Receipts";},"the card shows the account's labels");
+            QPointer<QQuickItem> card=find(window->contentItem(),"accountCard_personal"); require(card,"the account card");
+            const auto reads=labelReads;
+            for (int n=0; n<5; ++n) {
+                auto row=h.backend.m_allAccounts[0].toMap(); row["conversation_count"]=row["conversation_count"].toInt()+1;
+                h.backend.m_allAccounts={row}; h.backend.publishAccounts(h.backend.m_allAccounts); emit h.backend.accountsChanged();
+                QCoreApplication::processEvents();
+                require(card && find(window->contentItem(),"accountCard_personal")==card.data(),"the card is kept, not rebuilt");
+                require(find(card,"accountLabels_personal")->property("text")=="Receipts","its labels stay on screen");
+            }
+            QElapsedTimer settled; settled.start(); while(settled.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(labelReads==reads,"the labels are not read again");
+        }
         require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400 of 1k","processed of eligible mail displayed");
         require(find(window->contentItem(),"accountAnalysisStatus_personal")->property("text")=="600 not processed","unprocessed mail is named on the model row");
         {auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");require(status->width()+0.5>=status->property("implicitWidth").toReal() && !status->property("truncated").toBool(),"a meter's status shows in full, not elided");}
@@ -964,14 +1313,26 @@ public:
             setSync({{"inventory_complete",false},{"retained_sources",13204},{"observed_messages",13204},{"inventory_total",21388}});
             await([&]{return text("accountMailCount_personal")=="13.2k of 21.4k" && text("accountMailStatus_personal").startsWith("61%");},"a counted total gives the real share");
             {
-                // The top bar's account ring reads the same view: the same share.
-                QVariant view;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,view),Q_ARG(QVariant,QString("personal")));
-                require(qAbs(view.toMap()["ring"].toDouble()-13204./21388)<0.01,"the account tab's ring shows the download's real share");
+                // The top bar's account underline reads the same view: the same share.
+                QVariant view;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,view),Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,false));
+                require(view.toMap()["busy"].toBool() && qAbs(view.toMap()["progress"].toDouble()-13204./21388)<0.01,"the account tab's underline shows the download's real share");
+                QVariant whole;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,whole),Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,true));
+                require(whole.toMap()["mail"].toMap()["count"].toString()==QLocale().toString(13204.,'f',0)+" of "+QLocale().toString(21388.,'f',0),"the hover card counts in whole numbers");
             }
             setSync({{"inventory_complete",false},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});
             await([&]{return text("accountMailStatus_personal").startsWith("99%");},"mail arriving during the download never shows 100% early");
             setSync({{"inventory_complete",true},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});
             await([&]{return text("accountMailStatus_personal")=="Complete";},"a finished inventory is complete");
+            // A message Gmail cannot deliver is settled: no bar stuck at 99%, and
+            // the status stays plain; only the count's tooltip names it.
+            setSync({{"inventory_complete",true},{"retained_sources",51618},{"observed_messages",51620},{"undownloadable_messages",2}});
+            await([&]{return text("accountMailStatus_personal")=="Complete";},"messages that cannot download do not hold the download open");
+            {
+                QVariant settled;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,settled),Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,false));
+                const auto mail=settled.toMap()["mail"].toMap();
+                require(mail["status"].toString()=="Download complete","the hover card does not list messages that cannot download");
+                require(mail["countTitle"].toString().contains("2 messages can't be downloaded"),"the count's tooltip still says which messages are missing");
+            }
             h.backend.m_allAccounts=original;h.backend.publishAccounts(original);emit h.backend.accountsChanged();
         }
         const auto captureDir=qEnvironmentVariable("FM_BACKLOG_CAPTURE_DIR");
@@ -1097,6 +1458,327 @@ public:
         await([&]{return replied;},"mailto unsubscribe answers");
         require(h.methods.contains("google_unsubscribe_mail"),"a mailto list is unsubscribed by email through Google");
     }
-    static void run(){mutations();undoActions();remoteMail();controls();reviewTransitions();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    // Years of Done mail with most months folded: a clicked month header stays
+    // put while it opens and closes, however late sync lets the refresh land.
+    static void monthToggles() {
+        Harness h;
+        h.filterCollapsed = true;
+        const auto make=[](const QString &id,const QString &group,bool unread,const QString &at){
+            return QVariant(QVariantMap{{"id",id},{"subject","Month "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",group},{"kind","people"},{"unread",unread},{"starred",false}}); };
+        h.rows.clear();
+        for (int n=0; n<8; ++n) h.rows.append(make(QString("r%1").arg(n),"review",true,"2026-09-14T12:00:00Z"));
+        QJsonArray months; QStringList monthKeys;
+        for (int m=0; m<36; ++m) {
+            const auto date=QDate(2026,8,15).addMonths(-m);
+            const auto month=date.toString("yyyy-MM");
+            months.append(QJsonObject{{"month",month},{"count",5}}); monthKeys.append("done:"+month);
+            for (int n=0; n<5; ++n) h.rows.append(make(QString("d%1-%2").arg(m).arg(n),"done",false,date.toString("yyyy-MM-dd")+"T12:00:00Z"));
+        }
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",8},{"held",0}}},{"done_months",months}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Months.qml")));
+        require(!qml.rootObjects().isEmpty(),"month MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"month window exposed");
+        const auto settle=[&](int ms=150){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==h.rows.size();},"years of Inbox mail load");
+        // Every month but the newest two is folded.
+        h.backend.setCollapsedGroups(monthKeys.mid(2));
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==8+10;},"older months fold");
+        settle();
+        auto *list=find(window->contentItem(),"conversationList"); require(list,"month list");
+        QMetaObject::invokeMethod(list,"positionViewAtEnd"); settle();
+        // A folded month in the middle of the screen.
+        QQuickItem *header=nullptr; QString group;
+        for (const auto &key : monthKeys.mid(2)) {
+            auto *item=find(window->contentItem(),"mailGroup_"+key);
+            if (!item || !item->isVisible()) continue;
+            const auto y=item->mapToScene({0,0}).y();
+            if (y>250 && y<550) { header=item; group=key; break; }
+        }
+        require(header,"a folded month header is on screen");
+        // Retired delegates can linger hidden; only the painted header counts.
+        const auto painted=[&]()->QQuickItem* { QQuickItem *found=nullptr; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){ if(found) return; if(item->objectName()=="mailGroup_"+group && item->isVisible() && item->height()>0) { found=item; return; } for(auto *c:item->childItems()) walk(c); }; walk(window->contentItem()); return found; };
+        const auto sceneY=[&]{ auto *item=painted(); return item ? item->mapToScene({0,0}).y() : -1e9; };
+        const auto before=sceneY();
+        const auto steady=[&](const char *message){ const auto now=sceneY(); if (std::abs(now-before)>1) { QList<qreal> ys; std::function<void(QQuickItem*)> all=[&](QQuickItem *item){ if(!item->isVisible() || item->opacity()==0) return; if(item->objectName()=="mailGroup_"+group && item->height()>0) ys<<item->mapToScene({0,0}).y(); for(auto *c:item->childItems()) all(c); }; all(window->contentItem()); qWarning()<<"header moved from"<<before<<"to"<<now<<"; painted copies at"<<ys; require(false,message); } };
+        h.holdLists=true;
+        click(window,header,Qt::LeftButton); settle(50);
+        steady("the month header stays put as it opens");
+        require(h.backend.conversations().size()==8+15,"the month's rows show at once from memory");
+        // Sync keeps the refresh waiting past the old two-second hold.
+        QElapsedTimer waited; waited.start();
+        while (waited.elapsed()<2600) { QCoreApplication::processEvents(QEventLoop::AllEvents,10); steady("the header holds while the refresh waits"); }
+        h.releaseLists(); settle(300);
+        steady("the late refresh lands without moving the header");
+        // Quick repeated toggles, each refresh arriving late and out of step.
+        for (int n=0; n<6; ++n) {
+            auto *item=painted(); require(item,"the month header remains");
+            click(window,item,Qt::LeftButton); settle(40); steady("repeated toggles keep the header in place");
+        }
+        settle(2200); steady("the header holds past two seconds of pending refreshes");
+        h.releaseLists(); settle(300);
+        steady("the settled list keeps the header where it was clicked");
+        h.holdLists=false;
+    }
+    // Reply after discarding the thread's reply reopens it, and it stays open
+    // through later refreshes; typing revives it.
+    static void replyAfterDiscard() {
+        Harness h;
+        h.drafts["a"] = {{"account","personal"},{"draft_id","a"},{"conversation_id","a"},{"mode","reply"},{"source_message_id","a-original"},{"legacy_reply",true},
+            {"revision",0},{"discarded",false},{"body",""},{"subject","Re: Labeled message a"},{"to_recipients",QJsonArray{QJsonObject{{"email","sender@example.test"},{"name","Sender"}}}},
+            {"cc_recipients",QJsonArray{}},{"bcc_recipients",QJsonArray{}},{"attachment_ids",QJsonArray{}},{"attachments",QJsonArray{}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Reply.qml")));
+        require(!qml.rootObjects().isEmpty(),"reply MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"reply window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
+        const auto press=[&](const QString &name){ auto *item=find(window->contentItem(),name); require(item && item->isVisible() && item->isEnabled(),qPrintable("visible control "+name)); require(QMetaObject::invokeMethod(item,"clicked"),"control handler"); };
+        const auto panelShown=[&]{ auto *panel=find(window->contentItem(),"replyPanel"); return mail->property("replyOpen").toBool() && panel && panel->isVisible() && panel->height()>0; };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{return h.backend.m_draft.value("draft_id")=="a" && !h.backend.m_conversation.value("messages").toList().isEmpty();},"the thread and its reply load");
+        press("replyButton"); await(panelShown,"Reply opens the thread's reply");
+        h.backend.editDraft("Half a thought"); settle(300);
+        press("discardReply"); await([&]{return find(window->contentItem(),"confirmDiscardDraft");},"discard asks first");
+        settle(100); press("confirmDiscardDraft");
+        await([&]{return h.backend.draftStatus()=="Draft discarded" && !mail->property("replyOpen").toBool();},"discard closes the reply");
+        settle(300);
+        press("replyButton");
+        await(panelShown,"Reply after a discard opens the reply");
+        // Sync refreshes the draft while it is open; it stays open.
+        QElapsedTimer held; held.start();
+        while (held.elapsed()<1500) {
+            emit h.backend.draftChanged(); QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(panelShown(),"the reopened reply stays open");
+        }
+        h.backend.editDraft("Second thought");
+        await([&]{return h.drafts["a"]["body"]=="Second thought";},"typing saves the reply");
+        require(!h.drafts["a"]["discarded"].toBool() && h.backend.m_draft.value("draft_id")=="a" && !h.methods.contains("draft_create"),"the same reply is revived, with no new draft");
+        require(panelShown(),"the revived reply is still open");
+        // Discarding it again closes it again.
+        settle(300); press("discardReply"); await([&]{return find(window->contentItem(),"confirmDiscardDraft");},"discard asks again");
+        settle(100); press("confirmDiscardDraft");
+        await([&]{return h.backend.draftStatus()=="Draft discarded" && !mail->property("replyOpen").toBool();},"a second discard closes the reply");
+        const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible(); };
+        const auto prominent=[&](const QString &name){ return find(window->contentItem(),name)->property("prominent").toBool(); };
+        require(shown("replyButton") && shown("forwardButton") && prominent("replyButton"),"closing leaves Reply and Forward, Reply first");
+        // Reply, then Forward: the words move into the forward, the reply is
+        // retired, and the thread stays on screen throughout.
+        press("replyButton"); await(panelShown,"Reply reopens");
+        require(shown("replyButton") && shown("forwardButton"),"the buttons stay while replying");
+        h.backend.editDraft("Half a thought"); await([&]{return h.drafts["a"]["body"]=="Half a thought";},"the reply saves");
+        QPointer<QQuickItem> member=find(window->contentItem(),"messageMember_a-original"); require(member,"the thread's message");
+        auto *reader=find(window->contentItem(),"reader"); require(reader,"reader");
+        bool blanked=false; QMetaObject::Connection watch=QObject::connect(&h.backend,&MailBackend::conversationChanged,[&]{ if (h.backend.m_conversation.value("messages").toList().isEmpty()) blanked=true; });
+        press("forwardButton");
+        await([&]{return h.backend.m_draft.value("mode")=="forward" && panelShown();},"Forward turns the reply into a forward");
+        await([&]{return h.drafts["a"]["discarded"].toBool();},"the reply is retired once the forward is saved");
+        QObject::disconnect(watch);
+        const auto body=h.backend.m_draft.value("body").toString();
+        require(body.startsWith("Half a thought") && body.contains("Forwarded message"),"the words written come along, above the forwarded message");
+        require(!blanked && member && find(window->contentItem(),"messageMember_a-original")==member.data(),"the thread is not blanked or rebuilt");
+        require(prominent("forwardButton") && !prominent("replyButton") && shown("replyButton"),"Forward is marked, Reply is still there");
+        // Discard goes back to the buttons.
+        settle(300); press("discardReply"); await([&]{return find(window->contentItem(),"confirmDiscardDraft");},"discard asks");
+        settle(100); press("confirmDiscardDraft");
+        await([&]{return !mail->property("replyOpen").toBool() && !panelShown();},"Discard closes the forward");
+        require(shown("replyButton") && prominent("replyButton"),"back to Reply and Forward");
+        // A new message discarded returns to the thread it was started from.
+        QMetaObject::invokeMethod(mail,"newMessage");
+        await([&]{return h.backend.m_draft.value("mode")=="new" && panelShown();},"New message opens");
+        settle(200); press("discardReply");
+        await([&]{return h.backend.m_selected=="a" && !h.backend.m_conversation.value("messages").toList().isEmpty() && !mail->property("replyOpen").toBool();},"discarding it returns to the thread");
+    }
+    // Sync refreshes the list while a Done conversation is open: a new message
+    // moves it to the top. The list shows it once, under one month header.
+    // The list is its full length before older pages load, so arriving pages
+    // never move the scrollbar, and a jump to the end loads through to it
+    // without a loading line.
+    static void pagingKeepsLength() {
+        Harness h;
+        h.pageSize = 100;
+        h.rows.clear();
+        for (int n=0; n<350; ++n) h.rows.append(QVariantMap{{"id",QString("p%1").arg(n)},{"subject",QString("Paged %1").arg(n)},{"sender_name","Sender"},{"sender_email","sender@example.test"},
+            {"latest_at",QDateTime(QDate(2026,9,26),QTime(12,0)).addSecs(-n*600).toUTC().toString(Qt::ISODate)},{"message_ids",QVariantList{QString("p%1-m").arg(n)}},{"revision",3},
+            {"message_count",1},{"categories",QVariantList{}},{"group","done"},{"kind","people"},{"unread",false},{"starred",false}});
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",0},{"held",0},{"done",350}}},{"done_months",QJsonArray{QJsonObject{{"month","2026-09"},{"count",350}}}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Paging.qml")));
+        require(!qml.rootObjects().isEmpty(),"paging MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"paging window exposed");
+        const auto settle=[&](int ms=150){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==100;},"the first page loads"); settle();
+        auto *list=find(window->contentItem(),"conversationList"); require(list,"paging list");
+        const auto length=[&]{ return list->property("contentHeight").toReal(); };
+        const auto rowHeight=find(window->contentItem(),"mailWorkspace")->property("rowHeight").toReal();
+        const auto full=length();
+        require(full > 349*rowHeight,"the list is as long as all 350 rows before they load");
+        // Scrolling near the loaded end loads the next page in place. Qt
+        // estimates rows not yet built from those on screen, so the length is
+        // compared at one scroll position, before and after the page lands.
+        h.holdLists=true;
+        list->setProperty("contentY",list->property("loadedBottom").toReal()-2*list->height());
+        await([&]{return !h.heldLists.isEmpty();},"scrolling asks for the next page"); settle();
+        const auto beforePage=length();
+        h.releaseLists();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==200;},"the next page loads while scrolling"); settle();
+        if (std::abs(length()-beforePage)>2*rowHeight) qWarning()<<"length"<<beforePage<<"became"<<length();
+        require(std::abs(length()-beforePage)<=2*rowHeight,"an arriving page leaves the list's length alone");
+        // A jump to the end loads through to it.
+        list->setProperty("contentY",length()-list->height());
+        await([&]{return !h.heldLists.isEmpty();},"a jump to the end asks for the rest"); settle();
+        const auto beforeEnd=length();
+        while (h.backend.conversations().size()<350) { h.releaseLists(); settle(50); require(h.backend.m_loading || h.backend.conversations().size()==350 || !h.heldLists.isEmpty(),"loading through to the end continues"); }
+        h.holdLists=false; await([&]{return !h.backend.m_loading;},"a jump to the end loads every row"); settle(300);
+        if (std::abs(length()-beforeEnd)>4*rowHeight) qWarning()<<"length"<<beforeEnd<<"became"<<length();
+        require(std::abs(length()-beforeEnd)<=4*rowHeight,"the fully loaded list is as long as it was sized");
+        bool loadingText=false; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){ if (item->isVisible() && item->property("text").toString()==QStringLiteral("Loading…")) loadingText=true; for (auto *c:item->childItems()) walk(c); };
+        walk(window->contentItem());
+        require(!loadingText,"paging never shows a loading line");
+        qInfo()<<"Older pages fill a list already its full length.";
+    }
+    // Switching between Inbox and a long Sent list shows the new rows within
+    // a few frames; grouping Sent by day once per list, not per header, keeps
+    // it from growing with every page scrolled through.
+    static void folderSwitchSpeed() {
+        Harness h;
+        const auto make=[](int n,bool sent){
+            const auto id=QString(sent ? "s%1" : "i%1").arg(n);
+            const auto at=QDateTime(QDate(2026,9,26),QTime(12,0)).addSecs(-qint64(n)*3600*9).toUTC().toString(Qt::ISODate);
+            QVariantMap row{{"id",id},{"subject","A subject line for row "+id},{"sender_name","Person "+QString::number(n%17)},{"sender_email",QString("p%1@example.test").arg(n%17)},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-m"}},{"revision",3},{"message_count",1+n%4},{"categories",QVariantList{}},{"group",n<8 ? "review" : "done"},
+                {"kind",n%3 ? "people" : "automated"},{"unread",n<8},{"starred",false},{"snippet","A preview of the message body"}};
+            if(sent) { row["recipient"]="teammate@example.test"; row["group"]="done"; }
+            return QVariant(row); };
+        QVariantList inbox, sent;
+        for(int n=0;n<100;++n) inbox.append(make(n,false));
+        for(int n=0;n<400;++n) sent.append(make(n,true));
+        h.rows=inbox;
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; flags:Qt.WindowDoesNotAcceptFocus; color:Theme.canvas; width:1440; height:900; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Speed.qml")));
+        require(!qml.rootObjects().isEmpty(),"folder switch MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"folder switch window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==100;},"Inbox loads"); settle(300);
+        // The first visit also compiles Sent's parts; later visits are timed.
+        for(int round=0;round<3;++round) for(const QString folder:{"sent","inbox"}) {
+            h.rows = folder=="sent" ? sent : inbox;
+            const auto first = folder=="sent" ? QString("s0") : QString("i0");
+            QElapsedTimer t; t.start();
+            h.backend.setFolder(folder);
+            while(!(h.backend.conversations().value(0).toMap().value("id")==first) && t.elapsed()<5000) QCoreApplication::processEvents(QEventLoop::AllEvents,1);
+            if(t.elapsed()>=5000) qWarning()<<"switch to"<<folder<<"shows"<<h.backend.conversations().size()<<"rows, first"<<h.backend.conversations().value(0).toMap().value("id")<<"folder"<<h.backend.folder()<<"loading"<<h.backend.m_loading;
+            // Rendering the frame here, rather than waiting for one, times the
+            // same layout and paint while the display sleeps.
+            window->grabWindow();
+            qInfo()<<"round"<<round<<folder<<"first frame after"<<t.elapsed()<<"ms";
+            if(round>0) require(t.elapsed()<300,"a folder switch paints its rows within 300 ms");
+            settle(300);
+        }
+    }
+    // A found photo fills the whole circle at every size, not just the
+    // corner of the picture that fits. The circle cut only exists on a GPU
+    // renderer; the software one draws the plain picture.
+    static void photoFillsCircle(bool gpuOnly=false) {
+        QTemporaryDir copy; copyModule(copy);
+        const QColor quarters[]={Qt::red,Qt::green,Qt::blue,Qt::yellow};
+        QImage photo(64,64,QImage::Format_RGB32);
+        for(int y=0;y<64;++y) for(int x=0;x<64;++x) photo.setPixelColor(x,y,quarters[(y>=32)*2+(x>=32)]);
+        require(photo.save(copy.filePath("photo.png")),"a photo with one colour per quarter");
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path());
+        QQmlComponent service(&qml);
+        service.setData("import QtQuick\nQtObject { property QtObject htmlContent: QtObject { property int pictureRevision: 0; function senderPicture(email, kind) { return {state:'ready', source:'photo', label:'Profile photo', url:'"+QUrl::fromLocalFile(copy.filePath("photo.png")).toString().toUtf8()+"'} } } }",QUrl());
+        // Owned by the engine, so it outlives the window that reads it.
+        auto *backend=service.create(); require(backend!=nullptr,"stand-in picture service"); backend->setParent(&qml);
+        qml.rootContext()->setContextProperty("backend",backend);
+        qml.loadData("import QtQuick\nimport SelectionTest 1.0\nWindow { visible:true; flags:Qt.WindowDoesNotAcceptFocus; color:'black'; width:200; height:80; Row { x:10; y:10; spacing:10; Repeater { model:[28,18,34,36]; SenderAvatar { objectName:'photo'+modelData; diameter:modelData; name:'Photo'; email:'photo@example.test'; kind:'people' } } } }",QUrl::fromLocalFile(copy.filePath("Photo.qml")));
+        require(!qml.rootObjects().isEmpty(),"photo avatars load");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"photo window exposed");
+        const bool gpu=window->rendererInterface()->graphicsApi()!=QSGRendererInterface::Software;
+        if(gpuOnly && !gpu) { qInfo()<<"Not checked: no GPU renderer here, so photos are not cut to a circle."; return; }
+        await([&]{for(int d:{28,18,34,36}){auto *item=find(window->contentItem(),QString("photo%1").arg(d)); if(!item || !item->property("imageShown").toBool()) return false;} return true;},"every photo loads");
+        QElapsedTimer t; t.start(); while(t.elapsed()<200) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        const auto frame=window->grabWindow(); const qreal ratio=frame.devicePixelRatio();
+        // The dominant channels of a quarter drawn at 75% on black.
+        const auto matches=[](const QColor &seen,const QColor &want){ for(auto [s,w]:{std::pair{seen.red(),want.red()},{seen.green(),want.green()},{seen.blue(),want.blue()}}) if(w ? s<140 : s>60) return false; return true; };
+        for(int d:{28,18,34,36}) {
+            auto *item=find(window->contentItem(),QString("photo%1").arg(d));
+            for(int quarter=0;quarter<4;++quarter) {
+                const auto at=item->mapToScene(QPointF(d*(quarter%2 ? .75 : .25),d*(quarter/2 ? .75 : .25)))*ratio;
+                const auto seen=frame.pixelColor(at.toPoint());
+                if(!matches(seen,quarters[quarter])) qWarning()<<"diameter"<<d<<"quarter"<<quarter<<seen;
+                require(matches(seen,quarters[quarter]),"each quarter of the photo shows in its quarter of the circle");
+            }
+        }
+        qInfo()<<"A photo fills its circle at every size on the"<<(gpu ? "GPU" : "software")<<"renderer.";
+    }
+    static void refreshedRowMoves() {
+        Harness h;
+        const auto make=[](const QString &id,const QString &at,int count){
+            return QVariant(QVariantMap{{"id",id},{"subject","Thread "+id},{"sender_name","Sender "+id},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",count},{"categories",QVariantList{}},
+                {"group","done"},{"section","done:2026-09"},{"kind","people"},{"unread",false},{"starred",false}}); };
+        h.rows.clear();
+        for (int n=0; n<24; ++n) h.rows.append(make(QString("d%1").arg(n),QString("2026-09-26T%1:00:00Z").arg(23-n,2,10,QChar('0')),n==1 ? 5 : 1));
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",0},{"held",0},{"done",24}}},{"done_months",QJsonArray{QJsonObject{{"month","2026-09"},{"count",24}}}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Moved.qml")));
+        require(!qml.rootObjects().isEmpty(),"moved-row MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"moved-row window exposed");
+        const auto settle=[&](int ms=150){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==24;},"the month loads");
+        h.backend.selectConversation("d1"); settle(300);
+        // Only painted items count: retired delegates can linger hidden.
+        const auto painted=[&](const QString &name){ int found=0; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){ if(!item->isVisible() || item->opacity()==0) return; if(item->objectName()==name && item->height()>0) ++found; for(auto *c:item->childItems()) walk(c); }; walk(window->contentItem()); return found; };
+        require(painted("conversationRow_d1")==1 && painted("mailGroup_done:2026-09")==1,"one row and one month header before the refresh");
+        const auto check=[&](const QString &when){
+            const int rows=painted("conversationRow_d1"), headers=painted("mailGroup_done:2026-09");
+            if (rows!=1 || headers!=1) qWarning()<<when<<"rows"<<rows<<"headers"<<headers;
+            require(rows==1,"the open conversation shows once");
+            require(headers==1,"its month shows one header");
+        };
+        // The open thread starts first; mail arriving above it pushes it
+        // down, then a reply brings it back to the top.
+        auto first=h.rows.takeAt(1); h.rows.prepend(first);
+        {auto row=h.rows[0].toMap(); row["latest_at"]="2026-09-27T00:12:00Z"; h.rows[0]=row;}
+        h.backend.refreshState(true,false,true); settle(400); check("opened thread first");
+        for (int round=0; round<3; ++round) {
+            h.rows.prepend(make(QString("n%1").arg(round),QString("2026-09-27T0%1:23:00Z").arg(round),1));
+            h.backend.refreshState(true,false,true); settle(400); check(QString("mail arrived above, round %1").arg(round));
+            auto moved=h.rows.takeAt(1).toMap();
+            moved["latest_at"]=QString("2026-09-27T0%1:31:00Z").arg(round); moved["message_count"]=6+round; moved["revision"]=4+round;
+            h.rows.prepend(moved);
+            h.backend.refreshState(true,false,true); settle(400); check(QString("reply moved it up, round %1").arg(round));
+        }
+        qInfo()<<"A refreshed row that moves is shown once.";
+    }
+    static void memoryChecks(){readerMemorySharing();controls();}
+    static void refreshChecks(){scopedRefreshes();mutations();undoActions();remoteMail();reviewTransitions();}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();undoActions();remoteMail();controls();reviewTransitions();monthToggles();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
-int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));MailSelectionTest::run();return 0;}
+int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

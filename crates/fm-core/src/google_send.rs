@@ -928,10 +928,10 @@ pub fn prepare_google_send(
         created_at,
     )?;
     google_drafts::same_from(&identity.from.email, &plan.scope.primary_email)?;
-    let built = fm_mail::build_mail(&request, &identity, &parts).map_err(|_| {
+    let built = fm_mail::build_mail(&request, &identity, &parts).map_err(|error| {
         err(
             "invalid_draft",
-            "Submission requires valid recipients and bounded strict MIME",
+            &format!("This message cannot be sent: {error}"),
         )
     })?;
     let size = built.raw.len() as u64;

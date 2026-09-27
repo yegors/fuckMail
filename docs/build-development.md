@@ -74,7 +74,7 @@ The default **live** profile is `fuckMail/default` under `%LOCALAPPDATA%` on Win
 - `--profile DIR` picks another directory (absolute for `fm`). It opens whatever profile is there, or creates an empty live one; add `--demo-profile` to create demo data instead.
 - GUI and CLI share one engine per profile, which exits after the last client disconnects.
 - To back up or move a profile, close every client and copy the whole directory, never `store.sqlite3` alone.
-- A profile made by an older, incompatible build is refused with a message; there is no migration. Move its folder aside, start again and reconnect your accounts.
+- Schema37 profiles upgrade in place to schema38. Profiles older than37, and profiles newer than the running engine, are refused. For a profile older than the baseline, move its folder aside, start again and reconnect your accounts.
 - Don't point tests or development commands at a profile with real mail. Tests use temporary profiles.
 
 ## Google sign-in setup

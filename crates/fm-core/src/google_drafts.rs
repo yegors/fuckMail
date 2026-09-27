@@ -1599,8 +1599,12 @@ pub fn prepare_google_draft(
         format!("<draft-{digest}@fuckmail.invalid>"),
         created,
     )?;
-    let built = fm_mail::build_draft_mail(&request, &identity, &parts)
-        .map_err(|_| err("invalid_draft", "Draft cannot form a bounded MIME message"))?;
+    let built = fm_mail::build_draft_mail(&request, &identity, &parts).map_err(|error| {
+        err(
+            "invalid_draft",
+            &format!("This draft cannot be saved to Gmail: {error}"),
+        )
+    })?;
     let size = built.raw.len() as u64;
     if size > MAX_GOOGLE_DRAFT_BYTES {
         return Err(err(

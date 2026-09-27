@@ -10,5 +10,5 @@ FmButton {
     topPadding: 0; bottomPadding: 0
     font.pointSize: Theme.fontPoints(11); font.weight: Font.Medium; font.letterSpacing: .44
     foreground: hovered ? Theme.text : Theme.inkAlpha(.45)
-    background: Rectangle { radius: 5; color: button.hovered ? Theme.bg4 : "transparent"; border.width: button.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+    background: Rectangle { radius: 5; color: button.hovered ? Theme.bg4 : "transparent"; border.width: button.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
 }

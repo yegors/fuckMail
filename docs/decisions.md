@@ -1661,3 +1661,231 @@ The founder found the Windscribe account summarized and labelled but showing "?"
 - Measured: a first page with or without People takes about 125 ms through the CLI, process start included. The visible cost was the list rebuild, not the query.
 
 Local assistance27 and Mail UI102; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D149 — sending with attachments, quick previews, a steady month toggle and faster sync (2026-09-26T21:30:00Z)
+
+The founder sent logs and reported six problems:
+- A reply with three ordinary images would not send.
+- A reply sent during a long sync first flashed a red "not available" error.
+- Attachment thumbnails and videos took a while to appear.
+- There was no sign of progress while a large message went out.
+- Toggling a month repeatedly, with many months folded, sometimes made the whole list jump.
+- One account showed "May 2025, 336 items" for over an hour.
+
+Found:
+- The reply quoted a Gmail Message-ID containing `=`. The MIME builder accepted only letters, digits and a few symbols in message IDs, so it refused the reply, and the same draft could not save to Gmail.
+- The reader asked for the sent copy of a reply before the engine had recorded the send, and showed the refusal.
+- Previews waited for the attachment's export on the store writer, behind sync. The export hashed the file three or four times, copied it and flushed it. Sent replies had previews turned off.
+- A month toggle restored the clicked header for 2 s only, and a frame later. The row drawing that header could be removed during its own click. During sync the refresh often landed after 2 s and moved the list.
+- The logs show 2,701 history parts and no inventory parts. Each history part held 10 items and took 1–3 s, one Gmail read and one store write per item. A running history scan blocked the inventory completely.
+
+Decided:
+- Message IDs accept every RFC 5322 atext character. A message that still can't be built says why in plain words.
+- Attachments without a stated type get one from their extension.
+- The reader asks for a reply's sent copy only once the engine has recorded the send.
+- **Previews:**
+  - The attachment lookup runs on the store; the copy runs on a worker.
+  - One pass copies and hashes the file. A copy already verified in this run is reused without reading it again.
+  - A sent reply previews the files it was sent from.
+  - Images still show the file scaled to the tile, and videos play the file directly. Nothing is transcoded or thumbnailed.
+- **Send progress.** While a reply uploads, a 2 px line under its header fills with the bytes sent, sweeping until the size is known. When Gmail accepts it, a check shows next to the time.
+- **Month toggles:**
+  - The toggle applies just after the click returns.
+  - The header is put back after bindings settle and before the next frame paints. It holds until the refresh lands, up to 15 s, and lets go when the list is scrolled.
+  - After a diff, only rows whose data changed are rebound.
+- **Sync:**
+  - A history scan that fell behind takes turns with the recent and inventory listings, one part each.
+  - A part asks Gmail for the labels of its kept messages all at once, within the scheduler's two reads per account.
+  - Items that downloaded nothing are staged in the part's commit.
+- Measured: 60,000 generated conversations over 120 months in one account take 28–38 ms for an uncached first Inbox page, whether no months, half of them or all but the newest are folded. The month jump came from late refreshes, not the query.
+
+Gmail37, Core76, Mail UI103 and Quality78; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D150 — history scans skip mail deleted for good; reply and attachment polish (2026-09-26T23:30:00Z)
+
+The founder asked why a cleanup of mail that no longer exists was still being replayed. Gmail's history is a change log: the cleanup wrote about 110,000 "moved to Trash" records and 110,000 "deleted for good" ones. The scan asked Gmail about each trashed message and got "not found" every time. The cost is paid once. Normal syncs read only changes since the last one, and a re-added account starts from Gmail's current state.
+
+The founder also reported:
+- the send line overlapped the reply's recipients;
+- the viewer's arrows showed "Preview unavailable" for the next video;
+- Reply sometimes left the reader halfway up the thread, and the reply sometimes closed on its own.
+
+Found:
+- The viewer treated a file as video only when its stored type said so. A video sent as a generic file type had no poster and no playback.
+- Reply after a reply that had gone out, or was still going, reopened the sent draft. When Gmail accepted it, the composer closed.
+- A new reply draft clears and reloads the thread. The reader was placed on the reply for about 200 ms only, and the saved scroll position then took over.
+
+Decided:
+- **Deletions read ahead.** While a history scan has pages still ahead, the engine first reads only the scan's deletions: `history.list` with `historyTypes=messageDeleted`, 500 records per page, for up to 2 s per turn, at most 250,000 IDs, held in memory for that scan. A fetch of one of those messages is recorded missing with no request, exactly as Gmail's "not found" would be. Every other change still applies. If the read fails, the scan asks about each message as before.
+- **Send line** runs along the bottom of the reply.
+- **Attachments** fold and unfold from their "N ATTACHMENTS" header, like a month header. The choice is per message, for the session.
+- **Viewer:** a file named as a video, sent with no type or a generic one, plays as a video. An error from the previous item no longer blocks the next.
+- **Reply:**
+  - Reply while the last reply is on its way or sent writes a new one.
+  - The reader then shows the whole reply at the end of the thread, and keeps it there until the thread's height holds for 250 ms (3 s at most) or the reader is scrolled. A reply taller than the reader shows from its top.
+
+Gmail38, Mail UI104 and Quality79; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D151 — composing under a thread, reply after discard, video posters, account cards (2026-09-27T03:30:00Z)
+
+The founder reported, after D150:
+- Reply, Discard, then Reply again opened the reply box and shut it at once. Replying was impossible until they left the thread. Forward was fine.
+- Video cards sometimes showed no picture until Reply was pressed.
+- The viewer's arrows still showed "Preview unavailable" for the next video.
+- In Settings → Accounts, every account's labels flickered every few seconds during sync.
+- Reply, Reply all, Forward and New message should open their box at once, with a short animation and nothing above it jumping.
+- Reply, Reply all and Forward should never disappear, so a reply can turn into a forward.
+- Discard should go back to those buttons, and a discarded new message should not stay on screen.
+
+Found:
+- **Reply after discard.** Reply reopens the discarded reply, empty but for the signature, as intended: typing or a file revives it. But the reader and the composer closed the reply on every refresh of a draft marked discarded. During sync such refreshes are constant, so the box shut at once. Forward always starts a new draft, so it was unaffected.
+- **Video posters**, two causes:
+  - A card checked whether it was on screen only when the reader scrolled or changed height. A card that moved into view as the thread above it laid out never loaded. Reply scrolls, so pressing it loaded them.
+  - Qt clears a video's picture when its player is released. A poster survived only when its player happened to be kept, so posters came and went.
+- **Viewer arrows.** The next item was loaded from bindings that still described the previous one.
+- **Account cards.** Each refresh of the account list during sync replaced it whole. Every card was rebuilt, and its labels emptied and were read again.
+- **Opening a box.** Creating a draft takes the engine 4–10 ms. The lag was the GUI: a new reply or forward emptied the thread, moved the reader to the top, reloaded, then scrolled down. The buttons row also vanished as the box appeared.
+
+Decided:
+- **Reply after discard.** A discard closes the reply once, at that draft revision. A reopened discarded reply stays open through refreshes, and only a new discard closes it again.
+- **On-screen check.** A card re-checks whether it is on screen on any layout change above it, not only on scrolling.
+- **Posters.**
+  - The poster decoder runs until the first frame has been shown, however long that takes, then pauses.
+  - The GUI copies that frame from the video sink into a JPEG of at most 960 px, kept for this run in a temporary folder under the profile's `cache/`, and removed when the app closes.
+  - The card shows the JPEG and releases the player. Reopening the card, or scrolling back to it, shows the poster and length without decoding.
+  - If the frame can't be kept, the paused player goes on showing it.
+- **Viewer.** It reads the new item directly when it loads.
+- **Account cards** use a keyed model of all accounts. A refresh updates each card in place.
+- **Writing under a thread.**
+  - Reply, Reply all and Forward stay under the thread while a message is written. The kind being written is the filled button.
+  - Pressing it again brings the box into view. Pressing another while the box is open turns the message into that kind. With the box closed, each starts its own draft and the closed one stays in Drafts.
+  - A save under way finishes first; a second press while that kind is opening does nothing.
+  - A new draft for the thread on screen keeps the thread, its unfolded messages and scroll position.
+  - The box fades in and settles 10 px up over 200 ms. The reader glides to it over 200 ms, then holds it there while the thread lays out.
+- **Switching kind.**
+  - The words written above the starting text (the signature, or the forwarded message) move into the new draft, above its own starting text. Formatting is not kept.
+  - The old draft is discarded, without Undo, once the new one is saved.
+  - A draft with files, one being sent, or one with words anywhere but above its starting text is left as it is. Its words above still come along.
+- **Discarding a new message** returns to the draft or thread it was started from. With neither, the reader is empty. Undo still reopens it.
+
+Mail UI105 and Quality80; Gmail38, Core76, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D152 — one received source and bounded attachment exports (2026-09-27T03:16:49Z)
+
+The founder asks to reduce duplicate storage while keeping the app fast, and authorizes the proposed local extraction and bounded-cache plan. Full original messages continue to download for offline use. Network-on-demand attachments are not selected.
+
+- Keep exact original MIME once in `blobs/`, with extracted reading text, metadata and search indexes in SQLite. A received attachment records its decoded hash/size and its original source/part position; syncing no longer writes a second decoded blob.
+- Decode and verify the selected received part on a worker when a preview, export or authored operation needs it. Preview/export writes one disposable copy under `exports/`, reused on subsequent requests.
+- Target 512 MiB of exports, removing least recently used copies. Copies used within five minutes are protected so outstanding replies and clients can open them; locked files are retried. Maintenance runs every minute after the initial conversion, and export requests sweep at most once a minute. Recent/locked copies can temporarily exceed the target. User-saved Downloads files are outside this cache.
+- Imported files, observed Gmail draft parts and frozen outgoing MIME stay durable. A draft using a received part keeps its source even if that received message is pruned. Transferring a draft to another account retains its selected attachment bytes independently.
+- Schema38 adds `attachment_sources` to the existing store and upgrades schema37 in place. Older engines refuse the newer version. Convert older received attachment references one message at a time: verify the source and decoded bytes off the writer, recheck the rows, then record the reference and queue the old blob for normal startup cleanup. Missing/mismatched sources keep their existing copies. Cleanup respects other accounts, authored work and journals.
+
+Core77, Gmail39 and Quality81; Mail UI105 and CLI commands unchanged. Fixture revisions remain live0/demo3 and protocol1. Verification and measured results belong in `docs/research/search-storage.md`; this decision alone does not establish readiness.
+
+## D153 — the window reopens where it was left (2026-09-27T04:30:00Z)
+
+The founder asked for the app to remember its last screen position and size and always relaunch in the same place.
+
+Decided:
+- The GUI keeps the normal (unmaximized) geometry and the maximized state in `window.json` in the profile, saved as the window settles and on quit.
+- Launch applies them before the window first shows, so it does not jump.
+- A place no longer on any screen falls back to the default. An oversized one is capped to its screen.
+- Minimized and full-screen reopen as the last normal window.
+- Kept per profile, so disposable test profiles never touch the user's placement. Test, capture and benchmark runs ignore it.
+
+Platform 22. Engine, CLI, schema, fixtures and protocol unchanged.
+
+## D154 — HTML or plain text per sender, plain by default (2026-09-27T05:10:00Z)
+
+The founder asked to make the HTML/plain-text choice per sender instead of global: everything defaults to plain text, the user can choose HTML, and all of that sender's threads use that view from then on.
+
+Decided:
+- A shared preference, `html_senders`, lists `{account, email}` pairs shown as HTML. It is per account, like "Always load images from", keeping accounts separate. Up to 2,000 entries.
+- Everything else is plain text, including senders who were shown as HTML under the old global default.
+- The badge and Format menu change only that message's sender.
+- `message_format` is retired and a stored value is ignored.
+- The CLI sees the list through `preferences`; its reading commands are unchanged.
+
+Mail UI106, Core78, CLI57, Quality82. Schema, fixtures and protocol unchanged.
+
+## D155 — one Mail divider width for the whole app (2026-09-27T05:40:00Z)
+
+The founder noticed each account kept its own list/reader column width. Switching accounts therefore resized the panes, adding pointless re-rendering. They asked for one global width for snappiness, stressing that performance is paramount.
+
+Decided:
+- The divider width is GUI layout, not account data. It lives in `window.json` with the window's place.
+- It is applied once at startup and saved once when a drag ends.
+- Account switches never touch it.
+- Existing per-account `splitWidth` values are ignored rather than migrated. The first run after this uses half the window until the divider is dragged.
+
+Mail UI107, Platform 23. Engine, CLI, schema, fixtures and protocol unchanged.
+
+## D156 — reuse unchanged progress counts and verify blob bytes once (2026-09-27T06:07:04Z)
+
+The founder authorizes small, low-risk improvements from the disk I/O audit, followed by a GUI memory audit. The flat blob layout stays as it is.
+
+- Cache the small per-account model-progress result when mail, provider state, model results/failures and account state have not changed. Read policy and history/catch-up bounds freshly; unrelated calendar publications and global revisions do not cause a recount. Keep engine session/job state fresh. Conservatively invalidate around transactions, rollback and writes missed by SQLite's row hook. Bound the cache to 256 account rows.
+- Keep the existing counting SQL and exact results. Active mail changes can still require full recounts; incremental counters are a separate optimization.
+- Read a requested blob once from a regular-file handle, bound the read by its declared size and verify the returned bytes. Retain checksum, size and path protections. Staged received-message recovery verifies its manifest and decoded parts using those same original bytes.
+- Keep durability, offline content, cleanup and cache limits unchanged. The GUI audit measures graphics and application memory separately where possible; it does not establish a leak or authorize speculative cache reductions.
+
+Core79, Gmail40 and Quality83. CLI/IPC shapes, schema, live0/demo3 fixtures and protocol1 are unchanged by this optimization. Results and remaining limits belong in storage research.
+
+## D157 — share reader sources and size attachment decodes for the display (2026-09-27T06:38:21Z)
+
+The founder authorizes the GUI memory changes with the strongest expected benefit and least regression risk, while preserving fast operation.
+
+- A cached reader source goes straight to the prepared reader as a shared QVariant map. Do not serialize it to JSON, recreate its strings/maps or replace the cache entry on a hit. Retain account, source-version, lifecycle and navigation checks. An identical cached conversation also stays in place; changed data at the same revision still refreshes it.
+- Image thumbnails and saved video posters decode for the largest card in the existing grid, at the current screen's pixel density. Keep the requested size stable during ordinary window/divider resizing, preserving the image cache and avoiding repeated decodes.
+- The attachment viewer requests display-density image dimensions rounded up in 128-pixel steps. This removes the fixed 2× oversampling on lower-density screens and reduces decode requests while resizing. Keep the displayed image until its asynchronous replacement is ready.
+- Preserve cache capacities, navigation coverage, source content, downloads and video playback. Do not broadly unload visited views or trim SQLite memory. Savings are workload-specific; the earlier running GUI's full memory excess remains unattributed.
+
+Mail UI108 and Quality84. Core/Gmail/CLI contracts, schema, live0/demo3 fixtures and protocol1 unchanged. Scoped measurements and failed-attempt limits are in storage research.
+
+## D158 — refresh only changed UI projections (2026-09-27T07:00:43Z)
+
+The founder selected the first UI responsiveness recommendation: stop a global revision from reloading every independent area, then explain how to observe the benefit.
+
+- Add store-open generations for accounts, categories, the reader, drafts and captures to `status`, using the existing write hook. Keep mail/calendar generations and preference revisions. Unknown dependencies, missed hooks and transaction ambiguity invalidate conservatively; a new store epoch invalidates every area.
+- Scope automatic refreshes by these generations. Draft and outgoing delivery updates need not re-prepare received messages. Keep explicit refresh, fallback for older engines, dirty-text and account/navigation guards, and deliberate-open semantics.
+- Preserve invalidations deferred by search typing, older-page browsing or an already loading reader until they can run. Refresh draft chips and Draft/Sent lists when drafts change.
+- Track areas across the store in this slice. Per-account/per-conversation change tracking is deferred; incoming mail can still refresh the selected reader. Metadata advances account freshness because last-sync timestamps live there. Conversation writes also refresh legacy capture subjects.
+
+Core80, Mail UI109, CLI58 and Quality85. No schema migration, new scans, cache-size change or fixture/protocol revision. Verify reduced requests and freshness; do not claim an unmeasured click-latency percentage.
+
+## D159 — Flight Progress v2 (8), a full-length list, and every Gmail message downloads (2026-09-27T08:12:00Z)
+
+The founder asked for the updated prototype, with the designer's notes, and a list of fixes: the "Loading…" flash when a month folds, scrollbar jumps while older mail loads, the "2 unavailable" messages, the label tooltip, the Spam/Trash menu staying open, the plain text menus, the "saved locally" line and the two-step "Inbox zero". They also asked that Inbox/Sent/Drafts switch instantly. "If it's in Gmail, it should be available to us."
+
+- **Prototype.**
+  - Account tabs are 32 px blocks without a pill. An 18 px letter tile (24% tint selected, 10% otherwise) sits before the name and count, with a 2 px underline in the account colour on the selected tab. While syncing, the underline is a progress bar (at least 4%, amber downloading, silver-blue for the local model) over a tinted track. It pulses in 80 ms steps only while the app is active; no ring. The red disconnected dot stays.
+  - The hover card shows whole numbers; Settings → Accounts keeps the short form. Settings is a 32 × 28 button in a tray.
+  - The composer has a title (Compose Email, Reply, Reply All, Forward) with a gold icon tile.
+  - Reply, Reply All and Forward scroll the thread down only as far as the box's footer plus 24 px. New messages don't scroll.
+  - Draft rows lose Discard; the list's right-click menu keeps it.
+- **List length.**
+  - Loading every conversation at once is rejected. The founder's accounts hold 11.6k–27.8k Inbox conversations, about 1 KB each as list rows. Core caps a page at 100 rows and IPC frames at 1 MiB, so a single load would need a new protocol and would hold 12–28 MB of rows in QML.
+  - Instead, the list is its full length from the first page. Unloaded rows are a spacer sized from the engine's counts: exact per Inbox section, and estimated with header spacing elsewhere. Placeholder rows draw over the visible part.
+  - Scrolling near the end prefetches the next page. Dragging past the loaded rows loads straight through to that point, at most 2,000 rows per request.
+  - The Load more footer and its "Loading…" text are removed. Month folding no longer changes anything below the list.
+- **Speed.** Date grouping is computed once per row set, instead of once per header per row. Switching to a long Sent went from about 230 ms to 45 ms in the paging fixture. A first frame within 300 ms of switching is a GPU test gate.
+- **Interaction.**
+  - Label chips have no tooltip.
+  - The Spam/Trash menu closes on any outside press and on a mailbox or filter change. Its own button still toggles it.
+  - Every text field, message body and the composer use one app menu (Undo, Redo, Cut, Copy, Paste, Select all, and the composer's formatting) in place of Qt's default.
+  - Selection actions leave no status line unless something failed or stopped.
+  - The last row leaving To review is removed locally before the reload, so the empty state draws in the same frame.
+  - Focus outlines follow keyboard focus only.
+  - Sender photos map their texture to the circle explicitly, because Qt maps a Shape's fill item at device-pixel scale.
+- **Large messages.**
+  - The 40 MiB raw bound came from early allocation caps, not from Gmail. Gmail holds messages up to its 150 MB import limit and up to 500 attachments.
+  - The raw bound becomes 160 MiB, and received mail accepts 500 attachments. The blob cap follows the raw bound. The transport ceiling becomes 256 MiB; every request still sets its own lower cap.
+  - Raw and draft reads get a 10-minute deadline. The 30 s gap between reads still catches a stalled connection.
+  - A message is held once while it downloads: the reply is read into one buffer, the source moves to its front, and base64url decodes in place. Before this, the reply, a copy of the source and the decoded bytes were all held at once.
+  - A one-time migration marks earlier `item_too_large` and `attachment_limit` rows unseen, so reconciliation fetches or re-prepares them.
+  - A message Gmail still sends malformed is settled quietly. Progress says "Complete"; only the count's tooltip names it.
+- **Fixes.**
+  - Gmail drafts made before the local draft that mirrors them import again, because the draft-source key no longer requires that draft to exist first.
+  - A flaky engine test compared live refresh generations between clients; it now compares the store epoch.
+
+Mail UI110, Core81, Gmail41 and Quality86. Schema 40 (data-only migration 040 after 039), live0/demo3 fixtures, CLI shapes and protocol1 unchanged apart from Core81's `undownloadable_messages`. The copies of large sources made while the retained-source path re-prepares a message, and streaming raw downloads to disk, remain separate work.

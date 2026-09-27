@@ -27,6 +27,9 @@ struct FixtureState {
     list_page_size: usize,
     raw: BTreeMap<String, Value>,
     history_replies: VecDeque<(u16, Value)>,
+    /// What a deletions-only history read lists: messages deleted for good.
+    deleted: Vec<String>,
+    deleted_fails: bool,
     requests: Vec<String>,
     fail_once: Option<String>,
     cancel_once: Option<String>,
@@ -48,6 +51,8 @@ impl FixtureHttp {
                 .map(|id| (id.clone(), raw(id, "100", body_size)))
                 .collect(),
             history_replies: VecDeque::new(),
+            deleted: Vec::new(),
+            deleted_fails: false,
             requests: Vec::new(),
             fail_once: None,
             cancel_once: None,
@@ -144,6 +149,17 @@ impl HttpTransport for FixtureHttp {
                     (
                         200,
                         json!({"messages":ids[first..end].iter().map(|id|json!({"id":id,"threadId":format!("thread-{id}")})).collect::<Vec<_>>(),"resultSizeEstimate":999999,"nextPageToken":next}),
+                        None,
+                        false,
+                    )
+                } else if suffix.starts_with("history?")
+                    && suffix.contains("historyTypes=messageDeleted")
+                {
+                    let history: Vec<Value> = state.deleted.iter().enumerate().map(|(n, id)| json!({"id":(900 + n).to_string(),"messagesDeleted":[{"message":{"id":id,"threadId":format!("thread-{id}")}}]})).collect();
+                    let status = if state.deleted_fails { 500 } else { 200 };
+                    (
+                        status,
+                        json!({"historyId":state.history,"history":history}),
                         None,
                         false,
                     )
@@ -722,7 +738,7 @@ async fn new_mail_arrives_while_a_history_scan_is_behind() {
         .unwrap()
         .requests
         .iter()
-        .filter(|url| url.contains("/history?"))
+        .filter(|url| url.contains("/history?") && !url.contains("historyTypes="))
         .count();
     let history_pages = || {
         h.http
@@ -731,7 +747,7 @@ async fn new_mail_arrives_while_a_history_scan_is_behind() {
             .unwrap()
             .requests
             .iter()
-            .filter(|url| url.contains("/history?"))
+            .filter(|url| url.contains("/history?") && !url.contains("historyTypes="))
             .count()
             - earlier
     };
@@ -775,6 +791,152 @@ async fn new_mail_arrives_while_a_history_scan_is_behind() {
     assert_eq!(
         seen.lock().unwrap()[..5],
         [false, false, false, false, true]
+    );
+    h.close();
+}
+
+// A long history scan, such as one replaying a bulk change made in Gmail,
+// takes turns with the download of older mail once it falls behind, so the
+// inventory never stalls behind it.
+#[tokio::test]
+async fn old_mail_keeps_downloading_while_a_history_scan_is_behind() {
+    let h = Harness::new(80, 1, 0);
+    {
+        let mut state = h.http.0.lock().unwrap();
+        state.list_page_size = 10;
+        for page in 0..6 {
+            let mut reply = json!({"historyId":"300","history":[{"id":(201 + page).to_string(),"labelsRemoved":[{"message":{"id":"m000","threadId":"thread-m000"},"labelIds":["UNREAD"]}]}]});
+            if page < 5 {
+                reply["nextPageToken"] = json!(format!("more{page}"));
+            }
+            state.history_replies.push_back((200, reply));
+        }
+    }
+    let history_pages = || {
+        h.http
+            .0
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|url| url.contains("/history?") && !url.contains("historyTypes="))
+            .count()
+    };
+    let stored = || h.sql_count("SELECT count(*) FROM messages WHERE account=?1");
+    let interval = h
+        .core
+        .call(|store| store.google_sync_interval_ms())
+        .await
+        .unwrap();
+    let mut worker = MailWorker::new(h.account.clone());
+    for _ in 0..50 {
+        if history_pages() > 0 {
+            break;
+        }
+        worker.step(&h.ctx, 0).await.unwrap();
+    }
+    assert!(history_pages() > 0 && stored() < 80);
+    // The next check falls due with the scan still running.
+    worker.step(&h.ctx, interval).await.unwrap();
+    let (pages, kept) = (history_pages(), stored());
+    for _ in 0..4 {
+        worker.step(&h.ctx, interval).await.unwrap();
+    }
+    assert!(history_pages() > pages, "the scan continues");
+    assert!(stored() > kept, "older mail keeps downloading");
+    h.idle(&mut worker).await;
+    assert_eq!((stored(), history_pages()), (80, 6));
+    h.close();
+}
+
+// A bulk change made in Gmail, moving mail to Trash and then deleting it for
+// good, is replayed with no request for the deleted mail once the scan has
+// read the deletions ahead. Other changes in the same history still apply.
+#[tokio::test]
+async fn history_scan_skips_mail_gmail_later_deleted_for_good() {
+    bulk_delete_replay(false).await;
+}
+
+// If the deletions can't be read ahead, the scan asks about each message as
+// before and ends in the same state.
+#[tokio::test]
+async fn history_scan_without_the_deletions_read_ahead_ends_the_same() {
+    bulk_delete_replay(true).await;
+}
+
+async fn bulk_delete_replay(read_ahead_fails: bool) {
+    let h = Harness::new(20, 20, 0);
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    let gone: Vec<String> = (5..15).map(|n| format!("m{n:03}")).collect();
+    let trashed = |ids: &[String]| {
+        json!(ids.iter().map(|id| json!({"message":{"id":id,"threadId":format!("thread-{id}")},"labelIds":["TRASH"]})).collect::<Vec<_>>())
+    };
+    {
+        let mut state = h.http.0.lock().unwrap();
+        for id in &gone {
+            state.raw.remove(id);
+            state.inventory.retain(|kept| kept != id);
+        }
+        state.deleted = gone.clone();
+        state.deleted_fails = read_ahead_fails;
+        state.history = "400".into();
+        state.history_replies.push_back((200, json!({"historyId":"400","nextPageToken":"more1","history":[{"id":"201","labelsAdded":trashed(&gone[..5])}]})));
+        state.history_replies.push_back((200, json!({"historyId":"400","nextPageToken":"more2","history":[{"id":"202","labelsAdded":trashed(&gone[5..])},{"id":"203","labelsRemoved":[{"message":{"id":"m000","threadId":"thread-m000"},"labelIds":["UNREAD"]}]}]})));
+        state.history_replies.push_back((200, json!({"historyId":"400","history":[{"id":"300","messagesDeleted":gone.iter().map(|id| json!({"message":{"id":id,"threadId":format!("thread-{id}")}})).collect::<Vec<_>>()}]})));
+        state.raw.get_mut("m000").unwrap()["labelIds"] = json!(["INBOX"]);
+        state.raw.get_mut("m000").unwrap()["historyId"] = json!("203");
+    }
+    let asked = |id: &str| {
+        h.http
+            .0
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|url| url.contains(&format!("/messages/{id}?")))
+            .count()
+    };
+    let before: Vec<usize> = gone.iter().map(|id| asked(id)).collect();
+    h.idle(&mut MailWorker::new(h.account.clone())).await;
+    let requests = h.http.0.lock().unwrap().requests.clone();
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|url| url.contains("historyTypes=messageDeleted"))
+            .count(),
+        1,
+        "the deletions are read once for the scan"
+    );
+    // The first page ran before the scan knew it was long; after that,
+    // nothing deleted for good is asked about, unless the read-ahead failed.
+    for (id, earlier) in gone[5..].iter().zip(&before[5..]) {
+        let expected = earlier + usize::from(read_ahead_fails);
+        assert_eq!(
+            asked(id),
+            expected,
+            "{id} asked about {} times",
+            asked(id) - earlier
+        );
+    }
+    // Deleted mail leaves every mailbox view, as when Gmail answers "not found".
+    let shown = |id: &str| {
+        h.sql_count(&format!(
+            "SELECT count(*) FROM messages m JOIN google_message_state g ON g.account=m.account AND g.message_id=m.id WHERE m.account=?1 AND m.remote_id='{id}' AND (m.inbox=1 OR m.trashed=1 OR g.deleted=0)"
+        ))
+    };
+    for id in &gone {
+        assert_eq!(shown(id), 0, "{id} still shows");
+    }
+    assert_eq!(
+        h.sql_count(
+            "SELECT count(*) FROM messages WHERE account=?1 AND remote_id='m000' AND unread=0"
+        ),
+        1,
+        "other changes in the same history still apply"
+    );
+    assert_eq!(
+        h.sql_count("SELECT count(*) FROM messages WHERE account=?1 AND inbox=1"),
+        10
     );
     h.close();
 }

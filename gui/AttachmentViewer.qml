@@ -2,6 +2,7 @@
 // MailView with show(account, items, index); step() moves between them.
 // Previews come from backend.requestAttachmentPreview().
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -29,13 +30,17 @@ Popup {
     readonly property var audio: player ? player.audioOutput : null
     readonly property bool playing: !!player && player.playbackState === MediaPlayer.PlayingState
     readonly property var attachment: items[index] || ({})
-    readonly property bool video: /^video\//i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(attachment.name || "")
+    readonly property bool video: isVideo(attachment)
+    function isVideo(item) { return /^video\//i.test(item.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(item.name || "") }
     readonly property real ratio: video ? (videoLoader.item && videoLoader.item.sourceRect.width > 0 && videoLoader.item.sourceRect.height > 0 ? videoLoader.item.sourceRect.width/videoLoader.item.sourceRect.height : 16/9) : preview.width && preview.height ? preview.width/preview.height : 4/3
     function show(accountId,media,at) { account=accountId;items=media;index=at;open();load() }
     function load() {
+        // Read the item itself: from onIndexChanged, the `attachment` and
+        // `video` bindings may still describe the previous one.
+        const item=items[index] || ({})
         preparingPoster=false; if (player) { player.stop(); player.source="" } preview={}; error=""
-        if (video) mediaActive=true
-        if (opened && attachment.id) ticket=backend.requestAttachmentPreview(account,attachment.id)
+        if (isVideo(item)) mediaActive=true
+        ticket=opened && item.id ? backend.requestAttachmentPreview(account,item.id) : ""
     }
     function step(delta) { if (!items.length) return;index=(index+delta+items.length)%items.length }
     function togglePlayback() { if (video && player) {preparingPoster=false;posterReady.stop();playing ? player.pause() : player.play()} }
@@ -49,9 +54,12 @@ Popup {
         function onAttachmentPreviewReady(reply,result,ok) {
             if (reply !== viewer.ticket) return
             viewer.ticket=""
-            if (!ok || result.account !== viewer.account || result.id !== viewer.attachment.id || !result.preview_url) { viewer.error=result.preview_error || result.message || "Preview unavailable";return }
+            const item=viewer.items[viewer.index] || ({})
+            if (!ok || result.account !== viewer.account || result.id !== item.id || !result.preview_url) { viewer.error=result.preview_error || result.message || "Preview unavailable";return }
+            // An error left by the previous item's player no longer applies.
+            viewer.error=""
             viewer.preview=result
-            if (viewer.video) {viewer.preparingPoster=true; viewer.mediaActive=true; viewer.player.source=result.preview_url}
+            if (viewer.isVideo(item)) {viewer.preparingPoster=true; viewer.mediaActive=true; viewer.player.source=result.preview_url}
         }
     }
     background: Rectangle { color: "#e80e0f11" }
@@ -75,7 +83,14 @@ Popup {
             width:Math.max(0,Math.min(viewer.width-120,(viewer.height-140)*viewer.ratio,1400)); spacing:16
             Rectangle {
                 id: frame; Layout.fillWidth:true; Layout.preferredHeight:Math.max(0,Math.min(viewer.height-140,width/viewer.ratio)); radius:6; color:"#090a0c"; clip:true
-                Image { anchors.fill:parent; visible:!viewer.video; source:viewer.video ? "" : viewer.preview.preview_url || ""; asynchronous:true; autoTransform:true; fillMode:Image.PreserveAspectFit; sourceSize:Qt.size(Math.ceil(frame.width*2),Math.ceil(frame.height*2)) }
+                Image {
+                    objectName:"attachmentViewerImage"; anchors.fill:parent; visible:!viewer.video
+                    source:viewer.video ? "" : viewer.preview.preview_url || ""
+                    asynchronous:true; autoTransform:true; retainWhileLoading:true; fillMode:Image.PreserveAspectFit
+                    // Cover the physical display pixels, with coarse steps so a
+                    // resize does not request a new decode for each pixel moved.
+                    sourceSize:Qt.size(Math.ceil(frame.width*Screen.devicePixelRatio/128)*128,Math.ceil(frame.height*Screen.devicePixelRatio/128)*128)
+                }
                 Loader { id: videoLoader; anchors.fill:parent; active:viewer.mediaActive; visible:viewer.video; sourceComponent: VideoOutput { fillMode:VideoOutput.PreserveAspectFit } }
                 MouseArea { anchors.fill:parent; hoverEnabled:true; onClicked:viewer.togglePlayback() }
                 HoverHandler { id: mediaHover }
@@ -119,7 +134,8 @@ Popup {
         id: playerLoader; active: viewer.mediaActive
         sourceComponent: MediaPlayer { objectName:"attachmentMediaPlayer";videoOutput:videoLoader.item;audioOutput:AudioOutput {objectName:"attachmentAudio"}
             onMediaStatusChanged: if (mediaStatus===MediaPlayer.LoadedMedia && viewer.preparingPoster) {audioOutput.muted=true;play();posterReady.start()}
-            onErrorOccurred:{viewer.preparingPoster=false;viewer.error=errorString}
+            // Clearing the source between items is not a failure to show.
+            onErrorOccurred:{if (!source.toString()) return;viewer.preparingPoster=false;viewer.error=errorString}
         }
     }
     Timer {id:posterReady;interval:100;onTriggered:{if(viewer.preparingPoster && viewer.player) {viewer.preparingPoster=false;viewer.player.pause();viewer.player.position=0;viewer.audio.muted=false}}}

@@ -9,6 +9,18 @@ use crate::{err, Result, Store};
 use fm_assist::ollama::Account;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
+use std::{cell::RefCell, collections::HashMap};
+
+#[derive(PartialEq)]
+pub(crate) struct ProgressKey {
+    generation: u64,
+    policy: Value,
+    configured: bool,
+    cutoff: Option<i64>,
+    catch_up: Option<i64>,
+}
+/// Only small result rows are cached; never message bodies or queued jobs.
+pub(crate) type ProgressCache = RefCell<HashMap<String, (ProgressKey, Value)>>;
 
 /// Received mail the local model can analyse.
 const ELIGIBLE: &str = "m.account=?1 AND NOT m.sent AND NOT m.trashed AND length(m.source_hash)=64 AND length(m.body)>0
@@ -159,9 +171,14 @@ impl Store {
                 r.get(0)
             })?)
     }
-    /// Per-account counts for the Accounts view and account tabs, one pass
-    /// over the account's mail each.
+    /// Per-account counts for the Accounts view and account tabs. Unchanged
+    /// mail/model state reuses its counts; policy and time bounds are rechecked.
     pub fn local_model_progress(&self, account: Option<&str>) -> Result<Value> {
+        let generation = self.mail_changes.model_progress_generation(&self.db);
+        let cacheable = self.db.is_autocommit();
+        if !cacheable {
+            self.model_progress_cache.borrow_mut().clear();
+        }
         let settings = self.local_model_policy()?;
         let accounts: Vec<String> = self
             .db
@@ -172,6 +189,22 @@ impl Store {
         for id in accounts {
             let policy = settings.accounts.get(&id).cloned().unwrap_or_default();
             let bounds = self.bounds(&id)?;
+            let key = ProgressKey {
+                generation,
+                policy: serde_json::to_value(&policy)?,
+                configured: settings.model.is_some(),
+                cutoff: bounds.cutoff,
+                catch_up: bounds.catch_up,
+            };
+            if let Some((_, value)) = self
+                .model_progress_cache
+                .borrow()
+                .get(&id)
+                .filter(|(old, _)| cacheable && *old == key)
+            {
+                rows.push(value.clone());
+                continue;
+            }
             let enabled = settings.model.is_some() && (policy.summaries || policy.classification);
             let local: i64 = self.db.query_row(
                 "SELECT count(*) FROM messages m WHERE m.account=?1 AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id AND g.deleted=1)",
@@ -187,12 +220,20 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )?;
             let queued = if enabled { queued } else { 0 };
-            rows.push(json!({"account":id,"local":local,"eligible":eligible,"done":done,"queued":queued,
+            let value = json!({"account":id,"local":local,"eligible":eligible,"done":done,"queued":queued,
                 "failed":failed,"unprocessed":(eligible-done-queued-failed).max(0),
                 "model_configured":settings.model.is_some(),"enabled":enabled,
                 "summaries":policy.summaries,"classification":policy.classification,
                 "paused":policy.paused,"history_cutoff":bounds.cutoff,"catch_up_from":bounds.catch_up,
-                "catching_up":enabled && catching_up > 0}));
+                "catching_up":enabled && catching_up > 0});
+            if cacheable {
+                let mut cache = self.model_progress_cache.borrow_mut();
+                if cache.len() >= 256 && !cache.contains_key(&id) {
+                    cache.clear();
+                }
+                cache.insert(id, (key, value.clone()));
+            }
+            rows.push(value);
         }
         Ok(json!({"accounts":rows}))
     }
@@ -314,6 +355,149 @@ mod tests {
     }
     fn progress(s: &Store) -> Value {
         s.local_model_progress(Some(ACCOUNT)).unwrap()["accounts"][0].clone()
+    }
+    fn measured_progress(s: &Store) -> (Value, u64) {
+        use std::sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        };
+        let steps = Arc::new(AtomicU64::new(0));
+        let observed = steps.clone();
+        s.db.progress_handler(
+            1,
+            Some(move || {
+                observed.fetch_add(1, Ordering::Relaxed);
+                false
+            }),
+        );
+        let value = progress(s);
+        s.db.progress_handler(0, None::<fn() -> bool>);
+        (value, steps.load(Ordering::Relaxed))
+    }
+
+    #[test]
+    fn progress_polls_reuse_counts_across_unrelated_writes() {
+        let (_dir, s) = store();
+        let (first, scanned) = measured_progress(&s);
+        let (again, cached) = measured_progress(&s);
+        assert_eq!(again, first);
+        assert!(cached * 10 < scanned, "cached={cached}, scan={scanned}");
+        s.db.execute("UPDATE calendar_publication SET revision=revision+1", [])
+            .unwrap();
+        s.db.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])
+            .unwrap();
+        let (again, after_unrelated) = measured_progress(&s);
+        assert_eq!(again, first);
+        assert!(after_unrelated * 10 < scanned);
+        eprintln!(
+            "progress SQL steps: full={scanned}, cached={cached}, unrelated={after_unrelated}"
+        );
+    }
+
+    #[test]
+    fn progress_refreshes_results_failures_bounds_policy_and_account_visibility() {
+        let (_dir, mut s) = store();
+        let first = progress(&s);
+        let next = s.local_model_next(&[], None, 1, &[]).unwrap().remove(0);
+        finish(&s, &next);
+        assert_eq!(
+            progress(&s)["done"].as_i64(),
+            Some(first["done"].as_i64().unwrap() + 1)
+        );
+        // Unqualified DELETE can use SQLite's truncate optimization without row hooks.
+        s.db.execute("DELETE FROM local_model_results", []).unwrap();
+        assert_eq!(progress(&s)["done"], 0);
+        s.db.execute(
+            "INSERT INTO local_model_failures VALUES(?1,?2,?3,'test','test','2026-09-27')",
+            params![ACCOUNT, next["id"].as_str().unwrap(), MAX_ATTEMPTS],
+        )
+        .unwrap();
+        assert_eq!(progress(&s)["failed"], 1);
+        s.db.execute(
+            "INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![history_cutoff_key(ACCOUNT), 4102444800000i64],
+        )
+        .unwrap();
+        assert_eq!(progress(&s)["queued"], 0);
+        s.db.execute(
+            "INSERT INTO meta VALUES(?1,0) ON CONFLICT(key) DO UPDATE SET value=0",
+            [catch_up_key(ACCOUNT)],
+        )
+        .unwrap();
+        assert!(progress(&s)["queued"].as_i64().unwrap() > 0);
+        let mut settings = s.local_model_settings().unwrap();
+        settings["settings"]["accounts"][ACCOUNT]["summaries"] = json!(false);
+        settings["settings"]["accounts"][ACCOUNT]["classification"] = json!(false);
+        s.local_model_handle(
+            "assist_settings_save",
+            None,
+            &json!({"expected_revision":settings["revision"],"settings":settings["settings"]}),
+        )
+        .unwrap();
+        assert_eq!(progress(&s)["enabled"], false);
+        assert_eq!(progress(&s)["queued"], 0);
+        s.db.execute(
+            "UPDATE accounts SET lifecycle_state='removed' WHERE id=?1",
+            [ACCOUNT],
+        )
+        .unwrap();
+        assert_eq!(
+            s.local_model_progress(Some(ACCOUNT)).unwrap()["accounts"],
+            json!([])
+        );
+    }
+
+    #[test]
+    fn progress_refreshes_provider_draft_and_deleted_state() {
+        let (_dir, s) = store();
+        let first = progress(&s);
+        let next = s.local_model_next(&[], None, 1, &[]).unwrap().remove(0);
+        let id = next["id"].as_str().unwrap();
+        s.db.execute(
+            "INSERT INTO google_message_state(account,message_id,remote_thread_id,history_id,provider_labels_json,deleted) VALUES(?1,?2,'test','1','[\"DRAFT\"]',0)
+                ON CONFLICT(account,message_id) DO UPDATE SET provider_labels_json='[\"DRAFT\"]',deleted=0",
+            params![ACCOUNT, id],
+        )
+        .unwrap();
+        assert_eq!(progress(&s)["local"], first["local"]);
+        assert_eq!(
+            progress(&s)["eligible"].as_i64(),
+            Some(first["eligible"].as_i64().unwrap() - 1)
+        );
+        s.db.execute(
+            "UPDATE google_message_state SET provider_labels_json='[]',deleted=1 WHERE account=?1 AND message_id=?2",
+            params![ACCOUNT, id],
+        )
+        .unwrap();
+        assert_eq!(
+            progress(&s)["local"].as_i64(),
+            Some(first["local"].as_i64().unwrap() - 1)
+        );
+        s.db.execute(
+            "UPDATE google_message_state SET deleted=0 WHERE account=?1 AND message_id=?2",
+            params![ACCOUNT, id],
+        )
+        .unwrap();
+        assert_eq!(progress(&s), first);
+    }
+
+    #[test]
+    fn progress_cannot_retain_transaction_or_savepoint_results_after_rollback() {
+        let (_dir, s) = store();
+        let first = progress(&s);
+        s.db.execute_batch("BEGIN; UPDATE messages SET trashed=1;")
+            .unwrap();
+        assert_eq!(progress(&s)["eligible"], 0);
+        s.db.execute_batch("SAVEPOINT inner; UPDATE messages SET trashed=0;")
+            .unwrap();
+        assert!(progress(&s)["eligible"].as_i64().unwrap() > 0);
+        s.db.execute_batch("ROLLBACK TO inner;").unwrap();
+        assert_eq!(progress(&s)["eligible"], 0);
+        s.db.execute_batch("ROLLBACK;").unwrap();
+        assert_eq!(progress(&s), first);
+        s.db.execute_batch("BEGIN; UPDATE messages SET trashed=1; COMMIT;")
+            .unwrap();
+        assert_eq!(progress(&s)["eligible"], 0);
     }
     #[test]
     fn the_queue_runs_newest_first_and_empties_once_everything_is_saved() {

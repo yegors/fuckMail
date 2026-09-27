@@ -542,6 +542,14 @@ async fn concurrent_request_and_late_cancelled_ack_keep_exact_receipt_and_newer_
         .await
         .unwrap();
     assert_eq!(h.status("late-ack").await["state"], "in_flight");
+    // The message's size is known while it uploads; nothing else is listed.
+    let upload = progress(h.ctx.account.as_str(), "late-ack");
+    assert_eq!(upload["uploading"], true);
+    assert!(upload["total"].as_u64().unwrap() > 0);
+    assert_eq!(
+        progress(h.ctx.account.as_str(), "simultaneous")["uploading"],
+        false
+    );
     assert!(execute(&h.ctx, h.request("simultaneous").await)
         .await
         .is_err());
@@ -571,6 +579,10 @@ async fn concurrent_request_and_late_cancelled_ack_keep_exact_receipt_and_newer_
         .unwrap()
         .unwrap();
     assert_eq!(receipt["state"], "accepted");
+    assert_eq!(
+        progress(h.ctx.account.as_str(), "late-ack")["uploading"],
+        false
+    );
     assert_eq!(receipt["draft_revision"], old["revision"]);
     assert_eq!(receipt["ack"]["thread_id"], "sent-thread");
     assert_eq!(h.draft().await["body"], "Newer human edits are still here");

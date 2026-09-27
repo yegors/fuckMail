@@ -9,5 +9,5 @@ MessageHeaderButton {
     foreground: Theme.ai
     tip: "Summarize with " + (modelName || "the local model") + " — runs on this machine"
     Accessible.name: "Summarize"
-    background: Rectangle { radius: 5; color: button.hovered ? Theme.withAlpha(Theme.ai, .12) : "transparent"; border.width: button.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+    background: Rectangle { radius: 5; color: button.hovered ? Theme.withAlpha(Theme.ai, .12) : "transparent"; border.width: button.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
 }

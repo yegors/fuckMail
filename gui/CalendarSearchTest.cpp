@@ -698,8 +698,8 @@ class CalendarSearchTest {
             auto *settingsButton = qobject_cast<QQuickItem *>(named(window, "settingsButton"));
             auto *box = qobject_cast<QQuickItem *>(named(window, "searchBox"));
             require(settingsButton, "the Settings button exists"); require(box, "the search box exists");
-            require(settingsButton->mapToScene({}).x() > box->mapToScene({}).x() + box->width() && settingsButton->width() == 30 && settingsButton->height() == 30,
-                "a 30 px Settings button follows the search box");
+            require(settingsButton->mapToScene({}).x() > box->mapToScene({}).x() + box->width() && settingsButton->width() == 32 && settingsButton->height() == 28,
+                "a 32 by 28 Settings button in its tray follows the search box");
             require(!named(window, "accountEdge"), "no account-colour strip along the top");
         }
         // Calendar search's reading, dates and filter.

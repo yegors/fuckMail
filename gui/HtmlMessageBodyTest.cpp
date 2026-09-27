@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
     QTemporaryDir temp;
     const auto dir = temp.filePath("HtmlTest");
     QDir().mkpath(dir);
-    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml", "HtmlMessageBody.qml", "MessageNotices.qml", "RemoteContentSettings.qml"})
+    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml","FmMenu.qml","FmMenuItem.qml","TextMenu.qml","TextMenuHandler.qml", "HtmlMessageBody.qml", "MessageNotices.qml", "RemoteContentSettings.qml"})
         check(QFile::copy(QString(FM_GUI_SOURCE_DIR) + "/" + name, dir + "/" + name), "copy production QML");
     QFile module(dir + "/qmldir");
     check(module.open(QIODevice::WriteOnly), "module metadata");

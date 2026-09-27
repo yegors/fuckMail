@@ -14,6 +14,7 @@ target_link_libraries(fm-gui-icons PUBLIC Qt6::Quick fm-gui-html)
 target_compile_features(fm-gui-icons PUBLIC cxx_std_20)
 qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
+    WindowPlacement.cpp WindowPlacement.h
     DebugConsole.cpp DebugConsole.h
     NotificationPresenter.cpp
     NotificationPresenter.h
@@ -68,7 +69,7 @@ qt_add_qml_module(fuckmail-gui
     QML_FILES AccountProgress.qml AccountPolicy.qml AccountCard.qml AccountHoverCard.qml AccountColorPicker.qml LabelsDialog.qml SignatureDialog.qml
     QML_FILES HtmlMessageBody.qml MessageNotices.qml RemoteContentSettings.qml
     QML_FILES CalendarMailCount.qml
-    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml LabelSettings.qml TodayStrip.qml
+    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml TextMenu.qml TextMenuHandler.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt app-icon/app-icon.png
 )
 target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-html-content Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
@@ -120,6 +121,10 @@ if(BUILD_TESTING)
     if(WIN32)
         set_property(TEST gui-debug-console APPEND PROPERTY ENVIRONMENT "QT_QPA_FONTDIR=$ENV{SystemRoot}/Fonts")
     endif()
+    add_executable(gui-window-placement-test WindowPlacementTest.cpp WindowPlacement.cpp WindowPlacement.h)
+    target_link_libraries(gui-window-placement-test PRIVATE Qt6::Quick Qt6::Test)
+    add_test(NAME gui-window-placement COMMAND gui-window-placement-test)
+    set_tests_properties(gui-window-placement PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
     if(WIN32)
         add_executable(gui-ipc-trust-test IpcTrustWindowsTest.cpp IpcTrust.cpp)
         target_link_libraries(gui-ipc-trust-test PRIVATE advapi32)
@@ -223,7 +228,7 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-calendar-mail-activity COMMAND gui-calendar-mail-activity-test)
     set_tests_properties(gui-calendar-mail-activity PROPERTIES TIMEOUT 20 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
-    add_executable(gui-mail-selection-test MailSelectionTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
+    add_executable(gui-mail-selection-test MailSelectionTest.cpp WindowPlacement.cpp WindowPlacement.h ${FM_NAVIGATION_TEST_SOURCES})
     add_executable(gui-composer-input-test ComposerInputTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
     target_link_libraries(gui-composer-input-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-composer-input-test PRIVATE cxx_std_20)
@@ -276,7 +281,13 @@ if(BUILD_TESTING)
         target_link_libraries(gui-mail-selection-test PRIVATE advapi32)
     endif()
     add_test(NAME gui-mail-selection COMMAND gui-mail-selection-test)
-    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 60 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    # Photo circles and paint timing need the GPU renderer and a real window;
+    # headless Linux has neither, so these run where a desktop exists.
+    if(WIN32 OR APPLE)
+        add_test(NAME gui-mail-gpu COMMAND gui-mail-selection-test --gpu)
+        set_tests_properties(gui-mail-gpu PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_FORCE_STDERR_LOGGING=1")
+    endif()
     add_executable(gui-mail-navigation-cache-test MailNavigationCacheTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
     target_link_libraries(gui-mail-navigation-cache-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-mail-navigation-cache-test PRIVATE cxx_std_20)
@@ -359,6 +370,16 @@ if(BUILD_TESTING)
     add_executable(fm-html-probe HtmlProbe.cpp)
     target_link_libraries(fm-html-probe PRIVATE fm-gui-html Qt6::Gui)
 endif()
+
+# Video posters read frames through Qt Multimedia, so every target built with
+# the attachment backend links it.
+get_property(FM_GUI_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(target IN LISTS FM_GUI_TARGETS)
+    get_target_property(target_sources ${target} SOURCES)
+    if(target_sources AND "DraftAttachmentBackend.cpp" IN_LIST target_sources)
+        target_link_libraries(${target} PRIVATE Qt6::Multimedia)
+    endif()
+endforeach()
 
 if(BUILD_TESTING)
     add_executable(gui-html-message-body-test HtmlMessageBodyTest.cpp)

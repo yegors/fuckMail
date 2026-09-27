@@ -11,7 +11,7 @@ Rectangle {
     property var progress: null
     property string account: ""
     property var row: ({})
-    readonly property var pipeline: progress && account.length ? progress.view(account) : ({})
+    readonly property var pipeline: progress && account.length ? progress.view(account, true) : ({})
     function show(accountRow, left, top) {
         row = accountRow; account = accountRow.id
         x = Math.max(8, Math.min(left, (parent ? parent.width : 1000) - width - 8)); y = top

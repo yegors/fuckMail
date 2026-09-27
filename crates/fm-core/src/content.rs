@@ -1,14 +1,18 @@
 //! Immutable retained content, published before any SQLite reference to it.
 //!
-//! Message sources, attachments and draft parts live under `<profile>/blobs`,
+//! Message sources, authored attachments and draft parts live under `<profile>/blobs`,
 //! each named by the lowercase hex SHA-256 of its bytes. A blob is written to
 //! a `.stage-*` file, flushed, then renamed into place, so a name is only ever
 //! visible with complete bytes; SQL rows that reference it commit afterwards.
 //! Every read re-verifies size and hash and refuses symlinks, Windows reparse
 //! points and anything that is not a regular file. Files handed to other
 //! applications are verified copies under `<profile>/exports`, never the
-//! retained original.
-use crate::{err, id, Result, Store};
+//! retained original. Received attachments are extracted from their verified
+//! original MIME on demand; exports are disposable and size-budgeted.
+use crate::{
+    attachment_content::{self, SourcePart},
+    err, id, Result, Store,
+};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -18,12 +22,55 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-/// Largest single blob, in bytes (64 MiB). Larger content fails with
-/// `content_too_large` before anything is written.
-pub const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
+#[cfg(test)]
+#[path = "content_cache_tests.rs"]
+mod cache_tests;
+
+/// Largest single blob, in bytes: the largest message source Gmail can
+/// deliver. Larger content fails with `content_too_large` before anything is
+/// written.
+pub const MAX_BLOB_BYTES: u64 = fm_google::gmail_api::MAX_RAW_MIME as u64;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 // Serializes only the final rename, across every store in the process.
 static BLOB_PUBLICATION: Mutex<()> = Mutex::new(());
+// Cache publication and eviction share a lock so pruning never sees a half export.
+static EXPORT_IO: Mutex<()> = Mutex::new(());
+static EXPORT_SWEEPS: Mutex<Option<std::collections::HashMap<PathBuf, std::time::Instant>>> =
+    Mutex::new(None);
+const EXPORT_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+const EXPORT_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+// Exported copies verified in this process, with the size and modification
+// time they had then. A copy unchanged since is not hashed again, so showing
+// a large attachment a second time costs no full read.
+static VERIFIED_EXPORTS: Mutex<
+    Option<std::collections::HashMap<PathBuf, (u64, std::time::SystemTime)>>,
+> = Mutex::new(None);
+
+fn export_stamp(path: &Path) -> Option<(u64, std::time::SystemTime)> {
+    let metadata = fs::symlink_metadata(path).ok()?;
+    metadata
+        .is_file()
+        .then(|| metadata.modified().ok().map(|at| (metadata.len(), at)))
+        .flatten()
+}
+fn export_known(path: &Path) -> bool {
+    let stamp = export_stamp(path);
+    stamp.is_some()
+        && VERIFIED_EXPORTS
+            .lock()
+            .ok()
+            .and_then(|known| known.as_ref().and_then(|map| map.get(path).copied()))
+            == stamp
+}
+fn remember_export(path: &Path) {
+    if let (Some(stamp), Ok(mut known)) = (export_stamp(path), VERIFIED_EXPORTS.lock()) {
+        let known = known.get_or_insert_with(Default::default);
+        if known.len() >= 4096 {
+            known.clear();
+        }
+        known.insert(path.to_owned(), stamp);
+    }
+}
 
 /// A handle to a profile's blob directory, with no SQLite connection or
 /// credentials.
@@ -47,8 +94,49 @@ impl BlobStore {
         verified_blob(&self.profile, hash, size)
     }
 
+    /// Read and verify the exact bytes from one handle, with a bounded allocation.
+    pub(crate) fn read_verified(&self, hash: &str, size: u64) -> Result<Vec<u8>> {
+        validate_hash(hash)?;
+        if size > MAX_BLOB_BYTES {
+            return Err(unavailable());
+        }
+        let path = blob_directory(&self.profile, false)
+            .map_err(|_| unavailable())?
+            .join(hash);
+        let file = open_regular(&path).map_err(|_| unavailable())?;
+        if file.metadata()?.len() != size {
+            return Err(unavailable());
+        }
+        let mut bytes = Vec::with_capacity(size as usize);
+        file.take(size + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| unavailable())?;
+        if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != hash {
+            return Err(unavailable());
+        }
+        reject_non_regular(&fs::symlink_metadata(&path).map_err(|_| unavailable())?)?;
+        Ok(bytes)
+    }
+
     pub(crate) fn export_attachment(&self, hash: &str, size: u64, name: &str) -> Result<PathBuf> {
         export_verified_attachment(&self.profile, hash, size, name)
+    }
+
+    pub(crate) fn export_part(
+        &self,
+        hash: &str,
+        size: u64,
+        name: &str,
+        source: Option<&SourcePart>,
+    ) -> Result<PathBuf> {
+        export_content(&self.profile, hash, size, name, source)
+    }
+
+    /// Prune old disposable exports off the writer. Recently handed-out paths
+    /// have a grace period; locked files are retried on the next sweep.
+    pub fn prune_exports(&self) -> Result<()> {
+        let _guard = EXPORT_IO.lock().map_err(|_| unavailable())?;
+        prune_exports(&self.profile, EXPORT_CACHE_BYTES, EXPORT_GRACE)
     }
 }
 
@@ -122,7 +210,7 @@ fn stage_blob(profile: &Path, bytes: &[u8]) -> Result<String> {
     if bytes.len() as u64 > MAX_BLOB_BYTES {
         return Err(err(
             "content_too_large",
-            "Retained content exceeds the 64 MiB limit",
+            "Retained content exceeds the size limit",
         ));
     }
     let hash = format!("{:x}", Sha256::digest(bytes));
@@ -182,39 +270,179 @@ fn export_verified_attachment(
     size: u64,
     name: &str,
 ) -> Result<PathBuf> {
-    let source = verified_blob(profile, hash, size)?;
+    export_content(profile, hash, size, name, None)
+}
+
+fn export_content(
+    profile: &Path,
+    hash: &str,
+    size: u64,
+    name: &str,
+    part: Option<&SourcePart>,
+) -> Result<PathBuf> {
+    let _guard = EXPORT_IO.lock().map_err(|_| unavailable())?;
+    validate_hash(hash)?;
+    if size > MAX_BLOB_BYTES {
+        return Err(unavailable());
+    }
     let exports = private_directory(profile, "exports", true)?;
     let directory = private_directory(&exports, hash, true)?;
     let destination = directory.join(safe_export_name(name));
     match fs::symlink_metadata(&destination) {
         Ok(_) => {
-            verify_file(&destination, hash, size)?;
+            if !export_known(&destination) {
+                verify_file(&destination, hash, size)?;
+                remember_export(&destination);
+            }
+            touch_export(&destination);
+            maybe_prune_exports(profile);
             return Ok(destination);
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
+    // One pass: the retained blob is hashed while it is copied, so the copy
+    // is exactly the verified bytes.
+    let mut input: Box<dyn Read> = if let Some(part) = part {
+        let bytes = attachment_content::read(
+            &BlobStore {
+                profile: profile.to_owned(),
+            },
+            hash,
+            size,
+            Some(part),
+        )?;
+        Box::new(std::io::Cursor::new(bytes))
+    } else {
+        let source = blob_directory(profile, false)
+            .map_err(|_| unavailable())?
+            .join(hash);
+        let file = open_regular(&source).map_err(|_| unavailable())?;
+        if file.metadata()?.len() != size {
+            return Err(unavailable());
+        }
+        Box::new(file)
+    };
     let (temporary, mut file) = create_stage(&directory)?;
-    let copied = std::io::copy(&mut open_regular(&source)?.take(size + 1), &mut file)?;
-    if copied != size {
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0u8; 256 * 1024];
+    let mut copied = 0u64;
+    loop {
+        let count = input.read(&mut buffer).map_err(|_| unavailable())?;
+        if count == 0 {
+            break;
+        }
+        copied += count as u64;
+        if copied > size {
+            break;
+        }
+        digest.update(&buffer[..count]);
+        file.write_all(&buffer[..count])?;
+    }
+    if copied != size || format!("{:x}", digest.finalize()) != hash {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
         return Err(unavailable());
     }
     file.sync_all()?;
     drop(file);
-    verify_file(&temporary, hash, size)?;
-    {
+    let published = {
         let _publication = BLOB_PUBLICATION.lock().map_err(|_| unavailable())?;
         match fs::symlink_metadata(&destination) {
-            Ok(_) => fs::remove_file(&temporary)?,
+            Ok(_) => {
+                fs::remove_file(&temporary)?;
+                false
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 fs::rename(&temporary, &destination)?;
                 sync_directory(&directory)?;
+                true
             }
             Err(error) => return Err(error.into()),
         }
+    };
+    // Another export won the race: its copy is checked like any other.
+    if !published {
+        verify_file(&destination, hash, size)?;
     }
-    verify_file(&destination, hash, size)?;
+    touch_export(&destination);
+    maybe_prune_exports(profile);
     Ok(destination)
+}
+
+fn touch_export(path: &Path) {
+    if let Ok(file) = open_regular_with_write(path, true) {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+    remember_export(path);
+}
+
+fn maybe_prune_exports(profile: &Path) {
+    let Ok(mut sweeps) = EXPORT_SWEEPS.lock() else {
+        return;
+    };
+    let sweeps = sweeps.get_or_insert_with(Default::default);
+    if sweeps
+        .get(profile)
+        .is_some_and(|at| at.elapsed().as_secs() < 60)
+    {
+        return;
+    }
+    if sweeps.len() > 64 {
+        sweeps.clear();
+    }
+    sweeps.insert(profile.to_owned(), std::time::Instant::now());
+    let _ = prune_exports(profile, EXPORT_CACHE_BYTES, EXPORT_GRACE);
+}
+
+fn prune_exports(profile: &Path, budget: u64, grace: std::time::Duration) -> Result<()> {
+    if !profile.join("exports").exists() {
+        return Ok(());
+    }
+    let root = private_directory(profile, "exports", false)?;
+    let mut files = Vec::new();
+    let mut total = 0u64;
+    for folder in fs::read_dir(&root)? {
+        let folder = folder?;
+        let name = folder.file_name();
+        let Some(name) = name.to_str().filter(|name| validate_hash(name).is_ok()) else {
+            continue;
+        };
+        let Ok(directory) = private_directory(&root, name, false) else {
+            continue;
+        };
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let metadata = fs::symlink_metadata(entry.path())?;
+            if reject_non_regular(&metadata).is_err() {
+                continue;
+            }
+            let modified = metadata.modified()?;
+            total = total.saturating_add(metadata.len());
+            files.push((modified, metadata.len(), entry.path()));
+        }
+    }
+    files.sort_by_key(|(modified, _, _)| *modified);
+    for (modified, size, path) in files {
+        if total <= budget {
+            break;
+        }
+        if modified.elapsed().unwrap_or_default() < grace {
+            continue;
+        }
+        if fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(size);
+            if let Ok(mut known) = VERIFIED_EXPORTS.lock() {
+                if let Some(known) = known.as_mut() {
+                    known.remove(&path);
+                }
+            }
+            if let Some(parent) = path.parent() {
+                let _ = fs::remove_dir(parent);
+            }
+        }
+    }
+    Ok(())
 }
 impl Store {
     /// Describes one attachment of `account`. When its content is `available`,
@@ -223,7 +451,20 @@ impl Store {
     ///
     /// Fails with `not_found` for an unknown account or attachment and with
     /// `content_unavailable` when the retained bytes no longer verify.
+    #[cfg(test)]
     pub(crate) fn attachment(&self, account: &str, attachment_id: &str) -> Result<Value> {
+        self.attachment_plan(account, attachment_id)?.export()
+    }
+
+    /// The store half of [`Store::attachment`]: its description, and the
+    /// retained content to copy, which [`AttachmentPlan::export`] does off
+    /// the writer.
+    pub fn attachment_begin(&self, account: &str, params: &Value) -> Result<AttachmentPlan> {
+        crate::fields(params, &["id"])?;
+        self.attachment_plan(account, crate::string(params, "id")?)
+    }
+
+    fn attachment_plan(&self, account: &str, attachment_id: &str) -> Result<AttachmentPlan> {
         id(account)?;
         id(attachment_id)?;
         let row = self.db.query_row(
@@ -232,12 +473,41 @@ impl Store {
             |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?)),
         ).optional()?.ok_or_else(|| err("not_found", "Attachment does not exist in this account"))?;
         let (message_id, name, mime_type, size, state, hash) = row;
-        let mut result = json!({"account":account,"id":attachment_id,"message_id":message_id,"name":name,"mime_type":mime_type,"size":size,"state":state});
-        if state == "available" {
+        let result = json!({"account":account,"id":attachment_id,"message_id":message_id,"name":name,"mime_type":mime_type,"size":size,"state":state});
+        let export = if state == "available" {
             let size = u64::try_from(size).map_err(|_| unavailable())?;
+            Some((
+                self.google_blob_store(),
+                hash,
+                size,
+                name,
+                self.attachment_source(account, attachment_id)?,
+            ))
+        } else {
+            None
+        };
+        Ok(AttachmentPlan { result, export })
+    }
+}
+
+/// One attachment's description and, when its content is here, what
+/// [`AttachmentPlan::export`] copies out.
+pub struct AttachmentPlan {
+    result: Value,
+    export: Option<(BlobStore, String, u64, String, Option<SourcePart>)>,
+}
+
+impl AttachmentPlan {
+    /// Adds `path`, a verified copy under `exports/` named after the
+    /// attachment, and `sha256` to an available attachment's description.
+    /// Runs off the writer; a copy already verified in this process is not
+    /// read again.
+    pub fn export(self) -> Result<Value> {
+        let mut result = self.result;
+        if let Some((blobs, hash, size, name, source)) = self.export {
             // External editors receive a verified copy with a usable extension,
             // never the immutable retained original or a client-selected path.
-            let path = self.export_attachment(&hash, size, &name)?;
+            let path = export_content(&blobs.profile, &hash, size, &name, source.as_ref())?;
             result["path"] = json!(path.to_str().ok_or_else(unavailable)?);
             result["sha256"] = json!(hash);
         }
@@ -392,9 +662,13 @@ fn is_reparse_point(_: &fs::Metadata) -> bool {
 /// Opens `path` for reading only if it is a regular file, checking both before
 /// and after the open so a file swapped for a link in between is refused.
 pub(crate) fn open_regular(path: &Path) -> Result<File> {
+    open_regular_with_write(path, false)
+}
+
+fn open_regular_with_write(path: &Path, writable: bool) -> Result<File> {
     reject_non_regular(&fs::symlink_metadata(path)?)?;
     let mut options = OpenOptions::new();
-    options.read(true);
+    options.read(true).write(writable);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -476,6 +750,7 @@ mod tests {
             _lock: File::create(profile.join("content-test.lock")).unwrap(),
             projection_cache: Default::default(),
             coverage_cache: Default::default(),
+            model_progress_cache: Default::default(),
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
             state_scans: Default::default(),

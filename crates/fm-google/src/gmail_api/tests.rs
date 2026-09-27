@@ -488,6 +488,84 @@ async fn raw_outcomes_isolate_missing_oversized_malformed_and_valid_source() {
 }
 
 #[tokio::test]
+async fn a_large_source_downloads_whole_with_room_and_time_for_it() {
+    let (fake, api) = setup();
+    let a = account("a");
+    // Over the earlier 40 MiB bound, and not a multiple of the decoder's chunk.
+    let source: Vec<u8> = (0..41 * 1024 * 1024 + 7)
+        .map(|n: usize| (n * 7 % 251) as u8)
+        .collect();
+    fake.respond(200, raw("m", &URL_SAFE_NO_PAD.encode(&source)));
+    // A JSON writer may escape padding; the source then arrives as a copy.
+    let padded = base64::engine::general_purpose::URL_SAFE.encode(b"From: a@example.test\r\n\r\nx");
+    let escaped = padded.replace('=', "\\u003d");
+    assert_ne!(escaped, padded);
+    fake.replies.lock().unwrap().push_back(Ok(HttpResponse {
+        status: 200,
+        body: format!(r#"{{"id":"m","threadId":"t","historyId":"5","raw":"{escaped}"}}"#)
+            .into_bytes(),
+        retry_after_secs: None,
+        etag: None,
+    }));
+    for expected in [source.as_slice(), b"From: a@example.test\r\n\r\nx"] {
+        let GmailReply::Raw(RawOutcome::Available(item)) = api
+            .execute(
+                GmailCall::raw_message(&a, "m").unwrap(),
+                "token",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("a large or escaped source is available");
+        };
+        let decoded = crate::sync::decode_raw_message(item.message, "m").unwrap();
+        assert!(decoded.source_mime == expected);
+    }
+    let calls = fake.calls.lock().unwrap();
+    assert!(calls[0].response_limit_bytes().unwrap() > MAX_RAW_MIME / 3 * 4);
+    assert_eq!(calls[0].request_deadline(), Some(RAW_DEADLINE));
+    let draft = GmailCall::get_draft(&a, "d").unwrap();
+    assert_eq!(draft.request.request_deadline(), Some(RAW_DEADLINE));
+    assert_eq!(
+        GmailCall::profile(&a).unwrap().request.request_deadline(),
+        None
+    );
+}
+
+#[test]
+fn raw_sources_decode_across_chunks_padding_and_bad_input() {
+    let message = |raw: String| RawMessage {
+        id: "m".into(),
+        thread_id: "t".into(),
+        label_ids: Vec::new(),
+        history_id: "1".into(),
+        raw,
+    };
+    let chunk = 64 * 1024 / 4 * 3;
+    for length in [0, 1, 2, 3, 4, 5, chunk - 1, chunk, chunk + 1, 2 * chunk + 2] {
+        let source: Vec<u8> = (0..length).map(|n| (n % 256) as u8).collect();
+        for engine in [URL_SAFE_NO_PAD, base64::engine::general_purpose::URL_SAFE] {
+            let decoded =
+                crate::sync::decode_raw_message(message(engine.encode(&source)), "m").unwrap();
+            assert!(decoded.source_mime == source, "length {length}");
+        }
+    }
+    let mut late = URL_SAFE_NO_PAD.encode(vec![1_u8; 2 * chunk]);
+    late.push('*');
+    for bad in [
+        "a".to_owned(),
+        "YWJj===".to_owned(),
+        "YW*j".to_owned(),
+        late,
+    ] {
+        assert!(crate::sync::decode_raw_message(message(bad), "m").is_err());
+    }
+    let largest = "A".repeat(MAX_RAW_MIME.div_ceil(3) * 4 + 4);
+    assert!(crate::sync::decode_raw_message(message(largest), "m").is_err());
+}
+
+#[tokio::test]
 async fn state_mutation_targets_one_message_and_checks_returned_identity() {
     let (fake, api) = setup();
     let a = account("a");

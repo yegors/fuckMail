@@ -1,6 +1,43 @@
 # Gmail provider
 
+## D159 — every message Gmail holds downloads (Gmail41)
 
+- The raw bound is 160 MiB of decoded source, above Gmail's 150 MB import limit. The raw and draft-get reply cap is its base64url length plus 1 MiB of envelope.
+- Raw and draft reads get a 10-minute whole-request deadline; the transport's 30 s read gap still ends a stalled connection. Other calls keep the 120 s default.
+- The transport's response ceiling is 256 MiB. Every Gmail, Calendar and OAuth request still sets its own lower cap, and a declared length over the cap is refused before reading.
+- The reply is read into one buffer sized by its declared length. The source moves to the front of that buffer, then decodes in place. Escaped JSON strings fall back to a copy.
+- `RawOutcome::TooLarge` remains for a source over the bound; `decode_raw_message` uses the same bound.
+
+Consumers: Core81, engine mail sync, remote reads and draft import; Quality86.
+
+## D156 — avoid repeated original reads on replay (Gmail40)
+
+Ready staged-message replay verifies the declared source hash/size and decoded attachment manifest from one verified original read. Source-only staged entries still verify the original; malformed or missing ready manifests still fail. Acquisition, provider requests, publication and offline behavior are unchanged. Consumers: Core79 and Quality83; schema, live0/demo3 fixtures and protocol1 unchanged by this optimization.
+
+## D152 — retain MIME once, derive received attachments locally (Gmail39)
+
+Received mail still uses RAW acquisition and retains the exact original including attachments. Preparation records decoded attachment hashes, sizes and parser positions without writing separate decoded blobs. Staged replay checks those parts against the original; publication records Core77 source references with the attachment rows in the same transaction. Offline completeness includes locally extractable parts. No provider request is added to attachment preview/export. Spam, retention windows, provider checkpoints and observed Gmail draft retention are unchanged.
+
+Consumers: Core77, Mail UI105, CLI, Quality81; schema38, live0/demo3 fixtures and protocol1.
+
+
+
+## D150 — deletions read ahead of a history scan (Gmail38)
+
+- While the history scan's checkpoint has a next page (`Delta` or `CatchUp` with a page token), each of its turns first reads `history.list` with `startHistoryId` of the scan's start, `historyTypes=messageDeleted` and `maxResults=500`. It reads for up to 2 s, then gives the turn back. Cost: 2 units per page.
+- The message IDs in those records, at most 250,000, are held in memory for that scan (generation and start history ID). A restart reads them again.
+- A page item that fetches one of them is recorded missing with no request, as Gmail's 404 would be. Items that observe or delete are unchanged. Other lanes' fetches of such an ID are recorded missing the same way.
+- A failed read ends the read-ahead for that scan (`mail_deletions_read_failed`); the scan continues as before. A finished one logs `mail_deletions_read` with its pages and messages.
+
+Consumers: Core76, CLI (unchanged commands).
+
+## D149 — send progress, faster history catch-up (Gmail37)
+
+- `google_send_progress {request_id}` answers from engine memory, with no store call: `{account, request_id, uploading, sent, total}`. `total` is the request body's size once built; `sent` counts body bytes handed to the connection, in 64 KiB frames, and can run ahead of Google by the socket's buffers. Outside an upload `uploading` is false and both are 0.
+- A history scan that is behind (D145) takes turns with the recent and inventory listings, one part each, instead of running to the end first.
+- A part asks for the labels of every kept message in it together; the scheduler still admits at most two reads per account. Items that downloaded nothing are staged with the part's commit; downloads are still staged one at a time as they finish.
+
+Consumers: Core76, Mail UI103, CLI (unchanged commands).
 
 ## D147 — emptying Trash after Gmail deleted the mail (Gmail36)
 

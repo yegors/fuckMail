@@ -384,7 +384,13 @@ impl Store {
                     "Draft attachment is not fully retained",
                 ));
             }
-            let bytes = self.capture_bytes(&hash, size)?;
+            let bytes = crate::attachment_content::read_cached(
+                &self.google_blob_store(),
+                &hash,
+                size,
+                &name,
+                self.attachment_source(account, id)?.as_ref(),
+            )?;
             staged.push(StagedAttachment {
                 account_id: account.to_owned(),
                 filename: name,

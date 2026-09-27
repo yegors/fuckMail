@@ -49,7 +49,7 @@ Rectangle {
                     Text {id:undoKey;anchors.centerIn:parent;text:ShortcutRegistry.label(ShortcutRegistry.sequence("undo",backend.preferences));color:Theme.inkAlpha(.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11)}
                 }
             }
-            background: Rectangle { color: "transparent"; radius: 3; border.color: action.activeFocus ? Theme.accent : "transparent" }
+            background: Rectangle { color: "transparent"; radius: 3; border.color: action.visualFocus ? Theme.accent : "transparent" }
             onClicked: backend.activateActionToast()
         }
     }

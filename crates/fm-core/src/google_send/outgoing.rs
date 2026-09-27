@@ -7,6 +7,9 @@ use mail_parser::MimeHeaders;
 pub struct ReadPlan {
     upload: GoogleSendUploadPlan,
     metadata: Value,
+    /// The sending draft's attachments stored here, so the frozen message's
+    /// attachments can be previewed before Gmail's copy arrives.
+    stored: Vec<Value>,
 }
 
 impl Store {
@@ -111,7 +114,18 @@ impl Store {
         let op = self
             .google_send_operation(account, string(request, "request_id")?)?
             .ok_or_else(not_found)?;
+        let mut stored = Vec::new();
+        {
+            let mut statement = self.db.prepare_cached("SELECT a.id,a.name,a.mime_type,a.size,a.state FROM drafts d,json_each(d.attachments_json) j JOIN attachments a ON a.account=d.account AND a.id=j.value WHERE d.account=?1 AND d.draft_id=?2 LIMIT 50")?;
+            let rows = statement.query_map(params![account, op.draft_id], |r| {
+                Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"mime_type":r.get::<_,String>(2)?,"size":r.get::<_,i64>(3)?,"state":r.get::<_,String>(4)?}))
+            })?;
+            for row in rows {
+                stored.push(row?);
+            }
+        }
         Ok(ReadPlan {
+            stored,
             metadata: self.outgoing_metadata(&op)?,
             upload: GoogleSendUploadPlan {
                 blobs: self.google_blob_store(),
@@ -156,7 +170,29 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     }
     result["text_truncated"] = (preview.len() < text.len()).into();
     result["text"] = preview.into();
-    result["attachments"] = parsed.attachments().take(50).map(|part| json!({"name":part.attachment_name().unwrap_or("Attachment").chars().take(320).collect::<String>(),"size":part.len()})).collect::<Vec<_>>().into();
+    // Each attachment the sending draft still holds, matched by name and
+    // size, is the stored copy that previews it.
+    let mut stored = plan.stored;
+    result["attachments"] = parsed
+        .attachments()
+        .take(50)
+        .map(|part| {
+            let name: String = part
+                .attachment_name()
+                .unwrap_or("Attachment")
+                .chars()
+                .take(320)
+                .collect();
+            let size = part.len();
+            match stored.iter().position(|file| {
+                file["name"] == name.as_str() && file["size"].as_u64() == Some(size as u64)
+            }) {
+                Some(found) => stored.swap_remove(found),
+                None => json!({"name":name,"size":size}),
+            }
+        })
+        .collect::<Vec<_>>()
+        .into();
     cancelled(cancel)?;
     Ok(result)
 }

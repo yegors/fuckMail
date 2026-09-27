@@ -302,20 +302,8 @@ pub fn prepare_google_item_since(
         manifest.issue = Some(ItemIssue::InvalidInternalDate);
         return proof(blobs, page, manifest);
     };
-    let mut storage_failure = None;
-    let parsed = crate::google_store::prepare_message(&content, |bytes| {
-        if cancel.is_cancelled() {
-            return Err(fm_google::GoogleError::TransportInterrupted);
-        }
-        blobs.stage_blob(bytes).map_err(|error| {
-            storage_failure = Some(error);
-            fm_google::GoogleError::StoreUnavailable
-        })
-    });
+    let parsed = crate::google_store::prepare_message(&content);
     cancelled(cancel)?;
-    if let Some(error) = storage_failure {
-        return Err(error);
-    }
     match parsed {
         Ok(mut message) => {
             // Dated by Gmail's internal date, as the retention cutoff is, not
@@ -366,24 +354,25 @@ pub fn verify_staged_google_item(
     }
     let manifest: Manifest = serde_json::from_str(&stored.0)?;
     crate::id(&manifest.remote_id)?;
-    if let Some(source) = &manifest.source {
-        blobs.verified_blob(&source.hash, source.size)?;
-    }
     if let Some(message) = &manifest.message {
         if manifest.disposition != Disposition::Ready
             || manifest.source.is_none()
             || message.remote_id != manifest.remote_id
-            || message.attachments.len() > 50
+            || message.attachments.len() > crate::google_store::MAX_RECEIVED_ATTACHMENTS
             || message.body.len() > 256 * 1024
         {
             return Err(stale());
         }
-        for attachment in &message.attachments {
-            cancelled(cancel)?;
-            blobs.verified_blob(&attachment.hash, attachment.size)?;
-        }
+        crate::attachment_content::verify_parts(
+            blobs,
+            &manifest.source.as_ref().unwrap().hash,
+            manifest.source.as_ref().unwrap().size,
+            message,
+        )?;
     } else if manifest.disposition == Disposition::Ready {
         return Err(stale());
+    } else if let Some(source) = &manifest.source {
+        blobs.verified_blob(&source.hash, source.size)?;
     }
     cancelled(cancel)?;
     proof(blobs, page, manifest)

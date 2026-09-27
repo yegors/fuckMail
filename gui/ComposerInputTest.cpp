@@ -116,7 +116,7 @@ static void run() {
     backend.m_allAccounts.append(QVariantMap{{"id","other"},{"name","Personal"},{"email","personal@example.test"},{"lifecycle",QVariantMap{{"state","active"},{"revision",1}}}});
     require(backend.publishAccounts(backend.m_allAccounts),"multiple From choices");
     QTemporaryDir copy; const auto modulePath=copy.filePath("ComposerTest"); require(QDir().mkpath(modulePath),"QML module");
-    for (const auto name : {"FmScrollBar.qml","Theme.qml","FmDialog.qml","FmConfirmDialog.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml"})
+    for (const auto name : {"FmScrollBar.qml","Theme.qml","FmDialog.qml","FmConfirmDialog.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml","FmMenu.qml","FmMenuItem.qml","TextMenu.qml","TextMenuHandler.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"production QML copy");
     QFile module(modulePath+"/qmldir"); require(module.open(QIODevice::WriteOnly),"module registration");
     module.write("module ComposerTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();

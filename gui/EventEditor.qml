@@ -376,6 +376,8 @@ Popup {
             ColumnLayout {
                 width: formScroll.availableWidth; spacing: 0; enabled: !editor.saving && !editor.unknownOutcome && (!editor.live || !editor.editEvent.event_id || editor.editEvent.can_edit === true)
                 TextField {
+                    ContextMenu.menu: null
+                    TextMenuHandler {}
                     id: titleField; objectName: "eventTitle"; Layout.fillWidth: true; implicitHeight: 65
                     leftPadding: 20; rightPadding: 20; topPadding: 18; bottomPadding: 14
                     color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Title"
@@ -499,7 +501,7 @@ Popup {
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
                     Text { text: "Where"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
-                    TextField { id: locationField; objectName: "eventLocation"; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Add a location"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0 }
+                    TextField { id: locationField; objectName: "eventLocation"; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Add a location"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
@@ -508,7 +510,7 @@ Popup {
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: 2
                         FmButton { objectName: "eventAddMeet"; visible: editor.live && !editor.conferencePresent; text: "Add Google Meet"; iconName: "plus"; leftPadding: 0; enabled: editor.formReady; onClicked: editor.conferenceChange = "google_meet" }
-                        TextField { id: conferenceField; objectName: "eventConference"; visible: !editor.live || editor.conferencePresent; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? (editor.conferenceChange === "google_meet" ? "Google Meet · link added when saved" : editor.editEvent.conference_status === "failure" ? "Google Meet could not be created" : "Google Meet · preparing link…") : "Paste a meeting link"; font.pointSize: Theme.fontPoints(13); background: null; leftPadding: 0 }
+                        TextField { id: conferenceField; objectName: "eventConference"; visible: !editor.live || editor.conferencePresent; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? (editor.conferenceChange === "google_meet" ? "Google Meet · link added when saved" : editor.editEvent.conference_status === "failure" ? "Google Meet could not be created" : "Google Meet · preparing link…") : "Paste a meeting link"; font.pointSize: Theme.fontPoints(13); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
                     }
                     FmButton { objectName: "eventRemoveMeet"; visible: editor.live && editor.conferencePresent; iconName: "close"; tip: "Remove meeting"; implicitWidth: 26; implicitHeight: 26; leftPadding: 5; rightPadding: 5; enabled: editor.formReady; onClicked: { editor.conferenceChange = editor.editEvent.has_conference || !!editor.editEvent.conference_url ? "none" : "keep"; conferenceField.text = "" } }
                 }
@@ -531,7 +533,7 @@ Popup {
                         }
                         Text { objectName: "eventProtectedGuests"; visible: editor.protectedGuests.length > 0; text: editor.protectedGuests.map(function(a) { return a.email + (a.self ? " (you)" : " (organizer)") }).join(", ") + " · retained"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
                         Text { visible: editor.live && !editor.guestsEditable; text: (editor.editEvent.attendees || []).map(function(a) { return a.email || "Address unavailable" }).join(", "); color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
-                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: !editor.guestsEditable; placeholderText: editor.guestsEditable ? "Add email addresses" : "Guest changes unavailable"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0; onAccepted: editor.commitGuests(); onActiveFocusChanged: if (!activeFocus && text.trim().length) editor.commitGuests() }
+                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: !editor.guestsEditable; placeholderText: editor.guestsEditable ? "Add email addresses" : "Guest changes unavailable"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0; onAccepted: editor.commitGuests(); onActiveFocusChanged: if (!activeFocus && text.trim().length) editor.commitGuests(); ContextMenu.menu: null; TextMenuHandler {} }
                         Text { objectName: "eventGuestEditExplanation"; visible: editor.live && !editor.guestsEditable; text: editor.guestEditExplanation(); color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
                     }
                 }
@@ -553,6 +555,8 @@ Popup {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 12
                     Text { text: "Notes"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
                     TextArea {
+                        ContextMenu.menu: null
+                        TextMenuHandler {}
                         id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.alignment: Qt.AlignTop; Layout.preferredHeight: Math.max(editor.notesHeight, implicitHeight)
                         color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Agenda, dial-in — anything guests should see"; wrapMode: TextEdit.Wrap; selectByMouse: true
                         textFormat: TextEdit.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); leftPadding: 0; rightPadding: 0; topPadding: 1; bottomPadding: 0; background: null

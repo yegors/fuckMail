@@ -177,6 +177,7 @@ void MailBackend::dispatchQueuedSend(const QString &key) {
         m_transientOutgoing[send.account + '\n' + preview.value("request_id").toString()] = preview;
         refreshOutgoingPresentation();
         startGoogleSendForDraft("google_send", params, send.account, draftId);
+        m_sendProgressTimer.start();
         emit draftChanged();
     }, true);
 }

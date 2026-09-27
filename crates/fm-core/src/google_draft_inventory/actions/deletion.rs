@@ -212,7 +212,7 @@ pub fn prepare_google_draft_delete_observation(
                 ));
             }
             if remote.raw.is_empty() || remote.raw.len() > MAX_IMPORT_RAW_BYTES {
-                return Err(err("limit_exceeded", "Remote draft source exceeds 40 MiB"));
+                return Err(err("limit_exceeded", "Remote draft source is too large"));
             }
             let size = remote.raw.len() as u64;
             let sha256 = plan.blobs.stage_blob(&remote.raw)?;

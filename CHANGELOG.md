@@ -2,12 +2,49 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-09-27
+
+- Background updates refresh only the affected Mail areas. Progress, calendar and draft updates avoid unnecessary message preparation; updates arriving while a reader loads remain pending.
+
+- Mail reuses cached message sources without copying them. Attachment thumbnails and the image viewer use display-sized decodes, reducing memory and repeated loading during resizing.
+
+- Progress polling reuses unchanged mail counts, and reading or recovering saved message content avoids repeated full-file reads while keeping checksum validation.
+
+- The Mail list/reader divider stays put when you switch accounts: one position for the whole app, remembered across restarts.
+- Mail shows as plain text by default. The HTML/TEXT badge now switches just that sender to HTML (or back), and all their mail follows.
+- The app reopens where you left it, at the same size, and maximized if it was. If that monitor is gone, it opens in the default place.
+- Account tabs lose their pill: a thin underline in the account's colour marks the selected one and turns into a gently pulsing progress bar while an account syncs (amber downloading, silver-blue while the local model works). The ring around the letter is gone; the red disconnected dot stays.
+- The account hover card shows whole numbers ("18,420 of 41,300"). Settings → Accounts keeps the short form.
+- The Settings button sits in a tray like the Mail / Calendar switch.
+- The composer has a title bar: Compose Email, Reply, Reply All or Forward. Starting a reply or forward scrolls the thread just enough to show the whole box, footer included.
+- Draft rows no longer have a Discard link; discard from the composer, or right-click drafts in the list.
+- Right-click menus on message text, the composer and text fields look like the app's other menus.
+- Label chips no longer show a tooltip. The Spam / Trash menu closes when you click anywhere else or switch mailboxes.
+- Acting on selected conversations no longer leaves an "N of N saved locally" line; only a problem shows there.
+- Reading the last message in To review shows "Inbox zero" as soon as the row folds away.
+- The mail list is its full length from the start, so the scrollbar no longer jumps as older mail loads, and dragging it far down loads straight to that point. The Load more button and its "Loading…" flash are gone.
+- Switching between Inbox, Sent and Drafts is faster, most of all Sent after scrolling through many pages.
+- Clicking a label chip, button or menu no longer leaves a box around it; outlines show only when you move with the keyboard. An opened message's header highlights on hover without an outline, as in the design.
+- Sender photos fill their circle instead of showing only their top-left corner.
+- Gmail drafts sync again on profiles made before the draft-sync change.
+- Every message in Gmail downloads, however large (up to Gmail's own 150 MB limit), including messages with more than 50 attachments. Messages skipped before download on the next sync, and progress no longer lists "unavailable" messages.
+
 ## 2026-09-26
 
+- Received attachments share the saved original message instead of keeping a second permanent copy. Previews and downloads reuse a local cache; older duplicate copies are verified and cleaned up after restart. Drafts and offline access are preserved.
+- Replies to some Gmail messages, and their drafts, no longer fail to send or save. Messages that still can't be built say why.
+- A reply shows a thin progress line along its bottom while it uploads, then a check once Gmail accepts it. It no longer flashes a red error first.
+- Reply opens the whole reply box at the bottom of the thread and keeps it there while the thread loads. It no longer closes on its own when the previous reply finishes sending, or right after you discard a reply.
+- Reply, Reply all and Forward stay under the thread while you write. Switching turns a reply into a forward (or back) and keeps what you wrote. Boxes open with a short fade, with no jump in the thread above.
+- Discarding a new message goes back to where you started it.
+- Attachment previews and videos open straight away, even during sync, and sent replies preview their own attachments. The viewer's arrows play every video, video cards always show their first frame, and the attachments row folds away like a month.
+- Toggling Inbox months, even quickly with many folded, keeps the clicked header in place.
+- Old mail keeps downloading while Gmail history catches up on a bulk change, and that catch-up runs faster. Mail deleted for good in Gmail is skipped without asking Gmail about each message.
 - People/Automated works in every account again: label edits no longer wipe the model's answers, and lost answers come back on restart. Senders the model hasn't read show no mark instead of "?".
 - People/Automated, labels, day chips, folders and "All N with" switch instantly: the list updates in place, hovering loads the next view ahead, and a quick fade covers the rare wait.
 - Empty trash also clears local copies of mail you already deleted in Gmail, and its confirm counts what is here instead of saying 0.
 - Mail list rows no longer show a tooltip on hover.
+- Settings → Accounts no longer flickers during sync; each account's labels stay put.
 - The Calendar search dropdown no longer flickers while you type.
 - Done and Delay no longer show "Saved locally · waiting for Google". If Google refuses a change, the reason appears under the reader's buttons.
 - Inbox month headers have no tooltip, and showing or hiding a month no longer flashes "Searching…".

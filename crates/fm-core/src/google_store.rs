@@ -29,7 +29,7 @@ impl<'a> GooglePageStore<'a> {
         Self { store }
     }
 
-    /// Stages one fetched message: its source and attachments become blobs
+    /// Stages one fetched message: its source becomes a blob
     /// and its normalized record a staged row, not yet visible.
     fn stage(
         &mut self,
@@ -43,7 +43,7 @@ impl<'a> GooglePageStore<'a> {
             i64::try_from(expected.revision).map_err(|_| GoogleError::StaleCheckpoint)?;
         if crate::id(&content.id).is_err()
             || crate::id(&content.thread_id).is_err()
-            || content.source_mime.len() > 40 * 1024 * 1024
+            || content.source_mime.len() > fm_google::gmail_api::MAX_RAW_MIME
             || content.label_ids.len() > 1000
             || content.label_ids.iter().any(|id| crate::id(id).is_err())
             || content.history_id.parse::<u64>().is_err()
@@ -52,9 +52,7 @@ impl<'a> GooglePageStore<'a> {
                 "Invalid staged message identity or bounds",
             ));
         }
-        let staged = prepare_message(&content, |bytes| {
-            self.store.stage_blob(bytes).map_err(storage_error)
-        })?;
+        let staged = prepare_message(&content)?;
         let source_hash = self
             .store
             .stage_blob(&content.source_mime)
@@ -150,7 +148,7 @@ impl Store {
     }
 }
 
-/// An attachment of a staged message, already published as a blob.
+/// An attachment of a staged message, retained inside its original MIME.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct StagedAttachment {
     pub(crate) name: String,
@@ -277,14 +275,13 @@ impl PageStore for GooglePageStore<'_> {
         for remote in &plan.fetch_message_ids {
             let (staged, hash, size) =
                 load_stage(&self.store.db, account, generation, revision, remote)?;
-            self.store
-                .verified_blob(&hash, size)
-                .map_err(storage_error)?;
-            for part in staged.attachments {
-                self.store
-                    .verified_blob(&part.hash, part.size)
-                    .map_err(storage_error)?;
-            }
+            crate::attachment_content::verify_parts(
+                &self.store.google_blob_store(),
+                &hash,
+                size,
+                &staged,
+            )
+            .map_err(storage_error)?;
         }
         let tx = self
             .store
@@ -443,7 +440,9 @@ pub(crate) fn publish_message(
             account,
             &format!("{}:{index}:{}", staged.remote_id, part.hash),
         );
+        db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT blob_hash FROM attachments WHERE account=?1 AND id=?2 AND NOT EXISTS(SELECT 1 FROM attachment_sources s WHERE s.account=attachments.account AND s.id=attachments.id)",params![account,aid]).map_err(storage_error)?;
         db.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,?3,?4,?5,?6,'available',?7) ON CONFLICT(account,id) DO UPDATE SET name=excluded.name,mime_type=excluded.mime_type,size=excluded.size,state=excluded.state,blob_hash=excluded.blob_hash",params![account,aid,mid,part.name,part.mime_type,part.size,part.hash]).map_err(storage_error)?;
+        db.execute("INSERT INTO attachment_sources(account,id,source_hash,part_index) VALUES(?1,?2,?3,?4) ON CONFLICT(account,id) DO UPDATE SET source_hash=excluded.source_hash,part_index=excluded.part_index",params![account,aid,source_hash,index]).map_err(storage_error)?;
     }
     db.execute(
         "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
@@ -453,15 +452,17 @@ pub(crate) fn publish_message(
     Ok(())
 }
 
-/// Parses a fetched message into a [`StagedMessage`], staging each attachment
-/// through `stage` (which returns the blob hash).
+/// Parses a fetched message into a [`StagedMessage`], hashing its attachments
+/// without writing decoded copies. The retained MIME owns their bytes.
 ///
 /// Inline images referenced by the HTML are skipped. Fails with
 /// `InvalidResponse` when the MIME cannot be parsed, has more than 50
 /// attachments or has an oversized header.
+/// Most attachments a received message may list: Gmail's own limit.
+pub const MAX_RECEIVED_ATTACHMENTS: usize = 500;
+
 pub(crate) fn prepare_message(
     content: &MessageContent,
-    mut stage: impl FnMut(&[u8]) -> std::result::Result<String, GoogleError>,
 ) -> std::result::Result<StagedMessage, GoogleError> {
     let parsed = mail_parser::MessageParser::default()
         .parse(&content.source_mime)
@@ -484,7 +485,7 @@ pub(crate) fn prepare_message(
         if fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
             continue;
         }
-        if attachments.len() >= 50 {
+        if attachments.len() >= MAX_RECEIVED_ATTACHMENTS {
             return Err(GoogleError::InvalidResponse("Too many staged attachments"));
         }
         let mime_type = part
@@ -501,7 +502,7 @@ pub(crate) fn prepare_message(
         attachments.push(StagedAttachment {
             name: bounded_header(part.attachment_name().unwrap_or("attachment.bin"), 1024)?,
             mime_type,
-            hash: stage(bytes)?,
+            hash: format!("{:x}", Sha256::digest(bytes)),
             size: bytes.len() as u64,
             index: Some(index),
         });

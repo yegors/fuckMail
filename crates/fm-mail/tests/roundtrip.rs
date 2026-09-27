@@ -311,6 +311,32 @@ fn unfinished_drafts_keep_account_header_address_and_attachment_validation() {
 }
 
 #[test]
+fn replies_to_gmail_message_ids_keep_their_exact_identifiers() {
+    // Gmail's Message-IDs use `=` and `_`, which RFC 5322 allows.
+    let mut request = draft();
+    request.reply_to_message_id =
+        Some("<CACk624wB2CmZ=W88j37Ab7bDW8H1KXQn0AdnkkqKwkCrf2d1iQ@mail.gmail.com>".into());
+    request.references = vec!["<eme2a599a4-9989-4df8-88ce-9cfa463b581d@gmail.com>".into()];
+    let built = build_mail(
+        &request,
+        &identity(),
+        &[staged("Screenshot 2026-09-21 030028.png", None, b"png")],
+    )
+    .unwrap();
+    let parsed = MessageParser::default().parse(&built.raw).unwrap();
+    assert_eq!(
+        parsed.in_reply_to().as_text(),
+        Some("CACk624wB2CmZ=W88j37Ab7bDW8H1KXQn0AdnkkqKwkCrf2d1iQ@mail.gmail.com")
+    );
+    // A space still is not part of an identifier.
+    request.reply_to_message_id = Some("<bad id@example.test>".into());
+    assert!(matches!(
+        build_mail(&request, &identity(), &[]),
+        Err(ComposeError::InvalidHeader("message identity"))
+    ));
+}
+
+#[test]
 fn plain_unicode_reply_roundtrips_exact_author_text_signature_and_headers() {
     let request = draft();
     let account = identity();

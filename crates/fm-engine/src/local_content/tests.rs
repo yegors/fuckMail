@@ -1,3 +1,4 @@
+//! Engine worker ownership, cancellation and offline content integration.
 use super::*;
 use crate::Work;
 use std::{sync::Mutex, time::Duration};
@@ -46,6 +47,128 @@ async fn new_draft(core: &CoreBridge) -> Value {
     })
     .await
     .unwrap()
+}
+
+#[tokio::test]
+async fn received_attachment_extraction_leaves_writer_free_and_recreates_evicted_path() {
+    use fm_google::sync::{prepare_full_page, ListPage, MessageContent, MessageRef, PageStore};
+    let directory = tempfile::tempdir().unwrap();
+    let (core, queue, writer) = writer(directory.path());
+    drop(queue);
+    let attachment = core
+        .call(|store| {
+            let cp = store.google_begin_full("windscribe", "100")?;
+            fm_core::google_store::GooglePageStore::new(store)
+                .stage_message(
+                    &cp,
+                    MessageContent {
+                        id: "received-worker-file".into(),
+                        thread_id: "received-worker-thread".into(),
+                        label_ids: vec!["INBOX".into()],
+                        history_id: "110".into(),
+                        source_mime: include_bytes!(
+                            "../../../../fixtures/messages/inline-and-attachment.eml"
+                        )
+                        .to_vec(),
+                    },
+                )
+                .unwrap();
+            let page = prepare_full_page(
+                &cp,
+                ListPage {
+                    messages: vec![MessageRef {
+                        id: "received-worker-file".into(),
+                        thread_id: "received-worker-thread".into(),
+                    }],
+                    next_page_token: None,
+                    result_size_estimate: Some(1),
+                },
+            )
+            .unwrap();
+            fm_core::google_store::GooglePageStore::new(store)
+                .commit_page(&page)
+                .unwrap();
+            let rows = store.handle(
+                "conversations",
+                Some("windscribe"),
+                json!({"folder":"all","query":"subject:Deployment"}),
+            )?;
+            let thread = store.handle(
+                "conversation",
+                Some("windscribe"),
+                json!({"id":rows["conversations"][0]["id"]}),
+            )?;
+            Ok(thread["messages"][0]["attachments"][0]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned())
+        })
+        .await
+        .unwrap();
+    let (entered, mut entering) = mpsc::unbounded_channel();
+    let (release, released) = std::sync::mpsc::channel();
+    let released = Mutex::new(Some(released));
+    let mut runtime = Runtime::new(core.clone());
+    runtime.before_prepare = Some(Arc::new(move |_| {
+        if let Some(receiver) = released.lock().unwrap().take() {
+            entered.send(()).unwrap();
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        Ok(())
+    }));
+    let runtime = Arc::new(runtime);
+    let operation = runtime.clone();
+    let params = json!({"id":attachment});
+    let first_params = params.clone();
+    let job = tokio::spawn(async move {
+        operation
+            .handle(
+                CancellationToken::new(),
+                "attachment",
+                Some("windscribe"),
+                first_params,
+            )
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(3), entering.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        core.call(|store| store.handle("accounts", None, json!({}))),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    release.send(()).unwrap();
+    let first = job.await.unwrap().unwrap();
+    let bytes = std::fs::read(first["path"].as_str().unwrap()).unwrap();
+    assert!(!bytes.is_empty());
+    assert!(!directory
+        .path()
+        .join("blobs")
+        .join(first["sha256"].as_str().unwrap())
+        .exists());
+    std::fs::remove_file(first["path"].as_str().unwrap()).unwrap();
+    let second = runtime
+        .handle(
+            CancellationToken::new(),
+            "attachment",
+            Some("windscribe"),
+            params,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(second["path"].as_str().unwrap()).unwrap(),
+        bytes
+    );
+    drop(runtime);
+    drop(core);
+    tokio::task::spawn_blocking(move || writer.join().unwrap())
+        .await
+        .unwrap();
 }
 
 async fn draft(core: &CoreBridge, id: String) -> Value {

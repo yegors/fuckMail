@@ -11,9 +11,9 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","show_draft_chips":true,"calendar_recent_searches":[],"message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","show_draft_chips":true,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
-        "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
+        "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
 }
 /// The account colour palette: muted swatches shown 8×2 in the picker. A new
 /// account takes the first one no other account uses, cycling when all are.
@@ -80,8 +80,9 @@ impl Store {
                     .as_object()
                     .ok_or_else(|| err("storage_error", "Stored preferences are not an object"))?
                 {
-                    // Retired: Sent and Drafts are always grouped by date.
-                    if key != "mail_date_grouping" {
+                    // Retired: Sent and Drafts are always grouped by date, and
+                    // HTML or plain text is chosen per sender (`html_senders`).
+                    if key != "mail_date_grouping" && key != "message_format" {
                         merged[key] = value.clone();
                     }
                 }
@@ -134,7 +135,6 @@ impl Store {
                 "density",
                 "show_draft_chips",
                 "calendar_recent_searches",
-                "message_format",
                 "sync_every_minutes",
                 "week_start",
                 "calendar_start_hour",
@@ -162,6 +162,7 @@ impl Store {
                 "calendar_display_time_zone",
                 "blocked_hosts",
                 "remote_images_from",
+                "html_senders",
                 "remote_proxy",
                 "sender_pictures",
             ],
@@ -258,7 +259,6 @@ impl Store {
                 .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
-            ("message_format", &["html", "text"][..]),
             ("calendar_account_visibility", &["all", "current"][..]),
             ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
@@ -1165,18 +1165,26 @@ lines"]}),
     }
 
     #[test]
-    fn message_format_is_one_shared_choice() {
+    fn html_is_chosen_per_sender() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path()).unwrap();
         let before = store.preferences().unwrap();
-        assert_eq!(before["preferences"]["message_format"], "html");
-        let request = json!({"request_id":"format","expected_revision":before["revision"],"preferences":{"message_format":"text"}});
+        // Plain text unless a sender is listed; the old global choice is gone.
+        assert_eq!(before["preferences"]["html_senders"], json!([]));
+        assert!(before["preferences"].get("message_format").is_none());
+        let senders = json!([{"account":"acct-1","email":"news@x.test"}]);
+        let request = json!({"request_id":"html","expected_revision":before["revision"],"preferences":{"html_senders":senders}});
         let saved = store.handle("preferences_save", None, request).unwrap();
         assert_eq!(
-            store.preferences().unwrap()["preferences"]["message_format"],
-            "text"
+            store.preferences().unwrap()["preferences"]["html_senders"],
+            senders
         );
-        assert!(store.handle("preferences_save", None, json!({"request_id":"bad-format","expected_revision":saved["revision"],"preferences":{"message_format":"rich"}})).is_err());
+        assert!(store.handle("preferences_save", None, json!({"request_id":"old-format","expected_revision":saved["revision"],"preferences":{"message_format":"html"}})).is_err());
+        // A profile that saved the old global choice reads without it.
+        store.db.execute("UPDATE preferences SET json=json_set(json,'$.message_format','html') WHERE singleton=1", []).unwrap();
+        let reread = store.preferences().unwrap();
+        assert!(reread["preferences"].get("message_format").is_none());
+        assert_eq!(reread["preferences"]["html_senders"], senders);
     }
 
     #[test]

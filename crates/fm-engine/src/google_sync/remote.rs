@@ -411,7 +411,7 @@ fn project(content: &fm_google::sync::MessageContent, newest: bool) -> Option<Va
     let inline = fm_mail::html_view::inline_content_ids(&parsed);
     let attachments: Vec<Value> = parsed
         .attachments()
-        .take(50)
+        .take(fm_core::google_store::MAX_RECEIVED_ATTACHMENTS)
         .enumerate()
         .filter(|(_, part)| {
             !fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id))

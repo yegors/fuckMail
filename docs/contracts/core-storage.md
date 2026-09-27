@@ -1,6 +1,57 @@
 # Core and storage
 
+## D159 — whole Gmail messages and draft sources first (Core81)
 
+- A blob may be as large as the largest Gmail source ([`MAX_RAW_MIME`](../../crates/fm-google/src/gmail_api.rs), 160 MiB). This replaces the 64 MiB blob bound; exact size/hash checks and path protections are unchanged.
+- A received message may list up to 500 attachments (Gmail's limit). Inline `cid:` images are still part of the body.
+- `google.sync.undownloadable_messages` counts undeleted messages whose source Gmail never delivered (`item_too_large` or `malformed_response` with no retained source). They are settled for progress and still block offline completeness.
+- Migration 039 keeps only a Gmail draft source's link to its linked local draft as a foreign key, so a source can be written before the draft that mirrors it.
+- Migration 040 is data-only. It marks undeleted `item_too_large` and `attachment_limit` coverage rows unseen (`observed_generation=0`), so the next reconciliation pass fetches or re-prepares them.
+
+Consumers: Gmail41, Mail UI110, CLI account JSON, Quality86; schema 40, live0/demo3 fixtures and protocol1.
+
+## D158 — independent UI refresh generations (Core80)
+
+`status.ui_generations` adds an opaque store-open `epoch` and nonnegative counters for `accounts`, `categories`, `reader`, `drafts` and `captures`. They describe projection dependencies across the whole store, not individual accounts or conversations. Existing calendar/mail generations and preference revisions remain authoritative for their areas.
+
+The existing SQLite update hook advances these counters in memory. Account counters also follow metadata writes because last-sync timestamps live there. Draft delivery updates invalidate drafts, and conversation changes invalidate capture subjects retained by legacy receipts. Unknown tables, writes missed by row hooks, and reads inside/after transactions conservatively invalidate every area. Reopening changes the epoch. No additional scans, persistent counters or schema migration.
+
+Consumers: Mail UI109, CLI58 and engine status; Quality85. Schema, live0/demo3 fixtures and protocol1 unchanged.
+
+## D156 — progress reuse and one verified read (Core79)
+
+- Model-progress counts may reuse a bounded in-memory result for unchanged mail, provider state, model results/failures, account state, policy and history/catch-up bounds. Calendar-only writes and unrelated global revisions preserve it. Session/job status remains freshly assembled by the engine. Transactions, rollback and missed row hooks conservatively invalidate counts; no persisted counters or schema changes.
+- A blob read returns the bytes verified from one regular-file handle. Preserve the 64 MiB bound, exact size/hash validation and path protections. Received staged replay parses and verifies attachment references from this same verified source, with no preliminary full-file verification pass.
+- The existing counting SQL, durability and flat blob layout remain unchanged. Changing mail can still cause a full progress scan.
+
+Consumers: Gmail40, engine progress/status, source/attachment readers, composition, indexing and retention conversion. Quality83; live0/demo3 fixtures and protocol1 unchanged.
+
+## D154 — HTML senders (Core78)
+
+- Preferences gain `html_senders`: up to 2,000 distinct `{account, email}` entries with lowercase addresses, validated like `remote_images_from`. Default `[]`, so all mail is plain text until a sender is added.
+- `message_format` is retired: saves naming it are refused, and a stored value is dropped on read (like `mail_date_grouping`).
+
+## D152 — received attachment sources and disposable exports (Core77)
+
+- Schema38 adds `attachment_sources(account,id,source_hash,part_index)`, keyed by the attachment's account/id with cascading deletion. The source hash is a retained original MIME blob and the position is in the parser's attachment sequence, including skipped inline parts. Attachment `blob_hash` remains the expected decoded checksum; `available` includes bytes extractable from a retained source.
+- Received acquisition hashes decoded parts without writing separate blobs. Resuming a staged import verifies source and attachment checksums before publication. `attachment_begin` captures the source reference; its worker extracts/verifies the part and publishes the same reply/path shape as before. Saves, capture, send, transfer and invitation history use the same source resolver.
+- Local imports, observed draft parts and outgoing MIME remain durable blobs. A draft-referenced received attachment is detached from its message before retention/deletion removes that message; its source reference keeps the original alive. An account transfer stages independent durable selected bytes before destination publication.
+- Export copies have a 512 MiB target, oldest use first. Each successful export refreshes its use time. Five-minute grace and locked files defer deletion; recent/locked bytes may exceed the target until a later sweep. Sweep off the writer every minute, and at most once per minute during exports. User-selected saved files are never evicted. Paths returned by a later request regenerate offline as needed.
+- `attachment_migration_begin/prepare_migration/attachment_migration_finish` convert older records one message at a time with source/hash/size checks and transactional rechecks. A durable rowid cursor resumes after interruption. Corrupt/missing/unmatched originals leave their standalone files alone. Removed duplicates use the existing startup cleanup queue; checksum-only references of source-backed attachment rows do not retain a decoded blob, while their source hashes and all other consumers still do.
+
+Consumers: Gmail39, Mail UI105, unchanged CLI, composition/send/draft transfer, invitation history and archive/retention cleanup. Live0/demo3 fixtures and protocol1 unchanged.
+
+
+
+## D149 — attachment exports off the writer (Core76)
+
+- `Store::attachment_begin(account, {id}) → AttachmentPlan` reads the attachment row on the writer. `AttachmentPlan::export()` makes the verified copy on a worker. The `attachment` method's reply is unchanged.
+- An export copies and hashes the retained blob in one pass. A copy verified earlier in the same process, with the same size and modification time, is returned without reading it again.
+- Imported attachments whose type is unknown get one from their extension (`fm_mail::attachment_mime`).
+- `google_sent_message` attachments carry the draft attachment's `id` and `state` when name and size match.
+- No schema change.
+
+Consumers: Gmail37, Mail UI103.
 
 ## D147 — deleted-message markers (Core75)
 

@@ -16,9 +16,21 @@ Item {
     // Raw text is read for the dialog only and released when it closes.
     property string raw: ""
     property string rawTicket: ""
-    // HTML or plain text is one choice for every message, shared with the CLI.
-    readonly property bool plain: backend.preferences.message_format === "text"
-    function setPlain(value) { if (value !== plain) backend.setPreferences({message_format: value ? "text" : "html"}) }
+    // Mail shows as plain text unless its sender is in this account's
+    // html_senders; choosing HTML or text here applies to all their mail.
+    readonly property string sender: String(message.sender_email || "").trim().toLowerCase()
+    readonly property bool canChoose: !!account && sender.indexOf("@") > 0
+    readonly property bool plain: !canChoose || !(backend.preferences.html_senders || []).some(function(entry) { return entry.account === account && entry.email === sender })
+    function setPlain(value) {
+        if (!canChoose || value === plain) return
+        const list = (backend.preferences.html_senders || []).filter(function(entry) { return !(entry.account === account && entry.email === sender) })
+        if (!value) {
+            // The engine keeps at most 2,000; the oldest choice makes room.
+            while (list.length >= 2000) list.shift()
+            list.push({account: account, email: sender})
+        }
+        backend.setPreferences({html_senders: list})
+    }
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
     readonly property bool hasHtml: !!result.body_html && !result.html_truncated
     readonly property var metadata: (result.metadata || []).filter(function(row) { return row.people.length > 0 })
@@ -78,7 +90,7 @@ Item {
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 4 } }
+                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 4 } ContextMenu.menu: null; TextMenuHandler {} }
             }
         }
     }

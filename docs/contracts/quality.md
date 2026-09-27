@@ -1,5 +1,108 @@
 # Quality, performance and release acceptance
 
+## D159 — prototype, full-length list and large-message checks (Quality86)
+
+Mail UI110, Core81 and Gmail41; schema 40, live0/demo3 and protocol1. Required checks:
+
+- **`gui-mail-gpu`** (Windows and macOS, real scene graph):
+  - a sender photo fills its circle at 18–36 px;
+  - after the first switch, Inbox → Sent → Drafts draws its first frame within 300 ms.
+- **`gui-mail-selection`:**
+  - The paged list keeps its length within two rows as a page arrives, and within four after a jump to the end, with no "Loading…".
+  - Placeholder rows cover unloaded space.
+  - The Spam/Trash menu closes on outside presses and folder changes.
+  - "Inbox zero" draws while the last To review row leaves.
+  - A reply's footer is 24 px inside the view.
+  - Selection status is empty after success.
+  - Tab progress reports its share, and the hover card uses whole numbers.
+  - Settled undownloadable mail reads "Complete", with the count's tooltip naming it.
+- **Rust:**
+  - A 41 MiB source and a padding-escaped source both download whole, with the raw cap and 10-minute deadline set.
+  - In-place decoding matches ordinary base64url across chunk boundaries and rejects bad input and over-bound length.
+  - A request deadline outlasts the transport default and is bounded.
+  - A 41 MiB message and a 60-attachment message publish with their attachments.
+  - Migration 040 requeues only undeleted too-large and attachment-limit rows.
+- Engine session tests compare the store epoch, not moving refresh generations.
+
+Not measured: peak memory for a real large download. The estimate and its arithmetic are in [Gmail research](../research/gmail.md#large-messages-2026-09-27).
+
+## D158 — selective background refresh (Quality85)
+
+Core80/Mail UI109/CLI58, unchanged schema and live0/demo3 fixtures. Verify real store writes advance the affected generations, repeated status reads remain stable, and unknown writes, missed row hooks, rollback and reopen invalidate conservatively. Native IPC checks must verify independent requests, reader publication, draft delivery refresh, unsaved text, deferred list invalidation, epoch changes and legacy-engine fallback, with no background read-on-open or send mutation.
+
+Record request-count evidence and native/engine checks in [storage research](../research/search-storage.md). Fewer requests demonstrate less background work; they do not establish a percentage improvement in click latency or eliminate reader refreshes from unrelated mail within the same area.
+
+Verified: 839 Rust tests passed (9 ignored), Clippy, targeted native refresh/selection/undo/remote/review checks, and the real-engine draft/attachment walkthrough. Account-only polling requested one projection. Full GUI-suite/layout attempts hit concurrent paging-length and reply-bottom assertions; no full-suite pass is claimed for this slice.
+
+## D157 — GUI source sharing and image memory (Quality84)
+
+Mail UI108; schema, live0/demo3 and protocol1 unchanged. Verify repeated cached preparations share the exact source allocation and make no extra source request, identical reader replies stay cached, same-revision metadata refreshes and older revisions cannot replace it. Preview tests must cover physical-pixel sizing, stable card decode size during resizing, aspect/orientation, video poster handoff and playback/download controls.
+
+Windows Release evidence: native mail-selection suite and real-engine attachment walkthrough passed with software and D3D11 rendering; targeted reader/attachment controls and the walkthrough passed at 200% scaling. The initial full-suite 200% attempt failed an avatar pixel check before reaching attachment controls; it is not reported as a full high-DPI pass. The existing native folder-switch timing gate passed, with warm first-frame observations of 38–88 ms (four observations, not a percentile benchmark).
+
+Three paired synthetic thumbnail runs at 125% scaling averaged 12.32 MiB less resident memory for sixteen images, with readiness 71–73 ms versus 84–140 ms. A generated viewer resize completed two loads instead of 21 and retained about 5 MiB less, with a lower sampled peak. Cache checks share a 396,000-byte source string across repeated preparations. See [storage research](../research/search-storage.md) for fixtures, Qt behavior and limits. These establish scoped savings, not a reduction of the full live-session excess, an all-workload latency guarantee or the combined idle-memory budget.
+
+## D156 — progress reuse, verified reads and GUI audit (Quality83)
+
+Core79/Gmail40, live0/demo3 and protocol1. Required checks: unchanged progress avoids mailbox scans; calendar/global revisions do not invalidate it; message/provider/model/account/policy/bound changes refresh it; transactions and rollback cannot retain transient counts. Blob reads retain exact size/hash, missing/corrupt-file and regular-file protections; staged replay and native attachment flows preserve their results.
+
+Windows evidence: full Rust workspace 836 passed, 9 ignored; final progress slice four passed. Initial/cached/unrelated-write progress calls executed 27,090/68/68 SQLite steps on demo3. Strict Clippy, formatting, hygiene and whitespace checks passed; release engine/CLI and native D3D11 empty-profile/mail/attachment checks passed. Details, the intermediate failed test attempts and GUI memory measurements are recorded in [storage research](../research/search-storage.md). Active-sync recount cost and long-session GUI allocation ownership remain open. These results do not establish the combined idle-memory budget, other platforms or whole-feature readiness.
+
+## D154 — HTML senders (Quality82)
+
+- `fm-core` checks `html_senders` validation (lowercase, distinct per account, at most 2,000, required) and that a stored `message_format` is dropped on read and refused on save.
+- `gui-mail-selection` opens a message with HTML as plain text, checks the badge names the sender, switches it to HTML (saving that account and address) and back to plain text through the menu (forgetting it).
+
+## D152 — offline extraction and bounded copies (Quality81)
+
+Required evidence: a synced attachment adds only its original durable MIME; exact bytes survive reopen and cache removal; staged imports resume without decoded blobs; malformed source/part references fail; schema37 upgrades to38 without losing authored state; conversion retains standalone copies when the original is unavailable; shared authored hashes survive cleanup; received attachments in drafts survive message purge and account transfer; export eviction respects recent paths and user downloads. Exercise existing send, draft, invitation, retention, archive and native attachment flows. Measure first and repeated exports plus durable bytes saved using generated content in a release build. Record results and their platform/fixture limits in [storage research](../research/search-storage.md).
+
+Core77/Gmail39, fixtures0/3 and protocol1. Windows verification: Rust workspace 831 passed, 9 ignored; the final attachment regression slice passed after strengthening cache-loss coverage. Strict all-target Clippy, formatting, repository hygiene and diff whitespace checks passed. The native synthetic attachment walkthrough and independent CLI inspection passed. Release measurements for generated 1/5/20 MiB attachments: first export 13.536/40.724/146.507 ms; repeated mean 0.926/0.941/1.114 ms, saving the full decoded size in permanent storage. See [storage research](../research/search-storage.md) for fixture limits and the earlier startup-status race. No live provider or other-platform claim; whole-feature readiness is unchanged.
+
+## D151 — reply after discard, posters, account cards (Quality80)
+
+**Native tests (`gui-mail-selection`)**
+- Reply, type, Discard, then Reply again reopens the same reply. It stays open for 1.5 s of repeated draft refreshes, then typing revives it with no new draft, and a second Discard closes it. The old composer fails this.
+- A card below the reader loads once the long message above it folds, with no scrolling. The old on-screen check fails this.
+- A video card, after its decoder is released, still paints the video's first frame.
+- The viewer's Right arrow from one video plays the next.
+- Five sync refreshes of the account list keep the same account card, its labels on screen, and read no labels again.
+- Reply, Forward and Delay stay visible while replying.
+- Reply with words written, then Forward:
+  - opens a forward with those words above the forwarded message;
+  - discards the reply once the forward is saved;
+  - never empties or rebuilds the thread;
+  - marks Forward as the filled button.
+- Discarding the forward returns to Reply first. Discarding an empty new message returns to the thread it was started from.
+
+## D150 — deletions read ahead, reply and attachment checks (Quality79)
+
+**Rust tests**
+- A bulk move to Trash and delete for good, replayed across three history pages, reads the deletions once and asks nothing about the deleted mail after the first page. The deleted mail leaves every view, and a label change in the same history still applies. With the shortcut disabled the test fails.
+- If the deletions read fails, the same replay asks about each message and ends in the same state.
+
+**Native tests**
+- `gui-mail-selection`:
+  - Reply in a thread longer than the reader, with the thread growing while it opens, ends at the bottom with the whole reply showing.
+  - The attachments header folds the cards away and back.
+- `gui-send-undo`: the send line runs along the bottom of the reply, clear of its header.
+
+## D149 — sending, previews, month toggles and sync catch-up (Quality78)
+
+**Rust tests**
+- Replies to Gmail message IDs with `=` build and keep their exact identifiers; an ID with a space is still refused.
+- A counted upload keeps its `Content-Length` and bytes and reports every byte.
+- A held send reports its size through `google_send_progress` and stops once it has an outcome.
+- Older mail keeps downloading while a history scan is behind. Without the turn-taking the test fails.
+
+**Native tests**
+- `gui-mail-selection`: with 34 of 36 months folded, a clicked month header stays within 1 px as it opens, while its refresh waits 2.6 s, when the refresh lands, and through six quick toggles whose refreshes land late.
+- `gui-send-undo`: upload progress shows while Gmail receives the message, then polling stops once Gmail accepts.
+- `gui-conversation-list-model`: hiding a section rebinds only the row after it.
+
+**Measurement**
+- `inbox_months_ten_years_60k` (ignored; `FM_YEARS_REPORT`): 60,000 generated conversations over 120 months, release build, warm cache, no concurrent writer. The uncached first Inbox page takes 28.5 ms with no months folded, 38.4 ms with 60 folded and 38.0 ms with 119 folded. Cached repeats take about 0.1 ms.
+
 ## D107 — list details and HTML fidelity checks (Quality77)
 
 **Rust tests**

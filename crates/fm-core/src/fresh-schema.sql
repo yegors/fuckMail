@@ -225,6 +225,15 @@ CREATE TABLE preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1),revisi
 CREATE TABLE profile_identity(singleton INTEGER PRIMARY KEY CHECK(singleton=1),vault_namespace TEXT NOT NULL UNIQUE) STRICT;
 CREATE TABLE views(account TEXT PRIMARY KEY,revision INTEGER NOT NULL,json TEXT NOT NULL,FOREIGN KEY(account) REFERENCES accounts(id)) STRICT;
 
+CREATE TABLE attachment_sources(
+    account TEXT NOT NULL,
+    id TEXT NOT NULL,
+    source_hash TEXT NOT NULL CHECK(length(source_hash)=64),
+    part_index INTEGER NOT NULL CHECK(part_index>=0),
+    PRIMARY KEY(account,id),
+    FOREIGN KEY(account,id) REFERENCES attachments(account,id) ON DELETE CASCADE
+) STRICT;
+
 -- indexs
 CREATE INDEX accounts_active ON accounts(lifecycle_state,id);
 CREATE INDEX attachments_message ON attachments(account,message_id);

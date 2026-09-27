@@ -412,7 +412,7 @@ Item {
                 id: navigation; implicitWidth: navigationRow.width + 2; implicitHeight: 30; radius: 5; color: "transparent"; border.color: Theme.controlBorder
                 Row {
                     id: navigationRow; x: 1; y: 1; height: 28
-                    FmButton { objectName: "calendarPrevious"; iconName: "previous"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Previous — Left"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(-1) }
+                    FmButton { objectName: "calendarPrevious"; iconName: "previous"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Previous — Left"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(-1) }
                     Rectangle { width: Theme.ruleWidth; height: 28; color: Theme.controlBorder }
                     FmButton {
                         id: dateButton; objectName: "calendarDatePickerButton"; height: 28; leftPadding: 12; rightPadding: 12
@@ -421,11 +421,11 @@ Item {
                         foreground: backend.calendarDate === backend.todayDate ? Theme.text : Theme.inkAlpha(.85)
                         text: backend.calendarView === "week" ? Qt.formatDate(calendar.dateAt(0), calendar.dateAt(0).getMonth() === calendar.dateAt(6).getMonth() ? "d" : "d MMM") + " – " + Qt.formatDate(calendar.dateAt(6), "d MMM") : backend.calendarView === "month" ? Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMM yyyy") : backend.calendarDate === backend.todayDate ? "Today" : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "ddd d MMM")
                         selected: datePicker.opened; tip: "Pick a date — T for today"
-                        background: Rectangle { color: datePicker.opened || parent.hovered ? Theme.surface : "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+                        background: Rectangle { color: datePicker.opened || parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
                         onClicked: { datePicker.month = new Date(backend.calendarDate + "T12:00:00"); datePicker.opened ? datePicker.close() : datePicker.open() }
                     }
                     Rectangle { width: Theme.ruleWidth; height: 28; color: Theme.controlBorder }
-                    FmButton { objectName: "calendarNext"; iconName: "next"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Next — Right"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(1) }
+                    FmButton { objectName: "calendarNext"; iconName: "next"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Next — Right"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(1) }
                 }
             }
             FmButton { id: moreButton; objectName: "calendarMoreButton"; iconName: "more"; implicitWidth: 28; implicitHeight: 28; tip: "Calendar options and coverage"; onClicked: moreMenu.open() }
@@ -870,7 +870,7 @@ Item {
                 width: ListView.view.width; topPadding: 12; bottomPadding: 12; leftPadding: 0; rightPadding: 0
                 implicitHeight: dayAgendaText.implicitHeight + 25
                 onClicked: calendar.showEvent(modelData, this)
-                background: Rectangle { color: dayAgendaRow.hovered ? Theme.surface : "transparent"; border.width: dayAgendaRow.activeFocus ? 1 : 0; border.color: Theme.focusBorder; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
+                background: Rectangle { color: dayAgendaRow.hovered ? Theme.surface : "transparent"; border.width: dayAgendaRow.visualFocus ? 1 : 0; border.color: Theme.focusBorder; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: Item {
                     Text { width: 92; text: dayAgendaRow.modelData.all_day ? "All day" : dayAgendaRow.modelData.time_display + " – " + dayAgendaRow.modelData.end_display; color: calendar.eventNow(dayAgendaRow.modelData) ? Theme.accent : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.4); elide: Text.ElideRight }
                     Column {

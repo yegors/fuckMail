@@ -1,6 +1,14 @@
 # CLI and external agent interface
 
+## D158 — status refresh generations (CLI58)
 
+`status` exposes Core80's additive `ui_generations` object with `epoch`, `accounts`, `categories`, `reader`, `drafts` and `captures`. Compare counters only within the same epoch; a new epoch invalidates all areas. Existing command grammar, calendar/mail generations, preference revision and protocol1 stay unchanged. Consumers: Mail UI109; Quality85.
+
+
+
+## D154 — HTML senders (CLI57)
+
+`preferences show` includes `html_senders` instead of `message_format`; `preferences save` replaces the whole list. `mail read`, `mail html` and `mail source` are unchanged.
 
 ## D144 — calendar search around a day (CLI56)
 
@@ -54,7 +62,7 @@ The GUI's developer console runs `fm` as a child process with this profile, engi
 ## D107 — list people and message format (CLI45)
 
 - `mail list --json` rows include Core's `others` and `other_names` (Core59).
-- `preferences show` includes `message_format`. `preferences save` accepts `html` or `text` for it and changes the GUI's HTML/Text choice for every message.
+- `preferences show` includes `message_format`. `preferences save` accepts `html` or `text` for it and changes the GUI's HTML/Text choice for every message. (Retired by D154/CLI57: see `html_senders`.)
 
 Neither marks mail reviewed.
 

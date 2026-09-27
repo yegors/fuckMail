@@ -19,7 +19,7 @@ ComboBox {
     hoverEnabled: true
     contentItem: Text { text: control.displayText; color: control.enabled ? Theme.text : Theme.subtle; font: control.font; verticalAlignment: Text.AlignVCenter; elide: control.textElide }
     indicator: FmIcon { x: control.width - width - 10; y: (control.height - height)/2; name: "down"; size: 12 }
-    background: Rectangle { color: control.hovered ? Theme.hover : control.fill; radius: 5; border.color: control.activeFocus ? Theme.accent : Theme.controlBorder }
+    background: Rectangle { color: control.hovered ? Theme.hover : control.fill; radius: 5; border.color: control.visualFocus ? Theme.accent : Theme.controlBorder }
     delegate: ItemDelegate {
         id: option
         required property int index

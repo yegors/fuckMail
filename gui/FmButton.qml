@@ -102,8 +102,8 @@ T.ToolButton {
     background: Rectangle {
         radius: control.radius
         color: control.prominent ? (control.enabled ? Theme.brighten(Theme.text, control.lift) : Theme.controlBorder) : control.down || control.selected ? Theme.brighten(Theme.selected, control.lift) : control.hovered ? Theme.surface : "transparent"
-        border.width: control.activeFocus || control.outlined ? 1 : 0
-        border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder
+        border.width: control.visualFocus || control.outlined ? 1 : 0
+        border.color: control.visualFocus ? Theme.focusBorder : Theme.controlBorder
     }
     Loader { active: control.hovered && control.tip.length > 0; sourceComponent: FmToolTip { target: control; shown: true; text: control.tip } }
     Accessible.name: text.length ? text : tip

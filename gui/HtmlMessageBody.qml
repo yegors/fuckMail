@@ -168,6 +168,8 @@ ColumnLayout {
             highlightPhrases: body.matchPhrases
             highlightColor: Theme.matchPaper
             onLinkActivated: function(id) { body.activate(id) }
+            // The view takes only the left button; a right press opens the text menu.
+            TextMenuHandler {}
             onHoveredLinkChanged: {
                 const target = hoveredLink ? body.link(hoveredLink) : null
                 if (target) body.linkHovered(target.href, mapToItem(body, hoveredLinkRect))

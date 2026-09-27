@@ -192,6 +192,9 @@ pub struct GoogleMailCoverage {
     /// Messages missing their source, index or attachments, or not yet seen
     /// in the current generation.
     pub unavailable: u64,
+    /// Of those, messages whose source will not download: over the size
+    /// bound, or a reply Gmail sent malformed.
+    pub undownloadable: u64,
     /// Messages Google lists for the inventory's query, once counted.
     pub listed: Option<u64>,
     /// Messages counted so far while that count runs.
@@ -838,6 +841,9 @@ impl Store {
             [account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
         ).optional()?.unwrap_or_default();
         let pending: bool = self.db.query_row("SELECT EXISTS(SELECT 1 FROM google_live_pages WHERE account=?1 AND generation=?2 AND complete=0)",params![account,generation],|r|r.get(0))?;
+        // Read from the small gaps index; the planner would otherwise scan
+        // every coverage row of the account.
+        let undownloadable: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_gaps WHERE account=?1 AND issue IS NOT NULL AND deleted=0 AND issue IN ('item_too_large','malformed_response') AND source_state='unavailable'")?.query_row([account],|r|r.get(0))?;
         let count = self.google_mail_count(account)?;
         Ok(GoogleMailCoverage {
             generation,
@@ -849,6 +855,7 @@ impl Store {
             indexed,
             complete_attachments,
             unavailable,
+            undownloadable,
             listed: count.filter(|c| c.1).map(|c| c.0),
             listing: count.filter(|c| !c.1).map(|c| c.0),
         })

@@ -1,7 +1,7 @@
 //! Gmail mailbox sync as a checkpointed state machine: a full listing, then
 //! history catch-up. Each page becomes a [`PagePlan`] that a [`PageStore`]
 //! commits atomically together with the next [`Checkpoint`].
-use crate::{AccountId, GoogleError};
+use crate::{gmail_api::MAX_RAW_MIME, AccountId, GoogleError};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -45,28 +45,26 @@ pub struct MessageContent {
 
 /// Decodes a raw message after checking that its ID is `expected_id`, its
 /// IDs, labels and history ID are well formed, and its source is at most
-/// 40 MiB. Errors with `InvalidResponse`.
+/// [`MAX_RAW_MIME`] bytes. Errors with `InvalidResponse`.
 pub fn decode_raw_message(
     message: RawMessage,
     expected_id: &str,
 ) -> Result<MessageContent, GoogleError> {
-    const MAX_MIME: usize = 40 * 1024 * 1024;
     if message.id != expected_id
         || !valid_id(&message.id)
         || !valid_id(&message.thread_id)
         || message.label_ids.len() > 1000
         || message.label_ids.iter().any(|label| !valid_id(label))
-        || message.raw.len() > MAX_MIME / 3 * 4 + 4
+        || message.raw.len() > MAX_RAW_MIME.div_ceil(3) * 4
     {
         return Err(GoogleError::InvalidResponse(
             "invalid full message identity or size",
         ));
     }
     history_number(&message.history_id)?;
-    let source = URL_SAFE_NO_PAD
-        .decode(message.raw.trim_end_matches('='))
-        .map_err(|_| GoogleError::InvalidResponse("invalid message base64url"))?;
-    if source.len() > MAX_MIME {
+    let source = decode_in_place(message.raw)
+        .ok_or(GoogleError::InvalidResponse("invalid message base64url"))?;
+    if source.len() > MAX_RAW_MIME {
         return Err(GoogleError::InvalidResponse("message exceeds byte limit"));
     }
     Ok(MessageContent {
@@ -76,6 +74,34 @@ pub fn decode_raw_message(
         history_id: message.history_id,
         source_mime: source,
     })
+}
+
+// Decodes unpadded or padded base64url into the buffer that held it, so a
+// large source is never held twice. `None` if it is not valid base64url.
+fn decode_in_place(raw: String) -> Option<Vec<u8>> {
+    // A multiple of 4 characters, so every chunk but the last decodes whole.
+    const CHUNK: usize = 64 * 1024;
+    let mut bytes = raw.into_bytes();
+    let unpadded = bytes.iter().rposition(|&b| b != b'=').map_or(0, |i| i + 1);
+    if bytes.len() - unpadded > 2 {
+        return None;
+    }
+    bytes.truncate(unpadded);
+    let mut decoded = [0_u8; CHUNK / 4 * 3];
+    let (mut read, mut written) = (0, 0);
+    while read < bytes.len() {
+        let end = bytes.len().min(read + CHUNK);
+        let count = URL_SAFE_NO_PAD
+            .decode_slice(&bytes[read..end], &mut decoded)
+            .ok()?;
+        // Output never overtakes input: `written + count` is at most three
+        // quarters of `end`, and later reads start at `end`.
+        bytes[written..written + count].copy_from_slice(&decoded[..count]);
+        written += count;
+        read = end;
+    }
+    bytes.truncate(written);
+    Some(bytes)
 }
 
 /// One page of `messages.list`.

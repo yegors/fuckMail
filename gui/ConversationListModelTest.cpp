@@ -181,6 +181,29 @@ private slots:
         QCOMPARE(model.rowCount(), 0); QVERIFY(!retained.isValid());
     }
 
+    void sectionCollapseRebindsOnlyItsNeighbour() {
+        ConversationListModel model;
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
+        QVariantList all, collapsed;
+        for (const auto &group : {QStringLiteral("review"), QStringLiteral("august"), QStringLiteral("july")})
+            for (int number = 0; number < 40; ++number) {
+                all.append(row(group + QString::number(number), group));
+                if (group != u"august") collapsed.append(all.last());
+            }
+        QVERIFY(model.replace("personal/inbox", all));
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged), removed(&model, &QAbstractItemModel::rowsRemoved);
+        // Hiding a section removes its rows; only the row after them gets a new predecessor.
+        QVERIFY(model.replace("personal/inbox", collapsed));
+        verifyRows(model, collapsed);
+        QCOMPARE(removed.count(), 1); QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed[0][0].value<QModelIndex>().row(), 40); QCOMPARE(changed[0][1].value<QModelIndex>().row(), 40);
+        changed.clear();
+        QVERIFY(model.replace("personal/inbox", all));
+        verifyRows(model, all);
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed[0][0].value<QModelIndex>().row(), 80); QCOMPARE(changed[0][1].value<QModelIndex>().row(), 80);
+    }
+
     void pinnedPageRefreshPublishesFinalRolesOnce() {
         ConversationListModel model;
         QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
@@ -197,8 +220,10 @@ private slots:
             changed.clear(); QVERIFY(model.replace("personal/inbox", expected)); verifyRows(model, expected);
             QVERIFY(selected.isValid()); QCOMPARE(selected.row(), 6); QCOMPARE(idAt(model, selected.row()), "13");
             QCOMPARE(reset.count(), 0); QCOMPARE(changed.count(), 1);
-            QCOMPARE(changed[0][0].value<QModelIndex>().row(), 0);
-            QCOMPARE(changed[0][1].value<QModelIndex>().row(), expected.size() - 1);
+            // Only the kept row and the rows whose first-row status changed are
+            // notified; the rest of the page already shows its data.
+            const int first = changed[0][0].value<QModelIndex>().row(), last = changed[0][1].value<QModelIndex>().row();
+            QVERIFY(first <= 6 && last >= 6 && last < 12);
             QCOMPARE(changed[0][2].value<QList<int>>(), (QList<int>{ConversationListModel::RowDataRole, ConversationListModel::PreviousGroupRole}));
             changed.clear(); QVERIFY(model.replace("personal/inbox", expected)); QCOMPARE(changed.count(), 0);
         }

@@ -1,6 +1,112 @@
 # Mail UI, reader and human composer
 
+## D159 — Flight Progress v2 (8), full-length list, quiet progress (Mail UI110)
 
+- **Account tabs:**
+  - 32 px blocks, 6 px apart, no pill.
+  - An 18 × 18 letter tile with 4 px corners, tinted 24% when selected and 10% otherwise, then the name and unread count. Selected text is full ink at weight 500; others are about 50% ink, and hover brightens only the text.
+  - A 2 px underline, inset 8 px, in the account colour marks the selected tab.
+  - While the account syncs, the underline becomes a progress bar over a track: the account tint at 35% when selected, ink at 10% otherwise. The bar is at least 4%, amber while downloading and silver-blue while the local model works. Its width eases over 0.5 s, and its opacity pulses in 80 ms steps only while the app is active.
+  - No ring. The red dot marks a disconnected account.
+- **Hover card and Settings:** the hover card uses whole, grouped numbers; Settings → Accounts keeps the short form. Settings is a 32 × 28 button (4 px corners) in a surface tray (2 px padding, 6 px corners). It is transparent with a muted icon when idle and ink with a dark icon while Settings is open.
+- **Composer:**
+  - The title is Compose Email, Reply, Reply All or Forward: 20 pt, weight 500, after a 28 × 28 tile (5 px corners, gold at 12%) holding a 14 px gold edit, reply, reply-all or forward icon.
+  - Opening a reply, reply-all or forward scrolls the thread down only until the box's footer is 24 px inside the view. It never scrolls up; a new message doesn't scroll.
+- **Drafts:** draft rows have no Discard link; the list's right-click menu keeps Discard.
+- **List length:**
+  - The list is its full length from the first page. Unloaded rows are a spacer sized from the engine's counts (exact per Inbox section, estimated elsewhere) with placeholder rows over its visible part.
+  - The next page prefetches within four screens of the loaded end. Scrolling past it loads through to that point, at most 2,000 rows per request.
+  - There is no Load more footer, and no "Loading…" text in the list. A list error shows Try again.
+- **Menus and tips:**
+  - Label chips have no tooltip.
+  - The Spam/Trash menu closes on any press outside it and on a mailbox or filter change; its own button toggles it.
+  - Text fields, message bodies (plain and HTML) and the composer share the app's text menu: Undo, Redo, Cut, Copy, Paste, Select all, and the composer's formatting after Paste.
+- **Status:**
+  - Selection actions show no status line when they succeed; only a failure, or a stop after an account or session change, shows one.
+  - When the last row leaves To review, the empty state appears in the same frame as the row's removal.
+- **Mail progress:** it says "Complete" when the download has finished, even if Gmail sent a message malformed. The hover card says "Download complete" and the count's tooltip names the messages that can't be downloaded.
+
+Consumers: `Main.qml`, `MailView.qml`, `ReplyComposer.qml`, `AccountProgress.qml`, `TextMenu.qml`, `MailBackend` and the native mail-selection, integration and GPU checks; Quality86.
+
+## D158 — refresh changed projections (Mail UI109)
+
+- Automatic status polling compares Core80's independent generations. Reload accounts, labels, the reader, drafts and capture history only when their dependencies changed. Keep explicit refresh and action recovery intact. Missing/incomplete generations use the previous full refresh; a different store epoch invalidates every area.
+- A draft-only change refreshes the active/reply draft and outgoing previews without preparing the received reader. Preserve dirty-text, busy-state, revision, account and navigation guards; background queries never mark mail read. Draft/Sent lists and draft chips follow draft changes.
+- Keep mail-list invalidations pending during search typing, loading and older-page browsing, delivering them when eligible even if the next poll has identical generations. Calendar and preference refreshes retain their own generations/revisions.
+
+Consumers: `MailBackend`, status IPC and native mail-selection checks; Core80/CLI58/Quality85. This is area-level tracking; mail changes elsewhere may still refresh the open reader. Cache capacities and first-open behavior unchanged.
+
+## D157 — shared reader data and display-sized attachment images (Mail UI108)
+
+- Cached reader sources share their immutable maps/text with prepared readers, without a JSON round trip or cache replacement. Identical conversation refreshes keep the existing cache entry. Same-revision metadata changes still apply; older revisions, stale source versions, account/lifecycle and navigation guards remain unchanged.
+- The current attachment grid's previews are at most 400 × 250 logical pixels. Request that size multiplied by screen density for image thumbnails and saved video posters. The requested size stays constant across ordinary card/window resizing, and cached images remain reusable.
+- The viewer covers its physical display pixels, rounding each requested image dimension up to a multiple of 128. Asynchronous resizing retains the existing image until the replacement is ready. Aspect ratio, orientation, original bytes, downloads and video controls are unchanged.
+
+Consumers: `MailBackend`, attachment tiles/viewer and native mail-selection checks; Quality84. Cache capacities and engine/CLI behavior unchanged.
+
+
+
+## D155 — one list/reader divider for the whole app (Mail UI107)
+
+- The Mail list/reader divider has one width for every account. It is applied once when Mail loads and saved to `window.json` (Platform 23) when a drag ends, never mid-drag.
+- Switching accounts or restoring an account's view no longer sets the divider, so the panes do not relay out. Per-account view state keeps the list and reader scroll positions; a stored `splitWidth` is ignored (the engine still accepts it for older clients).
+- Without a saved width (first run, tests, benchmarks) the list takes half the window.
+
+## D154 — HTML or plain text per sender (Mail UI106)
+
+- Mail shows as plain text unless its sender is chosen for HTML in that account (`html_senders`, Core78). Messages without an HTML part are always text.
+- The HTML/TEXT badge and **Format** in the … menu change the choice for that message's sender, account and address, so all their mail follows, in every thread, including after a restart. Tips say "for all mail from <address>". Messages without a sender address show neither control.
+- This replaces the single `message_format` choice from D107; other senders in the same thread keep their own format.
+
+## D151 — reply after discard, switching reply and forward, video posters, account cards (Mail UI105)
+
+- **Reply after a discard.** A discard closes the reply once, at that draft revision. Reply reopens the discarded reply, and it stays open through refreshes until it is discarded again. Typing or a file revives it.
+- **Loading cards.** A card re-checks whether it is on screen on any layout change above it (heights, positions, the reader's size), not only on scrolling.
+- **Video posters.**
+  - The poster decoder runs until its first frame has been shown, then pauses.
+  - The GUI keeps that frame as a JPEG of at most 960 px for this run, in a temporary folder under the profile's `cache/` that is removed on close. Then it releases the player.
+  - A card that is reopened or scrolled back into view shows the kept poster and length at once. If no frame can be kept, the paused player stays.
+- **Viewer.** The arrows load the item they move to, not the one they leave.
+- **Settings → Accounts.** Cards come from a keyed model of all accounts, archived ones included. A sync refresh updates cards in place, and their labels are read once per card.
+- **Writing under a thread.**
+  - Reply, Reply all and Forward stay while a message is written. The kind being written is the filled button, and Reply is filled when nothing is written.
+  - The kind being written brings its box into view. Another kind, while the box is open, turns the message into it. With the box closed, each kind starts its own draft.
+  - The buttons stay enabled while a draft saves; the press waits for the save. A second press while that kind is opening does nothing.
+  - Reply all shows whenever the thread's reply offers it, including while a forward is written.
+  - A draft started for the thread on screen keeps the thread, its unfolded messages and scroll position while it loads.
+  - The box fades in and moves 10 px up into place over 200 ms, including when its kind changes. The reader glides to it over 200 ms (OutCubic), then follows layout changes at once.
+- **Switching kind.**
+  - The words above the starting text (the account signature, or the forwarded message when there is none) go above the new draft's starting text, as plain text.
+  - The old draft is discarded with no Undo once the new draft is saved. Drafts with files, with a send pending or accepted, or with words below the starting text are left, and their words above still come along.
+- **Discarding a new message** opens the draft or thread it was started from, or leaves the reader empty. Undo reopens it.
+
+Consumers: `gui-mail-selection`.
+
+## D150 — reply placement, folding attachments (Mail UI104)
+
+- The send line of Mail UI103 runs along the bottom of the reply, not under its header.
+- **Attachments header.** "N ATTACHMENTS", its hairline and a chevron form one button. A click folds the cards away or shows them again, per message for the session. Folded cards load no previews.
+- **Viewer.** A file named as a video (`mp4`, `webm`, `mov`, `m4v`, `mkv`, `avi`) with no type or `application/octet-stream` previews as a video. Clearing the player between items is not an error, and a good preview clears the last one.
+- **Reply:**
+  - A reply of this draft already on its way or sent makes Reply start a new draft.
+  - Opening a reply shows it whole at the end of the thread. The reader holds it there while the thread lays out, until the height has held for 250 ms (3 s at most). Scrolling hands the reader back at once.
+  - Saved reader positions don't move the reader while that runs. A reply taller than the reader shows from its top.
+
+Consumers: Gmail38; `gui-mail-selection`, `gui-send-undo`, `gui-attachments`.
+
+## D149 — send progress, previews and steady month toggles (Mail UI103)
+
+- **A reply on its way to Gmail** shows a 2 px line under its header. It fills with `google_send_progress` (`MailBackend.sendProgress`, by request ID, polled every 150 ms while a send is in flight, whole percents only), and sweeps until the size is known. Once Gmail accepts, a check shows next to the time until Gmail's copy replaces the reply.
+- The reader asks for a reply's sent copy only after the engine has recorded the send, so no error flashes.
+- A sent reply's attachments preview from the files it was sent from.
+- **Month toggles.** A clicked section header stays where it was on screen:
+  - the toggle applies just after the click returns;
+  - the header is restored before the next frame paints, after each change to the rows;
+  - it holds until the refresh lands (at most 15 s) and lets go when the list is scrolled.
+- After a structural diff, the list model rebinds only the rows whose data or predecessor changed.
+- A conversation read already on its way no longer undoes a just-answered unsubscribe.
+
+Consumers: Gmail37, Core76; `gui-mail-selection`, `gui-send-undo`, `gui-conversation-list-model`.
 
 ## D148 — instant filters, no unknown-kind mark (Mail UI102)
 

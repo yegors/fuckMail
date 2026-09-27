@@ -56,6 +56,9 @@ static void run() {
         if(method=="google_sent") {peer->write(reply(id,{{"account",a},{"outgoing",retainedOutgoing},{"next_offset",QJsonValue::Null}}));return true;}
         if(method=="google_sent_message") {if(params["request_id"]==frozenOutgoingContent["request_id"]) peer->write(reply(id,frozenOutgoingContent)); else peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",id},{"ok",false},{"error",QJsonObject{{"code","not_found"},{"message","No retained fixture submission"}}}}).toJson(QJsonDocument::Compact)+'\n');return true;}
         if(method=="google_send") {if(firstSendAt<0)firstSendAt=backend.m_actionClock.elapsed();sends.append({peer,id,a,params});return true;}
+        // Half of each held message has gone out.
+        if(method=="google_send_progress") {const bool held=std::any_of(sends.cbegin(),sends.cend(),[&](const Held &send){return send.params["request_id"]==params["request_id"];});
+            peer->write(reply(id,{{"account",a},{"request_id",params["request_id"]},{"uploading",held},{"sent",held?500:0},{"total",held?1000:0}}));return true;}
         if(method=="draft_get" && holdRead) {reads.append({peer,id,a,params});return true;}
         auto &saved=a=="fixture-account"?source:other;
         if(method=="draft_get") peer->write(reply(id,saved));
@@ -152,6 +155,13 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     require(bubbleMembers.size()==2 && bubbleMembers.last().toMap()["id"]==pendingId && bubbleMembers.last().toMap()["sent"].toBool(),"reply bubble appended without treating outgoing as incoming");
     require(backend.m_conversation["messages"].toList().size()==1 && backend.m_conversation["message_ids"].toList()==QVariantList{"received"},"pending reply never changes canonical read-on-open or mutation targets");
     require(backend.snapshotMailRows({pendingId}).first().toMap()["is_outgoing"].toBool(),"reply bubble menu names this exact outgoing request");
+    await([&]{auto bar=find(window->contentItem(),"messageSendProgress_"+pendingId);return bar && bar->isVisible();},"a sending reply shows its progress line");
+    {
+        auto *bar=find(window->contentItem(),"messageSendProgress_"+pendingId), *reply=find(window->contentItem(),"messageMember_"+pendingId);
+        require(reply,"the sending reply is in the reader");
+        const auto top=bar->mapToScene(QPointF(0,0)).y(), bottom=reply->mapToScene(QPointF(0,reply->height())).y();
+        require(top>=bottom-14 && top+bar->height()<=bottom,"the progress line runs along the bottom of the reply, clear of its header");
+    }
     queued.preview["conversation_id"]="";backend.m_conversation=originalThread;
     backend.m_folder=originalFolder;backend.m_selected=originalSelection;emit backend.queryChanged();backend.refreshOutgoingPresentation();
     click("actionToastButton");await([&]{return !backend.sendQueued() && backend.m_inFlight.isEmpty();},"Undo keeps original draft");
@@ -182,6 +192,8 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     while(elapsed.elapsed()<6500 && sends.isEmpty())QCoreApplication::processEvents(QEventLoop::AllEvents,10);
     require(sends.size()==1 && firstSendAt>=deadline,"one request only after real six-second window");
     const auto sent=sends[0];require(sent.account=="fixture-account" && sent.params["draft_id"]=="original-draft" && sent.params["expected_revision"]==source["revision"] && sent.params["expected_google_revision"]==9,"deadline read follows original draft and current Google revision");
+    const auto sentRequest=sent.params["request_id"].toString();
+    await([&]{return backend.sendProgress().value(sentRequest).toDouble()==0.5;},"the upload's progress shows while Gmail receives the message");
     require(backend.m_draft["body"]=="New words in another mailbox" && backend.m_draftDirty,"navigation never replaces another editor");
     click("captureReply");await([&]{return backend.sendQueued();},"another mailbox gets its own Undo");
     const auto latestToast=backend.m_actionToast;
@@ -189,6 +201,7 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
         {"request",sent.params},{"revision",3},{"current_google_revision",12},{"google_revision",9},{"draft_revision",sent.params["expected_revision"]},
         {"state","accepted"},{"operation_is_current",true},{"last_accepted_draft_revision",sent.params["expected_revision"]}};
     sent.peer->write(reply(sent.id,accepted));await([&]{return backend.m_googleOperations.isEmpty();},"accepted receipt completes");
+    await([&]{return backend.sendProgress().isEmpty() && !backend.m_sendProgressTimer.isActive();},"progress ends and stops polling once Gmail accepts");
     require(backend.m_actionToast==latestToast,"older success cannot remove newer Undo");
     click("actionToastButton");await([&]{return !backend.sendQueued() && backend.m_inFlight.isEmpty();},"second Undo");
     backend.advanceSendUndo();require(backend.m_deferredActionToasts.isEmpty() && backend.actionToast()["text"].toString()=="Sent to Reader","previous accepted result follows newer Undo");

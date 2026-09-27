@@ -6,6 +6,7 @@
 #include <QJsonArray>
 #include <QTimeZone>
 #include <algorithm>
+#include <cmath>
 
 namespace {
 QString people(const QVariantList &rows) {
@@ -60,6 +61,35 @@ QVariantList MailBackend::outgoingMessages() const {
             ? left.value("id").toString() < right.value("id").toString() : left.value("created_at").toLongLong() < right.value("created_at").toLongLong();
     });
     return rows;
+}
+
+// Reads how much of each in-flight send has gone out. The engine answers
+// from memory, so this never waits behind sync; it stops once nothing is
+// uploading.
+void MailBackend::pollSendProgress() {
+    QSet<QString> live;
+    for (const auto &row : std::as_const(m_transientOutgoing)) {
+        if (row.value("state") != "in_flight") continue;
+        const auto account = row.value("account").toString(), id = row.value("request_id").toString();
+        live.insert(id);
+        if (m_sendProgressReads.contains(id)) continue;
+        m_sendProgressReads.insert(id);
+        request("google_send_progress", account, {{"request_id", id}}, [this, account, id](auto result, bool ok) {
+            m_sendProgressReads.remove(id);
+            if (!ok || result["account"] != account || result["request_id"] != id || !result["uploading"].toBool()) return;
+            const auto total = result["total"].toDouble();
+            const auto share = total > 0 ? std::clamp(result["sent"].toDouble() / total, 0.0, 1.0) : 0.0;
+            // Whole percents only: finer steps would repaint for nothing.
+            const auto rounded = std::floor(share * 100) / 100;
+            if (m_sendProgress.value(id).toDouble() == rounded && m_sendProgress.contains(id)) return;
+            m_sendProgress[id] = rounded; emit sendProgressChanged();
+        });
+    }
+    bool changed = false;
+    for (auto it = m_sendProgress.begin(); it != m_sendProgress.end();)
+        if (!live.contains(it.key())) { it = m_sendProgress.erase(it); changed = true; } else ++it;
+    if (changed) emit sendProgressChanged();
+    if (live.isEmpty()) m_sendProgressTimer.stop();
 }
 
 int MailBackend::sendingCount() const {
@@ -198,7 +228,10 @@ void MailBackend::loadOutgoingMessage(const QVariantMap &value) {
     // arrival is what retires this preview, so a cached body must not hide it.
     const auto cached = m_outgoingBodies.value(key);
     const bool awaitingCopy = value.value("state") == "accepted" && cached.value("observed_conversation_id").toString().isEmpty();
-    if (!m_connected || value.value("state") == "queued" || value.value("state") == "preparing" || m_outgoingReads.contains(key)
+    // A send the engine has not answered yet may have no stored message to
+    // read; its preview shows the draft's own text and attachments until then.
+    if (!m_connected || value.value("state") == "queued" || value.value("state") == "preparing"
+        || (value.value("state") == "in_flight" && value.value("source_version").toString().isEmpty()) || m_outgoingReads.contains(key)
         || (!awaitingCopy && m_outgoingBodies.contains(key) && cached.value("source_version") == value.value("source_version"))) return;
     m_outgoingReads.insert(key);
     const auto lifecycle=lifecycleAccount(account).value("lifecycle").toMap().value("revision");

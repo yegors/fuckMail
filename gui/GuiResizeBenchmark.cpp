@@ -150,7 +150,7 @@ void GuiResizeBenchmark::tick() {
     }
     if (m_phase == Phase::Restoring && now - m_phaseBegan >= 400000000) {
         for (const auto &saved : m_originalScroll) if (saved.first) saved.first->setProperty("contentY", saved.second);
-        for (const auto &key : {"splitWidth", "listY", "readerY"})
+        for (const auto &key : {"listY", "readerY"})
             if (m_originalPresentation.contains(key)) m_backend.remember(key, m_originalPresentation.value(key));
         finish();
     }

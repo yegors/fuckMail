@@ -14,7 +14,7 @@ AbstractButton {
         radius: height / 2
         color: control.checked ? Theme.text : Theme.line3
         opacity: control.enabled ? 1 : 0.4
-        border.width: control.activeFocus ? 1 : 0
+        border.width: control.visualFocus ? 1 : 0
         border.color: Theme.focusBorder
         Rectangle {
             width: parent.height - 4; height: width; radius: width / 2; y: 2

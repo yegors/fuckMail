@@ -81,7 +81,7 @@ Turn on **Search remote mailbox** in the dropdown to also search Gmail itself. T
 
 ### Reading: HTML and plain text
 
-HTML mail is rebuilt by the engine's sanitizer, which removes scripts and trackers, and shown on a light card. Use the HTML/TEXT badge on a message, or **Format** in its menu, to switch between HTML and plain text. The choice applies to all messages. **View source** shows the original message.
+HTML mail is rebuilt by the engine's sanitizer, which removes scripts and trackers, and shown on a light card. Mail shows as plain text by default. Use the HTML/TEXT badge on a message, or **Format** in its menu, to switch that sender to HTML (or back); all their mail in that account follows, in every thread. **View source** shows the original message.
 
 **Remote images** stay blocked until you choose **Load images** for that message. They load over HTTPS only (plain-HTTP images never load), without cookies or a referrer. **Always load images from** a sender does this automatically for that sender in that account.
 
@@ -302,10 +302,12 @@ Everything is in one profile folder:
 The demo profile is `demo-v1` in the same place. Inside:
 
 - `store.sqlite3` (with `-wal` and `-shm` files while open): mail, calendar, drafts, labels, settings and local model results;
-- `blobs/`: original messages and attachments;
+- `blobs/`: original messages (including their attachments), imported draft files and retained outgoing mail;
+- `exports/`: disposable attachment copies made for previewing/opening; older copies are cleaned up around a 512 MiB target, with recently used and locked files kept longer. Removed copies are recreated from local originals, including offline. Files you save to Downloads are kept;
 - `cache/`: loaded images, sender pictures and prepared HTML;
 - `diagnostics/`: logs (see [troubleshooting](troubleshooting.md#where-are-the-logs));
-- `engine.json`: how the app and CLI find the running engine.
+- `engine.json`: how the app and CLI find the running engine;
+- `window.json`: where the window was left, so the app reopens there (maximized if it was), and where you left the Mail list/reader divider (one position for every account). If that monitor is gone, it opens in the default place.
 
 Google sign-in credentials and the proxy password are in your system keychain, not in the folder.
 

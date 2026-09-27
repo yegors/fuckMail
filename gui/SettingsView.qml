@@ -191,7 +191,7 @@ Item {
                         }
                     }
                 }
-                Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 2; border.color: swatch.checked ? Theme.text : swatch.activeFocus ? Theme.focusBorder : Theme.controlBorder }
+                Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 2; border.color: swatch.checked ? Theme.text : swatch.visualFocus ? Theme.focusBorder : Theme.controlBorder }
             }
             Text { width: 68; horizontalAlignment: Text.AlignHCenter; text: swatch.paletteData.name; color: swatch.checked ? Theme.text : Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: swatch.checked ? Font.Medium : Font.Normal } lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(11.5) * 1.4); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
         }
@@ -239,7 +239,7 @@ Item {
                 z: 2; anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 22; anchors.rightMargin: 24
                 text: "Done"; outlined: true; implicitWidth: doneContent.implicitWidth + 24
                 onClicked: settings.confirmLeave(function(){settings.done()})
-                background: Rectangle { radius: 5; color: doneButton.hovered ? Theme.surface : Theme.canvas; border.color: doneButton.activeFocus ? Theme.focusBorder : Theme.controlBorder }
+                background: Rectangle { radius: 5; color: doneButton.hovered ? Theme.surface : Theme.canvas; border.color: doneButton.visualFocus ? Theme.focusBorder : Theme.controlBorder }
                 contentItem: Row {
                     id: doneContent; spacing: 8
                     Text { anchors.verticalCenter: parent.verticalCenter; text: "Done"; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium } }
@@ -326,7 +326,7 @@ Item {
                         sourceComponent: ColumnLayout {
                             spacing: 12
                             Repeater {
-                                model: backend.allAccounts
+                                model: backend.allAccountModel
                                 AccountCard { progress: settings.progress; policy: accountPolicy; analysis: accountAnalysis; host: settings }
                             }
                             FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; googleSignIn.initialAccess=({mail:"write",calendar:"write"}); googleSignIn.email = ""; googleSignIn.renewAccess = false; googleSignIn.open() } }
@@ -444,7 +444,7 @@ Item {
                                         objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
                                         Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
                                         checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
-                                        indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.activeFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
+                                        indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.visualFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
                                         contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } } }
                                         Accessible.name: modelData.name + " from " + modelData.account_name
                                     }

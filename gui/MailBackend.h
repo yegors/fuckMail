@@ -20,7 +20,9 @@
 #include <QFuture>
 #include <QThreadPool>
 #include <QUrl>
+#include <QTemporaryDir>
 #include <functional>
+#include <memory>
 
 class GoogleOperation;
 class HtmlContent;
@@ -36,6 +38,9 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap accountLifecycle READ accountLifecycle NOTIFY accountLifecycleChanged)
     Q_PROPERTY(bool unsavedAccountBuffer READ unsavedAccountBuffer NOTIFY accountLifecycleChanged)
     Q_PROPERTY(QAbstractItemModel *accountModel READ accountModel CONSTANT)
+    // Every account, archived ones included, keyed by ID: Settings' cards stay
+    // in place, labels and all, while sync refreshes their counts.
+    Q_PROPERTY(QAbstractItemModel *allAccountModel READ allAccountModel CONSTANT)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
     Q_PROPERTY(QAbstractItemModel *conversationModel READ conversationModel CONSTANT)
     Q_PROPERTY(QAbstractItemModel *messageModel READ messageModel CONSTANT)
@@ -106,6 +111,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap actionToast READ actionToast NOTIFY actionToastChanged)
     Q_PROPERTY(bool sendQueued READ sendQueued NOTIFY draftChanged)
     Q_PROPERTY(int sendingCount READ sendingCount NOTIFY conversationsChanged)
+    Q_PROPERTY(QVariantMap sendProgress READ sendProgress NOTIFY sendProgressChanged)
     Q_PROPERTY(QVariantMap draftTransfer READ draftTransfer NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap draftDiscard READ draftDiscard NOTIFY draftChanged)
     Q_PROPERTY(bool draftBusy READ draftBusy NOTIFY draftChanged)
@@ -157,6 +163,7 @@ public:
     QVariantMap accountLifecycle() const;
     bool unsavedAccountBuffer() const { return m_unsavedAccountBuffer; }
     QAbstractItemModel *accountModel() { return &m_accountModel; }
+    QAbstractItemModel *allAccountModel() { m_allAccountModel.replace(QStringLiteral("account-settings"), m_allAccounts); return &m_allAccountModel; }
     QVariantList conversations() const;
     QAbstractItemModel *conversationModel() { return &m_conversationModel; }
     QAbstractItemModel *messageModel() { return &m_messageModel; }
@@ -207,6 +214,9 @@ public:
     bool loading() const { return m_loading; }
     bool listPending() const { return m_loading && m_listGeneration == m_rescopeGeneration; }
     Q_INVOKABLE void prefetchMore();
+    // Loads older rows until the list holds `count`, for a scroll that has
+    // reached past the loaded ones; at most 2000 more at a time.
+    Q_INVOKABLE void loadThrough(int count);
     Q_INVOKABLE void prefetchConversation(const QString &id);
     // Reads a collapsed Inbox section's first rows ahead of a click on its header.
     Q_INVOKABLE void prefetchSection(const QString &section);
@@ -301,6 +311,10 @@ public:
     Q_INVOKABLE void emptyBin();
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
     Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
+    // A video card's poster: `sink` is its VideoOutput's QVideoSink. Returns
+    // {url, duration}, or nothing when no frame could be kept.
+    Q_INVOKABLE QVariantMap keepVideoPoster(QObject *sink, const QString &account, const QString &id, qint64 duration);
+    Q_INVOKABLE QVariantMap videoPoster(const QString &account, const QString &id) const { return m_videoPosters.value(account + '\n' + id); }
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
     Q_INVOKABLE QString downloadAttachment(const QString &account, const QString &id, const QString &name);
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
@@ -356,6 +370,7 @@ public:
     Q_INVOKABLE void activateActionToast();
     Q_INVOKABLE void outgoingAction(const QString &id, bool undo = false);
     int sendingCount() const;
+    QVariantMap sendProgress() const { return m_sendProgress; }
     QVariantMap draftTransfer() const;
     bool draftTransferPending() const;
     Q_INVOKABLE void changeDraftAccount(const QString &account);
@@ -481,6 +496,7 @@ signals:
     void senderCardChanged();
     void actionToastChanged();
     void draftChanged();
+    void sendProgressChanged();
     void draftChipsChanged();
     void recentWithChanged();
     // Calendar window: events plus the view, date and range they belong to.
@@ -557,6 +573,7 @@ private:
     void prepareReader(const QString &account, const QString &id, QVariantMap data, int generation,
                        qint64 lifecycle, bool prefetch, std::function<void(QVariantMap)> ready);
     QVariantMap retainReaderPresentation(QVariantMap data) const;
+    QVariantMap keepUnsubscribe(QVariantMap data) const;
     void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void attachmentFile(const QString &account, const QString &id, Callback callback);
     void cancelGoogleOperations(bool notify = true);
@@ -606,6 +623,8 @@ private:
     void submitAccountRemoval(const QString &account, const QJsonObject &params);
     void resumeAccountRemovalAfterView(const QString &account, int generation, bool restored);
     void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
+    void refreshFromStatus(const QJsonObject &status);
+    void loadCurrentDraft();
     void selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow = {}, int clickedIndex = -1);
     void loadCategories();
     bool publishAccounts(QVariantList accounts);
@@ -718,6 +737,12 @@ private:
     QVariantList m_outgoingThread;
     QString m_outgoingThreadKey;
     QHash<QString, QVariantMap> m_outgoingBodies, m_transientOutgoing;
+    // Upload share (0..1) of each send on its way to Gmail, by request id,
+    // polled only while one is in flight.
+    QVariantMap m_sendProgress;
+    QSet<QString> m_sendProgressReads;
+    QTimer m_sendProgressTimer;
+    void pollSendProgress();
     QHash<QString, int> m_outgoingNext, m_outgoingGeneration;
     QSet<QString> m_outgoingReads;
     QVariantMap queuedOutgoing(const QJsonObject &params) const;
@@ -774,13 +799,16 @@ private:
     // read cannot roll it back.
     bool mergeDraftDeletion(const QJsonObject &status, const QString &account, const QString &draftId);
     void mergeDraftDeletionProjection(QVariantMap &next, const QJsonObject &result) const;
-    void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name);
+    void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry = false);
     bool commitRecipientInputs();
     QString attachmentImportKey() const;
     bool attachmentImportPending() const;
     void startDraftAttachmentImport(const QString &key);
     void advanceDraftAttachments();
     QHash<QString, QList<QUrl>> m_attachmentQueues;
+    // Video posters kept this run, by account and attachment, under the profile.
+    std::unique_ptr<QTemporaryDir> m_posterDirectory;
+    QHash<QString, QVariantMap> m_videoPosters;
     QHash<QString, qint64> m_attachmentQueueLifecycle;
     QSet<QString> m_attachmentQueuePaused;
     QHash<QString, QJsonObject> m_attachmentImports;
@@ -789,7 +817,7 @@ private:
     QString m_attachmentImportActive;
     // Both projections use the same identified-row diff; account rows need only
     // rowData, with their id as the identity and no predecessor presentation.
-    ConversationListModel m_accountModel, m_conversationModel, m_messageModel;
+    ConversationListModel m_accountModel, m_allAccountModel, m_conversationModel, m_messageModel;
     struct MailViewSnapshot {
         QVariantMap scope, summary;
         QVariantList rows, categories;
@@ -871,6 +899,8 @@ private:
     QString m_recipientError;
     QJsonObject m_draftCreation;
     QString m_draftCreationAccount;
+    // Where a new message was started from: account, thread and open draft.
+    QStringList m_newDraftOrigin;
     QString m_draftCreationEmail;
     QVariantMap m_senderCard;
     int m_senderCardGeneration = 0;
@@ -979,6 +1009,7 @@ private:
     QString m_lastAccountSelectionRequest;
     bool m_lastAccountSelectionDirty = false, m_lastAccountSelectionBusy = false;
     int m_desiredConversationCount = 50;
+    int m_loadThrough = 0;
     int m_launchAttempts = 0, m_launchDelay = 1000;
     QList<qint64> m_launchedPids;
     bool m_connected = false, m_loading = false;
@@ -986,6 +1017,7 @@ private:
     bool m_listRefreshPending = false, m_browsingOlder = false;
     QString m_listError;
     qint64 m_mailRevision = -1;
+    QJsonObject m_uiGenerations;
     bool m_automaticReadScope = false;
     bool m_mutatingConversation = false;
     int m_mailScopeCount = 0;
@@ -1038,6 +1070,9 @@ public:
     Q_INVOKABLE void loadRecentWith(const QString &email);
     // Leaving a new message keeps it in Drafts; one with nothing written goes.
     Q_INVOKABLE void leaveNewDraft();
+    // Like beginDraft, from an open reply or forward in this thread: the words
+    // written so far move into the new kind and the old draft is retired.
+    Q_INVOKABLE void switchDraft(const QString &mode);
     Q_INVOKABLE bool draftHasContent() const;
     Q_INVOKABLE void noteSavedToDrafts() { showActionToast("Saved to Drafts"); }
     // Spam and Trash counts for the ▾ menu: {account, spam, trash}.
@@ -1048,6 +1083,14 @@ private:
     void refreshDraftChips();
     bool authoredDraftRow(const QVariantMap &row) const;
     void dropEmptyNewDraft();
+    // The words written above a draft's starting text (its signature, or the
+    // forwarded message when there is none). `untouched` says whether all
+    // below them is still that starting text.
+    QString authoredDraftText(bool *untouched = nullptr) const;
+    // Discards a draft whose words moved into a new one, with no Undo.
+    void retireDraft(const QString &account, const QJsonObject &selector);
+    // A discarded new message leaves the reader for where it was written from.
+    void leaveDiscardedNewDraft();
     QVariantMap m_draftChips, m_recentWith;
     int m_draftChipsGeneration = 0, m_recentGeneration = 0;
     QTimer m_draftChipsTimer;

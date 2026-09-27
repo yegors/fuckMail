@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Shapes
+import QtQuick.Window
 
 // A sender's round picture. When the engine finds one, an automated sender's
 // brand icon sits on white and a person's photo fills the circle; otherwise
@@ -58,6 +59,12 @@ Item {
         visible: avatar.imageShown && (avatar.brand || GraphicsInfo.api === GraphicsInfo.Software)
         opacity: avatar.pictureOpacity
     }
+    // A shape fill draws its texture at the picture's pixel size, so a 64px
+    // photo showed only its top-left corner in a 28px circle. Scale it to
+    // cover the circle and centre it, as the crop fill mode would.
+    readonly property real textureWidth: image.implicitWidth / Screen.devicePixelRatio
+    readonly property real textureHeight: image.implicitHeight / Screen.devicePixelRatio
+    readonly property real cover: diameter / Math.max(1, Math.min(textureWidth, textureHeight))
     Shape {
         visible: avatar.imageShown && !avatar.brand && GraphicsInfo.api !== GraphicsInfo.Software
         opacity: avatar.pictureOpacity
@@ -65,6 +72,9 @@ Item {
         preferredRendererType: Shape.CurveRenderer
         ShapePath {
             strokeColor: "transparent"; fillItem: image
+            fillTransform: Qt.matrix4x4(avatar.cover, 0, 0, (avatar.diameter - avatar.textureWidth * avatar.cover) / 2,
+                                        0, avatar.cover, 0, (avatar.diameter - avatar.textureHeight * avatar.cover) / 2,
+                                        0, 0, 1, 0, 0, 0, 0, 1)
             PathAngleArc { centerX: avatar.diameter / 2; centerY: avatar.diameter / 2; radiusX: avatar.diameter / 2; radiusY: radiusX; startAngle: 0; sweepAngle: 360 }
         }
     }

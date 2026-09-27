@@ -4,8 +4,8 @@ use super::SyncContext;
 use fm_core::{
     google_live_mail::{
         prepare_google_item_retained, prepare_google_item_since, verify_staged_google_item,
-        GoogleItemAction, GooglePageIdentity, MailLane, MailLaneState, PreparedGoogleItem,
-        MAX_PART_BYTES, MAX_PART_ITEMS,
+        GoogleItemAction, GooglePageIdentity, MailLane, MailLaneState, PendingGoogleItem,
+        PreparedGoogleItem, MAX_PART_BYTES, MAX_PART_ITEMS,
     },
     CoreError, Result,
 };
@@ -16,7 +16,10 @@ use fm_google::{
     AccountId, GoogleError,
 };
 use serde_json::{json, Value};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::{HashMap, HashSet},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 /// How far back the recent lane lists: 30 days.
 const RECENT_SECONDS: u64 = 30 * 24 * 60 * 60;
@@ -35,6 +38,12 @@ const COUNT_STEP_BUDGET: Duration = Duration::from_secs(2);
 /// How many of Gmail's newest messages a new-mail check lists at most, while
 /// every one it lists is new here.
 const NEW_MAIL_LIMIT: usize = 500;
+/// Deletions are read ahead of a long history scan in Gmail's largest
+/// history pages, for up to this long per step, and at most this many are
+/// kept in memory; past that the scan asks about the rest as before.
+const DELETIONS_PAGE_SIZE: u16 = 500;
+const DELETIONS_STEP_BUDGET: Duration = Duration::from_secs(2);
+const MAX_DELETIONS_AHEAD: usize = 250_000;
 
 /// What a worker step did, which sets how soon the loop steps again.
 #[derive(Debug, PartialEq, Eq)]
@@ -61,9 +70,25 @@ pub(crate) struct MailWorker {
     /// listed directly and the scan counts as background work.
     delta_behind: bool,
     count: Option<InventoryCount>,
+    deletions: DeletionsAhead,
     /// Told, as each step picks its lane, whether it downloads older mail
     /// (true) or checks for new mail (false).
     lane_observer: Option<Box<dyn Fn(bool) + Send + Sync>>,
+}
+
+/// Messages Gmail deleted for good after the running history scan began,
+/// read ahead of it. Gmail never brings such a message back or reuses its
+/// ID, so asking about one can only answer "not found": the scan records it
+/// missing with no request. Held in memory for one scan; a restart reads
+/// them again.
+#[derive(Default)]
+struct DeletionsAhead {
+    /// The scan they belong to: its generation and starting history ID.
+    scan: Option<(u64, String)>,
+    page_token: Option<String>,
+    complete: bool,
+    pages: u32,
+    ids: HashSet<String>,
 }
 
 /// Counts what the inventory will list, apart from downloading it, so the
@@ -85,6 +110,7 @@ impl MailWorker {
             delta_open: false,
             delta_behind: false,
             count: None,
+            deletions: DeletionsAhead::default(),
             lane_observer: None,
         }
     }
@@ -148,12 +174,19 @@ impl MailWorker {
         // parts; once the inventory is complete it runs whenever due. A
         // history check that has started runs to the end before any listing
         // continues, so new mail never waits behind the download of old mail.
+        // One that fell behind is background work like the listings, since
+        // new mail is then listed directly: the two take turns, one part each,
+        // so a bulk change made elsewhere never stalls the download of old mail.
         let delta_running = self.delta_running(delta);
         let delta_due = !delta.complete
             || delta.checkpoint.phase != Phase::Idle
             || now_ms >= self.next_delta_ms;
+        let listing = [recent, inventory].into_iter().find(|lane| !lane.complete);
         let selected = if delta_running {
-            delta
+            match listing {
+                Some(listing) if self.delta_behind && self.non_delta_parts == 0 => listing,
+                _ => delta,
+            }
         } else if !recent.complete {
             if delta_due && self.non_delta_parts >= PARTS_BEFORE_DELTA {
                 delta
@@ -166,6 +199,13 @@ impl MailWorker {
             inventory
         };
         self.observe(selected.lane != MailLane::Delta || self.delta_behind);
+        if selected.lane == MailLane::Delta {
+            if let Some(step) = self.read_deletions_ahead(ctx, selected).await? {
+                // The read-ahead used this history turn.
+                self.non_delta_parts = 0;
+                return Ok(step);
+            }
+        }
 
         // While the inventory downloads, each of its steps also counts it,
         // page after page for up to COUNT_STEP_BUDGET. Counting is best
@@ -347,6 +387,98 @@ impl MailWorker {
         }
     }
 
+    /// Before a history scan with pages still ahead continues, reads the
+    /// messages Gmail deleted for good since the scan began, for up to
+    /// DELETIONS_STEP_BUDGET per step. Returns `Some` while there is more to
+    /// read. Best effort: after a failure the scan asks about those messages
+    /// as before.
+    async fn read_deletions_ahead(
+        &mut self,
+        ctx: &SyncContext,
+        delta: &MailLaneState,
+    ) -> Result<Option<Step>> {
+        let (Phase::Delta {
+            start_history_id,
+            page_token: Some(_),
+        }
+        | Phase::CatchUp {
+            start_history_id,
+            page_token: Some(_),
+        }) = &delta.checkpoint.phase
+        else {
+            return Ok(None);
+        };
+        let scan = (delta.checkpoint.generation, start_history_id.clone());
+        if self.deletions.scan.as_ref() != Some(&scan) {
+            self.deletions = DeletionsAhead {
+                scan: Some(scan),
+                ..DeletionsAhead::default()
+            };
+        }
+        if self.deletions.complete {
+            return Ok(None);
+        }
+        let started = Instant::now();
+        loop {
+            let call = GmailCall::deleted_history(
+                &self.account,
+                start_history_id,
+                self.deletions.page_token.as_deref(),
+                DELETIONS_PAGE_SIZE,
+            )
+            .map_err(provider_error)?;
+            let page = match ctx.gmail(call).await {
+                Ok(GmailReply::History(page)) => page,
+                Ok(_) => return Err(unexpected()),
+                Err(error) => {
+                    check_cancel(ctx)?;
+                    // The scan itself handles expired history and every
+                    // other failure; only the shortcut is lost.
+                    self.deletions.complete = true;
+                    crate::diagnostics::event(
+                        "Sync",
+                        "mail_deletions_read_failed",
+                        json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),"code":provider_error(error).code}),
+                    );
+                    return Ok(None);
+                }
+            };
+            self.deletions.pages += 1;
+            for change in page
+                .history
+                .into_iter()
+                .flat_map(|record| record.messages_deleted)
+            {
+                if self.deletions.ids.len() >= MAX_DELETIONS_AHEAD {
+                    break;
+                }
+                self.deletions.ids.insert(change.message.id);
+            }
+            self.deletions.page_token = page.next_page_token;
+            self.deletions.complete = self.deletions.page_token.is_none()
+                || self.deletions.ids.len() >= MAX_DELETIONS_AHEAD;
+            if self.deletions.complete {
+                crate::diagnostics::event(
+                    "Sync",
+                    "mail_deletions_read",
+                    json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),
+                    "pages":self.deletions.pages,"messages":self.deletions.ids.len()}),
+                );
+                return Ok(None);
+            }
+            if started.elapsed() >= DELETIONS_STEP_BUDGET {
+                return Ok(Some(Step::Progress));
+            }
+        }
+    }
+
+    /// Whether Gmail is known to have deleted `item` for good, so fetching it
+    /// could only answer "not found".
+    fn deleted_ahead(&self, item: &PendingGoogleItem) -> bool {
+        matches!(item.action, GoogleItemAction::Fetch)
+            && self.deletions.ids.contains(&item.remote_id)
+    }
+
     /// Whether a history scan has started and not yet caught up.
     fn delta_running(&self, delta: &MailLaneState) -> bool {
         self.delta_open
@@ -381,13 +513,7 @@ impl MailWorker {
         lane: MailLane,
         id: &str,
     ) -> Result<Option<GmailMessageState>> {
-        let call = GmailCall::message_state(&self.account, id)
-            .and_then(|call| call.with_read_class(read_class(lane)))
-            .map_err(provider_error)?;
-        match ctx.gmail(call).await.map_err(provider_error)? {
-            GmailReply::MessageState(state) => Ok(state),
-            _ => Err(unexpected()),
-        }
+        current_state(ctx, &self.account, lane, id).await
     }
     /// Reads the mailbox's current `historyId` from the Gmail profile.
     async fn baseline(&self, ctx: &SyncContext) -> Result<String> {
@@ -564,10 +690,10 @@ impl MailWorker {
     /// part, and finishes the page once nothing is pending. Returns the lane's
     /// new checkpoint when the page finished.
     ///
-    /// Items run one at a time so that at most one decoded message body is in
-    /// memory per worker. Each is staged before joining the part, so work
-    /// done before a cancellation or crash is verified rather than downloaded
-    /// again.
+    /// Downloads run one at a time so that at most one decoded message body
+    /// is in memory per worker. Each is staged before joining the part, so
+    /// work done before a cancellation or crash is verified rather than
+    /// downloaded again. Label reads for kept messages run together first.
     async fn publish_part(
         &self,
         ctx: &SyncContext,
@@ -584,7 +710,37 @@ impl MailWorker {
                 ))
             })
             .await?;
+        // Kept messages only need their labels. Ask for all of this part's at
+        // once; the scheduler still admits them within the account's limits.
+        let mut asked = tokio::task::JoinSet::new();
+        for item in &pending {
+            if let (GoogleItemAction::Fetch, Some(_), None, false) = (
+                item.action,
+                &item.retained,
+                &item.staged,
+                item.deleted || self.deleted_ahead(item),
+            ) {
+                let (ctx, account, lane, id) = (
+                    ctx.clone(),
+                    self.account.clone(),
+                    page.lane,
+                    item.remote_id.clone(),
+                );
+                asked.spawn(async move {
+                    let state = current_state(&ctx, &account, lane, &id).await;
+                    (id, state)
+                });
+            }
+        }
+        let mut states = HashMap::new();
+        while let Some(answer) = asked.join_next().await {
+            let (id, state) = answer.map_err(|_| unexpected())?;
+            states.insert(id, state);
+        }
         let mut prepared = Vec::<PreparedGoogleItem>::new();
+        // Items that downloaded nothing are staged with the part's commit, in
+        // one writer turn; redoing them after a crash costs one small read.
+        let mut stage_with_commit = Vec::<bool>::new();
         let mut bytes = 0;
         for item in pending {
             check_cancel(ctx)?;
@@ -597,11 +753,14 @@ impl MailWorker {
             // message already kept here reads its labels, not its source, and
             // one Gmail no longer has, or already reported deleted, is
             // recorded missing without a download.
-            let mut gone = item.deleted;
+            let mut gone = item.deleted || self.deleted_ahead(&item);
             if let (GoogleItemAction::Fetch, Some(retained), None, false) =
                 (item.action, &item.retained, &item.staged, gone)
             {
-                let current = self.current_state(ctx, page.lane, &item.remote_id).await?;
+                let current = match states.remove(&item.remote_id) {
+                    Some(state) => state?,
+                    None => self.current_state(ctx, page.lane, &item.remote_id).await?,
+                };
                 gone = current.is_none();
                 if let Some(state) = current {
                     let permit = ctx.lane_prepare_permit(delta).await?;
@@ -628,22 +787,18 @@ impl MailWorker {
                         )
                     })??;
                     if let Some(item) = reused {
-                        let owned_page = page.clone();
-                        let item = ctx
-                            .core_call(move |store| {
-                                store.google_live_stage_prepared(&owned_page, &item)?;
-                                Ok(item)
-                            })
-                            .await?;
                         if bytes + item.normalized_bytes() > MAX_PART_BYTES {
                             break;
                         }
                         bytes += item.normalized_bytes();
                         prepared.push(item);
+                        stage_with_commit.push(true);
                         continue;
                     }
                 }
             }
+            let downloaded =
+                item.staged.is_none() && !gone && matches!(item.action, GoogleItemAction::Fetch);
             let (permit, outcome) = if item.staged.is_some() {
                 (ctx.lane_prepare_permit(delta).await?, None)
             } else if gone {
@@ -696,13 +851,17 @@ impl MailWorker {
                     "Google content preparation failed",
                 )
             })??;
-            let owned_page = page.clone();
-            let item = ctx
-                .core_call(move |store| {
+            // A download is staged at once, so a crash never repeats it.
+            let item = if downloaded {
+                let owned_page = page.clone();
+                ctx.core_call(move |store| {
                     store.google_live_stage_prepared(&owned_page, &item)?;
                     Ok(item)
                 })
-                .await?;
+                .await?
+            } else {
+                item
+            };
             // If this record does not fit, its durable manifest is resumed in
             // the next step. Only the current bounded part becomes visible.
             if bytes + item.normalized_bytes() > MAX_PART_BYTES {
@@ -710,11 +869,17 @@ impl MailWorker {
             }
             bytes += item.normalized_bytes();
             prepared.push(item);
+            stage_with_commit.push(!downloaded);
         }
         let owned_page = page.clone();
         let item_count = prepared.len();
         let completed = ctx
             .core_call(move |store| {
+                for (item, later) in prepared.iter().zip(&stage_with_commit) {
+                    if *later {
+                        store.google_live_stage_prepared(&owned_page, item)?;
+                    }
+                }
                 if !prepared.is_empty() {
                     store.google_live_commit_part(&owned_page, &prepared)?;
                 }
@@ -734,6 +899,23 @@ impl MailWorker {
             "elapsed_ms":started.elapsed().as_millis()}),
         );
         Ok(completed)
+    }
+}
+
+/// Gmail's current labels and history ID for `id`, or `None` when Gmail no
+/// longer has it.
+async fn current_state(
+    ctx: &SyncContext,
+    account: &AccountId,
+    lane: MailLane,
+    id: &str,
+) -> Result<Option<GmailMessageState>> {
+    let call = GmailCall::message_state(account, id)
+        .and_then(|call| call.with_read_class(read_class(lane)))
+        .map_err(provider_error)?;
+    match ctx.gmail(call).await.map_err(provider_error)? {
+        GmailReply::MessageState(state) => Ok(state),
+        _ => Err(unexpected()),
     }
 }
 

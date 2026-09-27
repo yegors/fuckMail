@@ -12,7 +12,7 @@ CheckBox {
         x: control.leftPadding; y: control.topPadding + 2
         width: 16; height: 16; radius: 4
         color: control.checked ? Theme.text : "transparent"
-        border.color: control.activeFocus ? Theme.focusBorder : control.checked ? Theme.text : Theme.line3
+        border.color: control.visualFocus ? Theme.focusBorder : control.checked ? Theme.text : Theme.line3
         opacity: control.enabled ? 1 : 0.4
         FmIcon { anchors.centerIn: parent; name: "check"; size: 11; color: Theme.canvas; visible: control.checked }
     }

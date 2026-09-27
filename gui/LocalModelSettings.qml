@@ -203,6 +203,8 @@ ColumnLayout {
         Body { text: box.description; Layout.topMargin: 6 }
         ColumnLayout { id: extraSlot; Layout.fillWidth: true; spacing: 0 }
         TextArea {
+            ContextMenu.menu: null
+            TextMenuHandler {}
             objectName: "mailPrompt" + box.index
             Layout.fillWidth: true; Layout.topMargin: 12; Layout.preferredHeight: Math.max(box.minimum, contentHeight + 24)
             text: panel.textOf(panel.draft, box.index)

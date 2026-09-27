@@ -826,15 +826,15 @@ impl Store {
             if !seen.insert(aid) {
                 return Err(err("invalid_request", "Draft repeats an attachment"));
             }
-            let row: Option<(String, i64, String)> = self
+            let row: Option<(String, i64, String, String)> = self
                 .db
                 .query_row(
-                    "SELECT state,size,blob_hash FROM attachments WHERE account=?1 AND id=?2",
+                    "SELECT state,size,blob_hash,name FROM attachments WHERE account=?1 AND id=?2",
                     params![account, aid],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
                 )
                 .optional()?;
-            let (state, size, hash) =
+            let (state, size, hash, name) =
                 row.ok_or_else(|| err("not_found", "Draft attachment is outside this account"))?;
             let size = u64::try_from(size)
                 .map_err(|_| err("content_unavailable", "Draft attachment size is invalid"))?;
@@ -848,7 +848,13 @@ impl Store {
                     "Draft attachment is not fully retained",
                 ));
             }
-            self.verified_blob(&hash, size)?;
+            crate::attachment_content::verify(
+                &self.google_blob_store(),
+                &hash,
+                size,
+                &name,
+                self.attachment_source(account, aid)?.as_ref(),
+            )?;
         }
         Ok(())
     }

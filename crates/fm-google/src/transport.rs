@@ -4,6 +4,11 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    task::{Context, Poll},
     time::{Duration, SystemTime},
 };
 /// Cooperative cancellation shared by every async call in this crate.
@@ -77,6 +82,8 @@ pub struct HttpRequest {
     headers: HeaderMap,
     body: Vec<u8>,
     response_limit: Option<usize>,
+    deadline: Option<Duration>,
+    progress: Option<Arc<AtomicU64>>,
 }
 impl fmt::Debug for HttpRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -106,6 +113,8 @@ impl HttpRequest {
             headers: HeaderMap::new(),
             body: Vec::new(),
             response_limit: None,
+            deadline: None,
+            progress: None,
         })
     }
     /// Sets a header, replacing any earlier value of the same name.
@@ -137,12 +146,27 @@ impl HttpRequest {
         self.body = bytes;
         Ok(self)
     }
+    /// Counts, in `sent`, the body bytes handed to the connection so far.
+    /// The count can run ahead of what Google has received by the size of
+    /// the socket's buffers.
+    pub fn progress(mut self, sent: Arc<AtomicU64>) -> Self {
+        self.progress = Some(sent);
+        self
+    }
     /// Caps the response body at `bytes`.
     ///
     /// The caller may tighten the transport's cap, never enlarge it. A cap of
     /// zero makes execution fail with `InvalidRequest`.
     pub fn response_limit(mut self, bytes: usize) -> Self {
         self.response_limit = Some(bytes);
+        self
+    }
+    /// Replaces the transport's whole-request deadline, for a download too
+    /// large to finish within it. Gaps between reads still follow the
+    /// transport's read timeout. A zero deadline or one over ten minutes makes
+    /// execution fail with `InvalidRequest`.
+    pub fn deadline(mut self, deadline: Duration) -> Self {
+        self.deadline = Some(deadline);
         self
     }
     /// Accessors are for protocol adapters/fakes; never log their contents.
@@ -157,6 +181,12 @@ impl HttpRequest {
     }
     pub fn body_bytes(&self) -> &[u8] {
         &self.body
+    }
+    pub fn response_limit_bytes(&self) -> Option<usize> {
+        self.response_limit
+    }
+    pub fn request_deadline(&self) -> Option<Duration> {
+        self.deadline
     }
 }
 
@@ -195,6 +225,38 @@ fn allowed_url(url: &reqwest::Url) -> bool {
         Some("openidconnect.googleapis.com") => path == "/v1/userinfo",
         Some("accounts.google.com") => path == "/.well-known/openid-configuration",
         _ => false,
+    }
+}
+
+/// A request body sent in 64 KiB frames, recording how many bytes the
+/// connection has taken.
+struct CountedBody {
+    bytes: bytes::Bytes,
+    offset: usize,
+    sent: Arc<AtomicU64>,
+}
+impl http_body::Body for CountedBody {
+    type Data = bytes::Bytes;
+    type Error = std::convert::Infallible;
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        if self.offset >= self.bytes.len() {
+            return Poll::Ready(None);
+        }
+        let end = (self.offset + 64 * 1024).min(self.bytes.len());
+        let frame = self.bytes.slice(self.offset..end);
+        self.offset = end;
+        // The connection asks for a frame once it has room for it.
+        self.sent.store(end as u64, Ordering::Release);
+        Poll::Ready(Some(Ok(http_body::Frame::data(frame))))
+    }
+    fn is_end_stream(&self) -> bool {
+        self.offset >= self.bytes.len()
+    }
+    fn size_hint(&self) -> http_body::SizeHint {
+        http_body::SizeHint::with_exact((self.bytes.len() - self.offset) as u64)
     }
 }
 
@@ -263,7 +325,9 @@ impl Default for TransportLimits {
             request_timeout: Duration::from_secs(120),
             read_timeout: Duration::from_secs(30),
             max_request_bytes: 64 * 1024 * 1024,
-            max_response_bytes: 64 * 1024 * 1024,
+            // Every request sets its own lower cap; the largest is a Gmail
+            // message's raw source.
+            max_response_bytes: 256 * 1024 * 1024,
         }
     }
 }
@@ -293,7 +357,7 @@ impl ReqwestTransport {
             || limits.max_response_bytes == 0
             || limits.max_request_bytes == 0
             || limits.max_request_bytes > 128 * 1024 * 1024
-            || limits.max_response_bytes > 128 * 1024 * 1024
+            || limits.max_response_bytes > 256 * 1024 * 1024
         {
             return Err(TransportError::InvalidRequest);
         }
@@ -317,7 +381,11 @@ impl ReqwestTransport {
             .map_err(|_| TransportError::Initialization)?;
         Ok(Self { client, limits })
     }
-    async fn submit(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
+    async fn submit(
+        &self,
+        request: HttpRequest,
+        deadline: Duration,
+    ) -> Result<HttpResponse, TransportError> {
         if request.body.len() > self.limits.max_request_bytes {
             return Err(TransportError::RequestTooLarge);
         }
@@ -333,11 +401,20 @@ impl ReqwestTransport {
                 request.method,
                 HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
             );
+        let body = match request.progress {
+            Some(sent) => reqwest::Body::wrap(CountedBody {
+                bytes: request.body.into(),
+                offset: 0,
+                sent,
+            }),
+            None => request.body.into(),
+        };
         let mut builder = self
             .client
             .request(request.method.native(), request.url)
             .headers(request.headers)
-            .body(request.body);
+            .timeout(deadline)
+            .body(body);
         // An empty Vec does not make reqwest emit Content-Length. Google's
         // empty-body POST endpoints still need explicit HTTP body framing.
         if empty_submission {
@@ -370,7 +447,9 @@ impl ReqwestTransport {
             .filter(|v| v.len() <= 1024)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
-        let mut body = Vec::new();
+        // A declared length is at most the cap here, so the body is read into
+        // one allocation instead of regrowing through larger copies.
+        let mut body = Vec::with_capacity(response.content_length().unwrap_or(0) as usize);
         while let Some(chunk) = response.chunk().await.map_err(map_error)? {
             if chunk.len() > cap.saturating_sub(body.len()) {
                 return Err(TransportError::ResponseTooLarge);
@@ -392,13 +471,17 @@ impl HttpTransport for ReqwestTransport {
         cancel: &'a CancellationToken,
     ) -> HttpFuture<'a> {
         Box::pin(async move {
+            let deadline = request.deadline.unwrap_or(self.limits.request_timeout);
+            if deadline.is_zero() || deadline > Duration::from_secs(600) {
+                return Err(TransportError::InvalidRequest);
+            }
             // The outer deadline also covers the body loop in `submit`, so a
-            // server that keeps trickling bytes cannot outlast
-            // `request_timeout`. `biased` lets cancellation win a tie.
+            // server that keeps trickling bytes cannot outlast the request's
+            // deadline. `biased` lets cancellation win a tie.
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => Err(TransportError::Cancelled),
-                result = tokio::time::timeout(self.limits.request_timeout, self.submit(request)) =>
+                result = tokio::time::timeout(deadline, self.submit(request, deadline)) =>
                     result.unwrap_or(Err(TransportError::Timeout)),
             }
         })
@@ -784,6 +867,110 @@ mod tests {
             TransportError::Timeout
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_request_deadline_lets_a_slow_download_finish_and_is_bounded() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+            let _ = socket.read(&mut buffer).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 30\r\n\r\n")
+                .await
+                .unwrap();
+            for _ in 0..30 {
+                socket.write_all(b"a").await.unwrap();
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        let limited = ReqwestTransport::build(
+            TransportLimits {
+                connect_timeout: Duration::from_millis(80),
+                request_timeout: Duration::from_millis(100),
+                read_timeout: Duration::from_millis(80),
+                ..TransportLimits::default()
+            },
+            false,
+        )
+        .unwrap();
+        let response = limited
+            .execute(
+                local_request(&url).deadline(Duration::from_secs(10)),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.body, vec![b'a'; 30]);
+        server.await.unwrap();
+        for deadline in [Duration::ZERO, Duration::from_secs(601)] {
+            assert_eq!(
+                limited
+                    .execute(
+                        local_request("http://127.0.0.1:1/").deadline(deadline),
+                        &CancellationToken::new()
+                    )
+                    .await
+                    .unwrap_err(),
+                TransportError::InvalidRequest
+            );
+        }
+        for (bytes, ok) in [(256 * 1024 * 1024, true), (256 * 1024 * 1024 + 1, false)] {
+            let limits = TransportLimits {
+                max_response_bytes: bytes,
+                ..TransportLimits::default()
+            };
+            assert_eq!(ReqwestTransport::build(limits, false).is_ok(), ok);
+        }
+    }
+
+    #[tokio::test]
+    async fn counted_upload_keeps_its_length_and_bytes_and_reports_all_of_them() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/send", listener.local_addr().unwrap());
+        let body: Vec<u8> = (0..300_000u32).map(|n| (n % 251) as u8).collect();
+        let expected = body.clone();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut received = Vec::new();
+            let mut buffer = vec![0; 64 * 1024];
+            let start = loop {
+                let n = socket.read(&mut buffer).await.unwrap();
+                received.extend_from_slice(&buffer[..n]);
+                if let Some(at) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break at + 4;
+                }
+            };
+            while received.len() - start < 300_000 {
+                let n = socket.read(&mut buffer).await.unwrap();
+                assert!(n > 0, "upload ended early");
+                received.extend_from_slice(&buffer[..n]);
+            }
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .unwrap();
+            let headers = String::from_utf8_lossy(&received[..start]).to_ascii_lowercase();
+            assert!(headers.contains("content-length: 300000\r\n"), "{headers}");
+            assert!(!headers.contains("transfer-encoding"), "{headers}");
+            received[start..].to_vec()
+        });
+        let sent = Arc::new(AtomicU64::new(0));
+        let mut request = local_request(&url);
+        request.method = HttpMethod::Post;
+        let request = request
+            .body(body, "application/json")
+            .unwrap()
+            .progress(sent.clone());
+        let reply = transport()
+            .execute(request, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(reply.status, 200);
+        assert_eq!(server.await.unwrap(), expected);
+        assert_eq!(sent.load(Ordering::Acquire), 300_000);
     }
 
     #[tokio::test]

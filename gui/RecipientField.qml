@@ -86,6 +86,8 @@ Item {
             }
         }
         TextField {
+            ContextMenu.menu: null
+            TextMenuHandler {}
             id: entry
             objectName: "draftRecipient_"+field.fieldName
             property bool blocksWorkspaceShortcuts: true

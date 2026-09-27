@@ -658,6 +658,109 @@ fn mail_browse_20k() {
     }
 }
 
+/// Ten years of mail in one account, Done by month, and what the Inbox asks
+/// for as months are shown and hidden: the first page and the per-month
+/// counts, with no, half or all but the newest month collapsed.
+#[test]
+#[ignore = "Scoped generated multi-year Inbox measurement"]
+fn inbox_months_ten_years_60k() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("disposable-years-benchmark");
+    let store = Store::open(&profile).unwrap();
+    let source = store.stage_blob(b"From: Synthetic <benchmark@fixture.example>\r\nSubject: Years benchmark fixture\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic source.\r\n").unwrap();
+    const CONVERSATIONS: usize = 60_000;
+    const MONTHS: usize = 120;
+    let seed_start = Instant::now();
+    {
+        let tx = store.db.unchecked_transaction().unwrap();
+        let mut conversation = tx
+            .prepare("INSERT INTO conversations(account,id,subject,revision) VALUES('windscribe',?1,?2,1)")
+            .unwrap();
+        let mut message = tx.prepare("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES('windscribe',?1,?2,?1,?3,?4,'you@windscribe.example',?5,'Years benchmark body',?6,?7,?8,1,0,?9,1)").unwrap();
+        for index in 0..CONVERSATIONS {
+            // Newest first: index 0 is this month, the last one ten years back.
+            let month = index * MONTHS / CONVERSATIONS;
+            let total = 2026 * 12 + 8 - month;
+            let (year, month_of_year) = (total / 12, total % 12 + 1);
+            let sent_at = format!(
+                "{year:04}-{month_of_year:02}-{:02}T{:02}:{:02}:00Z",
+                28 - index % 27,
+                index % 24,
+                index % 60
+            );
+            let id = format!("years-{index:06}");
+            let subject = format!("Years benchmark {}", index % 97);
+            conversation.execute(params![id, subject]).unwrap();
+            message
+                .execute(params![
+                    format!("{id}-message"),
+                    id,
+                    format!("Sender {}", index % 500),
+                    format!("sender{}@example.test", index % 500),
+                    subject,
+                    sent_at,
+                    index < 300,
+                    (300..350).contains(&index),
+                    source
+                ])
+                .unwrap();
+        }
+        drop(message);
+        drop(conversation);
+        tx.commit().unwrap();
+    }
+    store
+        .db
+        .execute_batch("ANALYZE; PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+    let seed_seconds = seed_start.elapsed().as_secs_f64();
+    let mut store = store;
+    let first = store
+        .handle(
+            "conversations",
+            Some("windscribe"),
+            json!({"folder":"inbox","grouped":true,"live_paging":true,"limit":100,"offset":0,"month_zone":"UTC"}),
+        )
+        .unwrap();
+    let months: Vec<String> = first["done_months"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|month| month["month"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(months.len() >= MONTHS - 2, "{} months", months.len());
+    let mut measure = |collapsed: Vec<String>| {
+        let params = json!({"folder":"inbox","grouped":true,"live_paging":true,"limit":100,"offset":0,
+            "month_zone":"UTC","collapsed_months":collapsed});
+        let mut samples = Vec::new();
+        let mut rows = 0;
+        for _ in 0..30 {
+            let started = Instant::now();
+            let page = store
+                .handle("conversations", Some("windscribe"), params.clone())
+                .unwrap();
+            samples.push(started.elapsed());
+            rows = page["conversations"].as_array().unwrap().len();
+        }
+        // The first read is the one a toggle waits for; repeats may be cached.
+        let first_ms = samples[0].as_secs_f64() * 1000.0;
+        json!({"collapsed_months":params["collapsed_months"].as_array().unwrap().len(),"rows":rows,
+            "first_ms":first_ms,"p50_ms":percentile(&mut samples,0.5),"p95_ms":percentile(&mut samples,0.95)})
+    };
+    let open = measure(Vec::new());
+    let half = measure(months.iter().step_by(2).cloned().collect());
+    let newest_open = measure(months[1..].to_vec());
+    let report = json!({"experiment":"Inbox page and month counts over ten years of generated mail",
+        "generated_conversations":CONVERSATIONS,"months":months.len(),"seed_seconds":seed_seconds,
+        "sqlite_version":rusqlite::version(),"target_os":std::env::consts::OS,
+        "profile":"fresh generated, warm OS cache, one connection, no concurrent writer",
+        "none_collapsed":open,"half_collapsed":half,"all_but_newest_collapsed":newest_open});
+    println!("{report}");
+    if let Some(path) = std::env::var_os("FM_YEARS_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+}
+
 /// Pages SQLite had to fetch from the file since the last call (cache misses).
 fn cache_misses(store: &Store) -> i64 {
     let (mut current, mut highest) = (0, 0);

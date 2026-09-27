@@ -85,10 +85,8 @@ Item {
     Component.onCompleted: { syncDraft(); if (mode === "new") backend.loadRecentWith(firstRecipient ? firstRecipient.email : "") }
     Connections {
         target: backend
-        function onDraftChanged() {
-            root.syncDraft()
-            if (backend.draftStatus === "Draft discarded") root.dismissed()
-        }
+        // MailView closes the reply when it is discarded; Reply may reopen it.
+        function onDraftChanged() { root.syncDraft() }
     }
     ReplyDocument {
         id: document
@@ -131,6 +129,22 @@ Item {
             id: contents
             anchors { fill: parent; leftMargin: 18 }
             spacing: 0
+            // What is being written, above the form in every mode.
+            RowLayout {
+                objectName: "composerTitle"
+                Layout.fillWidth: true; Layout.bottomMargin: 14; spacing: 10
+                Rectangle {
+                    implicitWidth: 28; implicitHeight: 28; radius: 5; color: Theme.withAlpha(Theme.amber, .12)
+                    FmIcon { anchors.centerIn: parent; name: ({new: "edit", reply: "reply", reply_all: "replyAll", forward: "forward"})[root.mode] || "reply"; size: 14; color: Theme.amber }
+                }
+                Text {
+                    objectName: "composerTitleText"
+                    Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                    text: ({new: "Compose Email", reply: "Reply", reply_all: "Reply All", forward: "Forward"})[root.mode] || "Reply"
+                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium
+                    font.letterSpacing: -0.02 * Theme.fontSize(20); lineHeight: 1.1
+                }
+            }
             Text {
                 objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
                 Layout.fillWidth: true; Layout.bottomMargin: 12; wrapMode: Text.Wrap; textFormat: Text.PlainText
@@ -148,7 +162,7 @@ Item {
                     enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
                     Accessible.name: "From account, " + (backend.draft.from || "")
                     onClicked: fromMenu.open()
-                    background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.activeFocus ? Theme.accent : "transparent" }
+                    background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.visualFocus ? Theme.accent : "transparent" }
                     contentItem: RowLayout {
                         spacing: 6
                         Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
@@ -240,21 +254,18 @@ Item {
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_I && root.hasSelection) { document.format("italic"); event.accepted = true }
                         if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_U && root.hasSelection) { document.format("underline"); event.accepted = true }
                     }
+                    ContextMenu.menu: null
                     TapHandler {
                         acceptedButtons: Qt.RightButton
-                        onTapped: contextMenu.popup()
+                        onTapped: function(point) { contextMenu.show(bodyEditor, point.position.x, point.position.y) }
                     }
-                    Menu {
+                    // Pasting keeps the draft's own formatting: text comes in plain.
+                    TextMenu {
                         id: contextMenu
-                        MenuItem { text: "Copy"; enabled: root.hasSelection; onTriggered: bodyEditor.copy() }
-                        MenuItem { text: "Cut"; enabled: !root.readOnly && root.hasSelection; onTriggered: bodyEditor.cut() }
-                        MenuItem { text: "Paste plain text"; enabled: !root.readOnly; onTriggered: document.pastePlain() }
-                        MenuSeparator {}
-                        MenuItem { text: "Bold"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("bold") }
-                        MenuItem { text: "Italic"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("italic") }
-                        MenuItem { text: "Underline"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("underline") }
-                        MenuSeparator {}
-                        MenuItem { text: "Select all"; onTriggered: bodyEditor.selectAll() }
+                        pasteLabel: "Paste plain text"; pasteText: function() { document.pastePlain() }
+                        FmMenuItem { separatorAbove: true; text: "Bold"; shortcut: contextMenu.key + "B"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("bold") } }
+                        FmMenuItem { text: "Italic"; shortcut: contextMenu.key + "I"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("italic") } }
+                        FmMenuItem { text: "Underline"; shortcut: contextMenu.key + "U"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("underline") } }
                     }
                 }
             }
@@ -400,7 +411,7 @@ Item {
                     foreground: !enabled ? Theme.subtle : hovered ? Theme.error : Theme.inkAlpha(.8)
                     tip: "Discard this message"
                     enabled: !backend.draftLocked && !backend.draftBusy && !backend.attachmentImport.pending
-                    background: Rectangle { radius: 5; color: discardButton.hovered ? Theme.errorAlpha(.08) : "transparent"; border.width: 1; border.color: discardButton.activeFocus ? Theme.focusBorder : discardButton.hovered ? Theme.errorAlpha(.4) : Theme.line2 }
+                    background: Rectangle { radius: 5; color: discardButton.hovered ? Theme.errorAlpha(.08) : "transparent"; border.width: 1; border.color: discardButton.visualFocus ? Theme.focusBorder : discardButton.hovered ? Theme.errorAlpha(.4) : Theme.line2 }
                     onClicked: root.confirmDiscard()
                 }
             }

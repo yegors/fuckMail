@@ -48,6 +48,8 @@ FmDialog {
             Layout.fillWidth: true; Layout.preferredHeight: Math.max(150, Math.min(360, editor.contentHeight + 26))
             ScrollBar.vertical: FmScrollBar {}
             TextArea {
+                ContextMenu.menu: null
+                TextMenuHandler {}
                 id: editor
                 objectName: "signature_" + dialog.account
                 placeholderText: "No signature"; placeholderTextColor: Theme.faint

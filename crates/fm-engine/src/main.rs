@@ -929,6 +929,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         )),
     };
     services.remote.start_link_indexer(engine_cancel.clone());
+    services
+        .content
+        .start_storage_maintenance(store.google_blob_store(), engine_cancel.clone());
     // Earlier versions listed inline images as attachments; stored mail is
     // tidied once, in small batches behind other work.
     {
@@ -1242,6 +1245,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "google_draft_resolve",
         "google_send",
         "google_send_status",
+        "google_send_progress",
         "google_send_reconcile",
         "google_send_abandon",
         "google_drafts_refresh",

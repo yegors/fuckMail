@@ -15,4 +15,7 @@ TextField {
     selectedTextColor: Theme.selectedText
     selectByMouse: true
     background: Rectangle { color: Theme.surface; radius: 5; border.color: field.activeFocus ? Theme.accent : Theme.controlBorder }
+    // The app's own text menu in place of Qt's.
+    ContextMenu.menu: null
+    TextMenuHandler {}
 }

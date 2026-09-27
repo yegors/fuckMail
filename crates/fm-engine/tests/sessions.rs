@@ -483,9 +483,17 @@ async fn simultaneous_launches_elect_one_writer() {
     let temp = tempfile::tempdir().unwrap();
     let profile = temp.path().join("profile");
     let (mut a, mut b, mut c) = tokio::join!(client(&profile), client(&profile), client(&profile));
-    let astatus = ok(a.call("status", None, json!({})).await.unwrap());
-    let bstatus = ok(b.call("status", None, json!({})).await.unwrap());
-    let cstatus = ok(c.call("status", None, json!({})).await.unwrap());
+    // Refresh generations keep moving while startup work finishes, so the
+    // clients compare the store's epoch rather than those counters.
+    let status = |mut value: Value| {
+        let epoch = value["ui_generations"]["epoch"].take();
+        assert!(epoch.is_string());
+        value["ui_generations"] = json!({ "epoch": epoch });
+        value
+    };
+    let astatus = status(ok(a.call("status", None, json!({})).await.unwrap()));
+    let bstatus = status(ok(b.call("status", None, json!({})).await.unwrap()));
+    let cstatus = status(ok(c.call("status", None, json!({})).await.unwrap()));
     assert_eq!(astatus, bstatus);
     assert_eq!(bstatus, cstatus);
     drop(a);

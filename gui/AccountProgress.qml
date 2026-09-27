@@ -2,7 +2,8 @@ import QtQuick
 
 // Per-account pipeline: Download (mail and calendar from Google) then Local
 // model (summaries and labels for downloaded mail). The Accounts card, the
-// top-bar account tabs and their hover card all read view(account).
+// top-bar account tabs and their hover card all read view(account); the
+// hover card asks for whole numbers, the others for short ones.
 // Counts come from the engine; rates are observed here (download) or by the
 // engine (seconds per analysed message), never assumed.
 QtObject {
@@ -78,8 +79,9 @@ QtObject {
 
     readonly property color amber: Theme.amber
     readonly property color aiColor: Theme.ai
-    function view(account) {
+    function view(account, whole) {
         const _ = tick
+        const f = whole ? full : fmtN
         const row = backend.allAccounts.find(a => a.id === account) || {}
         // What Google granted; `capabilities` is true for every active account.
         const google = row.google || {}, sync = google.sync || {}, caps = google.granted_capabilities || google.capabilities || {}
@@ -93,29 +95,34 @@ QtObject {
         // what Google lists for the account's window; until that count
         // is done there is no honest total, so the bar shimmers.
         const local = Number(sync.retained_sources || 0)
+        // A message Gmail sent malformed will not download. It is settled,
+        // not still to go, and is named only in the count's tooltip.
+        const skipped = Number(sync.undownloadable_messages || 0)
         const listing = sync.inventory_complete !== true
         const total = sync.inventory_total === undefined || sync.inventory_total === null ? -1 : Number(sync.inventory_total)
         const counted = sync.inventory_counting === undefined || sync.inventory_counting === null ? -1 : Number(sync.inventory_counting)
         const counting = listing && total < 0
         const remote = Math.max(local, listing ? Math.max(total, 0) : Number(sync.observed_messages || 0))
-        const dlLeft = Math.max(0, remote - local), dlDone = !listing && dlLeft === 0
+        const dlLeft = Math.max(0, remote - local - skipped), dlDone = !listing && dlLeft === 0
         const dlOn = mailShown && !dlDone && !paused && !err
         // Mail arriving while it downloads can reach the total early; only a
         // finished inventory shows 100%.
-        const dlPct = remote ? Math.min(listing ? 99 : 100, Math.floor(local / remote * 100)) : (listing ? 0 : 100)
+        const dlPct = remote ? Math.min(listing ? 99 : 100, Math.floor((local + skipped) / remote * 100)) : (listing ? 0 : 100)
         const rate = mailRate(account), dlEta = rate > 0 && !counting ? dlLeft / rate : -1
-        const soFar = counted > 0 ? " · " + fmtN(counted) + " found" : ""
+        const soFar = counted > 0 ? " · " + f(counted) + " found" : ""
+        const left = skipped ? full(skipped) + (skipped === 1 ? " message can't" : " messages can't") + " be downloaded" : ""
         const mail = {
-            count: counting ? fmtN(local) : fmtN(local) + " of " + fmtN(remote),
+            count: counting ? f(local) : f(local) + " of " + f(remote),
             countTitle: counting ? full(local) + " messages are on this machine · counting what Google has" + (counted > 0 ? ": " + full(counted) + " so far" : "")
-                : full(local) + " of " + full(remote) + " messages are on this machine",
-            frac: counting ? 0 : remote ? Math.min(dlPct / 100, local / remote) : (dlDone ? 1 : 0),
+                : full(local) + " of " + full(remote) + " messages are on this machine" + (left ? " · " + left : ""),
+            frac: counting ? 0 : remote ? Math.min(dlPct / 100, (local + skipped) / remote) : (dlDone ? 1 : 0),
             short: err ? (counting ? "Stopped" : "Stopped at " + dlPct + "%") : paused && !dlDone ? (counting ? "Paused" : "Paused at " + dlPct + "%")
-                : dlOn ? (counting ? (counted > 0 ? "Counting" + soFar : "Counting…") : dlPct + "%" + (dlEta >= 0 ? " · " + shortEta(dlEta) : "")) : "Complete",
+                : dlOn ? (counting ? (counted > 0 ? "Counting" + soFar : "Counting…") : dlPct + "%" + (dlEta >= 0 ? " · " + shortEta(dlEta) : ""))
+                : "Complete",
             status: err ? (counting ? "Stopped · reconnect" : "Stopped at " + dlPct + "% · reconnect")
-                : paused && !dlDone ? (counting ? "Paused while counting mail in Google" : "Paused at " + dlPct + "% · " + fmtN(dlLeft) + " to go")
-                : dlOn ? (counting ? "Counting mail in Google" + soFar : dlPct + "% · " + fmtN(dlLeft) + " to go" + (dlEta >= 0 ? " · " + eta(dlEta) + " left" : ""))
-                : "All mail is on this machine",
+                : paused && !dlDone ? (counting ? "Paused while counting mail in Google" : "Paused at " + dlPct + "% · " + f(dlLeft) + " to go")
+                : dlOn ? (counting ? "Counting mail in Google" + soFar : dlPct + "% · " + f(dlLeft) + " to go" + (dlEta >= 0 ? " · " + eta(dlEta) + " left" : ""))
+                : skipped ? "Download complete" : "All mail is on this machine",
             label: dlOn ? "Downloading" : "Mail",
             fill: err ? Theme.error : dlOn ? amber : Theme.inkAlpha(.35),
             live: dlOn, eta: dlEta
@@ -127,7 +134,7 @@ QtObject {
         const calDone = !!calendarSettled[account] || (!calRunning && events > 0)
         const calOn = calShown && !calDone && !paused && !err
         const cal = {
-            count: fmtN(events) + (events === 1 ? " event" : " events"),
+            count: f(events) + (events === 1 ? " event" : " events"),
             countTitle: full(events) + " events are on this machine",
             frac: calDone ? 1 : 0,
             short: err ? "Stopped" : paused && !calDone ? "Paused" : calOn ? "Downloading…" : calDone ? "Complete" : "No events yet",
@@ -145,21 +152,21 @@ QtObject {
         const aiEta = perMessage > 0 ? queued * perMessage : -1
         const what = sOn && lOn ? "Summarizing & labeling" : sOn ? "Summarizing" : lOn ? "Labeling" : "Processing"
         const ai = {
-            count: fmtN(done) + " of " + fmtN(A.eligible || 0),
+            count: f(done) + " of " + f(A.eligible || 0),
             countTitle: full(done) + " of " + full(A.eligible || 0) + " received messages processed by the local model · " + full(queued) + " queued"
                 + (perMessage > 0 ? " · about " + perMessage.toFixed(1) + " s each" : ""),
             frac: done / eligible, qfrac: queued / eligible,
-            short: A.account === undefined ? "…" : !modelReady ? "No model" : !sOn && !lOn ? "Off" + (rest ? " · " + fmtN(rest) + " not processed" : "")
-                : (aiPaused || paused || err) && queued ? "Paused · " + fmtN(queued) + " queued"
-                : modelDown && queued ? "Model unavailable · " + fmtN(queued) + " queued"
-                : aiOn ? aiPct + "% · " + fmtN(queued) + " queued" + (aiEta >= 0 ? " · " + shortEta(aiEta) : "")
-                : rest ? fmtN(rest) + " not processed" : "Complete",
-            status: !modelReady ? "No local model set up" : err && queued ? "Waiting · " + fmtN(queued) + " queued"
-                : (aiPaused || paused) && queued ? "Paused at " + aiPct + "% · " + fmtN(queued) + " queued"
-                : modelDown && queued ? "Waiting for the local model · " + fmtN(queued) + " queued · " + (A.model_error.message || "")
-                : aiOn ? aiPct + "% · " + fmtN(queued) + " queued" + (aiEta >= 0 ? " · " + eta(aiEta) + " left" : "")
-                : !sOn && !lOn ? "Off for this account" + (rest ? " · " + fmtN(rest) + " not processed" : "")
-                : rest ? fmtN(rest) + " not processed" : failed ? fmtN(failed) + " could not be processed · open one to try again" : "Every message is processed",
+            short: A.account === undefined ? "…" : !modelReady ? "No model" : !sOn && !lOn ? "Off" + (rest ? " · " + f(rest) + " not processed" : "")
+                : (aiPaused || paused || err) && queued ? "Paused · " + f(queued) + " queued"
+                : modelDown && queued ? "Model unavailable · " + f(queued) + " queued"
+                : aiOn ? aiPct + "% · " + f(queued) + " queued" + (aiEta >= 0 ? " · " + shortEta(aiEta) : "")
+                : rest ? f(rest) + " not processed" : "Complete",
+            status: !modelReady ? "No local model set up" : err && queued ? "Waiting · " + f(queued) + " queued"
+                : (aiPaused || paused) && queued ? "Paused at " + aiPct + "% · " + f(queued) + " queued"
+                : modelDown && queued ? "Waiting for the local model · " + f(queued) + " queued · " + (A.model_error.message || "")
+                : aiOn ? aiPct + "% · " + f(queued) + " queued" + (aiEta >= 0 ? " · " + eta(aiEta) + " left" : "")
+                : !sOn && !lOn ? "Off for this account" + (rest ? " · " + f(rest) + " not processed" : "")
+                : rest ? f(rest) + " not processed" : failed ? f(failed) + " could not be processed · open one to try again" : "Every message is processed",
             label: aiOn ? what : "Processed",
             live: aiOn, eta: aiEta, modelReady: modelReady, paused: aiPaused, summaries: sOn, labels: lOn,
             unprocessed: rest, queued: queued, catchingUp: A.catching_up === true,
@@ -174,9 +181,10 @@ QtObject {
             : phase === "ai" ? "Processing" + (ai.eta >= 0 ? " · " + eta(ai.eta) + " left" : "")
             : "Up to date" + (lastSync > 0 ? " · " + ago(lastSync * 1000) : "")
         return {phase: phase, status: status, err: err, paused: paused, mail: mail, cal: cal, ai: ai, mailShown: mailShown, calShown: calShown,
-            // While Google's list is still being counted the ring shows only a sliver.
-            ring: phase === "dl" ? (counting ? .08 : mail.frac) : phase === "ai" ? ai.frac : 0, ringColor: phase === "dl" ? amber : aiColor,
-            ringShown: phase === "dl" || phase === "ai"}
+            // The tab's underline turns into this bar while the account syncs;
+            // while Google's list is still being counted it shows a sliver.
+            busy: phase === "dl" || phase === "ai",
+            progress: phase === "dl" ? (counting ? .04 : mail.frac) : phase === "ai" ? ai.frac : 0, progressColor: phase === "dl" ? amber : aiColor}
     }
 
     property Timer poll: Timer {

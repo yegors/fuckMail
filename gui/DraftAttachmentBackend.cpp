@@ -10,6 +10,8 @@
 #include <QCryptographicHash>
 #include <QStandardPaths>
 #include <QImageReader>
+#include <QVideoFrame>
+#include <QVideoSink>
 #include <QUuid>
 #include <memory>
 
@@ -203,7 +205,9 @@ QString MailBackend::requestAttachmentPreview(const QString &account, const QStr
             if (ok) {
                 const auto mime = result["mime_type"].toString();
                 const auto suffix = QFileInfo(path).suffix().toLower();
-                const bool video = mime.startsWith("video/") && QStringList{"mp4","webm","mov","m4v","mkv","avi"}.contains(suffix);
+                // A file sent as a generic type is still a video by its name.
+                const bool video = QStringList{"mp4","webm","mov","m4v","mkv","avi"}.contains(suffix)
+                    && (mime.startsWith("video/") || mime.isEmpty() || mime == "application/octet-stream");
                 QImageReader reader(path);
                 const auto format = reader.format().toLower();
                 auto size = reader.size();
@@ -221,6 +225,27 @@ QString MailBackend::requestAttachmentPreview(const QString &account, const QStr
         });
     });
     return ticket;
+}
+// A released player clears its output, so a video card keeps the frame its
+// decoder showed as a small JPEG for this run. A card that comes back into view
+// shows it again without decoding.
+QVariantMap MailBackend::keepVideoPoster(QObject *sink, const QString &account, const QString &id, qint64 duration) {
+    const auto *video = qobject_cast<QVideoSink *>(sink);
+    if (!video || account.isEmpty() || id.isEmpty()) return {};
+    auto image = video->videoFrame().toImage();
+    if (image.isNull()) return {};
+    if (image.width() > 960 || image.height() > 960) image = image.scaled(960, 960, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    if (!m_posterDirectory) {
+        const QDir cache(QDir(m_profile).filePath("cache"));
+        m_posterDirectory = std::make_unique<QTemporaryDir>(!m_profile.isEmpty() && QDir().mkpath(cache.path()) ? cache.filePath("video-posters-XXXXXX") : QString{});
+    }
+    if (!m_posterDirectory->isValid()) return {};
+    const auto key = account + '\n' + id;
+    const auto path = m_posterDirectory->filePath(QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex()) + ".jpg");
+    if (!image.convertToFormat(QImage::Format_RGB32).save(path, "JPEG", 88)) return {};
+    const QVariantMap poster{{"url", QUrl::fromLocalFile(path).toString()}, {"duration", duration}};
+    m_videoPosters.insert(key, poster);
+    return poster;
 }
 QString MailBackend::downloadAttachment(const QString &account, const QString &id, const QString &name) {
     const QFileInfo original(attachmentSaveLocation(name).toLocalFile());

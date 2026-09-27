@@ -22,6 +22,60 @@ pub(crate) struct Runtime {
 type PreparationHook = Arc<dyn Fn(&CancellationToken) -> Result<()> + Send + Sync>;
 
 impl Runtime {
+    /// Convert older received attachment copies on bounded workers, then keep
+    /// disposable exports within their budget throughout this engine lifetime.
+    pub(crate) fn start_storage_maintenance(
+        self: &Arc<Self>,
+        blobs: fm_core::google_live_mail::BlobStore,
+        cancel: CancellationToken,
+    ) {
+        let runtime = self.clone();
+        tokio::spawn(async move {
+            while !cancel.is_cancelled() {
+                let Ok(Some(plan)) = runtime
+                    .core
+                    .call(|store| store.attachment_migration_begin())
+                    .await
+                else {
+                    break;
+                };
+                let Ok(prepared) = runtime
+                    .prepare(cancel.clone(), move |stop| {
+                        fm_core::attachment_content::prepare_migration(plan, &stop)
+                    })
+                    .await
+                else {
+                    break;
+                };
+                if cancel.is_cancelled() {
+                    return;
+                }
+                if runtime
+                    .core
+                    .call(move |store| store.attachment_migration_finish(prepared))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+                }
+            }
+            while !cancel.is_cancelled() {
+                let files = blobs.clone();
+                let _ = runtime
+                    .prepare(cancel.clone(), move |_| files.prune_exports())
+                    .await;
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                }
+            }
+        });
+    }
+
     pub(crate) fn new(core: CoreBridge) -> Self {
         Self {
             core,
@@ -45,6 +99,7 @@ impl Runtime {
                 | "message_invite"
                 | "google_sent_message"
                 | "draft_transfer"
+                | "attachment"
         )
     }
 
@@ -122,6 +177,15 @@ impl Runtime {
                     fm_core::google_send::outgoing::read(plan, &cancel)
                 })
                 .await;
+        }
+        // Only the lookup uses the store; copying and hashing the file runs
+        // on a worker, so previews never wait behind sync's writes.
+        if method == "attachment" {
+            let plan = self
+                .core
+                .call(move |store| store.attachment_begin(&account, &params))
+                .await?;
+            return self.prepare(cancel, move |_| plan.export()).await;
         }
         if method == "message_source" {
             let plan = self

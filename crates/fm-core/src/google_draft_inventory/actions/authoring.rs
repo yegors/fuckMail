@@ -377,7 +377,7 @@ pub(super) fn verify_remote(source: &SourceStamp, remote: &GoogleDraftActionRemo
     identifier(&remote.message_id)?;
     identifier(&remote.thread_id)?;
     if remote.raw.is_empty() || remote.raw.len() > MAX_IMPORT_RAW_BYTES {
-        return Err(err("limit_exceeded", "Remote draft source exceeds 40 MiB"));
+        return Err(err("limit_exceeded", "Remote draft source is too large"));
     }
     if source.provider_draft_id != remote.draft_id
         || source.message_id != remote.message_id

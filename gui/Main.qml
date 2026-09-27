@@ -258,7 +258,7 @@ ApplicationWindow {
                     contentWidth: accountsRow.width; contentHeight: height; clip: true
                     boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
                     Row {
-                        id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                        id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 6
                         Repeater {
                             id: accountRepeater
                             model: backend.accountModel
@@ -268,14 +268,17 @@ ApplicationWindow {
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
                                 readonly property var pipeline: accountProgress.view(modelData.id)
+                                readonly property color hue: Qt.color(Theme.accountColor(modelData.id))
                                 property int reviewCount: (modelData.inbox_review_count ?? modelData.unread_conversation_count) || 0
                                 readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
-                                readonly property real naturalWidth: 20 + 22 + 7 + accountName.implicitWidth
+                                readonly property real naturalWidth: 16 + 18 + 7 + accountName.implicitWidth
                                     + (badgeText.length ? accountCount.implicitWidth + 7 : 0)
+                                // Hover brightens the text only.
+                                readonly property color ink: selected || hovered ? Theme.text : Theme.inkAlpha(.5)
                                 Accessible.description: pipeline.status
                                 text: modelData.name
-                                height: 28; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
-                                leftPadding: 8; rightPadding: 8
+                                height: 32; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
+                                leftPadding: 8; rightPadding: 8; topPadding: 0; bottomPadding: 2
                                 selected: backend.account === modelData.id
                                 Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
@@ -286,19 +289,67 @@ ApplicationWindow {
                                     else if (accountTip.account === modelData.id) accountTip.close()
                                 }
                                 onClicked: { accountTip.close(); backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
+                                // No pill: a 2px underline marks the selected account in
+                                // its colour, and becomes a progress bar while the
+                                // account syncs (amber downloading, silver-blue while
+                                // the local model works).
+                                background: Item {
+                                    Rectangle {
+                                        border.width: accountTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder
+                                        anchors.fill: parent; radius: 4; color: "transparent"
+                                    }
+                                    Rectangle {
+                                        objectName: "accountTabTrack_" + accountTab.modelData.id
+                                        x: 8; width: parent.width - 16; y: parent.height - 2; height: 2; radius: 1; clip: true
+                                        color: !accountTab.pipeline.busy ? "transparent" : accountTab.selected ? Theme.withAlpha(accountTab.hue, .35) : Theme.inkAlpha(.1)
+                                        Rectangle {
+                                            id: underline
+                                            objectName: "accountTabUnderline_" + accountTab.modelData.id
+                                            // A gentle 1.6 s pulse. Syncing can last for days, so it
+                                            // steps at 12.5 frames a second rather than repainting the
+                                            // window every frame, and rests while the app is in the back.
+                                            property real phase: 0
+                                            height: 2; radius: 1
+                                            width: parent.width * (accountTab.pipeline.busy ? Math.max(.04, Math.min(1, accountTab.pipeline.progress || 0)) : 1)
+                                            color: accountTab.pipeline.busy ? accountTab.pipeline.progressColor : accountTab.selected ? accountTab.hue : "transparent"
+                                            opacity: accountTab.pipeline.busy ? .65 + .35 * Math.cos(phase * 2 * Math.PI) : 1
+                                            Behavior on width { NumberAnimation { duration: 500; easing.type: Easing.Linear } }
+                                            Behavior on color { ColorAnimation { duration: 200 } }
+                                            Timer {
+                                                interval: 80; repeat: true
+                                                running: accountTab.pipeline.busy === true && Qt.application.state === Qt.ApplicationActive
+                                                onTriggered: underline.phase = (underline.phase + 0.05) % 1
+                                            }
+                                        }
+                                    }
+                                }
                                 contentItem: Row {
                                     id: accountContent
                                     spacing: 7
-                                    AccountBadge {
+                                    Item {
                                         objectName: "accountTabBadge_" + accountTab.modelData.id
-                                        anchors.verticalCenter: parent.verticalCenter; tipEnabled: false; reserveRing: true
-                                        account: accountTab.modelData.id; accountName: accountTab.modelData.name; selected: accountTab.selected
-                                        // Amber while downloading, silver-blue while the model processes.
-                                        ringShown: accountTab.pipeline.ringShown; ringProgress: accountTab.pipeline.ring; ringColor: accountTab.pipeline.ringColor
-                                        errorShown: accountTab.pipeline.err
+                                        anchors.verticalCenter: parent.verticalCenter; width: 18; height: 18
+                                        Rectangle {
+                                            objectName: "accountBadgeLetter"
+                                            anchors.fill: parent; radius: 4
+                                            color: Theme.withAlpha(accountTab.hue, accountTab.selected ? .24 : .1)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: accountTab.modelData.name.trim().charAt(0).toUpperCase()
+                                                color: accountTab.selected ? accountTab.hue : Theme.withAlpha(accountTab.hue, .6)
+                                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10); font.weight: Font.DemiBold
+                                            }
+                                        }
+                                        // Disconnected: a 6px red dot in a 2px ring of the bar colour.
+                                        Rectangle {
+                                            objectName: "accountBadgeError"
+                                            visible: accountTab.pipeline.err === true
+                                            x: parent.width - 6; y: -4; width: 10; height: 10; radius: 5; color: Theme.error
+                                            border.width: 2; border.color: Theme.canvas
+                                        }
                                     }
-                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 22 - 7 - (accountTab.badgeText.length ? accountCount.implicitWidth + 7 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
-                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
+                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 18 - 7 - (accountTab.badgeText.length ? accountCount.implicitWidth + 7 : 0)); elide: Text.ElideRight; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } Behavior on color { ColorAnimation { duration: 150 } } }
+                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
                                 }
                             }
                         }
@@ -361,6 +412,8 @@ ApplicationWindow {
                         anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 10
                         FmIcon { name: "search"; size: 14; color: Theme.subtle }
                         TextField {
+                            ContextMenu.menu: null
+                            TextMenuHandler {}
                             id: search; objectName: "searchField"
                             Layout.fillWidth: true; padding: 0
                             placeholderText: window.workspace === "calendar" ? "Search events" : "Search " + (backend.currentAccount.name || "mail") + (backend.folder === "sent" ? " sent" : backend.folder === "drafts" ? " drafts" : "")
@@ -392,20 +445,20 @@ ApplicationWindow {
                         }
                     }
                 }
-                FmButton {
-                    id: settingsButton
-                    objectName: "settingsButton"
-                    implicitWidth: 30; implicitHeight: 30; leftPadding: 0; rightPadding: 0; iconName: "settings"; iconSize: 14; radius: 6
-                    prominent: window.settingsOpen; hoverBrightness: 1
-                    foreground: prominent ? Theme.canvas : hovered ? Theme.text : Theme.muted
-                    tip: "Settings — ,"; Accessible.name: "Settings"
-                    background: Rectangle {
-                        radius: 6
-                        color: settingsButton.prominent ? Theme.text : "transparent"
-                        border.width: 1
-                        border.color: settingsButton.activeFocus ? Theme.focusBorder : settingsButton.prominent ? Theme.text : settingsButton.hovered ? Theme.line3 : Theme.line2
+                // Sits in the same tray as the Mail / Calendar switch.
+                Rectangle {
+                    implicitWidth: settingsButton.width + 4; implicitHeight: 32
+                    radius: 6; color: Theme.surface
+                    FmButton {
+                        id: settingsButton
+                        objectName: "settingsButton"
+                        anchors.centerIn: parent
+                        width: 32; height: 28; leftPadding: 0; rightPadding: 0; iconName: "settings"; iconSize: 14; radius: 4
+                        prominent: window.settingsOpen
+                        foreground: prominent ? Theme.canvas : Theme.muted
+                        tip: "Settings — ,"; Accessible.name: "Settings"
+                        onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings")
                     }
-                    onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings")
                 }
             }
         }

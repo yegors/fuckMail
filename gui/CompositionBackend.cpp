@@ -48,14 +48,17 @@ void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
     }
     if (result["draft_id"].toString() != m_draft.value("draft_id").toString() && !m_attachmentQueues.value(attachmentImportKey()).isEmpty())
         m_attachmentQueuePaused.insert(attachmentImportKey());
+    // A draft for the thread on screen keeps the thread there while it
+    // reloads, rather than blanking it and starting from the top.
+    const bool sameThread = !m_selected.isEmpty() && result["conversation_id"].toString() == m_selected && !m_conversation.isEmpty();
     restoreRecipientInputs(result.toVariantMap());
     m_activeDraft = result["draft_id"].toString();
     m_selected = result["conversation_id"].toString();
     m_draft = mergedDraftProjection(result); m_draftDirty = false; m_draftConflict = false;
     m_draftStatus = draftDiscardPending() ? "Draft action needs attention" : m_draft.value("transferred").toBool() ? "Draft moved to another account" : draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
-    m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
+    if (!sameThread) { m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1; }
     remember("selectedDraft", m_activeDraft); remember("selected", m_selected);
-    if (!restoreView) { remember("readerY", 0); remember("replyOpen", true); }
+    if (!restoreView) { if (!sameThread) remember("readerY", 0); remember("replyOpen", true); }
     emit conversationChanged(); emit draftChanged();
     if (!restoreView) emit presentationChanged();
     if (!m_selected.isEmpty()) loadConversation(false);
@@ -70,19 +73,39 @@ void MailBackend::writeToSender(const QString &email, const QString &name) {
     if (address.isEmpty() || !validFilterSender(address)) return;
     beginDraftWithRecipient("new", address, name);
 }
-void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name) {
+void MailBackend::switchDraft(const QString &mode) {
+    if (mode != "new") beginDraftWithRecipient(mode, {}, {}, true);
+}
+void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry) {
     if (!m_connected || m_account.isEmpty() || accountArchived() || m_unsavedAccountBuffer) return;
     if (mode != "new" && mode != "reply" && mode != "reply_all" && mode != "forward") return;
+    // A second press while that same kind is opening changes nothing.
+    if (m_resolvingDraft && m_draftCreation["mode"].toString() == mode) return;
     cancelPendingGoogleSend("Send cancelled by draft navigation.");
     // Save pending edits first; the continuation re-runs this navigation if
     // the same account is still selected.
     if (m_draftDirty || draftBusy()) {
         const auto account = m_account;
-        m_afterDraftSave = [this, account, mode, email, name] { if (account == m_account) beginDraftWithRecipient(mode, email, name); };
+        m_afterDraftSave = [this, account, mode, email, name, carry] { if (account == m_account) beginDraftWithRecipient(mode, email, name, carry); };
         saveDraft(); return;
     }
     const auto members = m_conversation.value("messages").toList();
     if (mode != "new" && (members.isEmpty() || m_conversation.value("remote").toBool())) return;
+    if (mode == "new" && m_draft.value("mode").toString() != "new") m_newDraftOrigin = {m_account, m_selected, m_draft.value("discarded").toBool() ? QString{} : m_activeDraft};
+    // Turning this thread's reply into a forward, or back, takes the words
+    // written so far into the new draft and retires the old one once the new
+    // one is saved. A draft with files, one being sent, or one with words
+    // anywhere but above its starting text stays as it is.
+    QString carried; QJsonObject retired;
+    const auto currentMode = m_draft.value("mode").toString();
+    if (carry && mode != "new" && !m_selected.isEmpty() && m_draft.value("conversation_id").toString() == m_selected
+        && (currentMode.isEmpty() ? QStringLiteral("reply") : currentMode) != mode && m_draft.value("revision").toLongLong() > 0
+        && !m_draft.value("discarded").toBool() && !draftReadOnly() && !googleSendBlocksDraftSync()
+        && m_draft.value("attachment_ids").toList().isEmpty() && !draftDiscardPending()) {
+        bool untouched = false;
+        carried = authoredDraftText(&untouched);
+        if (untouched) { retired = draftSelector(); retired["expected_revision"] = m_draft.value("revision").toLongLong(); }
+    }
     dropEmptyNewDraft();
     const auto source = mode == "new" ? QString{} : members.last().toMap()["id"].toString();
     if (m_draftCreation.isEmpty() || m_draftCreationAccount != m_account
@@ -97,11 +120,17 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
     m_resolvingDraft = true; m_draftStatus = "Opening draft…"; emit draftChanged();
     const auto account = m_account;
-    request("draft_create", account, m_draftCreation, [this, account, email, name](auto result, bool ok) {
+    request("draft_create", account, m_draftCreation, [this, account, email, name, carried, retired](auto result, bool ok) {
         m_resolvingDraft = false;
         if (account != m_account || accountRemoved(account) || m_unsavedAccountBuffer) return;
         if (ok) {
             ++m_generation; m_draftCreation = {}; m_draftCreationEmail.clear(); acceptDraft(result);
+            if (!carried.isEmpty()) {
+                const auto start = m_draft.value("body").toString();
+                m_draft["body"] = carried + (start.isEmpty() || start.startsWith('\n') ? QString{} : QStringLiteral("\n\n")) + start;
+                m_draft["body_html"] = QVariant(); m_draftDirty = true; m_draftStatus = "Saving…"; emit draftChanged();
+            }
+            if (!retired.isEmpty()) m_afterDraftSave = [this, account, retired] { retireDraft(account, retired); };
             if (!email.isEmpty()) {
                 const bool safeName = name.toUtf8().size() <= 4096 && std::none_of(name.begin(), name.end(), [](QChar c) { return c.category() == QChar::Other_Control; });
                 // The card supplies a structured Core mailbox. Preserve it
@@ -325,6 +354,35 @@ void MailBackend::dropEmptyNewDraft() {
     request("draft_discard", account, params, [this, account](auto, bool ok) {
         if (ok && account == m_account) { loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); m_draftChipsTimer.start(); }
     }, true);
+}
+QString MailBackend::authoredDraftText(bool *untouched) const {
+    const auto body = m_draft.value("body").toString();
+    const auto signature = currentAccount().value("signature_text").toString().trimmed();
+    const auto forwarded = QStringLiteral("---------- Forwarded message ----------");
+    auto end = signature.isEmpty() ? qsizetype(-1) : body.indexOf(signature);
+    if (end < 0) end = body.indexOf(forwarded);
+    if (untouched) {
+        const auto rest = end < 0 ? QString{} : body.mid(end).trimmed();
+        *untouched = rest.isEmpty() || rest == signature || rest.startsWith(forwarded)
+            || (!signature.isEmpty() && rest.startsWith(signature + QStringLiteral("\n\n") + forwarded));
+    }
+    return (end < 0 ? body : body.left(end)).trimmed();
+}
+void MailBackend::retireDraft(const QString &account, const QJsonObject &selector) {
+    if (account != m_account || !m_connected || m_unsavedAccountBuffer) return;
+    auto params = selector; params["request_id"] = mutation()["request_id"];
+    request("draft_discard", account, params, [this, account](auto, bool ok) {
+        if (ok && account == m_account) { loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); m_draftChipsTimer.start(); }
+    }, true);
+}
+void MailBackend::leaveDiscardedNewDraft() {
+    if (m_draft.value("mode").toString() != "new" || !m_draft.value("discarded").toBool() || m_draftDirty || draftBusy()) return;
+    const auto origin = m_newDraftOrigin; m_newDraftOrigin.clear();
+    if (origin.size() == 3 && origin[0] == m_account && !origin[2].isEmpty() && origin[2] != m_activeDraft) { openDraft(origin[2]); return; }
+    if (origin.size() == 3 && origin[0] == m_account && !origin[1].isEmpty()) { selectConversationInternal(origin[1], false); return; }
+    ++m_generation; m_activeDraft.clear(); m_draft.clear(); m_recipientInputs.clear(); m_draftStatus.clear();
+    remember("selectedDraft", ""); remember("replyOpen", false);
+    emit conversationChanged(); emit draftChanged(); emit presentationChanged();
 }
 void MailBackend::leaveNewDraft() {
     if (m_draft.value("mode").toString() != "new" || m_activeDraft.isEmpty()) return;
