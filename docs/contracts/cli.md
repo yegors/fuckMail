@@ -1,5 +1,9 @@
 # CLI and external agent interface
 
+## D162 — unchecked mail in sync status (CLI60)
+
+Account and status sync JSON add Core83's `unchecked_messages`: kept messages the current listing has yet to see. Other fields are unchanged.
+
 ## D160 — reading text in `mail source` (CLI59)
 
 `mail source` adds Core82's `body_text` and `text_truncated`. Other fields are unchanged, and querying still never marks mail reviewed.

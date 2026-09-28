@@ -1,5 +1,15 @@
 # Mail UI, reader and human composer
 
+## D162 — checking downloaded mail (Mail UI112)
+
+- While the inventory lists and `unchecked_messages` is above zero with mail kept locally, the mail stage is checking:
+  - short status "Checking N%", where N is the share of kept mail already checked, at most 99;
+  - hover status "Checking downloaded mail · N to go" and label "Checking";
+  - the meter and the account tab's underline show the checked share instead of the counting sliver.
+- Errors and pauses still take precedence.
+
+Consumers: `AccountProgress`, `AccountCard`, the account tab and the mail-selection check; Core83, Quality89.
+
 ## D160 — forwards in text mode (Mail UI111)
 
 - Text mode reads a message's `body_text` from its source reply when present, else the stored `text`.

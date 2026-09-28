@@ -195,6 +195,10 @@ pub struct GoogleMailCoverage {
     /// Of those, messages whose source will not download: over the size
     /// bound, or a reply Gmail sent malformed.
     pub undownloadable: u64,
+    /// Stored messages without an issue that the current generation has not
+    /// seen yet. After Gmail history expires, the listing checks each again
+    /// on its way to older mail.
+    pub unchecked: u64,
     /// Messages Google lists for the inventory's query, once counted.
     pub listed: Option<u64>,
     /// Messages counted so far while that count runs.
@@ -622,6 +626,39 @@ impl Store {
         Ok(result)
     }
 
+    /// Settles a listing page's messages that are already kept whole and seen
+    /// in this generation, without any Gmail read. Gmail never changes a
+    /// message's source, and the history lane keeps its labels current. This
+    /// covers mail the recent lane already listed, and all kept mail after a
+    /// retention change. Returns how many it settled.
+    ///
+    /// History pages, and pages of an older generation, settle nothing.
+    pub fn google_live_skip_current(&self, page: &GooglePageIdentity) -> Result<usize> {
+        let (record, complete) = load_page(&self.db, page)?;
+        if complete
+            || page.lane == MailLane::Delta
+            || !matches!(record.plan.expected.phase, Phase::Full { .. })
+            || record.plan.fetch_message_ids.is_empty()
+        {
+            return Ok(0);
+        }
+        let tx = self.db.unchecked_transaction()?;
+        ensure_checkpoint(&tx, page, &record.plan.expected)?;
+        let ids = serde_json::to_string(&record.plan.fetch_message_ids)?;
+        let revision: i64 =
+            tx.query_row("SELECT value FROM meta WHERE key='revision'", [], |r| {
+                r.get(0)
+            })?;
+        let current = "SELECT c.remote_id FROM json_each(?5) j JOIN google_mail_coverage c ON c.account=?1 AND c.remote_id=j.value WHERE c.deleted=0 AND c.observed_generation=?3 AND c.source_state='retained' AND c.index_state='indexed' AND c.attachment_state='complete' AND c.issue IS NULL";
+        // Items already staged or settled keep their own outcome.
+        let settled = tx.execute(&format!("INSERT INTO google_live_page_items(account,lane,generation,expected_revision,remote_id,ordinal,required_action,applied_revision) SELECT ?1,?2,?3,?4,remote_id,0,'fetch',?6 FROM ({current}) WHERE true ON CONFLICT DO NOTHING"),params![page.account,page.lane.key(),page.generation,page.expected_revision,ids,revision])?;
+        if settled > 0 && page.lane == MailLane::Inventory {
+            tx.execute(&format!("UPDATE google_mail_coverage SET last_inventory_generation=?3 WHERE account=?1 AND remote_id IN ({current})"),params![page.account,page.lane.key(),page.generation,page.expected_revision,ids])?;
+        }
+        tx.commit()?;
+        Ok(settled)
+    }
+
     /// Persists a prepared item's manifest so a restart can verify and publish
     /// it without downloading the message again.
     ///
@@ -844,6 +881,11 @@ impl Store {
         // Read from the small gaps index; the planner would otherwise scan
         // every coverage row of the account.
         let undownloadable: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_gaps WHERE account=?1 AND issue IS NOT NULL AND deleted=0 AND issue IN ('item_too_large','malformed_response') AND source_state='unavailable'")?.query_row([account],|r|r.get(0))?;
+        // Messages with an issue are retried only once the listing ends, so
+        // they are not part of its check. Both counts read small indexes.
+        let unseen: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_reconcile WHERE account=?1 AND deleted=0 AND observed_generation<?2")?.query_row(params![account, generation], |r| r.get(0))?;
+        let unseen_issues: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_gaps WHERE account=?1 AND issue IS NOT NULL AND deleted=0 AND observed_generation<?2")?.query_row(params![account, generation], |r| r.get(0))?;
+        let unchecked = unseen.saturating_sub(unseen_issues);
         let count = self.google_mail_count(account)?;
         Ok(GoogleMailCoverage {
             generation,
@@ -856,6 +898,7 @@ impl Store {
             complete_attachments,
             unavailable,
             undownloadable,
+            unchecked,
             listed: count.filter(|c| c.1).map(|c| c.0),
             listing: count.filter(|c| !c.1).map(|c| c.0),
         })
@@ -1081,6 +1124,97 @@ fn insert_lanes(
     Ok(())
 }
 /// Every ID the page names; each needs a committed outcome before the page ends.
+/// Moves an account's mail sync from `generation` to `next` after a retention
+/// change, keeping its place in Gmail history. The caller has already moved
+/// the account to `next` and dropped its pages.
+///
+/// The history lane carries over, so the labels of kept mail stay current.
+/// A finished recent lane carries over too; an unfinished one starts again
+/// from the history lane's position, as the inventory always does, now over
+/// the window starting at `since`. Kept, complete mail counts as seen in
+/// `next`, so the new listing only downloads what is missing.
+///
+/// Returns false and changes nothing when there is no position to keep:
+/// sync never started, or Gmail history expired. The caller then starts sync
+/// over.
+pub(crate) fn carry_mail_lanes(
+    db: &Connection,
+    account: &str,
+    generation: u64,
+    next: u64,
+    since: Option<i64>,
+) -> Result<bool> {
+    let lane = |name: &str| -> Result<Option<(Checkpoint, Option<String>, bool)>> {
+        let row: Option<(String, String, bool)> = db.query_row(
+            "SELECT checkpoint_json,query_json,complete FROM google_live_lanes WHERE account=?1 AND lane=?2 AND generation=?3",
+            params![account, name, generation],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).optional()?;
+        row.map(|(checkpoint, query, complete)| {
+            Ok((
+                serde_json::from_str(&checkpoint)?,
+                serde_json::from_str(&query)?,
+                complete,
+            ))
+        })
+        .transpose()
+    };
+    let (Some(mut delta), Some(mut recent), Some(_)) =
+        (lane("delta")?, lane("recent")?, lane("inventory")?)
+    else {
+        return Ok(false);
+    };
+    // Local state reflects history up to where the lane's scan started, or
+    // up to its last finished scan.
+    let position = match &delta.0.phase {
+        Phase::Delta {
+            start_history_id, ..
+        }
+        | Phase::CatchUp {
+            start_history_id, ..
+        } => Some(start_history_id.clone()),
+        Phase::Idle => delta.0.committed_history_id.clone(),
+        Phase::Full { .. } | Phase::NeedsFullSync => None,
+    };
+    let Some(position) = position else {
+        return Ok(false);
+    };
+    let fresh = Checkpoint::begin_full(
+        AccountId::new(account).map_err(|_| stale())?,
+        next,
+        position.clone(),
+    )
+    .map_err(|_| stale())?;
+    delta.0.generation = next;
+    if recent.2 {
+        recent.0.generation = next;
+    } else {
+        // Recent mail never reaches back past the retention start.
+        let after = recent
+            .1
+            .as_deref()
+            .and_then(|q| q.strip_prefix("after:"))
+            .and_then(|s| s.parse::<i64>().ok());
+        recent.0 = fresh.clone();
+        recent.1 = match (after, since) {
+            (Some(after), Some(since)) => Some(after.max(since)),
+            (after, since) => after.or(since),
+        }
+        .map(|after| format!("after:{after}"));
+    }
+    let inventory = (fresh, since.map(|s| format!("after:{s}")), false);
+    db.execute("DELETE FROM google_live_lanes WHERE account=?1", [account])?;
+    for (name, (checkpoint, query, complete)) in [
+        ("recent", recent),
+        ("inventory", inventory),
+        ("delta", delta),
+    ] {
+        db.execute("INSERT INTO google_live_lanes(account,lane,generation,checkpoint_json,query_json,complete) VALUES(?1,?2,?3,?4,?5,?6)",params![account,name,next,serde_json::to_string(&checkpoint)?,serde_json::to_string(&query)?,complete])?;
+    }
+    db.execute("UPDATE google_mail_coverage SET observed_generation=?3 WHERE account=?1 AND observed_generation=?2 AND deleted=0 AND source_state='retained' AND index_state='indexed' AND attachment_state='complete' AND issue IS NULL",params![account, generation, next])?;
+    Ok(true)
+}
+
 fn planned_ids(plan: &PagePlan) -> BTreeSet<String> {
     plan.observed_message_ids
         .iter()

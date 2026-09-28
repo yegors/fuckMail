@@ -48,6 +48,13 @@ use std::{
 };
 use tokio::sync::{watch, Notify, OwnedSemaphorePermit, Semaphore};
 
+/// Gmail downloads prepared at once across all accounts, besides the slot
+/// kept for new mail. A slot is held through the download's network round
+/// trip, so with one, accounts waited on each other's latency. Each account
+/// still downloads one message at a time. A typical message is far below
+/// 1 MB; the largest Gmail holds needs about twice its size while prepared.
+pub(crate) const GMAIL_PREPARATION_SLOTS: usize = 3;
+
 /// Where a job's transport gets access tokens.
 #[derive(Clone)]
 enum TokenSource {
@@ -737,8 +744,9 @@ impl Runtime {
                 .send_modify(|generation| *generation = generation.wrapping_add(1));
         }
     }
-    /// Creates the runtime with one Gmail and two Calendar preparation slots
-    /// shared by all accounts. `cancel` is the engine's shutdown token.
+    /// Creates the runtime with [`GMAIL_PREPARATION_SLOTS`] Gmail and two
+    /// Calendar preparation slots shared by all accounts. `cancel` is the
+    /// engine's shutdown token.
     pub(crate) fn new(
         core: CoreBridge,
         auth: Arc<google_auth::Runtime>,
@@ -748,7 +756,7 @@ impl Runtime {
             core,
             auth,
             cancel,
-            preparation: Arc::new(Semaphore::new(1)),
+            preparation: Arc::new(Semaphore::new(GMAIL_PREPARATION_SLOTS)),
             delta_preparation: Arc::new(Semaphore::new(1)),
             calendar_preparation: Arc::new(Semaphore::new(2)),
             state: tokio::sync::Mutex::new(RuntimeState {

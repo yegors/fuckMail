@@ -1,9 +1,17 @@
 //! Explicit, local-only retention changes. Provider content is never deleted.
 use crate::{err, Result, Store};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 impl Store {
     pub(crate) fn change_mail_retention(&self, account: &str, since: Option<i64>) -> Result<()> {
+        let generation: Option<u64> = self
+            .db
+            .query_row(
+                "SELECT mail_generation FROM google_accounts WHERE account=?1",
+                [account],
+                |r| r.get(0),
+            )
+            .optional()?;
         // The account_update transaction owns this entire reset. Advancing the
         // generation fences prepared pages from the old acquisition window.
         self.db.execute(
@@ -16,8 +24,22 @@ impl Store {
         )?;
         self.db
             .execute("DELETE FROM google_live_pages WHERE account=?1", [account])?;
-        self.db
-            .execute("DELETE FROM google_live_lanes WHERE account=?1", [account])?;
+        // Keeping the place in Gmail history lets the new window's listing
+        // download only what is missing; without one, sync starts over.
+        let carried = match generation {
+            Some(generation) => crate::google_live_mail::carry_mail_lanes(
+                &self.db,
+                account,
+                generation,
+                generation + 1,
+                since,
+            )?,
+            None => false,
+        };
+        if !carried {
+            self.db
+                .execute("DELETE FROM google_live_lanes WHERE account=?1", [account])?;
+        }
         if let Some(since) = since {
             self.db.execute_batch("CREATE TEMP TABLE IF NOT EXISTS retention_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,remote_id TEXT NOT NULL,source_hash TEXT NOT NULL,source_rowid INTEGER NOT NULL); DELETE FROM retention_messages;")?;
             // Match acquisition's cutoff: Gmail's internal date when known, else
@@ -30,7 +52,11 @@ impl Store {
             purge_messages(&self.db, account)?;
             self.db.execute_batch("DROP TABLE retention_messages")?;
         }
-        self.db.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete'),unavailable=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0) WHERE account=?1",[account])?;
+        if carried {
+            crate::google_live_mail::recount_coverage(&self.db, account)?;
+        } else {
+            self.db.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete'),unavailable=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0) WHERE account=?1",[account])?;
+        }
         Ok(())
     }
 }

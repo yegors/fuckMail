@@ -715,7 +715,7 @@ impl Store {
                 "messages":coverage.observed,"indexed_messages":coverage.indexed,"text_index_complete":coverage.indexed==coverage.observed,
                 "retained_source_records":coverage.retained_sources,"retained_sources":coverage.retained_sources,"source_verification":"verified_on_acquisition",
                 "attachments":null,"recorded_available_attachments":null,"complete_attachments":null,"verified_attachments":null,"attachment_verification":"verified_on_acquisition",
-                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"undownloadable_messages":coverage.undownloadable,"offline_complete":coverage.offline_complete,
+                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"undownloadable_messages":coverage.undownloadable,"unchecked_messages":coverage.unchecked,"offline_complete":coverage.offline_complete,
                 "text":format!("Cached text: {}/{} observed messages. {} source records retained; {} items need attention. {}",coverage.indexed,coverage.observed,coverage.retained_sources,coverage.unavailable,if coverage.offline_complete {"Inventory and catch-up are complete at the last sync."} else {"Full offline acquisition is incomplete."})}),
             );
         }

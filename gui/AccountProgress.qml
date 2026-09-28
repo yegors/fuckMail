@@ -110,20 +110,28 @@ QtObject {
         const dlPct = remote ? Math.min(listing ? 99 : 100, Math.floor((local + skipped) / remote * 100)) : (listing ? 0 : 100)
         const rate = mailRate(account), dlEta = rate > 0 && !counting ? dlLeft / rate : -1
         const soFar = counted > 0 ? " · " + f(counted) + " found" : ""
+        // After Gmail history expires, the listing sees every kept message
+        // again before older mail downloads, and the count stands still.
+        const unchecked = listing ? Number(sync.unchecked_messages || 0) : 0
+        const checking = dlOn && unchecked > 0 && local > 0
+        const checkPct = checking ? Math.min(99, Math.floor((local - unchecked) / local * 100)) : 0
         const left = skipped ? full(skipped) + (skipped === 1 ? " message can't" : " messages can't") + " be downloaded" : ""
         const mail = {
             count: counting ? f(local) : f(local) + " of " + f(remote),
             countTitle: counting ? full(local) + " messages are on this machine · counting what Google has" + (counted > 0 ? ": " + full(counted) + " so far" : "")
                 : full(local) + " of " + full(remote) + " messages are on this machine" + (left ? " · " + left : ""),
-            frac: counting ? 0 : remote ? Math.min(dlPct / 100, (local + skipped) / remote) : (dlDone ? 1 : 0),
+            frac: checking ? (local - unchecked) / local : counting ? 0 : remote ? Math.min(dlPct / 100, (local + skipped) / remote) : (dlDone ? 1 : 0),
+            checking: checking,
             short: err ? (counting ? "Stopped" : "Stopped at " + dlPct + "%") : paused && !dlDone ? (counting ? "Paused" : "Paused at " + dlPct + "%")
+                : checking ? "Checking " + checkPct + "%"
                 : dlOn ? (counting ? (counted > 0 ? "Counting" + soFar : "Counting…") : dlPct + "%" + (dlEta >= 0 ? " · " + shortEta(dlEta) : ""))
                 : "Complete",
             status: err ? (counting ? "Stopped · reconnect" : "Stopped at " + dlPct + "% · reconnect")
                 : paused && !dlDone ? (counting ? "Paused while counting mail in Google" : "Paused at " + dlPct + "% · " + f(dlLeft) + " to go")
+                : checking ? "Checking downloaded mail · " + f(unchecked) + " to go"
                 : dlOn ? (counting ? "Counting mail in Google" + soFar : dlPct + "% · " + f(dlLeft) + " to go" + (dlEta >= 0 ? " · " + eta(dlEta) + " left" : ""))
                 : skipped ? "Download complete" : "All mail is on this machine",
-            label: dlOn ? "Downloading" : "Mail",
+            label: checking ? "Checking" : dlOn ? "Downloading" : "Mail",
             fill: err ? Theme.error : dlOn ? amber : Theme.inkAlpha(.35),
             live: dlOn, eta: dlEta
         }
@@ -184,7 +192,7 @@ QtObject {
             // The tab's underline turns into this bar while the account syncs;
             // while Google's list is still being counted it shows a sliver.
             busy: phase === "dl" || phase === "ai",
-            progress: phase === "dl" ? (counting ? .04 : mail.frac) : phase === "ai" ? ai.frac : 0, progressColor: phase === "dl" ? amber : aiColor}
+            progress: phase === "dl" ? (counting && !mail.checking ? .04 : mail.frac) : phase === "ai" ? ai.frac : 0, progressColor: phase === "dl" ? amber : aiColor}
     }
 
     property Timer poll: Timer {

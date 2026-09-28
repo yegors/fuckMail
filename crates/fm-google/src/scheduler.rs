@@ -156,13 +156,15 @@ impl SchedulerConfig {
             ServiceBudget::from_confirmed_limits(values[2], values[3])?,
         ))
     }
-    /// Uses the given budgets with the default limits: 4 in flight, 2 reads
-    /// per account, 1024 queued and 128 accounts.
+    /// Uses the given budgets with the default limits: 8 in flight, 2 reads
+    /// per account, 1024 queued and 128 accounts. Eight leaves room for a
+    /// download from each of three accounts, their label reads, and the
+    /// slots backfill never takes.
     pub fn new(gmail: ServiceBudget, calendar: ServiceBudget) -> Self {
         Self {
             gmail,
             calendar,
-            max_in_flight: 4,
+            max_in_flight: 8,
             max_reads_per_account: 2,
             max_queued: 1024,
             max_accounts: 128,

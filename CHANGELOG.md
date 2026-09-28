@@ -4,6 +4,7 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-09-27
 
+- Changing an account's mail retention no longer re-checks mail that is already downloaded: only the newly included mail downloads. Accounts download side by side instead of taking turns. When a full re-check is still needed (after a long time offline), progress says "Checking downloaded mail" and moves, instead of looking stuck.
 - Emails that are only a subject (a reminder to yourself, "lunch?") are summarized and labelled from the subject instead of failing with "no text to summarize".
 - Forwarded messages read clearly in text mode: a "Forwarded message" caption, the original's From/Date/To/Subject as a compact block, its text, then the history it quotes, indented with a bar per level. HTML-only mail no longer runs lines together in text mode ("Thanks,KrisOn Thursday…"), including mail downloaded earlier; new mail is searched and previewed with the same cleaner text.
 

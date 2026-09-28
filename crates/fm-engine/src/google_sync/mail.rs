@@ -703,6 +703,8 @@ impl MailWorker {
         let owned_page = page.clone();
         let (blobs, pending, since) = ctx
             .core_call(move |store| {
+                // Mail already kept whole in this generation needs no read.
+                store.google_live_skip_current(&owned_page)?;
                 Ok((
                     store.google_blob_store(),
                     store.google_live_pending(&owned_page, MAX_PART_ITEMS)?,

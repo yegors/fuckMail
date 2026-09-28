@@ -480,7 +480,7 @@ fn actual_quota_configuration_preserves_service_units_and_headroom() {
             config.max_accounts,
             config.max_queued
         ),
-        (4, 2, 128, 1024)
+        (8, 2, 128, 1024)
     );
     let mut missing = limits.clone();
     missing

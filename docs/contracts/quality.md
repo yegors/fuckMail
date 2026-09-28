@@ -1,5 +1,15 @@
 # Quality, performance and release acceptance
 
+## D162 — retention changes and download slots (Quality89)
+
+Gmail42, Core83, Mail UI112 and CLI60. Required checks:
+- widening retention advances the generation, carries the delta checkpoint apart from its generation, restarts the unfinished listings from its history place, and leaves nothing unchecked or unavailable;
+- the wider listing settles kept mail without a read, fetches only new mail and completes;
+- without a history place, a retention change deletes the lanes;
+- a listing settles mail kept by the other lane in the same generation and sets its inventory generation; a history page never settles;
+- after history expires, kept mail without an issue is unchecked until read again;
+- the account card shows "Checking 75%", the hover card names the re-check, and the tab underline follows it.
+
 ## D161 — subject-only summaries (Quality88)
 
 Local assistance28. Required checks:

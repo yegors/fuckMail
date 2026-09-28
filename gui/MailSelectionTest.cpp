@@ -1319,6 +1319,16 @@ public:
                 QVariant whole;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,whole),Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,true));
                 require(whole.toMap()["mail"].toMap()["count"].toString()==QLocale().toString(13204.,'f',0)+" of "+QLocale().toString(21388.,'f',0),"the hover card counts in whole numbers");
             }
+            {
+                // Rechecking kept mail after Gmail history expires moves the bar
+                // and says so, rather than a download that stands still.
+                setSync({{"inventory_complete",false},{"retained_sources",1000},{"observed_messages",1000},{"inventory_total",5000},{"unchecked_messages",250}});
+                await([&]{return text("accountMailStatus_personal")=="Checking 75%";},"a recheck of kept mail shows its own progress");
+                QVariant view;QMetaObject::invokeMethod(qvariant_cast<QObject*>(settings->property("progress")),"view",Q_RETURN_ARG(QVariant,view),Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,false));
+                const auto mail=view.toMap()["mail"].toMap();
+                require(mail["status"].toString()==QString::fromUtf8("Checking downloaded mail · 250 to go"),"the hover card names the recheck");
+                require(qAbs(view.toMap()["progress"].toDouble()-.75)<0.01,"the account tab's underline follows the recheck");
+            }
             setSync({{"inventory_complete",false},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});
             await([&]{return text("accountMailStatus_personal").startsWith("99%");},"mail arriving during the download never shows 100% early");
             setSync({{"inventory_complete",true},{"retained_sources",21400},{"observed_messages",21400},{"inventory_total",21388}});

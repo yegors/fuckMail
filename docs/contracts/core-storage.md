@@ -1,5 +1,14 @@
 # Core and storage
 
+## D162 — carried lanes and settled listings (Core83)
+
+- **`change_mail_retention`** advances `mail_generation` and clears pages and page items as before. It then calls `carry_mail_lanes`. When that returns false, lanes are deleted as before.
+- **`carry_mail_lanes(db, account, generation, next, since)`** needs all three lanes and a history place: `Delta` or `CatchUp` start, or `Idle`'s committed history ID. It rewrites the lanes for `next` (Gmail42) and moves coverage rows kept whole (retained, indexed, attachments complete, no issue) from `generation` to `next`. Coverage metrics are recounted.
+- **`google_live_skip_current(page)`** returns 0 for a complete page, a delta-lane page, a non-`Full` phase or an empty fetch list. Otherwise, in one transaction, it records each listed message kept whole at the page's generation as an applied fetch item, and for inventory pages sets its `last_inventory_generation`. It returns how many it settled.
+- **Coverage** adds `unchecked`: rows not deleted, below the current generation and without an issue.
+
+Consumers: Gmail42, engine mail sync, account and profile JSON, CLI60, Mail UI112; Quality89. Schema 40, live0/demo3 and protocol1 unchanged.
+
 ## D160 — block-aware reading text (Core82)
 
 - **Reading text from HTML:**

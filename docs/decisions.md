@@ -1928,3 +1928,22 @@ The founder found that an email with only a subject ("Dont forget to milk the co
 - **Evidence.** The built-in prompt is unchanged. With synthetic subject-only emails, the founder's local qwen3.8 and gemma4:e4b both wrote one-line "you" summaries from the subject alone and judged the sender correctly.
 
 Local assistance28 and Quality88. No schema, fixture or protocol change.
+
+## D162 — widening retention keeps what is downloaded (2026-09-27T17:30:00Z)
+
+The founder widened retention on three accounts. Two downloaded older mail within hours; the third showed no progress.
+
+- **Found.**
+  - Changing retention advanced the account's mail generation and deleted its sync lanes, so sync started over. Every kept message counted as unseen, and the listing read each one again (labels plus a re-parse of its stored source) before any older mail downloaded.
+  - The stalled account had 51,630 messages kept and was re-checking 49,606 of them at about 1.4 a second. Its count stood still for the whole re-check.
+  - One Gmail preparation slot served every account and was held through each download's network round trip, so accounts took turns waiting on each other's latency.
+- **Change.**
+  - When the account has a place in Gmail history, a retention change keeps it. The history lane carries over to the new generation. Both listings restart from that place, the recent one keeping its window and the inventory taking the new one. Mail kept whole (source, index and attachments, no issue) stays seen in the new generation.
+  - A listing page first settles messages already kept whole in the current generation, with no read. History pages always read, because they report changed labels.
+  - Without a history place (never synced, or history expired), a retention change starts over as before.
+  - When a re-check does run (after Gmail history expires), progress shows it: "Checking N%" and "Checking downloaded mail · N to go", with the bar and the account tab's underline following it.
+  - Three Gmail preparation slots are shared by all accounts, besides the slot kept for new mail. The scheduler's default in-flight limit rises from 4 to 8 so three accounts can download while label reads and new-mail slots stay free.
+- **Memory.** Each slot holds at most one prepared message, so a typical download adds well under a megabyte per slot. Four of Gmail's largest messages prepared at once would need about 1.5 GiB. This bounds the worst case; it is not a measurement.
+- **Not measured.** The speed-up from three slots has not been measured on the founder's accounts yet.
+
+Gmail42, Core83, Mail UI112, CLI60 and Quality89. No schema, fixture or protocol change.

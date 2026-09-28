@@ -1,5 +1,14 @@
 # Gmail provider
 
+## D162 — keep downloaded mail across retention changes (Gmail42)
+
+- **Retention change with a history place.** The delta lane carries to the new generation unchanged apart from its generation. A complete recent lane stays complete; an unfinished one restarts as a full listing from that history place, starting at the later of its old start and the new one. The inventory restarts as a full listing of the new window from the same place.
+- **Retention change without one** (no delta lane, or a delta lane that is `Full` or `NeedsFullSync`): lanes are deleted and sync starts over, as before.
+- **Listing pages** skip the read for a message already kept whole in the current generation. History pages never skip.
+- **Preparation.** Three shared Gmail preparation slots plus the one kept for new mail. The scheduler's default `max_in_flight` is 8; backfill still leaves `ceil(max/4)` slots free and each account still gets at most 2 reads.
+
+Consumers: Core83, engine mail sync and scheduler; Quality89.
+
 ## D159 — every message Gmail holds downloads (Gmail41)
 
 - The raw bound is 160 MiB of decoded source, above Gmail's 150 MB import limit. The raw and draft-get reply cap is its base64url length plus 1 MiB of envelope.

@@ -183,10 +183,20 @@ Gmail accepts imported messages up to 150 MB ([upload limits](https://developers
 **Memory.** These figures are arithmetic, not measurements. A source of S bytes arrives as about 1.33·S of JSON.
 - **Before:** the reply buffer (grown by doubling), a copied base64url string and the decoded source were all live, about 3.3·S plus up to 1.33·S of regrowth.
 - **Now:** the buffer is sized by the declared length, the string reuses it, and decoding runs in place. That is about 1.33·S, plus the parser's decoded attachment parts (up to about S).
-- **Concurrency:** at most two raw bodies are prepared at once, through the engine's two preparation permits.
+- **Concurrency:** at most four raw bodies are prepared at once: three shared download slots and one for new mail (see below).
 
 **Still open:**
 - Re-preparing a retained source base64-encodes it again, about 2.3·S at peak.
 - Raw downloads still buffer in memory rather than streaming to disk.
 - Extracted text stays capped at 256 KiB, with the source kept whole.
 - Header bounds still hold a message back as `header_limit`.
+
+## Retention changes and download slots (2026-09-27)
+
+The founder widened retention on three accounts; one showed no progress for hours. Read from the profile's engine log and store, with no message contents:
+
+- The retention change had advanced the account's generation and deleted its lanes, so 49,606 of its 51,630 kept messages counted as unseen. The listing re-read each one's labels and re-parsed its stored source before downloading older mail.
+- That re-check ran at about 1.4 messages a second, about 10 hours in all, and the progress count did not move. It had finished by the time of the fix.
+- One preparation slot served every account and was held through the network round trip, so the three accounts took turns. The scheduler budgets each account 4,800 Gmail units a minute (6,000 less 20% headroom). A raw read and a label read each cost 20 units, so one account can reach about 4 reads a second: roughly three times what one shared slot gave, and the ceiling for the new slots.
+
+Change (D162): a retention change keeps the history place and the kept mail, listings skip mail already kept whole, and three shared slots replace one. The new rate has not been measured on the founder's accounts yet; record it here when it is.

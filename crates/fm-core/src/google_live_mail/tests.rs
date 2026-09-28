@@ -1120,3 +1120,182 @@ fn large_sources_and_many_attachments_are_published_whole() {
         .unwrap();
     assert_eq!(counts, [(1, big.len() as i64), (60, 100)]);
 }
+
+fn history_position(checkpoint: &Checkpoint) -> String {
+    match &checkpoint.phase {
+        Phase::Delta {
+            start_history_id, ..
+        }
+        | Phase::CatchUp {
+            start_history_id, ..
+        } => start_history_id.clone(),
+        _ => checkpoint.committed_history_id.clone().unwrap(),
+    }
+}
+
+#[test]
+fn widening_retention_keeps_history_and_lists_only_missing_mail() {
+    let (_directory, mut store, account) = setup();
+    let page = begin_list(&mut store, &account, MailLane::Inventory, &["a", "b"], None);
+    for id in ["a", "b"] {
+        let item = prepared(&store, &page, id, raw(id, "110", id));
+        publish(&mut store, &page, item);
+    }
+    store.google_live_finish_page(&page).unwrap();
+    let history = catch_up(&mut store, &account, "120", &[], &[]);
+    store.google_live_finish_page(&history).unwrap();
+    let delta = checkpoint(&store, &account, MailLane::Delta);
+    let recent_query = store.google_live_lanes(&account).unwrap()[0].query.clone();
+    let generation = store.google_live_coverage(&account).unwrap().generation;
+
+    store.change_mail_retention(&account, None).unwrap();
+    let coverage = store.google_live_coverage(&account).unwrap();
+    assert_eq!(coverage.generation, generation + 1);
+    // Kept mail stays seen: nothing to check, nothing unavailable.
+    assert_eq!(
+        (
+            coverage.unchecked,
+            coverage.unavailable,
+            coverage.retained_sources
+        ),
+        (0, 0, 2)
+    );
+    // The history lane keeps its place; the listings start over from it.
+    assert_eq!(
+        checkpoint(&store, &account, MailLane::Delta),
+        Checkpoint {
+            generation: generation + 1,
+            ..delta.clone()
+        }
+    );
+    let lanes = store.google_live_lanes(&account).unwrap();
+    for lane in [MailLane::Recent, MailLane::Inventory] {
+        let state = lanes.iter().find(|l| l.lane == lane).unwrap();
+        assert!(!state.complete);
+        assert_eq!(
+            state.checkpoint.phase,
+            Phase::Full {
+                baseline_history_id: history_position(&delta),
+                page_token: None
+            }
+        );
+    }
+    assert_eq!(lanes[0].query, recent_query);
+    assert_eq!(
+        lanes
+            .iter()
+            .find(|l| l.lane == MailLane::Inventory)
+            .unwrap()
+            .query,
+        None
+    );
+
+    // The wider listing settles kept mail without a read and fetches the rest.
+    let page = begin_list(
+        &mut store,
+        &account,
+        MailLane::Inventory,
+        &["a", "b", "c"],
+        None,
+    );
+    assert_eq!(store.google_live_skip_current(&page).unwrap(), 2);
+    assert_eq!(store.google_live_skip_current(&page).unwrap(), 0);
+    let pending = store.google_live_pending(&page, 10).unwrap();
+    assert_eq!(
+        pending
+            .iter()
+            .map(|p| p.remote_id.as_str())
+            .collect::<Vec<_>>(),
+        ["c"]
+    );
+    let item = prepared(&store, &page, "c", raw("c", "125", "charlie"));
+    publish(&mut store, &page, item);
+    store.google_live_finish_page(&page).unwrap();
+    assert_eq!(count(&store, &account), 3);
+    let coverage = store.google_live_coverage(&account).unwrap();
+    assert!(coverage.inventory_complete);
+    assert_eq!((coverage.retained_sources, coverage.unavailable), (3, 0));
+}
+
+#[test]
+fn retention_without_a_history_position_starts_sync_over() {
+    let (_directory, mut store, account) = setup();
+    let page = begin_list(&mut store, &account, MailLane::Inventory, &["a"], None);
+    let item = prepared(&store, &page, "a", raw("a", "110", "alpha"));
+    publish(&mut store, &page, item);
+    store
+        .db
+        .execute(
+            "UPDATE google_live_lanes SET checkpoint_json=json_set(checkpoint_json,'$.phase','NeedsFullSync') WHERE account=?1 AND lane='delta'",
+            [&account],
+        )
+        .unwrap();
+    store.change_mail_retention(&account, None).unwrap();
+    assert!(store.google_live_lanes(&account).unwrap().is_empty());
+    assert_eq!(store.google_live_coverage(&account).unwrap().unavailable, 1);
+}
+
+#[test]
+fn listings_settle_mail_already_kept_this_generation_but_history_never_does() {
+    let (_directory, mut store, account) = setup();
+    let recent = begin_list(&mut store, &account, MailLane::Recent, &["a"], None);
+    let item = prepared(&store, &recent, "a", raw("a", "110", "alpha"));
+    publish(&mut store, &recent, item);
+    store.google_live_finish_page(&recent).unwrap();
+    // The inventory lists the recent message again: nothing to read for it.
+    let page = begin_list(&mut store, &account, MailLane::Inventory, &["a", "b"], None);
+    assert_eq!(store.google_live_skip_current(&page).unwrap(), 1);
+    let pending = store.google_live_pending(&page, 10).unwrap();
+    assert_eq!(
+        pending
+            .iter()
+            .map(|p| p.remote_id.as_str())
+            .collect::<Vec<_>>(),
+        ["b"]
+    );
+    let last: Option<i64> = store
+        .db
+        .query_row(
+            "SELECT last_inventory_generation FROM google_mail_coverage WHERE account=?1 AND remote_id='a'",
+            [&account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(last, Some(1));
+    // A history page names changed labels; it always reads them.
+    let history = catch_up(&mut store, &account, "120", &["a"], &[]);
+    assert_eq!(store.google_live_skip_current(&history).unwrap(), 0);
+    assert_eq!(store.google_live_pending(&history, 10).unwrap().len(), 1);
+}
+
+#[test]
+fn after_history_expires_kept_mail_is_unchecked_until_listed_again() {
+    let (_directory, mut store, account) = setup();
+    let page = begin_list(
+        &mut store,
+        &account,
+        MailLane::Inventory,
+        &["a", "b", "huge"],
+        None,
+    );
+    for (id, outcome) in [
+        ("a", raw("a", "110", "alpha")),
+        ("b", raw("b", "110", "bravo")),
+        ("huge", RawOutcome::TooLarge),
+    ] {
+        let item = prepared(&store, &page, id, outcome);
+        publish(&mut store, &page, item);
+    }
+    assert_eq!(store.google_live_coverage(&account).unwrap().unchecked, 0);
+    store
+        .google_live_resync(&account, 1, "300", 1800000000)
+        .unwrap();
+    // The one with an issue waits for the end, not for the listing.
+    assert_eq!(store.google_live_coverage(&account).unwrap().unchecked, 2);
+    let page = begin_list(&mut store, &account, MailLane::Inventory, &["a"], None);
+    // Its labels may have changed while history was lost, so it is read.
+    assert_eq!(store.google_live_skip_current(&page).unwrap(), 0);
+    let item = prepared(&store, &page, "a", raw("a", "310", "alpha"));
+    publish(&mut store, &page, item);
+    assert_eq!(store.google_live_coverage(&account).unwrap().unchecked, 1);
+}
