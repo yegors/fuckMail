@@ -30,7 +30,7 @@ QVariantMap MailBackend::queuedOutgoing(const QJsonObject &params) const {
         {"request_id",params.value("request_id").toString()},{"request",params.toVariantMap()},{"draft_id",params.value("draft_id").toString()},
         {"draft_revision",params.value("expected_revision").toInteger()},{"state","queued"},
         {"headers",headers},{"text",m_draft.value("body").toString() + (m_draft.value("signature_text").toString().isEmpty() ? "" : "\n\n" + m_draft.value("signature_text").toString())},
-        {"conversation_id", mode == "reply" || mode == "reply_all" ? m_draft.value("conversation_id").toString() : QString{}},
+        {"conversation_id", mode == "reply" || mode == "reply_all" || mode == "forward" ? m_draft.value("conversation_id").toString() : QString{}},
         {"attachments",m_draft.value("attachments",QVariantList{})},{"created_at",QDateTime::currentSecsSinceEpoch()}};
 }
 

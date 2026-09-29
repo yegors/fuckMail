@@ -13,7 +13,7 @@ A native desktop mail and calendar client for Gmail and Google Workspace, with a
 
 </details>
 
-Screenshots use the built-in demo profile (`fuckmail-gui --demo-profile`); every name and message in them is synthetic.
+Screenshots use the built-in demo profile (`fuckMail --demo-profile`); every name and message in them is synthetic.
 
 ## What it does
 

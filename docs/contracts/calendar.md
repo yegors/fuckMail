@@ -2,6 +2,21 @@
 
 
 
+## D166 — no scope banner (Calendar41)
+
+- Calendar no longer names a hidden-calendar or current-account restriction above the grid, and has no Show all button there. The header's All calendars switch does what Show all did: clears `selected_calendars` and sets `calendar_account_visibility` to `all`. This replaces the banner described under Calendar coverage below.
+- Month's weekday header is 36 px. It no longer takes the all-day band height, which stays shared by Day and Week so their hour axis does not move.
+
+Consumers: `CalendarView`; CalendarControlsTest.
+
+## D163 — reminders that reach you (Calendar40)
+
+- **Sound.** Every platform plays the same three generated tones: a soft chime when the reminder appears, a loud rising triple (played twice) at one minute, and a two-tone alarm at the start. Windows uses PlaySound; macOS and Linux play them through Qt Multimedia at full effect volume instead of the system beep. The repeat cadence and Mute are unchanged. Headless (offscreen) runs stay silent.
+- **Bring forward.** A due reminder asks once at one minute and once at the start, muted or not, and never in View or after it was dismissed or snoozed. Showing the same reminder again at a level already reached does not ask again. The window is restored if minimized, raised and activated. macOS also activates the app, orders the window in front regardless and bounces the Dock icon until the user looks; Windows lifts its foreground lock by sharing the foreground thread's input, briefly makes the window topmost and flashes the taskbar button if focus was still refused; Linux sets the urgency hint. While any reminder is open, macOS holds an activity so App Nap does not delay the countdown.
+- **Typing.** For one second after a due reminder appears or comes forward, S, M, Return/Enter and Escape do nothing, and auto-repeat never acts. Clicks work at once. When it closes, focus returns to the item that had it, if that item is still visible and enabled and nothing else has taken focus.
+
+Consumers: none outside the GUI. Real sound and window raising are verified only on a desktop session; tests check when they are requested.
+
 ## D146 — search dropdown holds its answer (Calendar39)
 
 - `CalendarSearchPopup` shows the last finished `calendar_search` answer while the next one runs: its matches, "7+", "No events match" and its status. A status the backend sets while busy (opening a match) shows at once.

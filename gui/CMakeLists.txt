@@ -77,7 +77,9 @@ target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm dwmapi)
 endif()
+# The program, bundle and Dock name is fuckMail; fuckmail-gui stays the target.
 set_target_properties(fuckmail-gui PROPERTIES
+    OUTPUT_NAME "fuckMail"
     MACOSX_BUNDLE_BUNDLE_NAME "fuckMail"
     MACOSX_BUNDLE_GUI_IDENTIFIER "com.fuckmail.desktop"
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
@@ -92,13 +94,14 @@ elseif(APPLE)
     target_sources(fuckmail-gui PRIVATE app-icon/app-icon.icns)
     set_source_files_properties(app-icon/app-icon.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
-# The native title bar follows the theme; macOS needs AppKit for its colour.
+# The native title bar follows the theme, and meeting reminders bring the window
+# forward; macOS needs AppKit for both.
 if(APPLE)
     enable_language(OBJCXX)
-    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.mm)
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.mm WindowAttention.h WindowAttention.mm)
     target_link_libraries(fuckmail-gui PRIVATE "-framework AppKit")
 else()
-    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.cpp)
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.cpp WindowAttention.h WindowAttention.cpp)
 endif()
 # Qt's Windows runtime layout differs from the Unix subdirectory layout. Let
 # developer launchers consume the generator's actual path rather than guess it.
@@ -247,6 +250,15 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-send-undo COMMAND gui-send-undo-test)
     set_tests_properties(gui-send-undo PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-reply-stability-test ReplyStabilityTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
+    target_link_libraries(gui-reply-stability-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-reply-stability-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-reply-stability-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-reply-stability-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-reply-stability COMMAND gui-reply-stability-test)
+    set_tests_properties(gui-reply-stability PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-draft-discard-test DraftDiscardTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
     target_link_libraries(gui-draft-discard-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-draft-discard-test PRIVATE cxx_std_20)

@@ -4,7 +4,10 @@ import QtQuick.Layouts
 import QtQuick.Effects
 
 // One full-screen event screen for due reminders and for View on an event
-// card. Viewing never acknowledges, snoozes or plays a sound on opening.
+// card. Viewing never acknowledges, snoozes or plays a sound on opening. A due
+// reminder brings the window forward once at one minute and once at the start.
+// It can appear mid-typing, so for a moment after it appears or comes forward
+// its keys do nothing, and when it closes the cursor goes back where it was.
 Item {
     id: panel
     // View mode: the host closes the screen.
@@ -22,10 +25,16 @@ Item {
     // again at that level (after a refresh hid it) stays silent; only Snooze
     // or Dismiss forgets it.
     property var heard: ({})
-    // Sounds played since this event was shown.
+    // Sounds played, and bring-forward requests made, since this event was shown.
     property int chimes: 0
+    property int summons: 0
     property double nowMs: Date.now()
     property bool muted: false
+    // S, M, Return and Escape do nothing while this is set: the keys that
+    // follow the reminder's appearance were meant for what the user was typing.
+    property bool keysGuarded: false
+    // What had focus before a due reminder took it; it gets it back on close.
+    property Item returnFocus: null
     // All-day dates are local midnights; timed values carry their offset.
     function instant(value) {
         const text = String(value || ""), day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
@@ -74,16 +83,42 @@ Item {
     function snooze() { if (canSnooze) { forget(); backend.snoozeCalendarReminder(event) } }
     function dismiss() { if (viewing) closeRequested(); else { forget(); backend.dismissCalendarReminder(event) } }
     function play() { if (!muted && backend.playReminderSound) { backend.playReminderSound(level); ++chimes } }
+    // Mute silences the sound only; the window still comes forward.
+    function summon() { if (!viewing && !ended && level > 0 && backend.requestReminderAttention) { backend.requestReminderAttention(); ++summons; guardKeys() } }
+    function guardKeys() { if (!viewing) { keysGuarded = true; keyGuard.restart() } }
+    function keyAllowed(key) { return !keysGuarded && !key.isAutoRepeat }
+    // Whether focus on this item is focus on the reminder: the item is the
+    // reminder, inside it, or a scope around it that focus fell back to.
+    function ours(item) {
+        for (let at = item; at; at = at.parent) if (at === panel) return true
+        for (let at = panel.parent; at; at = at.parent) if (at === item) return true
+        return false
+    }
+    function takeFocus() {
+        const window = panel.Window.window, current = window ? window.activeFocusItem : null
+        if (!viewing && current && !ours(current)) returnFocus = current
+        forceActiveFocus()
+    }
+    // Only while the focus is still the reminder's, so nothing else is overridden.
+    function restoreFocus() {
+        const target = returnFocus, window = panel.Window.window, current = window ? window.activeFocusItem : null
+        returnFocus = null
+        if (target && target.visible && target.enabled && (!current || ours(current))) target.forceActiveFocus()
+    }
     function reveal() {
         if (!visible || !event.account || presentedIdentity === eventIdentity) return
-        nowMs = Date.now(); presentedIdentity = eventIdentity; forceActiveFocus()
+        nowMs = Date.now(); presentedIdentity = eventIdentity; takeFocus(); guardKeys()
         revealedLevel = level
         const seen = heard[eventIdentity]
         if (seen !== undefined && level <= seen) { soundedLevel = seen; return }
-        muted = false; chimes = 0; soundedLevel = level; remember(level)
-        if (!viewing && !ended) play()
+        muted = false; chimes = 0; summons = 0; soundedLevel = level; remember(level)
+        if (!viewing && !ended) { play(); summon() }
     }
-    onVisibleChanged: { if (visible) reveal(); else { backend.stopReminderSound(); presentedIdentity = ""; soundedLevel = -1 } }
+    onVisibleChanged: {
+        if (visible) { reveal(); return }
+        backend.stopReminderSound(); presentedIdentity = ""; soundedLevel = -1
+        keysGuarded = false; keyGuard.stop(); restoreFocus()
+    }
     onMutedChanged: if (muted) backend.stopReminderSound()
     onEventIdentityChanged: reveal()
     // Viewing sounds only when the one-minute or start point passes while open,
@@ -92,15 +127,17 @@ Item {
         if (!visible || presentedIdentity !== eventIdentity || level <= soundedLevel) return
         soundedLevel = level; remember(level)
         if (!ended && (!viewing || secondsLeft > -60)) play()
+        summon()
     }
     onEndedChanged: if (ended) backend.stopReminderSound()
-    Keys.onReturnPressed: primary()
-    Keys.onEnterPressed: primary()
-    Keys.onEscapePressed: dismiss()
+    Keys.onReturnPressed: function(key) { if (keyAllowed(key)) primary() }
+    Keys.onEnterPressed: function(key) { if (keyAllowed(key)) primary() }
+    Keys.onEscapePressed: function(key) { if (keyAllowed(key)) dismiss() }
     Keys.onPressed: function(key) {
-        if (key.key === Qt.Key_S && canSnooze) { snooze(); key.accepted = true }
-        if (key.key === Qt.Key_M) { muted = !muted; key.accepted = true }
+        if (key.key === Qt.Key_S && canSnooze) { if (keyAllowed(key)) snooze(); key.accepted = true }
+        if (key.key === Qt.Key_M) { if (keyAllowed(key)) muted = !muted; key.accepted = true }
     }
+    Timer { id: keyGuard; interval: 1000; onTriggered: panel.keysGuarded = false }
     Timer { interval: 1000; repeat: true; running: panel.visible; onTriggered: panel.nowMs = Date.now() }
     Timer {
         interval: panel.level === 2 && panel.secondsLeft > -30 ? 2600 : 8000; repeat: true

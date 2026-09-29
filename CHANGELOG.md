@@ -2,6 +2,20 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-09-28
+
+- Sending a reply keeps the thread still: the message you answered stays open, the reply box turns into your sent message with a short fade, and the reader never scrolls past the end into blank space. While Gmail takes the message, a thin line sweeps along the bottom of the box.
+- Forwarding a message keeps the forward in the thread it came from, as Gmail does, instead of starting a new conversation. Forwards sent before this stay where they are.
+- Hiding a thread's earlier messages keeps them hidden. They no longer unfold again a few seconds later in threads where one of them had been opened.
+- The reply editor keeps its cursor while a draft saves, syncs to Gmail or the thread refreshes.
+- The app is called fuckMail everywhere: the macOS app, Dock and app switcher, the Windows program and the Linux binary (it was "fuckmail-gui"). The Dock shows the app's icon instead of the generic one, even for development builds, and small icons (third-party docks, lists) show it too instead of a blank tile.
+- Calendar no longer shows the "Showing N of M calendars" banner; the All calendars switch shows every calendar.
+- Month view no longer leaves an empty gap above the grid where Day and Week show all-day events; the weekday names sit right on top of the month.
+- The account "…" menu in Settings → Accounts no longer greys out the screen behind it.
+- Meeting reminders ring loudly on macOS and Linux too (they used the quiet system beep), with a clearer alarm at one minute before and at the start. Mute still silences them.
+- At one minute before and at the start, a reminder you have not dismissed brings the window to the front, even from behind other windows or minimized. On macOS the Dock icon bounces if focus is refused; on Windows the taskbar button flashes.
+- A reminder that appears while you type no longer snoozes, joins or closes from the keys you were already typing, and the cursor returns to where you were once it closes.
+
 ## 2026-09-27
 
 - Changing an account's mail retention no longer re-checks mail that is already downloaded: only the newly included mail downloads. Accounts download side by side instead of taking turns. When a full re-check is still needed (after a long time offline), progress says "Checking downloaded mail" and moves, instead of looking stuck.

@@ -209,8 +209,8 @@ def gui_binary(preset, installed=None):
         return Path(metadata.read_text(encoding="utf-8").strip())
     base = Path(installed)
     if HOST == "Darwin":
-        return base / MAC_APP / "Contents" / "MacOS" / "fuckmail-gui"
-    return base / "bin" / ("fuckmail-gui" + SUFFIX)
+        return base / MAC_APP / "Contents" / "MacOS" / "fuckMail"
+    return base / "bin" / ("fuckMail" + SUFFIX)
 
 
 def package_environment():
@@ -366,7 +366,7 @@ INSTALL_NOTES = {
         "Uninstall by deleting the app. Your mail data in ~/Library/Application Support/fuckMail is kept.\n"
         "The fm CLI is in fuckMail.app/Contents/MacOS.\n"),
     "Linux": (
-        "Launch bin/fuckmail-gui. Move the folder to install; delete it to uninstall.\n"
+        "Launch bin/fuckMail. Move the folder to install; delete it to uninstall.\n"
         "Your mail data in ~/.local/share/fuckMail is kept. The fm CLI is in bin.\n"),
 }
 
@@ -429,8 +429,6 @@ def package(preset):
     if stage.exists():
         shutil.rmtree(stage)
     run(managed_tool("cmake"), "--install", build, "--prefix", stage, env=env)
-    if HOST == "Darwin":
-        (stage / "fuckmail-gui.app").rename(stage / MAC_APP)
     if WINDOWS:
         # Per-user installs cannot run vc_redist, so the MSVC runtime ships beside the executables.
         missing = [dll for dll in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll") if not (stage / "bin" / dll).is_file()]

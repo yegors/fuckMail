@@ -454,7 +454,7 @@ Rectangle {
         }
     }
     Popup {
-        id: accountActions; parent: Overlay.overlay; width: 200; padding: 5; modal: true; focus: true
+        id: accountActions; parent: Overlay.overlay; width: 200; padding: 5; focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
         contentItem: ColumnLayout {

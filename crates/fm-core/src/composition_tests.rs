@@ -308,8 +308,8 @@ fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attac
     assert_eq!(forward["subject"], "Fwd: Frozen source context");
     assert_eq!(forward["to_recipients"], json!([]));
     assert_eq!(forward["attachment_ids"], json!([]));
-    assert_eq!(forward["references"], json!([]));
-    assert!(forward["reply_to_message_id"].is_null());
+    assert_eq!(forward["references"], json!(["<ancestor@fixture.example>"]));
+    assert_eq!(forward["reply_to_message_id"], "<original@fixture.example>");
     assert!(forward["body"]
         .as_str()
         .unwrap()
@@ -355,7 +355,10 @@ fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attac
     let bytes = std::fs::read(captured["path"].as_str().unwrap()).unwrap();
     let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
     assert_eq!(parsed.subject(), Some("Fwd: Frozen source context"));
-    assert!(parsed.in_reply_to().as_text().is_none());
+    assert_eq!(
+        parsed.in_reply_to().as_text(),
+        Some("original@fixture.example")
+    );
     assert_eq!(parsed.attachments().count(), 0);
     assert!(parsed.body_text(0).unwrap().contains("Human preface"));
 }

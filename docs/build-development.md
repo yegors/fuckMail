@@ -61,7 +61,7 @@ scripts/dev.sh run --preset release -- --demo-profile
 scripts/dev.sh cli --preset release -- --demo-profile --account windscribe mail list --limit 5
 ```
 
-Builds copy `fm` and `fm-engine` next to the GUI executable, as packages do. The CLI needs no Qt or display. `fm --help` and `fuckmail-gui --help` list every option; `--fixture-clock` pins the GUI to the demo data's date, 11 September 2026.
+Builds copy `fm` and `fm-engine` next to the GUI executable, as packages do. The CLI needs no Qt or display. `fm --help` and `fuckMail --help` list every option; `--fixture-clock` pins the GUI to the demo data's date, 11 September 2026.
 
 For quick UI compiles, configure a separate build directory with `-DFM_GUI_ONLY=ON`. It builds only the Qt client, so the result can't run on its own.
 
@@ -131,7 +131,7 @@ Known timing issues: `gui-startup-recovery` can time out when cargo rebuilds ins
 
 - **Windows:** `fuckMail-<version>-<commit>-windows-amd64-setup.exe`, built with Inno Setup from [scripts/windows-installer.iss](../scripts/windows-installer.iss). It installs for the current user in `%LOCALAPPDATA%\Programs\fuckMail` without an admin prompt, with a Start menu entry, an optional desktop icon and an uninstaller under Settings → Apps. Upgrades replace the program files. The MSVC runtime DLLs ship beside the executables, because a per-user install can't run `vc_redist`.
 - **macOS:** `fuckMail-<version>-<commit>-macos-<arch>.dmg` with `fuckMail.app` and an Applications shortcut, made with `hdiutil`. The script mounts the image and verifies the app's code signature. `fm` and `fm-engine` are in `fuckMail.app/Contents/MacOS`.
-- **Linux:** `fuckMail-<version>-<commit>-linux-<arch>.tar.gz` of the staged folder; start `bin/fuckmail-gui`.
+- **Linux:** `fuckMail-<version>-<commit>-linux-<arch>.tar.gz` of the staged folder; start `bin/fuckMail`.
 
 The version comes from `project(fuckMail VERSION ...)` in [CMakeLists.txt](../CMakeLists.txt). On Windows and Linux the executables are in `bin/`. Nothing puts `fm` on PATH; call it by its full path.
 

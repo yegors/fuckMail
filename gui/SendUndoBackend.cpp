@@ -79,7 +79,9 @@ void MailBackend::queueGoogleSend(const QJsonObject &params) {
     send.deadline = m_actionClock.elapsed() + m_sendUndoMs;
     m_queuedSends.insert(key, send);
     refreshOutgoingPresentation();
-    remember("replyOpen", false); emit presentationChanged(); emit draftChanged();
+    // MailView closes the box as the sent message appears; re-applying the
+    // saved view here would move the reader to a stale position.
+    remember("replyOpen", false); emit draftChanged();
     if (m_sendUndoMs > 0) showActionToast("Sending to " + send.recipientNames, "undo_send", {{"key", key}}, m_sendUndoMs);
     else {
         const bool attachments = !m_draft.value("attachment_ids").toList().isEmpty();

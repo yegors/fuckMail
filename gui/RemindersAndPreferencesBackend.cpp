@@ -1,6 +1,7 @@
-// MailBackend's event reminders and new-mail notifications, the clock, calendar
-// navigation and sources, preferences and account settings, mail filters, sender
-// cards, search highlighting, draft field edits and demo-profile send captures.
+// MailBackend's event reminders, their alarm sound and bring-forward request,
+// new-mail notifications, the clock, calendar navigation and sources, preferences
+// and account settings, mail filters, sender cards, search highlighting, draft
+// field edits and demo-profile send captures.
 #include "MailBackend.h"
 #include "CalendarLayout.h"
 #include "SearchMatch.h"
@@ -12,6 +13,12 @@
 #include <QDesktopServices>
 #include <QApplication>
 #include <QThreadPool>
+#include <QGuiApplication>
+#include <QDir>
+#ifndef Q_OS_WIN
+#include <QSoundEffect>
+#include <QTemporaryFile>
+#endif
 #include <cmath>
 #include <algorithm>
 #ifdef Q_OS_WIN
@@ -51,6 +58,38 @@ bool reminderReceiptMatches(const QJsonObject &receipt, const QVariantMap &event
         && receipt["state"].toString() == state && reminderKey(current) == reminderKey(event)
         && !current.value("busy_only").toBool() && !current.value("cancelled").toBool()
         && current.value("self_response").toString() != "declined";
+}
+// A reminder tone as 16-bit mono WAV. Level 0 is a soft chime when the
+// reminder appears, 1 a rising triple played twice at one minute, 2 a two-tone
+// alarm at the start. The UI controls the repeat cadence; each note has a soft
+// envelope so stopping one cannot click loudly.
+QByteArray reminderWave(int level) {
+    constexpr int rate = 44100;
+    struct Note { double hz; double seconds; };  // 0 Hz is a rest
+    const QList<Note> notes = level == 0 ? QList<Note>{{660,0.16},{880,0.24}}
+        : level == 1 ? QList<Note>{{880,0.11},{1175,0.11},{1568,0.2},{0,0.12},{880,0.11},{1175,0.11},{1568,0.26}}
+        : QList<Note>{{880,0.17},{660,0.17},{880,0.17},{660,0.17},{880,0.17},{660,0.24}};
+    // Peak level: a gentle chime, then loud alarms. Square waves sound louder
+    // than triangles at the same peak.
+    const double peak = level == 0 ? 11000 : level == 1 ? 20000 : 13000;
+    QByteArray pcm;
+    for (const auto &note : notes) {
+        const int samples = int(rate * note.seconds);
+        for (int i=0; i<samples; ++i) {
+            const double phase = std::fmod(note.hz * i / rate, 1.0);
+            const double wave = note.hz <= 0 ? 0.0 : level == 0 ? std::sin(phase * 6.283185307179586)
+                : level == 1 ? 1.0 - 4.0 * std::abs(phase - 0.5)
+                : (phase < 0.5 ? 1.0 : -1.0);
+            const double envelope = std::min({1.0, i / (rate * 0.012), (samples-i-1) / (rate * 0.02)});
+            const qint16 value = qint16(wave * std::max(0.0,envelope) * peak);
+            pcm.append(char(value & 0xff)); pcm.append(char((value >> 8) & 0xff));
+        }
+    }
+    QByteArray wav; wav.reserve(44+pcm.size());
+    auto u16=[&wav](quint16 v){wav.append(char(v&255));wav.append(char((v>>8)&255));};
+    auto u32=[&wav](quint32 v){for(int i=0;i<4;++i)wav.append(char((v>>(8*i))&255));};
+    wav.append("RIFF",4);u32(36+pcm.size());wav.append("WAVEfmt ",8);u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);wav.append("data",4);u32(pcm.size());wav.append(pcm);
+    return wav;
 }
 QVariantList notificationAccounts(const QVariantList &accounts) {
     QVariantList result;
@@ -171,45 +210,43 @@ void MailBackend::pollNotifications() {
 void MailBackend::dismissCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false); }
 void MailBackend::joinCalendarEvent(const QVariantMap &event) { acknowledgeCalendarReminder(event, true); }
 void MailBackend::snoozeCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false, true); }
+// The alarm itself. Windows plays it through PlaySound; elsewhere Qt
+// Multimedia plays it from a temporary file at full volume, because the system
+// beep is the alert sound at the alert volume, which is often quiet or silent.
 void MailBackend::playReminderSound(int level) {
     if (level < 0 || level > 2 || m_shutdown) return;
+    // Headless runs have no one to hear it.
+    if (QGuiApplication::platformName() == QLatin1String("offscreen") || QGuiApplication::platformName() == QLatin1String("minimal")) return;
+    const auto wave = reminderWave(level);
 #ifdef Q_OS_WIN
-    // Build a short PCM waveform in memory. The UI controls repeat cadence;
-    // each tone has a soft envelope so stopping one cannot click loudly.
-    constexpr int rate = 22050;
-    struct Note { double hz; double seconds; };
-    const QList<Note> notes = level == 0 ? QList<Note>{{660,0.16},{880,0.22}}
-        : level == 1 ? QList<Note>{{880,0.11},{1175,0.11},{1568,0.18}}
-        : QList<Note>{{880,0.17},{660,0.17},{880,0.17},{660,0.17}};
-    QByteArray pcm;
-    for (const auto &note : notes) {
-        const int samples = int(rate * note.seconds);
-        for (int i=0; i<samples; ++i) {
-            const double phase = std::fmod(note.hz * i / rate, 1.0);
-            const double wave = level == 0 ? std::sin(phase * 6.283185307179586)
-                : level == 1 ? 1.0 - 4.0 * std::abs(phase - 0.5)
-                : (phase < 0.5 ? 1.0 : -1.0);
-            const double envelope = std::min({1.0, i / (rate * 0.012), (samples-i-1) / (rate * 0.02)});
-            const qint16 value = qint16(wave * std::max(0.0,envelope) * (level == 2 ? 4800 : 3000));
-            pcm.append(char(value & 0xff)); pcm.append(char((value >> 8) & 0xff));
-        }
-    }
-    QByteArray wav; wav.reserve(44+pcm.size());
-    auto u16=[&wav](quint16 v){wav.append(char(v&255));wav.append(char((v>>8)&255));};
-    auto u32=[&wav](quint32 v){for(int i=0;i<4;++i)wav.append(char((v>>(8*i))&255));};
-    wav.append("RIFF",4);u32(36+pcm.size());wav.append("WAVEfmt ",8);u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);wav.append("data",4);u32(pcm.size());wav.append(pcm);
-    QThreadPool::globalInstance()->start([wave=std::move(wav)] {
+    QThreadPool::globalInstance()->start([wave] {
         PlaySoundA(wave.constData(), nullptr, SND_MEMORY | SND_SYNC | SND_NODEFAULT);
     });
 #else
-    QApplication::beep();
+    const auto name = QStringLiteral("reminderSound%1").arg(level);
+    auto *effect = findChild<QSoundEffect *>(name, Qt::FindDirectChildrenOnly);
+    if (!effect) {
+        effect = new QSoundEffect(this); effect->setObjectName(name);
+        // The file goes with the effect.
+        auto *file = new QTemporaryFile(QDir::tempPath() + "/fuckmail-reminder-XXXXXX.wav", effect);
+        if (!file->open() || file->write(wave) != wave.size() || !file->flush()) { delete effect; QApplication::beep(); return; }
+        file->close();
+        effect->setVolume(1.0);
+        effect->setSource(QUrl::fromLocalFile(file->fileName()));
+    }
+    // A sound that cannot load still gets the system beep.
+    if (effect->status() == QSoundEffect::Error) { QApplication::beep(); return; }
+    effect->stop(); effect->play();
 #endif
 }
 void MailBackend::stopReminderSound() {
 #ifdef Q_OS_WIN
     PlaySoundA(nullptr, nullptr, 0);
+#else
+    for (auto *effect : findChildren<QSoundEffect *>(QString(), Qt::FindDirectChildrenOnly)) effect->stop();
 #endif
 }
+void MailBackend::requestReminderAttention() { if (!m_shutdown) emit reminderAttentionRequested(); }
 QString MailBackend::calendarReminderWhen(const QVariantMap &event) const {
     if (event.value("all_day").toBool()) return QDate::fromString(event.value("start").toString(),Qt::ISODate).toString("dddd d MMM") + " · all day";
     auto start=QDateTime::fromString(event.value("start").toString(),Qt::ISODate);

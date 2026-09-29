@@ -93,7 +93,7 @@ Item {
         objectName: "replyDocument"
         textDocument: bodyEditor.textDocument
         editor: bodyEditor
-        readOnly: root.readOnly
+        readOnly: root.readOnly || backend.draftLocked
         onContentChanged: if (!root.loading) backend.editFormattedDraft(plainText, html)
     }
     Item {
@@ -102,6 +102,19 @@ Item {
         height: Math.max(root.minimumHeight, implicitHeight)
         implicitHeight: contents.implicitHeight
         Rectangle { width: 2; height: parent.height; color: fileDrop.containsDrag ? Theme.accent : Theme.accentAlpha(0.55) }
+        // Send pressed: a hairline sweeps along the bottom until the sent
+        // message takes the box's place, as it does on that message.
+        Item {
+            id: sendTrack
+            objectName: "composerSendProgress"
+            visible: !backend.syntheticProfile && (backend.googleSend.busy || false)
+            x: 18; y: parent.height - 2; width: parent.width - 18; height: 2; clip: true; z: 1
+            Rectangle { anchors.fill: parent; radius: 1; color: Theme.inkAlpha(.06) }
+            Rectangle {
+                height: parent.height; width: sendTrack.width * .2; radius: 1; color: Theme.accent
+                NumberAnimation on x { running: sendTrack.visible; loops: Animation.Infinite; from: -sendTrack.width * .2; to: sendTrack.width; duration: 1100; easing.type: Easing.InOutQuad }
+            }
+        }
         DropArea {
             id: fileDrop; objectName: "draftFileDrop"
             anchors.fill: parent; z: 100
@@ -215,7 +228,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
                 Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
-                TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; background: Item {} enabled: root.readOnly || !backend.draftLocked; readOnly: root.readOnly; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
+                TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; background: Item {} readOnly: root.readOnly || backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
             }
             Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
             ScrollView {
@@ -234,8 +247,9 @@ Item {
                     objectName: "replyComposer"
                     property bool blocksWorkspaceShortcuts: true
                     width: composerScroll.availableWidth
-                    enabled: root.readOnly || !backend.draftLocked
-                    readOnly: root.readOnly
+                    // A lock while Gmail or Send works keeps the cursor here:
+                    // the editor refuses edits instead of dropping focus.
+                    readOnly: root.readOnly || backend.draftLocked
                     textFormat: TextEdit.RichText
                     selectByMouse: true
                     persistentSelection: true

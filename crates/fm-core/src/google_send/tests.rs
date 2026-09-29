@@ -898,18 +898,17 @@ fn reply_reply_all_and_forward_reuse_exact_retained_source_and_threading() {
             1
         );
         assert!(!wire.contains("secret@fixture.example"));
+        // Every mode joins the source's Gmail thread with its references.
+        assert_eq!(lease.thread_id(), Some("composition-source-thread"));
+        assert!(wire.contains("In-Reply-To: <frozen-source@fixture.example>"));
+        assert!(wire.contains("<ancestor@fixture.example>"));
         if mode == "forward" {
-            assert_eq!(lease.thread_id(), None);
             assert!(message
                 .body_text(0)
                 .unwrap()
                 .contains("Original retained text frozen-source"));
-            assert!(!wire.contains("In-Reply-To:"));
             assert!(wire.contains("forward-reader@example.test"));
         } else {
-            assert_eq!(lease.thread_id(), Some("composition-source-thread"));
-            assert!(wire.contains("In-Reply-To: <frozen-source@fixture.example>"));
-            assert!(wire.contains("<ancestor@fixture.example>"));
             assert!(wire.contains("reply@fixture.example"));
             if mode == "reply_all" {
                 assert!(wire.contains("ada@fixture.example"));

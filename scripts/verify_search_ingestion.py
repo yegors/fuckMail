@@ -168,7 +168,7 @@ def run(args):
         result["host"] = platform.platform()
         bin_dir = args.bin.resolve(strict=True)
         suffix = ".exe" if platform.system() == "Windows" else ""
-        files = {name: bin_dir / (name + suffix) for name in ("fm", "fm-engine", "fuckmail-gui")}
+        files = {name: bin_dir / (name + suffix) for name in ("fm", "fm-engine", "fuckMail")}
         require(all(path.is_file() for path in files.values()), "GUI, engine and CLI siblings are required")
         manifest_path = next((parent / "build-manifest.json" for parent in (bin_dir, *list(bin_dir.parents)[:4])
                               if (parent / "build-manifest.json").exists()), None)
@@ -214,7 +214,7 @@ def run(args):
                 require(armed.get("mode") == "search" and armed.get("engine_pid") == engine.pid
                         and read_json(profile / "engine.json").get("pid") == engine.pid,
                         "Search verification scenario was not armed in the owned engine")
-                gui = subprocess.Popen([str(files["fuckmail-gui"]), "--profile", str(profile), "--fixture-clock",
+                gui = subprocess.Popen([str(files["fuckMail"]), "--profile", str(profile), "--fixture-clock",
                                         "--benchmark-search-output", str(outputs["gui_report"])],
                                        cwd=scratch, env=env, stdin=subprocess.DEVNULL,
                                        stdout=gui_log, stderr=subprocess.STDOUT)

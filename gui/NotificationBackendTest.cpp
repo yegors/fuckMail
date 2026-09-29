@@ -7,6 +7,7 @@
 #include <QDesktopServices>
 #include <QGuiApplication>
 #include <QJsonArray>
+#include <QKeyEvent>
 #include <QFontDatabase>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -221,6 +222,7 @@ ApplicationWindow {
     Binding { target: Theme; property: "themeId"; value: appearance }
     Binding { target: Theme; property: "textSize"; value: textSize }
     Rectangle { id: backdrop; anchors.fill: parent; color: Theme.surface }
+    TextArea { objectName: "typing"; width: 200; height: 60; text: "Hello there" }
     ReminderPopup { objectName: "reminderPopup"; anchors.fill: parent; backgroundSource: backdrop; visible: backend.reminders.length > 0 }
 })QML",QUrl::fromLocalFile(copy.filePath("Test.qml")));
         require(!engine.rootObjects().isEmpty(), "actual reminder popup loads");
@@ -238,6 +240,29 @@ ApplicationWindow {
             }, "short-window modal fills viewport and actions do not overlap");
             require(!warnings, "popup produces no QML binding/type warnings");
         }
+        // The window comes forward once at one minute and once at the start,
+        // muted or not, and not again when the same reminder is shown again.
+        int summoned = 0;
+        QObject::connect(&h.backend, &MailBackend::reminderAttentionRequested, [&] { ++summoned; });
+        const auto startMs = panel->property("startMs").toDouble();
+        const auto chimes = [&] { return panel->property("chimes").toInt(); };
+        require(summoned == 0 && chimes() == 1, "a ten-minute reminder chimes once and leaves the window where it is");
+        panel->setProperty("nowMs", startMs - 59000);
+        require(summoned == 1 && chimes() == 2 && button("reminderKicker")->property("text") == "STARTING NOW", "one minute before sounds and brings the window forward");
+        panel->setProperty("nowMs", startMs - 30000);
+        require(summoned == 1 && chimes() == 2, "the rest of the last minute does not ask again");
+        panel->setProperty("muted", true);
+        panel->setProperty("nowMs", startMs + 1000);
+        require(summoned == 2 && chimes() == 2, "the start brings a muted reminder forward without a sound");
+        panel->setProperty("nowMs", startMs + 5000);
+        require(summoned == 2, "a started reminder asks only once");
+        panel->setProperty("muted", false);
+        h.backend.m_reminders = {}; emit h.backend.remindersChanged();
+        await([&] { return !panel->isVisible(); }, "refresh hides the reminder");
+        h.backend.m_reminders = {current.toVariantMap()}; emit h.backend.remindersChanged();
+        await([&] { return panel->isVisible(); }, "refresh shows the same reminder again");
+        panel->setProperty("nowMs", startMs + 2000);
+        require(summoned == 2 && chimes() == 2, "the same reminder shown again after its start stays in the background and silent");
         const auto capture=qEnvironmentVariable("FM_REMINDER_CAPTURE");
         if(!capture.isEmpty()) {
             auto window=qobject_cast<QQuickWindow *>(root);require(window,"reminder capture window");
@@ -261,6 +286,30 @@ ApplicationWindow {
         require(held.request["params"].toObject()["occurrence_id"] == current["id"], "QML keeps the exact card occurrence");
         h.complete(held,receipt(current,"dismissed"));
         await([&] { return !panel->isVisible(); }, "dismissed popup closes");
+        require(summoned == 2, "dismissing never brings the window forward");
+        // A reminder that appears mid-typing ignores the keys already on their
+        // way, and hands the cursor back where it was when it closes.
+        auto *window = qobject_cast<QQuickWindow *>(root); auto *typing = root->findChild<QQuickItem *>("typing");
+        require(window && typing, "typing window and field");
+        window->requestActivate(); typing->forceActiveFocus(); typing->setProperty("cursorPosition", 5);
+        require(typing->hasActiveFocus(), "the reply field has the cursor");
+        h.backend.m_reminders = {current.toVariantMap()}; emit h.backend.remindersChanged();
+        await([&] { return panel->isVisible() && panel->hasActiveFocus(); }, "the reminder takes the keyboard");
+        const auto press = [&](int key, const QString &text) {
+            QKeyEvent down(QEvent::KeyPress, key, Qt::NoModifier, text), up(QEvent::KeyRelease, key, Qt::NoModifier, text);
+            QCoreApplication::sendEvent(window, &down); QCoreApplication::sendEvent(window, &up);
+        };
+        press(Qt::Key_S, "s"); press(Qt::Key_Return, "\r"); press(Qt::Key_Enter, "\r"); press(Qt::Key_Escape, "\x1b"); press(Qt::Key_M, "m");
+        { QElapsedTimer settle; settle.start(); while (settle.elapsed() < 150) QCoreApplication::processEvents(QEventLoop::AllEvents, 10); }
+        require(h.requests.isEmpty() && panel->isVisible() && !panel->property("muted").toBool() && typing->property("text") == "Hello there",
+            "keys typed as the reminder appears neither snooze, join, dismiss, mute nor type into the hidden reply");
+        await([&] { return !panel->property("keysGuarded").toBool(); }, "the key guard ends after a moment");
+        press(Qt::Key_M, "m");
+        require(panel->property("muted").toBool() && h.requests.isEmpty(), "the reminder's keys work again after the moment");
+        require(QMetaObject::invokeMethod(button("reminderDismiss"),"clicked",Qt::DirectConnection), "dismiss by click");
+        h.complete(h.take("calendar_reminder_ack"),receipt(current,"dismissed"));
+        await([&] { return !panel->isVisible(); }, "the dismissed reminder closes");
+        require(typing->hasActiveFocus() && typing->property("cursorPosition").toInt() == 5, "the cursor goes back to the reply where it was");
         require(!warnings, "popup dismissal leaves no binding errors");
     }
 public:

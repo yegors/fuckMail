@@ -139,11 +139,12 @@ public:
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) { ++reminderActions; }
     // The full event view shares the reminder screen; viewing must not touch reminders.
     QVariantList reminders;
-    int reminderActions = 0, sounds = 0;
+    int reminderActions = 0, sounds = 0, attention = 0;
     Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &) { ++reminderActions; }
     Q_INVOKABLE void snoozeCalendarReminder(const QVariantMap &) { ++reminderActions; }
     Q_INVOKABLE void playReminderSound(int) { ++sounds; }
     Q_INVOKABLE void stopReminderSound() {}
+    Q_INVOKABLE void requestReminderAttention() { ++attention; }
     Q_INVOKABLE QString calendarReminderWhen(const QVariantMap &) const { return "Scripted time"; }
     Q_INVOKABLE void loadCalendarOperations() {}
     Q_INVOKABLE void loadMoreCalendarOperations() {}
@@ -435,6 +436,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     viewPanel->setProperty("nowMs", viewedStartMs + 5000);
     require(backend.sounds == 2 && viewKicker->property("text") == "IN PROGRESS" && viewCountdown->property("text") == "+0:05"
         && named(root, "reminderRelative")->property("text") == "Started 0:05 ago" && !viewPanel->property("alerting").toBool(), "A started viewed event is in progress, counting up without an alarm");
+    require(backend.attention == 0, "Viewing an event never brings the window forward");
     viewPanel->setProperty("nowMs", viewedStartMs + 3601000);
     require(viewKicker->property("text") == "ENDED" && viewCountdown->property("text") == "Ended" && named(root, "reminderRelative")->property("text") == "This event is over"
         && !qobject_cast<QQuickItem *>(named(root, "reminderPrimary"))->isVisible() && viewClose->property("text") == "Close", "An ended event offers only Close");
@@ -907,21 +909,23 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     loader->setProperty("startupReady", false); require(!loader->property("visible").toBool(), "Later queries cannot replay startup animation");
     auto calendar = named(visualRoot, "calendarWorkspace");
     require(plain(calendar->property("visibleEvents")).toList().size() == 2, "Calendar defaults to combined permitted projection");
-    auto scopeNotice = named(visualRoot, "calendarHiddenScopeNotice");
-    require(!scopeNotice->property("visible").toBool(), "All-calendar view has no hidden-scope notice");
+    auto combinedToggle = named(visualRoot, "calendarCombinedToggle");
+    require(calendar->property("hiddenCalendarCount").toInt() == 0, "All calendars hides nothing");
+    // The All calendars switch is the one way back to every calendar.
+    const auto showAll = [&] { combinedToggle->setProperty("checked", true); call(combinedToggle, "clicked"); };
     backend.preferences["selected_calendars"] = QVariantList{QVariantMap{{"account", "beta"}, {"calendar_id", "primary"}}};
     emit backend.eventsChanged();
-    settle([&] { return scopeNotice->property("visible").toBool(); });
+    settle([&] { return calendar->property("hiddenCalendarCount").toInt() > 0; });
     require(calendar->property("hiddenCalendarCount").toInt() == 2, "Restricted legacy selection discloses every hidden calendar in the current account scope");
     require(!calendar->property("combinedAccounts").toBool() && !named(visualRoot, "calendarCombinedToggle")->property("checked").toBool(), "A saved hidden selection cannot claim All calendars is on");
-    call(named(visualRoot, "calendarShowAllFromNotice"), "clicked");
-    settle([&] { return !scopeNotice->property("visible").toBool(); });
+    showAll();
+    settle([&] { return calendar->property("combinedAccounts").toBool(); });
     require(backend.preferences.value("selected_calendars").isNull() && backend.preferences.value("calendar_account_visibility") == "all" && calendar->property("combinedAccounts").toBool(), "Show all restores the combined calendar scope");
     backend.preferences["calendar_account_visibility"] = "current"; emit backend.eventsChanged();
-    settle([&] { return scopeNotice->property("visible").toBool(); });
+    settle([&] { return !calendar->property("combinedAccounts").toBool(); });
     require(calendar->property("selectedCalendarCount").toInt() == 1, "Saved current-account scope discloses the other calendar");
-    call(named(visualRoot, "calendarShowAllFromNotice"), "clicked");
-    settle([&] { return !scopeNotice->property("visible").toBool(); });
+    showAll();
+    settle([&] { return calendar->property("combinedAccounts").toBool(); });
     require(backend.preferences.value("calendar_account_visibility") == "all", "Show all clears saved account restriction");
     const auto savedSelection = backend.preferences.value("selected_calendars");
     backend.setPreferences({{"calendar_account_visibility","current"}});
@@ -976,7 +980,9 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         backend.setCalendarView(view);
         QCoreApplication::processEvents();
         auto band = qobject_cast<QQuickItem *>(named(visualRoot, QString(view) == "month" ? "calendarMonthBand" : "calendarBand"));
-        settle([&] { return qAbs(band->height() - 92) < .5; });
+        // Month has no all-day band, only its weekday row.
+        const double expected = QString(view) == "month" ? 36 : 92;
+        settle([&] { return qAbs(band->height() - expected) < .5; });
         if (QString(view) == "day") {
             // Day view shows the day's mail above its agenda, not in the band.
             auto received = named(visualRoot, "calendarDayMailReceived"), sent = named(visualRoot, "calendarDayMailSent");

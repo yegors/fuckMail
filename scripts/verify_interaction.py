@@ -144,7 +144,7 @@ def run(args):
     try:
         bin_dir = args.bin.resolve(strict=True)
         suffix = ".exe" if platform.system() == "Windows" else ""
-        programs = {name: bin_dir / (name + suffix) for name in ("fm", "fm-engine", "fuckmail-gui")}
+        programs = {name: bin_dir / (name + suffix) for name in ("fm", "fm-engine", "fuckMail")}
         require(all(p.is_file() for p in programs.values()), "Three native sibling executables are required")
         result["executables_sha256"] = {name: sha256(p) for name, p in programs.items()}
         manifest = next((p / "build-manifest.json" for p in (bin_dir, *list(bin_dir.parents)[:4])
@@ -228,7 +228,7 @@ def run(args):
                                                            "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
                     before = snapshot(profile)
                     result["before"] = before
-                    gui_command = [str(programs["fuckmail-gui"]), "--profile", str(profile), "--fixture-clock"]
+                    gui_command = [str(programs["fuckMail"]), "--profile", str(profile), "--fixture-clock"]
                     if visual:
                         gui_command += ["--screenshot", str(output), "--screenshot-reply", "--smoke",
                                         "--screenshot-width", str(args.width), "--screenshot-height", str(args.height)]

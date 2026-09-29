@@ -13,6 +13,7 @@
 #include "GuiResizeBenchmark.h"
 #include "GuiCalendarBenchmark.h"
 #include "TitleBar.h"
+#include "WindowAttention.h"
 #include "WindowPlacement.h"
 
 #include <QCommandLineParser>
@@ -53,10 +54,9 @@ int main(int argc, char **argv) {
     app.setApplicationName("fuckMail");
     app.setOrganizationName("fuckMail");
     app.setApplicationVersion("0.1.0");
-#ifndef Q_OS_MACOS
-    // macOS shows the bundle's .icns in the Dock instead.
+    // Also the Dock icon on macOS, which a directly launched build otherwise
+    // shows as the generic app icon until Launch Services reads its .icns.
     app.setWindowIcon(QIcon(":/qt/qml/FuckMail/app-icon/app-icon.png"));
-#endif
     for (const auto &weight : {"Regular", "Medium", "SemiBold"})
         QFontDatabase::addApplicationFont(QString(":/qt/qml/FuckMail/fonts/Geist-%1.ttf").arg(weight));
     app.setFont(QFont("Geist", 10));
@@ -355,7 +355,10 @@ int main(int argc, char **argv) {
     if (auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0))) {
         QObject::connect(window, &QQuickWindow::colorChanged, window, [window] { matchTitleBar(window); });
         matchTitleBar(window);
+        // The reminder screen asks at one minute and at the start.
+        QObject::connect(&backend, &MailBackend::reminderAttentionRequested, window, [window] { bringToFront(window); });
     }
+    QObject::connect(&backend, &MailBackend::remindersChanged, &app, [&backend] { holdReminderTiming(!backend.reminders().isEmpty()); });
     if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount) && !engine.rootObjects().isEmpty())
         engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
     if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {

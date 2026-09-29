@@ -83,7 +83,7 @@ wrappers). It configures and builds the preset, then runs `ctest --preset dev`
   `<file.png>.items.json` with named item geometry. `--screenshot-view`,
   `--screenshot-calendar-view`, `--screenshot-date`, `--screenshot-settings-page`,
   `--screenshot-width`/`-height` and `--screenshot-set`/`-invoke`/`-click` stage the view.
-  Run `fuckmail-gui --help` for the full list.
+  Run `fuckMail --help` for the full list.
 - For a quick compile while editing UI, configure a separate build directory with
   `-DFM_GUI_ONLY=ON`. It builds the GUI and its own tests but not the engine, packaging
   or whole-app checks, so the result cannot run on its own.

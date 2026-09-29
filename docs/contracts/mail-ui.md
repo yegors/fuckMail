@@ -1,5 +1,25 @@
 # Mail UI, reader and human composer
 
+## D166 — account menu (Mail UI115)
+
+- The Settings → Accounts "…" menu is non-modal and does not dim the window, like the app's other menus. Escape or a click outside closes it.
+
+Consumers: `AccountCard`.
+
+## D165 — forwards stay in their thread (Mail UI114)
+
+- A forward's pending preview joins its source thread like a reply's, and the thread keeps the forward once Gmail's copy arrives. Mail UI113's Send behaviour applies to forwards too.
+
+Consumers: `MailBackend` outgoing previews, `MailView`; Gmail43.
+
+## D164 — a reply that stays put (Mail UI113)
+
+- **Folded threads.** When messages are added after the newest one (a sent reply, or new mail), the message that was newest stays shown and keeps its open state. "N earlier messages" counts only the hidden ones and disappears when none are hidden. The pins last while the thread stays open.
+- **Send.** The composer stays open with a sweeping 2 px hairline along its bottom while Send saves and waits for Gmail. It closes in the frame its sent message appears in the thread. That message fades in over 200 ms and settles 10 px up, then shows the upload line of Mail UI103. The reader never rests past the thread's end, and scrolls just enough to show the sent message whole. Scrolling takes over. Send does not re-apply the saved view.
+- **Locks.** While a draft is locked, its body, subject and recipient inputs are read-only rather than disabled, so they keep keyboard focus and the cursor.
+
+Consumers: `MailView`, `ReplyComposer`, `RecipientField`, `MailBackend` send queue; Quality (gui-reply-stability).
+
 ## D162 — checking downloaded mail (Mail UI112)
 
 - While the inventory lists and `unchecked_messages` is above zero with mail kept locally, the mail stage is checking:

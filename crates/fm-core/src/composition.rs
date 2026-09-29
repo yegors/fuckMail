@@ -494,20 +494,18 @@ pub(crate) fn routing_from_source(
     } else {
         format!("{prefix} {original_subject}")
     };
-    let references: Vec<String> = if mode == "forward" {
-        vec![]
-    } else {
-        parsed
-            .references()
-            .as_text_list()
-            .map(|ids| ids.iter().map(|v| format!("<{v}>")).collect())
-            .unwrap_or_default()
-    };
+    // A forward carries the thread's references like a reply, so Gmail keeps
+    // it in the conversation it was forwarded from.
+    let references: Vec<String> = parsed
+        .references()
+        .as_text_list()
+        .map(|ids| ids.iter().map(|v| format!("<{v}>")).collect())
+        .unwrap_or_default();
     if references.len() > 100 {
         return Err(err("limit_exceeded", "Reply source exceeds 100 references"));
     }
     let routing = json!({"from":from,"subject":title,"to_recipients":to,"cc_recipients":cc,"bcc_recipients":[],
-            "reply_to_message_id":if mode=="forward" {None} else {parsed.message_id().map(|v|format!("<{v}>"))},
+            "reply_to_message_id":parsed.message_id().map(|v|format!("<{v}>")),
             "references":references,"reply_all_available":reply_all_available,"source_unavailable":false});
     validate_routing(&routing)?;
     let quoted = if mode == "forward" {

@@ -1947,3 +1947,42 @@ The founder widened retention on three accounts. Two downloaded older mail withi
 - **Not measured.** The speed-up from three slots has not been measured on the founder's accounts yet.
 
 Gmail42, Core83, Mail UI112, CLI60 and Quality89. No schema, fixture or protocol change.
+
+## D163 — reminders that reach you (2026-09-28T12:00:00Z)
+
+The founder heard no alarm on macOS in the last minute before a meeting, and the reminder stayed behind other windows on macOS and Windows. Separately, a ten-minute reminder appeared while they typed a reply and the next letter, "s", snoozed it; the reply lost its cursor.
+
+- **Found.** Only Windows played the designed tones, and quietly (about a tenth of full scale). macOS and Linux called the system beep: on macOS that is the alert sound at the alert volume, often quiet or off. Nothing brought the window forward. The reminder took focus and acted on keys at once, and never gave focus back.
+- **Change.** Louder tones on every platform through Qt Multimedia (PlaySound on Windows); the window comes forward once at one minute and once at the start; a one-second key guard after it appears or comes forward; focus returns on close. See Calendar40.
+- **Not verified here.** Audible output and native raising need a desktop session. The build host's agent session cannot reach the macOS audio server, so the founder checks both by hand on macOS and Windows.
+
+Calendar40. No schema, fixture or protocol change.
+
+## D164 — a reply that stays put (2026-09-28T13:00:00Z)
+
+The founder reported two jolts while replying. Typing a reply sometimes lost the cursor and flashed the reader. After Send, the message being answered folded away and the reply box vanished, leaving an empty reader until the sent copy drew.
+
+- **Found.** The typing jolt was the ten-minute meeting reminder: it took focus as it appeared, and the next letter typed ("s") snoozed it 0.28 s later. Its gui.log shows the snooze and the reminder returning five minutes later. D163 fixes it. Send made the sent preview the thread's newest message, so a folded thread hid the message answered. Send also re-applied the saved view, which moved the reader to the reply's old scroll position, past the new, shorter end.
+- **Change.** The message that was newest when a reply or new mail lands after it stays shown and open. The box closes in the frame its sent message appears, fading in in its place. The reader stays within the thread and shows that message whole. Send no longer re-applies the saved view. While Send waits for Gmail, the box shows a sweeping hairline. A draft lock makes the editors read-only instead of disabled, so they keep focus.
+- **Verified.** gui-reply-stability types into a real reply through autosaves, Gmail draft sync, reader and list reloads and Sent refreshes, then sends and checks every painted frame. It fails on the earlier code and passes now.
+
+Mail UI113. No schema, fixture or protocol change.
+
+## D165 — forwards stay in their thread (2026-09-28T14:00:00Z)
+
+The founder forwarded a message with a note. It was sent, but the thread it came from showed no sign of it; it appeared only as a new one-message conversation.
+
+- **Found.** A forward was built as a new message: no `In-Reply-To`, no `References`, and no Gmail `threadId` on its draft or send. Gmail therefore started a new thread. The pending preview was also kept out of the source thread. No earlier decision asked for this; tests only pinned it.
+- **Change.** A forward carries the source's Message-ID as `In-Reply-To`, the source's references, and the source's Gmail thread on its Gmail draft and send, like a reply and like Gmail's own forward. Its pending preview shows in the source thread and hands over to the sent copy. Forwards created before this change keep their saved headers.
+- **Not verified here.** Gmail's threading of the live message is checked by the founder on the next forward; tests check the headers and thread id sent to Gmail.
+
+Gmail43, Mail UI114. No schema, fixture or protocol change.
+
+## D166 — no scope banner, no dimmed account menu (2026-09-28T15:00:00Z)
+
+The founder asked to remove Calendar's "Showing N of M calendars" banner, which the prototype does not have, and to stop the Settings → Accounts "…" menu dimming the screen.
+
+- **Change.** Calendar shows no restriction banner. The All calendars switch in the header restores every calendar, as Show all did. The account menu is an ordinary non-modal menu that closes on Escape or a click outside.
+
+Calendar41, Mail UI115. No schema, fixture or protocol change.
+

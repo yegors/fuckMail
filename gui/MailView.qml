@@ -847,6 +847,31 @@ Item {
         const next = Object.assign({}, collapsedAttachments), key = expansionKey + id
         next[key] = !attachmentsCollapsed(id); collapsedAttachments = next
     }
+    // A folded thread shows its latest message. The message that was latest
+    // when a reply or new mail landed after it stays shown, open as it was,
+    // so the thread never folds away under the reader.
+    property var shownMembers: ({})
+    property string lastMemberKey: ""
+    property string memberRestoredThread: ""
+    function memberShown(id, index) { return expanded || index === members.length - 1 || shownMembers[expansionKey + id] === true }
+    readonly property int foldedCount: {
+        let count = 0
+        for (let i = 0; i < members.length - 1; ++i) if (shownMembers[expansionKey + members[i].id] !== true) ++count
+        return count
+    }
+    function keepLatestShown(thread) {
+        const messages = draftsMode ? [] : (backend.conversation.messages || [])
+        if (thread !== loadedThread) shownMembers = ({})
+        else if (lastMemberKey.startsWith(expansionKey)) {
+            const id = lastMemberKey.slice(expansionKey.length)
+            const at = messages.findIndex(function(m) { return m.id === id })
+            if (at >= 0 && at < messages.length - 1 && shownMembers[lastMemberKey] !== true) {
+                const shown = Object.assign({}, shownMembers); shown[lastMemberKey] = true; shownMembers = shown
+                if (expandedMembers[lastMemberKey] === undefined) { const open = Object.assign({}, expandedMembers); open[lastMemberKey] = true; expandedMembers = open }
+            }
+        }
+        lastMemberKey = messages.length ? expansionKey + messages[messages.length - 1].id : ""
+    }
     function memberIsExpanded(id, index) {
         const state = expandedMembers[expansionKey + id]
         return state === undefined ? index === members.length - 1 : state === true
@@ -1061,6 +1086,35 @@ Item {
             if (((stable >= 15 && mail.members.length > 0) || pass >= 190) && !revealScroll.running) stop()
         }
     }
+    // After Send the sent message takes the box's place and the thread gets
+    // shorter. The reader never rests past its end and shows the sent message
+    // whole, until the height has held for 250 ms (1.5 s at most) or the
+    // reader is scrolled.
+    Timer {
+        id: sentReveal
+        objectName: "sentReveal"
+        interval: 16; repeat: true
+        property int pass: 0
+        property int stable: 0
+        property real lastHeight: -1
+        function begin() { replyReveal.stop(); revealScroll.stop(); pass = 0; stable = 0; lastHeight = -1; restart() }
+        function follow() {
+            const bottom = Math.max(0, reader.contentHeight - reader.height)
+            let target = Math.min(reader.contentY, bottom)
+            const loader = memberRepeater.itemAt(mail.members.length - 1), sent = loader ? loader.item : null
+            if (sent && sent.visible && sent.height > 0)
+                target = Math.min(bottom, Math.max(target, sent.mapToItem(reader.contentItem, 0, sent.height).y + 24 - reader.height))
+            if (Math.abs(reader.contentY - target) > .5) { reader.cancelFlick(); reader.contentY = target }
+        }
+        onTriggered: {
+            ++pass
+            const height = reader.contentHeight
+            stable = height === lastHeight ? stable + 1 : 0
+            lastHeight = height
+            follow()
+            if (stable >= 15 || pass >= 90) { backend.remember("readerY", reader.contentY); stop() }
+        }
+    }
     function restorePosition() {
         restoring = true
         const view = backend.presentation
@@ -1100,9 +1154,14 @@ Item {
                 mail.replyOpen = mail.replyStates[identity] === true
                 if (!replyReveal.running && !sameThread) reader.contentY = Math.max(0,backend.presentation.readerY||0)
             }
+            mail.keepLatestShown(thread)
+            if (thread !== mail.loadedThread) mail.memberRestoredThread = ""
             mail.loadedThread = thread
             if (mail.members.length) {
-                const selected = backend.presentation.selectedMember || ""
+                // The message last opened here reopens once per visit; the
+                // thread's later refreshes leave its folding as the user set it.
+                const selected = mail.memberRestoredThread === thread ? "" : backend.presentation.selectedMember || ""
+                mail.memberRestoredThread = thread
                 if (selected && mail.members.some(function(m) { return m.id === selected })) {
                     const next = Object.assign({},mail.expandedMembers); next[mail.expansionKey+selected] = true; mail.expandedMembers = next; mail.expanded = true
                 }
@@ -1112,7 +1171,12 @@ Item {
         function onDraftChanged() {
             mail.noteReplyAll()
             const discarded = backend.draftStatus === "Draft discarded", closing = mail.discardClosesReply()
-            if (backend.googleSend.sent_current || mail.sentReplyDone) { mail.setReplyOpen(false); return }
+            // Once Send is under way the box gives way to the sent message,
+            // which the thread already shows; the reader keeps it in view.
+            if (backend.googleSend.sent_current || mail.sentReplyDone || backend.sendQueued || mail.replyOnItsWay()) {
+                if (mail.replyOpen && mail.members.length) sentReveal.begin()
+                mail.setReplyOpen(false); return
+            }
             if (backend.activeDraftId.length && Object.keys(backend.draft).length) {
                 if (discarded) { if (closing) mail.setReplyOpen(false) }
                 else if (mail.hydratedDraftIdentity !== backend.account+"/draft/"+backend.activeDraftId) {
@@ -1690,21 +1754,25 @@ Item {
                     ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     // Scrolling takes over from a reply being brought into view.
-                    onMovementStarted: { replyReveal.stop(); revealScroll.stop() }
+                    onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop() }
+                    // A shorter thread never leaves the reader past its end.
+                    onContentHeightChanged: if (sentReveal.running) sentReveal.follow()
                     ColumnLayout {
                         id: readerColumn
                         x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
                         RowLayout {
-                            Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 16; Layout.bottomMargin: 4
+                            Layout.fillWidth: true; visible: mail.foldedCount>0; spacing: 12; Layout.topMargin: 16; Layout.bottomMargin: 4
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                             FmButton {
                                 objectName: "earlierMessagesButton"; iconName: mail.expanded ? "up" : "down"; iconSize: 12; iconSpacing: 6
-                                text: (mail.expanded ? "Hide " : "")+(mail.members.length-1)+(mail.members.length === 2 ? " earlier message" : " earlier messages")
+                                text: (mail.expanded ? "Hide " : "")+mail.foldedCount+(mail.foldedCount === 1 ? " earlier message" : " earlier messages")
                                 tip: mail.expanded ? "Collapse the thread to the latest message" : "Show the whole thread"
                                 font.pointSize: Theme.fontPoints(12); implicitHeight: Math.round(Theme.fontSize(12) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                 foreground: hovered ? Theme.text : Theme.inkAlpha(.5)
                                 background: Rectangle { color: "transparent"; radius: 3; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
-                                onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded) }
+                                // Hiding also forgets the opened message, so it
+                                // does not unfold the thread on the next visit.
+                                onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded); if (!mail.expanded) backend.remember("selectedMember","") }
                             }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                         }
@@ -1719,9 +1787,8 @@ Item {
                                 required property int index
                                 Layout.fillWidth:true
                                 Layout.bottomMargin:0
-                                readonly property bool firstVisible: index === 0 || (!mail.expanded && index === mail.members.length-1)
                                 active:false
-                                visible:!mail.draftsMode && (mail.expanded || index===mail.members.length-1)
+                                visible:!mail.draftsMode && mail.memberShown(rowData.id,index)
                                 onVisibleChanged:if(visible)active=true
                                 Component.onCompleted:if(visible)active=true
                                 readonly property bool assistancePopupOpen:item ? item.assistancePopupOpen : false
@@ -1742,8 +1809,16 @@ Item {
                                     return false
                                 }
                                 objectName: "messageMember_"+modelData.id
+                                // A message on its way out fades in where the reply box was.
+                                transform: Translate { id: memberShift }
+                                Component.onCompleted: if (modelData.is_outgoing && ["queued","preparing","in_flight"].indexOf(modelData.outgoing_state) >= 0) memberArrival.start()
+                                ParallelAnimation {
+                                    id: memberArrival
+                                    NumberAnimation { target: member; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: memberShift; property: "y"; from: 10; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                                }
                                 implicitHeight: memberColumn.implicitHeight + (isExpanded ? 22 : 0)
-                                visible: mail.expanded || isLast
+                                visible: mail.memberShown(modelData.id,index)
                                 // Every other message sits on a 2.8% ink block, rounded and bled
                                 // 12px into the margin so text keeps its alignment; no rules between.
                                 Rectangle {

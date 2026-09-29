@@ -152,8 +152,9 @@ Item {
         else { backend.setCalendarDate(date); backend.setCalendarView("week") }
     }
     // The band above the grid is 36px plus 28px per all-day row of the anchor
-    // week's busiest day, in Day, Week and Month alike, so switching views
+    // week's busiest day, in Day and Week alike, so switching between them
     // never moves the hour axis. Four rows at most; more fold into "+N all day".
+    // Month has no all-day band: its weekday row is the 36px alone.
     function previewAllDayAt(index) { return previewRows.filter(function(e) { return e.all_day && e.day_index <= index && e.day_index + e.span_days > index }) }
     readonly property int shownAllDayRows: {
         let most = 0
@@ -430,27 +431,6 @@ Item {
             }
             FmButton { id: moreButton; objectName: "calendarMoreButton"; iconName: "more"; implicitWidth: 28; implicitHeight: 28; tip: "Calendar options and coverage"; onClicked: moreMenu.open() }
         }
-        Rectangle {
-            objectName: "calendarHiddenScopeNotice"
-            visible: calendar.hiddenCalendarCount > 0 || calendar.accountScopeRestricted
-            Layout.fillWidth: true; Layout.bottomMargin: 8
-            implicitHeight: scopeNoticeRow.implicitHeight + 14
-            radius: 5; color: Theme.surface; border.color: Theme.controlBorder
-            RowLayout {
-                id: scopeNoticeRow; anchors.fill: parent; anchors.margins: 7; spacing: 10
-                Text {
-                    Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                    text: calendar.hiddenCalendarCount > 0
-                        ? "Showing " + calendar.selectedCalendarCount + " of " + calendar.permittedCalendarCount + " calendars. Events on hidden calendars will not appear here."
-                        : "Showing the current account only. Events on other accounts will not appear here."
-                    font.pointSize: Theme.fontPoints(11); color: Theme.secondary
-                }
-                FmButton {
-                    objectName: "calendarShowAllFromNotice"; text: "Show all"; outlined: true
-                    onClicked: backend.setPreferences({selected_calendars:null, calendar_account_visibility:"all"})
-                }
-            }
-        }
         Text { visible: !backend.calendarReady && (!calendar.calendarLoading || calendar.slowLoad); text: backend.calendarCoverage; Layout.fillWidth: true; Layout.bottomMargin: 8; font.pointSize: Theme.fontPoints(11); color: Theme.subtle; wrapMode: Text.Wrap }
         // Header band. A Week column shows its date, mail count and all-day
         // chips; Day view shows only its chips, resting on the rule, since the
@@ -661,17 +641,17 @@ Item {
             }
             Item { visible: backend.calendarView === "day" && calendar.width > 850; Layout.preferredWidth: 320; Layout.fillHeight: true }
         }
-        // Month: the weekday header shares the band height and a 56px week
-        // axis stands where the hour axis does. Cells draw only right and
+        // Month: a 36px weekday header and a 56px week axis where the hour
+        // axis stands. Cells draw only right and
         // bottom rules; the axis rule and header rule close the grid.
         RowLayout {
             objectName: "calendarMonthBand"
             visible: calendar.monthView; Layout.fillWidth: true; Layout.fillHeight: false; spacing: 0
-            Item { Layout.preferredWidth: 56; implicitHeight: calendar.bandHeight }
+            Item { Layout.preferredWidth: 56; implicitHeight: 36 }
             Repeater { model: 7
                 Item {
                     required property int index
-                    Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: calendar.bandHeight
+                    Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: 36
                     Text {
                         objectName: "calendarMonthWeekday-" + parent.index
                         x: 10; height: 26; verticalAlignment: Text.AlignVCenter

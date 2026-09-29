@@ -376,7 +376,10 @@ impl Store {
         )?;
         let draft = retained.draft();
         let twin = self.google_draft_status(&scope.account, draft_id)?;
-        let thread_id = if matches!(draft["mode"].as_str(), Some("reply" | "reply_all")) {
+        let thread_id = if matches!(
+            draft["mode"].as_str(),
+            Some("reply" | "reply_all" | "forward")
+        ) {
             self.db.query_row("SELECT remote_thread_id FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0",params![scope.account,draft["source_message_id"].as_str()],|r|r.get(0)).optional()?
         } else {
             twin["effective_target"]["thread_id"]

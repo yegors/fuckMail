@@ -72,8 +72,8 @@ endif()
 
 install(TARGETS fuckmail-gui BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 if(APPLE)
-    set(FM_INSTALL_BIN "fuckmail-gui.app/Contents/MacOS")
-    set(FM_INSTALL_LICENSES "fuckmail-gui.app/Contents/Resources/licenses")
+    set(FM_INSTALL_BIN "fuckMail.app/Contents/MacOS")
+    set(FM_INSTALL_LICENSES "fuckMail.app/Contents/Resources/licenses")
 else()
     set(FM_INSTALL_BIN bin)
     set(FM_INSTALL_LICENSES "${FM_INSTALL_BIN}/licenses")
@@ -116,7 +116,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/gui/third_party/litehtml/src/gumbo/LICENSE"
 # relocated development artifact can run its headless integration checks in CI.
 if(APPLE)
     install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
-        DESTINATION "fuckmail-gui.app/Contents/PlugIns/platforms")
+        DESTINATION "fuckMail.app/Contents/PlugIns/platforms")
 endif()
 # The per-user Windows installer cannot run vc_redist (it needs admin), so the
 # MSVC runtime DLLs ship beside the executables instead of Qt's vc_redist copy.

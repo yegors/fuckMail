@@ -94,7 +94,8 @@ Item {
             width: Math.min(160,chips.width); height: 24; padding: 0; leftPadding: 0; rightPadding: 0; background: Item {}
             color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); placeholderTextColor: Theme.subtle
             placeholderText: field.recipients.length ? "" : "Name or address"
-            enabled: !backend.draftLocked; selectByMouse: true
+            // Locked, it keeps the keyboard and refuses edits instead of dropping focus.
+            readOnly: backend.draftLocked; selectByMouse: true
             onTextEdited: { backend.stageDraftRecipient(field.fieldName,text); field.resetSuggestions(); field.showCandidates([]); lookup.restart() }
             onAccepted: field.commit()
             onEditingFinished: { field.resetSuggestions(); if (text.trim().length) field.commit() }

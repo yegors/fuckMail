@@ -1,5 +1,13 @@
 # Gmail provider
 
+## D165 — forwards stay in their thread (Gmail43)
+
+- A forward's routing has `reply_to_message_id` (the source's Message-ID) and the source's `references`, as a reply's does, so its MIME carries `In-Reply-To` and `References`.
+- Its Gmail draft and send name the source message's Gmail thread (`threadId`), as replies do.
+- Drafts saved before this keep their stored routing.
+
+Consumers: Core (composition, Google drafts, Google send), engine send; Mail UI114; Quality.
+
 ## D162 — keep downloaded mail across retention changes (Gmail42)
 
 - **Retention change with a history place.** The delta lane carries to the new generation unchanged apart from its generation. A complete recent lane stays complete; an unfinished one restarts as a full listing from that history place, starting at the later of its old start and the new one. The inventory restarts as a full listing of the new window from the same place.

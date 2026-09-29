@@ -303,7 +303,7 @@ void MailBackend::startGoogleSendForDraft(const QString &method, const QJsonObje
             if (valid) mergeGoogleSendStatus(result, account, draftId);
             if (valid && !result["operation_is_current"].toBool()) refreshGoogleSendMetadata(account, draftId);
             if (googleSend().value("sent_current").toBool()) {
-                m_draftStatus = "Sent"; remember("replyOpen", false); emit presentationChanged();
+                m_draftStatus = "Sent"; remember("replyOpen", false);
             }
             emit draftChanged();
         }

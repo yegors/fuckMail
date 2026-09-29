@@ -582,9 +582,10 @@ impl Store {
             effective_observation(&twin)
         };
         let source = retained.draft()["source_message_id"].as_str();
-        let thread = if retained.draft()["mode"] == "reply"
-            || retained.draft()["mode"] == "reply_all"
-        {
+        let thread = if matches!(
+            retained.draft()["mode"].as_str(),
+            Some("reply" | "reply_all" | "forward")
+        ) {
             self.db.query_row("SELECT remote_thread_id FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0", params![scope.account,source], |r|r.get::<_,String>(0)).optional()?
         } else {
             twin.adoption.as_ref().map(|a| a.target.thread_id.clone())

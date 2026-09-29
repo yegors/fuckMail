@@ -183,6 +183,8 @@ public:
     Q_INVOKABLE void snoozeCalendarReminder(const QVariantMap &event);
     Q_INVOKABLE void playReminderSound(int level);
     Q_INVOKABLE void stopReminderSound();
+    // The reminder screen asks for the window to come forward at one minute and at start.
+    Q_INVOKABLE void requestReminderAttention();
     Q_INVOKABLE QString calendarReminderWhen(const QVariantMap &event) const;
     // An invitation's time in the calendar's display zone: "Tue 29 Sep · 15:00 – 16:00",
     // or without its end "Fri 25 Sep 15:30". Dates alone are all-day.
@@ -476,6 +478,7 @@ signals:
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
     void remindersChanged();
+    void reminderAttentionRequested();
     void desktopNotification(const QString &title, const QString &body);
     void startupReadyChanged();
     void accountsChanged();
@@ -540,6 +543,7 @@ private:
     friend class ComposerInputTest;
     friend class DraftTransferControlsTest;
     friend class SendUndoTest;
+    friend class ReplyStabilityTest;
     friend class DraftDiscardTest;
     friend class CalendarOccurrenceBackendTest;
     friend class CalendarMailActivityTest;

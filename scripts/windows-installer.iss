@@ -17,7 +17,7 @@ DefaultDirName={autopf}\fuckMail
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayIcon={app}\bin\fuckmail-gui.exe
+UninstallDisplayIcon={app}\bin\fuckMail.exe
 UninstallDisplayName=fuckMail
 ; Ask to close a running GUI, CLI or engine before replacing their files.
 CloseApplications=yes
@@ -43,8 +43,8 @@ Type: filesandordirs; Name: "{app}\translations"
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\fuckMail"; Filename: "{app}\bin\fuckmail-gui.exe"
-Name: "{autodesktop}\fuckMail"; Filename: "{app}\bin\fuckmail-gui.exe"; Tasks: desktopicon
+Name: "{autoprograms}\fuckMail"; Filename: "{app}\bin\fuckMail.exe"
+Name: "{autodesktop}\fuckMail"; Filename: "{app}\bin\fuckMail.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\bin\fuckmail-gui.exe"; Description: "{cm:LaunchProgram,fuckMail}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\bin\fuckMail.exe"; Description: "{cm:LaunchProgram,fuckMail}"; Flags: nowait postinstall skipifsilent
