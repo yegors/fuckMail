@@ -41,10 +41,12 @@ bool quietDiagnosticRead(const QString &method) {
 // dialog shows. Readers and their caches keep the rest.
 QJsonObject withoutRaw(QJsonObject source) { source.remove(QStringLiteral("raw")); return source; }
 // Inbox sections in list order, as MailView's sectionOrder: To review,
-// Delayed, then Done months newest first and undated last.
+// Delayed, This Week, This Month, then older months newest first and undated last.
 QString sectionOrder(const QString &key) {
     if (key == u"review") return QStringLiteral("0");
     if (key == u"held") return QStringLiteral("1");
+    if (key == u"done:week") return QStringLiteral("200000000");
+    if (key == u"done:month") return QStringLiteral("200000001");
     static const QRegularExpression month(QStringLiteral(R"(^done:(\d{4})-(\d{2})$)"));
     const auto match = month.match(key);
     if (!match.hasMatch()) return QStringLiteral("3");
@@ -422,10 +424,14 @@ void MailBackend::receive() {
         const auto errorCode = response["error"].toObject()["code"].toString();
         const bool retryCursor = pending.method == "conversations" && errorCode == "stale_cursor";
         const bool searchRefusal = pending.searchText && errorCode == "invalid_request";
-        // saveView merges and retries a view another interface saved first.
-        const bool viewMerge = pending.method == "view_save" && errorCode == "stale_revision";
+        // saveView merges and retries a view another interface saved first, and
+        // drops a saved reference whose message or thread is gone.
+        const bool viewMerge = pending.method == "view_save" && (errorCode == "stale_revision"
+            || (errorCode == "not_found" && response["error"].toObject()["details"].toObject()["view_key"].isString()));
+        // requestMailAction retries or reports a refused mail action itself.
+        const bool mailRetry = isMailAction(pending.method) && errorCode == "stale_revision";
         if (!ok && qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE")) qInfo() << "GUI request failed:" << pending.method << errorCode;
-        if (!ok && currentRead && !retryCursor && !searchRefusal && !viewMerge) fail(response["error"].toObject()["message"].toString("The operation failed."));
+        if (!ok && currentRead && !retryCursor && !searchRefusal && !viewMerge && !mailRetry) fail(response["error"].toObject()["message"].toString("The operation failed."));
         pending.callback(ok ? response["result"].toObject() : response["error"].toObject(), ok);
         sendNext();
     }
@@ -480,13 +486,19 @@ bool MailBackend::publishAccounts(QVariantList accounts) {
     return false;
 }
 
-// Inbox sections: review, held and one per Done month. Each keeps its own
-// collapsed state in the account's saved view.
-static bool validSection(const QString &section) {
-    if (section == u"review" || section == u"held" || section == u"done:undated") return true;
+// Inbox sections: review, held, This Week, This Month and one per older Done
+// month. The first four fold when collapsed; older months start folded and
+// open when chosen. Both lists are kept in the account's saved view.
+static bool fixedSection(const QString &section) {
+    return section == u"review" || section == u"held" || section == u"done:week" || section == u"done:month";
+}
+static bool olderSection(const QString &section) {
+    if (section == u"done:undated") return true;
     return section.startsWith(u"done:") && section.size() == 12
         && QDate::fromString(section.mid(5) + u"-01", Qt::ISODate).isValid();
 }
+static bool validSection(const QString &section) { return fixedSection(section) || olderSection(section); }
+static const QStringList weekdays{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"};
 void MailBackend::selectAccount(const QString &id) {
     ++m_accountSelectionRequests;
     m_lastAccountSelectionRequest = id;
@@ -502,7 +514,7 @@ void MailBackend::selectAccount(const QString &id) {
     m_queryActivity.start();
     if (!m_account.isEmpty()) saveView(m_account);
     m_afterConversationMutation = {}; m_captureNextOffset = -1;
-    m_collapsedGroups.clear();
+    m_collapsedGroups.clear(); m_openSections.clear();
     ++m_generation; const int generation = m_generation;
     m_accountViewRestorationGeneration = generation;
     ++m_draftSaveGeneration;
@@ -540,10 +552,12 @@ void MailBackend::selectAccount(const QString &id) {
         m_folder = view.value("folder", "inbox").toString();
         m_category = view.value("category").toString();
         m_filters = view.value("filters").toMap();
-        QStringList sections;
+        QStringList sections, open;
         for (const auto &section : view.value("collapsedSections").toStringList())
-            if (validSection(section) && !sections.contains(section)) sections.append(section);
-        m_collapsedGroups = sections;
+            if (fixedSection(section) && !sections.contains(section)) sections.append(section);
+        for (const auto &section : view.value("openSections").toStringList())
+            if (olderSection(section) && !open.contains(section) && open.size() < 256) open.append(section);
+        m_collapsedGroups = sections; m_openSections = open;
         convertLegacyFilters();
         emit recentSearchesChanged();
         if (m_selected != previousSelected) {
@@ -594,35 +608,70 @@ void MailBackend::setCategory(const QString &value) {
     m_category = value; m_pinnedRow.clear(); m_pinnedIndex = -1; remember("category", value); emit queryChanged();
     rescope(m_filters, previous);
 }
-void MailBackend::setCollapsedGroups(const QStringList &groups) {
-    QStringList next;
-    for (const auto &group : groups) if (validSection(group) && !next.contains(group) && next.size() < 258) next.append(group);
-    if (next == m_collapsedGroups) return;
+bool MailBackend::sectionCollapsed(const QString &section) const {
+    return m_collapsedGroups.contains(section) || (olderSection(section) && !m_openSections.contains(section));
+}
+void MailBackend::setSectionCollapsed(const QString &section, bool collapsed) {
+    if (!validSection(section) || sectionCollapsed(section) == collapsed) return;
+    auto groups = m_collapsedGroups, open = m_openSections;
+    if (fixedSection(section)) { if (collapsed) groups.append(section); else groups.removeAll(section); }
+    else if (collapsed) open.removeAll(section);
+    else if (open.size() < 256) open.append(section);
+    else return;
+    setSections(groups, open);
+}
+void MailBackend::setSections(const QStringList &collapsed, const QStringList &open) {
     m_queryActivity.start();
-    const auto previous = m_collapsedGroups;
-    m_collapsedGroups = next; m_pinnedRow.clear(); m_pinnedIndex = -1;
-    remember("collapsedSections", next);
+    const auto previousCollapsed = m_collapsedGroups, previousOpen = m_openSections;
+    m_collapsedGroups = collapsed; m_openSections = open; m_pinnedRow.clear(); m_pinnedIndex = -1;
+    remember("collapsedSections", collapsed); remember("openSections", open);
     ++m_listGeneration;
     // Hide or show the sections from rows in memory now; the refresh then
     // reconciles them with Core and refills the page.
-    if (m_folder == "inbox") applyCollapsedSections(previous);
+    if (m_folder == "inbox") applyCollapsedSections(previousCollapsed, previousOpen);
     emit queryChanged();
     if (m_folder == "inbox") loadConversations(false, true);
 }
-QString MailBackend::rowSection(const QVariantMap &row, const QTimeZone &zone) const {
+QString MailBackend::DoneSections::of(const QString &latest) const {
+    const auto at = QDateTime::fromString(latest, Qt::ISODate);
+    if (!at.isValid()) return QStringLiteral("done:undated");
+    const auto day = at.toTimeZone(zone).date();
+    if (day >= week) return QStringLiteral("done:week");
+    if (day.year() == today.year() && day.month() == today.month()) return QStringLiteral("done:month");
+    return u"done:" + day.toString(u"yyyy-MM");
+}
+MailBackend::DoneSections MailBackend::doneSections() const {
+    const QTimeZone zone(mailMonthZone().toUtf8());
+    const auto today = m_mailToday.isValid() ? m_mailToday : clockNow().toTimeZone(zone).date();
+    const auto start = std::max<qsizetype>(0, weekdays.indexOf(m_preferences.value("mail_week_start").toString()));
+    return {zone, today.addDays(-((today.dayOfWeek() - 1 - start + 7) % 7)), today, weekdays[start]};
+}
+// This Week and This Month move with the date and the chosen weekday.
+void MailBackend::refreshDoneSections() {
+    if (m_folder != u"inbox" || m_account.isEmpty()) return;
+    if (publishConversations(m_conversations)) emit conversationsChanged();
+    loadConversations(false, true);
+}
+QString MailBackend::rowSection(const QVariantMap &row, const DoneSections &done) const {
     auto section = row.value("display_group").toString();
     if (section.isEmpty()) section = row.value("group").toString();
     if (section != u"done") return section;
-    const auto at = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);
-    return at.isValid() ? u"done:" + at.toTimeZone(zone).toString(u"yyyy-MM") : QStringLiteral("done:undated");
+    return done.of(row.value("latest_at").toString());
 }
-void MailBackend::applyCollapsedSections(const QStringList &previous) {
+void MailBackend::applyCollapsedSections(const QStringList &previousCollapsed, const QStringList &previousOpen) {
     const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
+    const auto wasCollapsed = [&](const QString &section) {
+        return previousCollapsed.contains(section) || (olderSection(section) && !previousOpen.contains(section));
+    };
     auto rows = m_conversations;
     bool changed = false;
     // A collapsed section's rows leave the list and are kept for its expand.
-    for (const auto &section : m_collapsedGroups) {
-        if (previous.contains(section)) continue;
+    QStringList folding;
+    for (const auto &value : std::as_const(rows)) {
+        const auto section = value.toMap().value("section").toString();
+        if (!folding.contains(section) && sectionCollapsed(section) && !wasCollapsed(section)) folding.append(section);
+    }
+    for (const auto &section : std::as_const(folding)) {
         QVariantList kept;
         rows.erase(std::remove_if(rows.begin(), rows.end(), [&](const QVariant &value) {
             const auto row = value.toMap();
@@ -633,12 +682,12 @@ void MailBackend::applyCollapsedSections(const QStringList &previous) {
         if (kept.isEmpty()) continue;
         changed = true;
         const int cost = int(kept.size());
-        m_sectionRows.insert(viewKey(currentView(), {}) + u'\n' + section, new SectionRows{std::move(kept), lifecycle}, cost);
+        m_sectionRows.insert(viewKey(currentView(), {}, {}) + u'\n' + section, new SectionRows{std::move(kept), lifecycle}, cost);
     }
     // An expanded section gets back rows kept at its collapse or prefetched.
-    for (const auto &section : previous) {
-        if (m_collapsedGroups.contains(section)) continue;
-        const std::unique_ptr<SectionRows> kept(m_sectionRows.take(viewKey(currentView(), {}) + u'\n' + section));
+    for (const auto &section : previousCollapsed + m_openSections) {
+        if (!wasCollapsed(section) || sectionCollapsed(section)) continue;
+        const std::unique_ptr<SectionRows> kept(m_sectionRows.take(viewKey(currentView(), {}, {}) + u'\n' + section));
         if (!kept || kept->lifecycle != lifecycle) continue;
         QSet<QString> ids;
         for (const auto &value : std::as_const(rows)) ids.insert(value.toMap().value("id").toString());
@@ -655,32 +704,29 @@ void MailBackend::applyCollapsedSections(const QStringList &previous) {
     if (changed && publishConversations(std::move(rows))) emit conversationsChanged();
 }
 void MailBackend::prefetchSection(const QString &section) {
-    if (!m_connected || m_shutdown || m_account.isEmpty() || m_folder != u"inbox" || !m_collapsedGroups.contains(section)) return;
-    const auto account = m_account, key = viewKey(currentView(), {}) + u'\n' + section;
+    if (!m_connected || m_shutdown || m_account.isEmpty() || m_folder != u"inbox" || !validSection(section) || !sectionCollapsed(section)) return;
+    const auto account = m_account, key = viewKey(currentView(), {}, {}) + u'\n' + section;
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     if (const auto kept = m_sectionRows.object(key); (kept && kept->lifecycle == lifecycle) || m_sectionPrefetches.contains(key)) return;
     // Every other section collapsed, so the page holds only this one's rows.
-    QStringList others;
-    if (section != u"review") others << QStringLiteral("review");
-    if (section != u"held") others << QStringLiteral("held");
+    // Older months stay folded unless this is one of them.
+    QStringList others, open;
+    for (const char *fixed : {"review", "held", "done:week", "done:month"})
+        if (section != QLatin1String(fixed)) others << QString::fromLatin1(fixed);
     if (!section.startsWith(u"done:")) others << QStringLiteral("done");
-    else for (const auto &value : m_querySummary.value("done_months").toList()) {
-        const auto month = u"done:" + value.toMap().value("month").toString();
-        if (month != section) others << month;
-    }
-    if (others.size() > 258) return;
-    const auto params = listParams(others);
+    else if (olderSection(section)) open << section;
+    const auto params = listParams(others, open);
     m_sectionPrefetches.insert(key);
     QScopedValueRollback<bool> origin(m_automaticReadScope, true);
     request("conversations", account, params, [this, account, section, key, lifecycle](auto result, bool ok) {
         m_sectionPrefetches.remove(key);
-        if (!ok || account != m_account || !m_collapsedGroups.contains(section)
+        if (!ok || account != m_account || !sectionCollapsed(section)
             || lifecycle != lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) return;
-        const QTimeZone zone(mailMonthZone().toUtf8());
+        const auto done = doneSections();
         QVariantList rows;
         for (const auto &value : result["conversations"].toArray().toVariantList()) {
             auto row = value.toMap();
-            const auto shown = rowSection(row, zone);
+            const auto shown = rowSection(row, done);
             if (shown != section) continue;
             row["section"] = shown;
             rows.append(row);
@@ -759,21 +805,18 @@ QString MailBackend::mailMonthZone() const {
     return id.contains(u'/') ? id : QStringLiteral("UTC");
 }
 bool MailBackend::publishConversations(QVariantList rows) {
-    // Inbox rows name their section; Done rows split by the month of their
-    // latest message, in the same zone Core counts them in.
+    // Inbox rows name their section; Done rows split by the date of their
+    // latest message, in the same zone and week Core counts them in.
     if (m_folder == u"inbox") {
-        const QTimeZone zone(mailMonthZone().toUtf8());
+        const auto done = doneSections();
         for (auto &value : rows) {
             auto row = value.toMap();
-            const auto section = rowSection(row, zone);
+            const auto section = rowSection(row, done);
             if (row.value("section").toString() != section) { row["section"] = section; value = row; }
             // A kept row still counts in Core's totals for its real section.
             if (const auto from = row.value("pinned_from").toString(); !from.isEmpty()) {
                 auto counted = from;
-                if (from == u"done") {
-                    const auto at = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);
-                    counted = at.isValid() ? u"done:" + at.toTimeZone(zone).toString(u"yyyy-MM") : QStringLiteral("done:undated");
-                }
+                if (from == u"done") counted = done.of(row.value("latest_at").toString());
                 if (row.value("counted_section").toString() != counted) { row["counted_section"] = counted; value = row; }
             }
         }
@@ -803,7 +846,7 @@ bool MailBackend::publishConversations(QVariantList rows) {
 
 QVariantMap MailBackend::mailViewScope() const {
     return {{"folder", m_folder}, {"query", m_query}, {"category", m_category}, {"filters", m_filters},
-        {"collapsed_groups", m_collapsedGroups}};
+        {"collapsed_groups", m_collapsedGroups}, {"open_sections", m_openSections}};
 }
 
 void MailBackend::cacheMailView() {
@@ -825,11 +868,12 @@ bool MailBackend::restoreMailView() {
         || cached->lifecycle != lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong()) return false;
     const QVariantMap wanted{{"folder", view.value("folder", "inbox")}, {"query", view.value("query", "")},
         {"category", view.value("category", "")}, {"filters", view.value("filters", QVariantMap{})},
-        {"collapsed_groups", cached->scope.value("collapsed_groups")}};
+        {"collapsed_groups", cached->scope.value("collapsed_groups")}, {"open_sections", cached->scope.value("open_sections")}};
     if (cached->scope != wanted) return false;
     m_folder = wanted.value("folder").toString(); m_query = wanted.value("query").toString();
     m_category = wanted.value("category").toString(); m_filters = wanted.value("filters").toMap();
     m_collapsedGroups = wanted.value("collapsed_groups").toStringList();
+    m_openSections = wanted.value("open_sections").toStringList();
     m_selected = view.value("selected").toString();
     m_querySummary = cached->summary; m_categories = cached->categories;
     m_nextOffset = cached->nextOffset; m_nextCursor = cached->nextCursor;
@@ -859,32 +903,37 @@ bool MailBackend::restoreConversation(const QString &account, const QString &id)
 }
 
 // The first list page of the current view, with `collapsed` Inbox sections
-// left out.
-QJsonObject MailBackend::listParams(const QStringList &collapsed) const {
-    return listParams(collapsed, currentView());
+// and every older month not in `open` left out.
+QJsonObject MailBackend::listParams(const QStringList &collapsed, const QStringList &open) const {
+    return listParams(collapsed, open, currentView());
 }
 // The same page for another view of the account.
-QJsonObject MailBackend::listParams(const QStringList &collapsed, const ListView &view) const {
+QJsonObject MailBackend::listParams(const QStringList &collapsed, const QStringList &open, const ListView &view) const {
     QJsonObject params{{"live_paging", true}, {"query", view.query}, {"folder", view.folder}, {"limit", 100}, {"offset", 0}};
     params["grouped"] = view.folder != "sent";
     for (auto it = view.filters.cbegin(); it != view.filters.cend(); ++it) params[it.key()] = QJsonValue::fromVariant(it.value());
     if (view.folder == "inbox") {
-        // Done is shown by month in this computer's zone, like row times.
+        // Done is shown by week and month in this computer's zone, like row times.
+        const auto done = doneSections();
         params["month_zone"] = mailMonthZone();
-        QJsonArray groups, months;
+        params["done_week_start"] = done.weekStart;
+        params["today"] = done.today.toString(Qt::ISODate);
+        QJsonArray groups, months, opened;
         for (const auto &section : collapsed) {
             if (section.startsWith(u"done:")) months.append(section.mid(5)); else groups.append(section);
         }
+        for (const auto &section : open) opened.append(section.mid(5));
         if (!groups.isEmpty()) params["collapsed_groups"] = groups;
         if (!months.isEmpty()) params["collapsed_months"] = months;
+        params["open_months"] = opened;
     }
     if (!view.category.isEmpty()) params["category"] = view.category;
     return params;
 }
-QString MailBackend::viewKey(const ListView &view, const QStringList &collapsed) const {
+QString MailBackend::viewKey(const ListView &view, const QStringList &collapsed, const QStringList &open) const {
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"account", m_account}, {"folder", view.folder}, {"query", view.query},
         {"category", view.category}, {"filters", QJsonObject::fromVariantMap(view.filters)},
-        {"collapsed", QJsonArray::fromStringList(collapsed)}}).toJson(QJsonDocument::Compact));
+        {"collapsed", QJsonArray::fromStringList(collapsed)}, {"open", QJsonArray::fromStringList(open)}}).toJson(QJsonDocument::Compact));
 }
 // What choosing `folder` shows from the current view. Day chips are a Sent
 // control, so their dates never filter other views unseen; Drafts, Spam and
@@ -959,10 +1008,10 @@ void MailBackend::loadRescoped(bool shown) {
 void MailBackend::prefetchView(const ListView &view) {
     if (!m_connected || m_shutdown || m_account.isEmpty() || view.folder == u"drafts" || view.folder == u"spam"
         || view.query.size() > 512) return;
-    const auto account = m_account, key = viewKey(view, m_collapsedGroups);
+    const auto account = m_account, key = viewKey(view, m_collapsedGroups, m_openSections);
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     if (key == viewKey() || m_viewPrefetches.contains(key)) return;
-    const auto params = listParams(m_collapsedGroups, view);
+    const auto params = listParams(m_collapsedGroups, m_openSections, view);
     m_viewPrefetches.insert(key);
     QScopedValueRollback<bool> origin(m_automaticReadScope, true);
     request("conversations", account, params, [this, account, key, lifecycle](auto result, bool ok) {
@@ -997,7 +1046,7 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     const int offset = append ? m_nextOffset : 0;
     if (offset < 0) return;
     m_listError.clear(); m_loading = true; emit loadingChanged();
-    auto params = listParams(m_collapsedGroups);
+    auto params = listParams(m_collapsedGroups, m_openSections);
     params["offset"] = offset;
     if (append && !m_nextCursor.isEmpty()) { params.remove("offset"); params["cursor"] = m_nextCursor; }
     // Keep visible rows until a refresh has recovered the same page count. Each
@@ -1439,7 +1488,7 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
     const auto id = m_selected, account = m_account;
     m_mutatingConversation = true; emit mutationChanged();
     const auto undoEpoch = m_mailUndoEpoch;
-    request(method, account, params, [this, id, account, method, params, undoable, undoEpoch](auto result, bool ok) {
+    requestMailAction(method, account, params, [this, id, account, method, params, undoable, undoEpoch](auto result, bool ok) {
         if (ok && undoable && undoEpoch == m_mailUndoEpoch) {
             const auto token=mailUndoToken(account,result);
             if (!token.isEmpty()) offerMailUndo(mailActionLabel(method,params), {token});
@@ -1480,6 +1529,31 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             m_listRefreshPending = false;
             loadConversations(false, true);
         }
+    });
+}
+bool MailBackend::isMailAction(const QString &method) {
+    return method == "flag" || method == "set_category" || method == "mail_filing";
+}
+// A mail action names the exact members it was taken on and the thread
+// revision they were read at. Work nobody sees, such as a local summary, a
+// label rule or Gmail confirming an earlier change, also moves that revision.
+// When the thread still holds exactly those members, retry once at its current
+// revision; a new or removed member still refuses the action.
+void MailBackend::requestMailAction(const QString &method, const QString &account, QJsonObject params, Callback callback) {
+    request(method, account, params, [this, method, account, params, callback = std::move(callback)](const QJsonObject &refusal, bool ok) mutable {
+        if (ok || refusal["code"].toString() != "stale_revision") { callback(refusal, ok); return; }
+        const auto refuse = [this, refusal, callback] {
+            fail(refusal["message"].toString("The operation failed.")); callback(refusal, false);
+        };
+        request("conversation", account, {{"id", params["id"]}}, [this, method, account, params, refuse, callback](const QJsonObject &current, bool loaded) mutable {
+            if (!loaded || current["id"] != params["id"] || current["message_ids"].toArray() != params["message_ids"].toArray()
+                || current["revision"] == params["expected_revision"]) { refuse(); return; }
+            params["expected_revision"] = current["revision"]; params["request_id"] = uuid();
+            request(method, account, params, [this, callback](const QJsonObject &result, bool retried) {
+                if (!retried && result["code"].toString() == "stale_revision") fail(result["message"].toString("The operation failed."));
+                callback(result, retried);
+            });
+        });
     });
 }
 void MailBackend::setRead(bool read) { flag("read", read); }
@@ -1636,7 +1710,7 @@ void MailBackend::runMailSelection() {
         runMailSelection();
     };
     if (command["method"] == "draft_discard") startDraftDiscardRequest("draft_discard", account, params, m_bulkIssuedAt, command["reopen"].toBool(), std::move(done));
-    else request(command["method"].toString(), account, params, std::move(done));
+    else requestMailAction(command["method"].toString(), account, params, std::move(done));
 }
 
 void MailBackend::editDraft(const QString &body) {
@@ -2130,6 +2204,15 @@ void MailBackend::saveView(const QString &account) {
                 saveView(account);
                 if (m_shutdown) finishShutdown();
             });
+        } else if (const auto key = result["details"].toObject()["view_key"].toString(); result["code"].toString() == "not_found" && !key.isEmpty()) {
+            // The saved thread, message or draft is gone, usually removed by
+            // sync. Forget only that reference; the rest of the view still saves.
+            auto view = m_views.value(account).toMap();
+            const bool held = view.remove(key) > 0;
+            m_views[account] = view; m_viewPending[account].remove(key);
+            m_viewDirty.insert(account);
+            if (held) saveView(account);
+            else { cancelShutdown(); fail(result["message"].toString()); }
         } else {
             m_viewDirty.insert(account); cancelShutdown();
             fail("The current mail view was not saved. Your changes remain here. Reconnect if needed, then close again to retry.");

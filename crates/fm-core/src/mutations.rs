@@ -514,6 +514,16 @@ pub(crate) fn check_revision(expected: i64, actual: i64) -> Result<()> {
         next_revision(actual).map(|_| ())
     }
 }
+/// `not_found` for a view key naming a conversation, message or draft that is
+/// not in the account. A saved reference goes stale when sync removes its
+/// target, so `details.view_key` lets the client drop just that key.
+fn dangling_view_key(key: &str, message: &str) -> CoreError {
+    CoreError {
+        code: "not_found".into(),
+        message: message.into(),
+        details: json!({"view_key": key}),
+    }
+}
 fn optional_bool(p: &Value, key: &str) -> Result<Option<bool>> {
     match p.get(key) {
         None => Ok(None),
@@ -571,6 +581,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             "selectedDraft",
             "recentSearches",
             "collapsedSections",
+            "openSections",
         ],
     )?;
     // Up to six committed searches, newest first, as typed.
@@ -590,7 +601,8 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             ));
         }
     }
-    // Collapsed Inbox sections: review, held or a Done month.
+    // Collapsed Inbox sections: review, held, This Week, This Month or a
+    // Done month.
     if let Some(value) = view.get("collapsedSections") {
         let valid = value.as_array().is_some_and(|rows| {
             rows.len() <= 258
@@ -599,6 +611,8 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
                         s == "review"
                             || s == "held"
                             || s == "done:undated"
+                            || s == "done:week"
+                            || s == "done:month"
                             || s.strip_prefix("done:").is_some_and(|month| {
                                 month.len() == 7
                                     && month.as_bytes()[4] == b'-'
@@ -614,7 +628,33 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
         if !valid {
             return Err(err(
                 "invalid_request",
-                "collapsedSections names review, held or done:YYYY-MM",
+                "collapsedSections names review, held, done:week, done:month or done:YYYY-MM",
+            ));
+        }
+    }
+    // Older Done months start folded; these are the ones opened.
+    if let Some(value) = view.get("openSections") {
+        let valid = value.as_array().is_some_and(|rows| {
+            rows.len() <= 256
+                && rows.iter().all(|row| {
+                    row.as_str().is_some_and(|s| {
+                        s == "done:undated"
+                            || s.strip_prefix("done:").is_some_and(|month| {
+                                month.len() == 7
+                                    && month.as_bytes()[4] == b'-'
+                                    && chrono::NaiveDate::parse_from_str(
+                                        &format!("{month}-01"),
+                                        "%Y-%m-%d",
+                                    )
+                                    .is_ok()
+                            })
+                    })
+                })
+        });
+        if !valid {
+            return Err(err(
+                "invalid_request",
+                "openSections names done:YYYY-MM or done:undated",
             ));
         }
     }
@@ -637,8 +677,8 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
                 |r| r.get(0),
             )?;
             if !exists {
-                return Err(err(
-                    "not_found",
+                return Err(dangling_view_key(
+                    key,
                     "Selected conversation is outside this account",
                 ));
             }
@@ -675,7 +715,10 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             |r| r.get(0),
         )?;
         if !found {
-            return Err(err("not_found", "Selected member is outside this account"));
+            return Err(dangling_view_key(
+                "selectedMember",
+                "Selected member is outside this account",
+            ));
         }
     }
     if let Some(value) = view
@@ -691,7 +734,10 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             |r| r.get(0),
         )?;
         if !exists {
-            return Err(err("not_found", "Selected draft is outside this account"));
+            return Err(dangling_view_key(
+                "selectedDraft",
+                "Selected draft is outside this account",
+            ));
         }
     }
     if let Some(value) = view.get("account") {
@@ -817,6 +863,40 @@ mod tests {
             110
         );
         review
+    }
+
+    #[test]
+    fn a_view_naming_a_removed_target_reports_that_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        for (key, value) in [
+            ("selected", "windscribe-thread-gone"),
+            ("selectedMember", "windscribe-message-gone"),
+            ("selectedDraft", "draft-gone"),
+        ] {
+            let mut view = json!({"query":"","selected":"windscribe-thread-000"});
+            view[key] = json!(value);
+            let refused = store
+                .handle(
+                    "view_save",
+                    Some("windscribe"),
+                    json!({"view":view,"expected_revision":0,"request_id":format!("dangling-{key}")}),
+                )
+                .unwrap_err();
+            assert_eq!(refused.code, "not_found");
+            assert_eq!(refused.details, json!({"view_key":key}));
+            // Without the key the rest of the view saves.
+            view.as_object_mut().unwrap().remove(key);
+            let revision = store.view("windscribe").unwrap()["revision"].clone();
+            let saved = store
+                .handle(
+                    "view_save",
+                    Some("windscribe"),
+                    json!({"view":view,"expected_revision":revision,"request_id":format!("kept-{key}")}),
+                )
+                .unwrap();
+            assert_eq!(saved["view"], view);
+        }
     }
 
     #[test]

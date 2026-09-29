@@ -1044,7 +1044,15 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             }
             let reply = match result {
                 Ok(result) => response(&id, result),
-                Err(e) => error(&id, &e.code, &e.message),
+                Err(e) => {
+                    // Only the view key a saved view could not resolve is
+                    // passed on, so the client can drop just that key.
+                    let mut reply = error(&id, &e.code, &e.message);
+                    if let Some(key) = e.details["view_key"].as_str() {
+                        reply["error"]["details"] = json!({"view_key": key});
+                    }
+                    reply
+                }
             };
             let _ = work.reply.send(reply);
         }

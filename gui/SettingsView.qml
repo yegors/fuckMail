@@ -361,6 +361,19 @@ Item {
                                 }
                             }
                             Divider {}
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                                PreferenceLabel { label: "Week starts on"; detail: "Where “This Week” begins in the mail list." }
+                                FmComboBox {
+                                    readonly property var days: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
+                                    objectName: "mailWeekStartPreference"; implicitWidth: 140; implicitHeight: 32
+                                    model: ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+                                    currentIndex: Math.max(0, days.indexOf(backend.preferences.mail_week_start))
+                                    onActivated: function(index) { backend.setPreferences({mail_week_start:days[index]}); currentIndex = Qt.binding(function() { return Math.max(0, days.indexOf(backend.preferences.mail_week_start)) }) }
+                                    Accessible.name: "Week starts on"
+                                }
+                            }
+                            Divider {}
                             BlockedDomainsSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
                             RemoteContentSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
                         }

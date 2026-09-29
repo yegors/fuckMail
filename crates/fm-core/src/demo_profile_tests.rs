@@ -882,14 +882,133 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             "invalid_request"
         );
     }
+    // This Week and This Month come first, then the older months. On
+    // Wednesday 5 August a Monday week starts on the 3rd; 1–2 August are
+    // This Month, and July keeps its own group.
+    for (start, first) in [("monday", 3), ("wednesday", 5), ("thursday", 30)] {
+        let mut recent = request.clone();
+        recent["done_week_start"] = json!(start);
+        recent["today"] = json!("2026-08-05");
+        let grouped = store
+            .handle("conversations", Some(ACCOUNT), recent.clone())
+            .unwrap();
+        let week = if first > 5 {
+            chrono::NaiveDate::from_ymd_opt(2026, 7, first).unwrap()
+        } else {
+            chrono::NaiveDate::from_ymd_opt(2026, 8, first).unwrap()
+        };
+        let group_of = |row: &Value| {
+            let date = chrono::DateTime::parse_from_rfc3339(row["latest_at"].as_str().unwrap())
+                .unwrap()
+                .with_timezone(&zone)
+                .date_naive();
+            if date >= week {
+                "week".to_owned()
+            } else if month_of(row) == "2026-08" {
+                "month".to_owned()
+            } else {
+                month_of(row)
+            }
+        };
+        let groups = grouped["done_months"].as_array().unwrap().clone();
+        let keys: Vec<&str> = groups
+            .iter()
+            .map(|g| g["month"].as_str().unwrap())
+            .collect();
+        let order = |key: &str| match key {
+            "week" => "9999-99".to_owned(),
+            "month" => "9999-98".to_owned(),
+            month => month.to_owned(),
+        };
+        let mut expected_order = keys.clone();
+        expected_order.sort_by_key(|key| std::cmp::Reverse(order(key)));
+        assert_eq!(keys, expected_order, "{start}");
+        assert!(!keys.contains(&"2026-08"), "{start}");
+        let mut counted = std::collections::BTreeMap::<String, i64>::new();
+        for row in grouped["conversations"].as_array().unwrap() {
+            if row["group"] == "done" {
+                *counted.entry(group_of(row)).or_default() += 1;
+            }
+        }
+        for group in &groups {
+            let key = group["month"].as_str().unwrap();
+            assert_eq!(
+                counted.get(key).copied().unwrap_or(0),
+                group["count"].as_i64().unwrap(),
+                "{start} {key}"
+            );
+        }
+        assert_eq!(counted.len(), groups.len(), "{start}");
+        // A folded This Week leaves its rows out, like a folded month.
+        let mut week_folded = recent.clone();
+        week_folded["collapsed_months"] = json!(["week"]);
+        let folded = store
+            .handle("conversations", Some(ACCOUNT), week_folded)
+            .unwrap();
+        assert_eq!(folded["done_months"], grouped["done_months"]);
+        assert!(folded["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["group"] != "done" || group_of(r) != "week"));
+        // With open_months, older months stay folded unless listed; This
+        // Week and This Month still show.
+        let older: Vec<&str> = keys
+            .iter()
+            .copied()
+            .filter(|k| *k != "week" && *k != "month")
+            .collect();
+        assert!(!older.is_empty(), "{start}");
+        let mut opened = recent.clone();
+        opened["open_months"] = json!([older[0]]);
+        let opened = store
+            .handle("conversations", Some(ACCOUNT), opened)
+            .unwrap();
+        assert_eq!(opened["done_months"], grouped["done_months"]);
+        let shown: std::collections::BTreeSet<String> = opened["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["group"] == "done")
+            .map(group_of)
+            .collect();
+        let expected: std::collections::BTreeSet<String> = counted
+            .keys()
+            .filter(|k| matches!(k.as_str(), "week" | "month") || *k == older[0])
+            .cloned()
+            .collect();
+        assert_eq!(shown, expected, "{start}");
+    }
+    for bad in [
+        json!({"month_zone":"America/Toronto","done_week_start":"monday"}),
+        json!({"month_zone":"America/Toronto","done_week_start":"mon","today":"2026-08-05"}),
+        json!({"done_week_start":"monday","today":"2026-08-05"}),
+        json!({"month_zone":"America/Toronto","done_week_start":"monday","today":"5 Aug"}),
+        json!({"month_zone":"America/Toronto","open_months":["2026-07"]}),
+        json!({"month_zone":"America/Toronto","done_week_start":"monday","today":"2026-08-05","open_months":["2026-07","2026-07"]}),
+    ] {
+        assert_eq!(
+            store
+                .handle("conversations", Some(ACCOUNT), bad)
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
     // Each month's state is saved with the account's view, as are recent searches.
-    let saved = store.handle("view_save", Some(ACCOUNT), json!({"view":{"collapsedSections":["review","done:2026-08"],"recentSearches":["from:maya","subject:board deck"]},"expected_revision":0,"request_id":"sections"})).unwrap();
+    let saved = store.handle("view_save", Some(ACCOUNT), json!({"view":{"collapsedSections":["review","done:week","done:2026-08"],"openSections":["done:2026-07","done:undated"],"recentSearches":["from:maya","subject:board deck"]},"expected_revision":0,"request_id":"sections"})).unwrap();
     assert_eq!(
         saved["view"]["collapsedSections"],
-        json!(["review", "done:2026-08"])
+        json!(["review", "done:week", "done:2026-08"])
+    );
+    assert_eq!(
+        saved["view"]["openSections"],
+        json!(["done:2026-07", "done:undated"])
     );
     for bad in [
         json!({"collapsedSections":["done:2026-8"]}),
+        json!({"openSections":["done:week"]}),
+        json!({"openSections":["review"]}),
         json!({"recentSearches":["a","b","c","d","e","f","g"]}),
         json!({"recentSearches":["two\nlines"]}),
     ] {

@@ -1986,3 +1986,24 @@ The founder asked to remove Calendar's "Showing N of M calendars" banner, which 
 
 Calendar41, Mail UI115. No schema, fixture or protocol change.
 
+
+## D167 — reads that survive background revisions (2026-09-29T09:00:00Z)
+
+During acceptance testing on a mailbox of over 100,000 messages, opening new mail after a relaunch stopped marking it read, and marking it read by hand failed with "State changed; reload before applying this command."
+
+- **Found.** Two faults. The local model, label rules and delivery readback advance a conversation's revision without changing its members, so the revision the list or reader held went stale and every read was refused. Separately, one account's saved view named a `selectedMember` that no longer exists in any account, so every view save for it failed and repeated.
+- **Change.** A mail action refused as stale is retried once when the conversation's members are exactly the snapshot the action named; later arrivals still refuse it, as the journaled member snapshots require. `view_save` names the key it cannot resolve, and the GUI drops that key and saves again.
+
+Core84, Mail UI116. No schema, fixture or protocol version change.
+
+## D168 — designer notes: account menu, Done by week and month, sticky bands, quiet scrollbars (2026-09-29T10:00:00Z)
+
+The founder passed on the design notes with the Flight Progress v2 export (9), and asked that sections open, close and scroll without lag on ten years of mail at over 1,000 messages a month, and that the mail list and thread scrollbars hide when idle.
+
+- **Accounts.** The card header keeps only ⋯ ("Sync, pause, edit or remove"). Connected: Sync now (Syncing… while running; Resume and sync now when paused), Pause/Resume syncing, Edit account, Remove account. Disconnected: Reconnect, Edit account, Remove account. The whole Labels and Signature rows open their editors; "Edit ›" is a cue only.
+- **Done.** This Week (from Settings → Mail → Week starts on, Monday by default, separate from Calendar's week), This Month (the rest of the month), then one section per older month. This Week and This Month start open, older months start folded, and each choice is remembered with the account's view. Folded sections build no rows: Core leaves them out of paging.
+- **Headers.** To review and Delayed head their rows with a 36px band that stays at the top while its rows scroll. To review uses a circle with an exclamation mark, also in the header's "to review" count.
+- **Scrollbars.** This supersedes D085 for the conversation list and the thread reader: their bar fades in on pointer movement, scrolling, hover or drag and fades out after 0.9 s at rest. Its 14px gutter stays reserved and live.
+- **Speed.** Core works out each row's Done group once per list. A hover still prefetches a folded section's rows, so opening it shows them at once.
+
+Core84, Mail UI117. No schema or protocol version change.

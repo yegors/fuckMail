@@ -1,5 +1,14 @@
 # Core and storage
 
+## D167, D168 — Done by week and month, folded older months, dangling view keys (Core84)
+
+- **`conversations`** accepts `done_week_start` (a lowercase weekday) and `today` (`YYYY-MM-DD`), together and with `month_zone`. Done then groups as `week` (latest message on or after the most recent `done_week_start` through `today`, and later), `month` (the rest of `today`'s month), then `YYYY-MM` and `undated`. `done_months` lists them in that order.
+- **`open_months`** (at most 256 unique older-month keys, requiring the week fields) folds every older month and `undated` not listed. `collapsed_months` also accepts `week` and `month`. Folded rows leave paging and `expanded_conversation_count`; `done_months` keeps full counts. Each row's group is worked out once per query.
+- **Preferences** add `mail_week_start` (a lowercase weekday, default `monday`), separate from Calendar's `week_start`.
+- **`view_save`** accepts `openSections` (at most 256 unique `done:YYYY-MM` or `done:undated`); `collapsedSections` also accepts `done:week` and `done:month`. A saved view naming a conversation, `selectedMember` or `selectedDraft` that no longer exists is `not_found` with `details.view_key`, and the engine passes that one detail to the client.
+
+Consumers: Mail UI116, Mail UI117. Schema, live/demo fixtures and protocol1 unchanged.
+
 ## D162 — carried lanes and settled listings (Core83)
 
 - **`change_mail_retention`** advances `mail_generation` and clears pages and page items as before. It then calls `carry_mail_lanes`. When that returns false, lanes are deleted as before.

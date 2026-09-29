@@ -124,7 +124,7 @@ bool draw(const QString &name, Sketch &c) {
     else if (n == "clock") { c.circle(8,8,6); c.line({8,4,8,8,10.7,9.6}); }
     else if (n == "info") { c.circle(8,8,6); c.line({8,7.5,8,11}); c.line({8,4.8,8,5}); }
     else if (n == "warning") { c.moveTo(8,2.5); c.lineTo(14,13); c.lineTo(2,13); c.path.closeSubpath(); c.line({8,6.5,8,9.5}); c.line({8,11.3,8,11.5}); }
-    else if (n == "review") { c.circle(8,8,5.5); c.circle(8,8,0.75); }
+    else if (n == "review") { c.circle(8,8,5.5); c.line({8,5.2,8,8.5}); c.line({8,10.6,8,10.9}); }
     else if (n == "checkCircle") { c.circle(8,8,6); c.line({5.5,8.2,7.3,10,10.7,6.2}); }
     else if (n == "reply") { c.line({6.5,3.5,2.5,7.5,6.5,11.5}); c.moveTo(3,7.5); c.cubicTo(10,6,13.5,9.5,13.5,13); }
     else if (n == "replyAll") { c.line({5,3.5,1,7.5,5,11.5}); c.line({8,3.5,4,7.5,8,11.5}); c.moveTo(5,7.5); c.cubicTo(11,6,14,9.5,14,13); }

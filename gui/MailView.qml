@@ -336,7 +336,7 @@ Item {
     }
     function groupOf(row) { return dateGroups && row ? dateGrouping.of[row.id] || dateGroup(row) : row ? row.section || row.display_group || row.group || "done" : "done" }
     function groupTitle(group) {
-        const fixed = {review:"To review",held:"Delayed",done:"Done","done:undated":"Undated"}[group]
+        const fixed = {review:"To review",held:"Delayed",done:"Done","done:week":"This Week","done:month":"This Month","done:undated":"Undated"}[group]
         if (fixed) return fixed
         // A Done month; the year appears only outside the current year.
         if (group.indexOf("done:") === 0) {
@@ -347,7 +347,8 @@ Item {
     }
     // Inbox sections in order. To review and Delayed stay while browsing, even
     // when empty; searching or filtering shows only sections with matches.
-    // Done is one section per month, newest first, with Core's full counts.
+    // Done is This Week, This Month, then one section per older month, newest
+    // first, with Core's full counts.
     // The open conversation kept in To review counts there, not in the
     // section Core counts it in.
     readonly property var inboxSections: {
@@ -365,10 +366,13 @@ Item {
             if (count("done:" + month.month, month.count) > 0) sections.push({key: "done:" + month.month, count: count("done:" + month.month, month.count)})
         return sections
     }
-    // Sorts review, held, then Done months newest first and undated last.
+    // Sorts review, held, This Week, This Month, then older months newest
+    // first and undated last.
     function sectionOrder(key) {
         if (key === "review") return "0"
         if (key === "held") return "1"
+        if (key === "done:week") return "200000000"
+        if (key === "done:month") return "200000001"
         const month = /^done:(\d{4})-(\d{2})$/.exec(key)
         return month ? "2" + ("00000000" + (99999999 - (Number(month[1]) * 12 + Number(month[2])))).slice(-8) : "3"
     }
@@ -376,17 +380,23 @@ Item {
     function groupCount(group) { return dateGroups ? dateGrouping.counts[group] || 0 : backend.folder === "inbox" ? sectionCount(group) : (backend.querySummary.filtered_group_counts || {})[group] || 0 }
     function groupKey(group) { return backend.account + "/" + backend.folder + "/" + group }
     // Inbox sections keep their collapsed state in the account's saved view.
-    function groupCollapsed(group) { return backend.folder === "inbox" ? backend.collapsedGroups.indexOf(group) >= 0 : collapsedGroups[groupKey(group)] === true }
+    // Older Done months start collapsed; only the opened ones are listed.
+    function olderMonth(group) { return group.indexOf("done:") === 0 && group !== "done:week" && group !== "done:month" }
+    // Read from the backend once per change, not once per header.
+    readonly property var sectionFolds: ({collapsed: backend.collapsedGroups, open: backend.openSections})
+    function groupCollapsed(group) {
+        if (backend.folder !== "inbox") return collapsedGroups[groupKey(group)] === true
+        return sectionFolds.collapsed.indexOf(group) >= 0 || (olderMonth(group) && sectionFolds.open.indexOf(group) < 0)
+    }
     function toggleGroup(group, header) {
         if (header) { anchoredSection = group; anchoredOffset = header.mapToItem(list, 0, 0).y; anchorExpiry.restart() }
         if (backend.folder === "inbox") {
-            const next = backend.collapsedGroups.filter(function(key) { return key !== group })
-            if (next.length === backend.collapsedGroups.length) next.push(group)
+            const collapse = !groupCollapsed(group)
             // Rows in memory hide or show at once, just after this click
             // returns: the row drawing the clicked header may leave the list.
             // The header is put back before that frame paints, and again once
             // the refresh lands.
-            Qt.callLater(function() { backend.setCollapsedGroups(next); mail.anchorAfterChange(false) })
+            Qt.callLater(function() { backend.setSectionCollapsed(group, collapse); mail.anchorAfterChange(false) })
             return
         }
         const next = Object.assign({}, collapsedGroups); next[groupKey(group)] = !groupCollapsed(group); collapsedGroups = next
@@ -469,7 +479,7 @@ Item {
             for (const section of inboxSections) {
                 const open = !mail.groupCollapsed(section.key)
                 if (section.key === last) { after = true; if (open) height += Math.max(0, section.count - (shown[section.key] || 0)) * mail.rowHeight; continue }
-                if (after) height += 44 + (open ? section.count * mail.rowHeight : 0)
+                if (after) height += 10 + mail.headerHeight(section.key) + (open ? section.count * mail.rowHeight : 0)
             }
             return height
         }
@@ -575,30 +585,54 @@ Item {
         }
         background: Rectangle { radius: height / 2; color: railChip.selected ? Theme.text : railChip.hovered ? Theme.surface : "transparent"; border.color: railChip.visualFocus ? Theme.accent : railChip.selected ? Theme.text : Theme.controlBorder }
     }
+    // To review and Delayed head their rows with a full-width band that stays
+    // at the top while they scroll; Done and date groups keep a lighter rule.
+    function bandGroup(group) { return backend.folder === "inbox" && !dateGroups && (group === "review" || group === "held") }
+    function headerHeight(group) { return bandGroup(group) ? 36 : 34 }
+    readonly property string monoFamily: backend.fixedFontFamily()
     component GroupHeader: ItemDelegate {
         id: heading
         required property string group
         readonly property bool collapsed: mail.groupCollapsed(group)
+        readonly property bool band: mail.bandGroup(group)
         objectName: "mailGroup_" + group
-        height: 34; leftPadding: 24; rightPadding: 24; topPadding: 0; bottomPadding: 0; hoverEnabled: true
+        height: mail.headerHeight(group); leftPadding: 24; rightPadding: 24; topPadding: 0; bottomPadding: 0; hoverEnabled: true
         enabled: backend.folder === "inbox" || mail.dateGroups
         onClicked: mail.toggleGroup(group, heading)
         // A collapsed section's rows load on hover, so its click shows them at once.
         onHoveredChanged: if (hovered && collapsed && backend.folder === "inbox") backend.prefetchSection(group)
-        background: Item {}
+        background: Rectangle {
+            visible: heading.band; color: Theme.bg2
+            Rectangle { width: parent.width; height: 1; color: Theme.line }
+            Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: Theme.line }
+        }
         Accessible.name: mail.groupTitle(group) + ", " + mail.groupCount(group) + " conversations, " + (collapsed ? "collapsed" : "expanded")
-        readonly property color tone: hovered ? Theme.text : Theme.inkAlpha(.45)
+        property color tone: band ? (hovered ? Theme.text : Theme.inkAlpha(.82)) : hovered ? Theme.text : Theme.inkAlpha(.45)
+        Behavior on tone { enabled: heading.band; ColorAnimation { duration: 150 } }
         contentItem: RowLayout {
-            spacing: 12
+            spacing: heading.band ? 10 : 12
             Row {
                 spacing: 7
                 FmIcon { anchors.verticalCenter: parent.verticalCenter; name: mail.dateGroups ? "calendar" : heading.group === "review" ? "review" : heading.group === "held" ? "clock" : "check"; size: 12; color: heading.tone }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: mail.dateGroups ? mail.groupTitle(heading.group) : backend.folder === "sent" ? "Sent" : backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : mail.groupTitle(heading.group); color: heading.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: mail.dateGroups ? mail.groupTitle(heading.group) : backend.folder === "sent" ? "Sent" : backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : mail.groupTitle(heading.group)
+                    color: heading.tone; font.family: Theme.fontFamily
+                    font.pointSize: Theme.fontPoints(heading.band ? 11 : 11.5); font.weight: heading.band ? Font.Medium : Font.Normal
+                    font.capitalization: heading.band ? Font.AllUppercase : Font.MixedCase
+                    font.letterSpacing: heading.band ? Theme.fontSize(11) * .07 : 0
+                }
             }
-            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: heading.band ? "transparent" : Theme.line }
             Row {
                 spacing: 8; visible: backend.folder === "inbox" || mail.dateGroups
-                Text { anchors.verticalCenter: parent.verticalCenter; text: mail.groupCount(heading.group); color: heading.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum":1} }
+                Text { visible: !heading.band; anchors.verticalCenter: parent.verticalCenter; text: mail.groupCount(heading.group); color: heading.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum":1} }
+                Rectangle {
+                    visible: heading.band; anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(20, bandCount.implicitWidth + 12); height: 18; radius: 4
+                    color: "transparent"; border.width: 1; border.color: Theme.line2
+                    Text { id: bandCount; anchors.centerIn: parent; text: mail.groupCount(heading.group); color: Theme.text; font.family: mail.monoFamily; font.pointSize: Theme.fontPoints(10.5) }
+                }
                 FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "down"; size: 10; color: heading.tone; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: 180 } } }
             }
         }
@@ -1394,7 +1428,8 @@ Item {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
+                    ScrollBar.vertical: FmScrollBar { id: listBar; autoHide: true }
+                    HoverHandler { onPointChanged: listBar.pointerMoved(point.scenePosition) }
                     // When a new search, filter or label's mail is still on the
                     // way after 80 ms, the rows still shown fade back to say so;
                     // the answer brings them up again.
@@ -1415,8 +1450,9 @@ Item {
                         function onRowsMoved() { list.forceLayout() }
                         function onRowsInserted() { list.forceLayout() }
                     }
-                    onContentHeightChanged: { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
+                    onContentHeightChanged: { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart(); updateStickyBand() }
                     onContentYChanged: {
+                        updateStickyBand()
                         backend.setBrowsingOlder(contentY - originY > height)
                         if (!mail.restoring && !list.moving) backend.remember("listY", contentY - originY)
                         prefetchTimer.restart()
@@ -1437,6 +1473,30 @@ Item {
                     Connections { target: backend; function onLoadingChanged() { if (!backend.loading) prefetchTimer.restart() } }
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY - originY)
                     onMovementStarted: mail.anchoredSection = ""
+                    // The To review or Delayed band whose rows fill the top of the
+                    // list stays pinned there; the next section's header pushes it up.
+                    function updateStickyBand() {
+                        let stuck = "", push = 0
+                        if (backend.folder === "inbox" && !mail.dateGroups && count > 0) {
+                            const top = contentY, item = itemAt(width / 2, top + 1)
+                            if (item && mail.bandGroup(item.group) && !item.collapsed && (!item.firstInGroup || top > item.y + item.rowTop - 36)) {
+                                stuck = item.group
+                                const below = itemAt(width / 2, top + 37)
+                                if (below && below !== item && below.group !== item.group) push = Math.min(0, below.y + 10 - top - 36)
+                            }
+                        }
+                        stickyBand.stuck = stuck; stickyBand.y = push
+                    }
+                    onCountChanged: updateStickyBand()
+                    Connections { target: mail; function onSectionFoldsChanged() { list.updateStickyBand() } }
+                    GroupHeader {
+                        id: stickyBand
+                        property string stuck: ""
+                        objectName: "mailStickyGroup"
+                        group: stuck || "review"
+                        visible: stuck.length > 0
+                        parent: list; width: list.width; z: 3
+                    }
                     delegate: Item {
                         id: groupedRow
                         required property var rowData
@@ -1455,7 +1515,9 @@ Item {
                         readonly property string tier: group === "review" || group === "held" ? group : "done"
                         readonly property bool collapsed: (backend.folder === "inbox" || mail.dateGroups) && mail.groupCollapsed(group)
                         readonly property var sectionsAbove: mail.sectionsBefore(index, previousGroup, group)
-                        readonly property int headingHeight: firstInGroup && !mail.binMode && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 && sectionsAbove.length === 0 ? 34 : 44) : 0
+                        readonly property int headingHeight: firstInGroup && !mail.binMode && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 && sectionsAbove.length === 0 ? 0 : 10) + mail.headerHeight(group) : 0
+                        // Where this row's own content starts, below any headers.
+                        readonly property real rowTop: collapsedHeaders.height + headingHeight
                         // A row read in To review folds away once another opens: 170 ms,
                         // faded by 70% of the way.
                         readonly property bool leaving: !!modelData.leaving
@@ -1751,7 +1813,8 @@ Item {
                     id: reader; objectName: "reader"
                     Layout.fillWidth: true; Layout.fillHeight: true
                     contentWidth: width; contentHeight: readerColumn.implicitHeight + (mail.chipsVisible ? 64 : 40); clip: true; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
+                    ScrollBar.vertical: FmScrollBar { id: readerBar; autoHide: true }
+                    HoverHandler { onPointChanged: readerBar.pointerMoved(point.scenePosition) }
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     // Scrolling takes over from a reply being brought into view.
                     onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop() }

@@ -62,7 +62,7 @@ QVariantList MailBackend::withRemoteRows(QVariantList rows) const {
     if (!m_remoteSearch || m_remoteRows.isEmpty() || m_remoteAccount != m_account || m_remoteFolder != m_folder
         || m_remoteQuery != m_query.trimmed()) return rows;
     const bool inbox = m_folder == u"inbox";
-    const QTimeZone zone(mailMonthZone().toUtf8());
+    const auto done = doneSections();
     QSet<QString> ids;
     for (const auto &value : rows) ids.insert(value.toMap().value("id").toString());
     for (const auto &value : m_remoteRows) {
@@ -72,8 +72,8 @@ QVariantList MailBackend::withRemoteRows(QVariantList rows) const {
         row["account"] = m_account;
         const auto when = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);
         if (inbox) {
-            const auto section = when.isValid() ? u"done:" + when.toTimeZone(zone).toString(u"yyyy-MM") : QStringLiteral("done:undated");
-            if (m_collapsedGroups.contains(section)) continue;
+            const auto section = done.of(row.value("latest_at").toString());
+            if (sectionCollapsed(section)) continue;
             row["section"] = section;
         }
         qsizetype at = rows.size();

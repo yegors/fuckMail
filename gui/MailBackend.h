@@ -91,7 +91,10 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
     // Collapsed Inbox sections, saved per account: review, held or done:YYYY-MM.
+    // Folded Inbox sections: To review, Delayed, This Week and This Month when
+    // listed in collapsedGroups; older Done months unless listed in openSections.
     Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
+    Q_PROPERTY(QStringList openSections READ openSections NOTIFY queryChanged)
     // How Core read the current search text, or why it could not.
     Q_PROPERTY(QVariantMap searchTerms READ searchTerms NOTIFY searchTermsChanged)
     Q_PROPERTY(QString searchError READ searchError NOTIFY searchTermsChanged)
@@ -242,6 +245,7 @@ public:
     QVariantMap diagnostics() const { return m_diagnostics; }
     QVariantMap filters() const { return m_filters; }
     QStringList collapsedGroups() const { return m_collapsedGroups; }
+    QStringList openSections() const { return m_openSections; }
     QVariantMap searchTerms() const { return m_searchTerms; }
     QString searchError() const { return m_searchError; }
     QStringList recentSearches() const { return presentation().value("recentSearches").toStringList(); }
@@ -419,7 +423,8 @@ public:
     Q_INVOKABLE void saveMyDraftVersion();
     Q_INVOKABLE bool validFilterSender(const QString &sender) const;
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
-    Q_INVOKABLE void setCollapsedGroups(const QStringList &groups);
+    Q_INVOKABLE bool sectionCollapsed(const QString &section) const;
+    Q_INVOKABLE void setSectionCollapsed(const QString &section, bool collapsed);
     // Enter keeps the search and adds it to this account's recent searches.
     Q_INVOKABLE void commitSearch(const QString &text);
     Q_INVOKABLE void removeRecentSearch(const QString &text);
@@ -684,6 +689,8 @@ private:
     void savePreferences();
     void flag(const QString &name, bool value);
     void mutateConversation(const QString &method, QJsonObject params, bool undoable = true);
+    static bool isMailAction(const QString &method);
+    void requestMailAction(const QString &method, const QString &account, QJsonObject params, Callback callback);
     QVariantMap mailUndoToken(const QString &account, const QJsonObject &result) const;
     void offerMailUndo(const QString &label, const QVariantList &tokens, const QVariantList &selection = {});
     void undoMailActions(const QVariantMap &context);
@@ -835,14 +842,26 @@ private:
     struct SectionRows { QVariantList rows; qint64 lifecycle = 0; };
     QCache<QString, SectionRows> m_sectionRows{2000};
     QSet<QString> m_sectionPrefetches;
-    void applyCollapsedSections(const QStringList &previous);
-    QString rowSection(const QVariantMap &row, const QTimeZone &zone) const;
-    QJsonObject listParams(const QStringList &collapsed) const;
+    void setSections(const QStringList &collapsed, const QStringList &open);
+    void applyCollapsedSections(const QStringList &previousCollapsed, const QStringList &previousOpen);
+    // Where Done rows fall: This Week from the chosen weekday, the rest of this
+    // month, then one section per older month, in the zone Core counts them in.
+    struct DoneSections {
+        QTimeZone zone;
+        QDate week, today;
+        QString weekStart;
+        QString of(const QString &latest) const;
+    };
+    DoneSections doneSections() const;
+    void refreshDoneSections();
+    QDate m_mailToday; // Set by tests; otherwise the clock's date.
+    QString rowSection(const QVariantMap &row, const DoneSections &done) const;
+    QJsonObject listParams(const QStringList &collapsed, const QStringList &open) const;
     // A view of the account: its folder, search, filters and labels.
     struct ListView { QString folder, query; QVariantMap filters; QString category; };
     ListView currentView() const { return {m_folder, m_query, m_filters, m_category}; }
     ListView folderView(const QString &folder) const;
-    QJsonObject listParams(const QStringList &collapsed, const ListView &view) const;
+    QJsonObject listParams(const QStringList &collapsed, const QStringList &open, const ListView &view) const;
     // First pages of recent list views, by account and view, so going back to
     // one, or to one prefetched on hover, shows at once; its refresh then
     // reconciles it. Cost is rows.
@@ -855,8 +874,8 @@ private:
     };
     QCache<QString, ViewRows> m_viewRows{3000};
     QSet<QString> m_viewPrefetches;
-    QString viewKey(const ListView &view, const QStringList &collapsed) const;
-    QString viewKey() const { return viewKey(currentView(), m_collapsedGroups); }
+    QString viewKey(const ListView &view, const QStringList &collapsed, const QStringList &open) const;
+    QString viewKey() const { return viewKey(currentView(), m_collapsedGroups, m_openSections); }
     void rememberView(const QVariantMap &summary);
     bool showInstantView(const QVariantMap &previousFilters, const QString &previousCategory);
     void rescope(const QVariantMap &previousFilters, const QString &previousCategory);
@@ -927,7 +946,7 @@ private:
     std::function<void()> m_afterAccountDisposition;
     QVariantMap m_conversation, m_draft, m_views;
     QVariantMap m_preferences, m_preferencesPending, m_diagnostics, m_filters, m_querySummary;
-    QStringList m_collapsedGroups;
+    QStringList m_collapsedGroups, m_openSections;
     QVariantMap m_searchTerms;
     QString m_searchError, m_searchPeopleQuery;
     QVariantList m_searchPeople;

@@ -204,10 +204,23 @@ class MailNavigationCacheTest {
             for (auto *child : item->childItems()) self(self, child);
         };
         findBar(findBar, list);
-        require(scrollbar && scrollbar->isVisible() && scrollbar->width() >= 14 && scrollbar->opacity() > 0.9,
-            "mail scrollbar stays visible with a wide target while idle");
+        const auto wait = [&](int ms) { QElapsedTimer t; t.start(); while (t.elapsed() < ms) QCoreApplication::processEvents(QEventLoop::AllEvents, 10); };
+        const auto moveTo = [&](QPointF at) {
+            QMouseEvent move(QEvent::MouseMove, at, QPointF(window->mapToGlobal(at.toPoint())), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window, &move);
+        };
+        require(scrollbar && scrollbar->isVisible() && scrollbar->width() >= 14,
+            "mail scrollbar keeps a wide target when the list overflows");
+        // It fades in while the pointer moves over the list and out at rest.
+        const auto middle = list->mapToScene({list->width() / 2, list->height() / 2});
+        moveTo(middle); wait(40); moveTo(middle + QPointF(4, 4)); wait(160);
+        require(scrollbar->opacity() > 0.9, "moving over the list shows its scrollbar");
+        wait(1300);
+        require(scrollbar->opacity() < 0.1 && scrollbar->isVisible(), "the idle scrollbar fades out and keeps its gutter");
         const auto beforeClick = list->property("contentY").toReal();
         const auto point = scrollbar->mapToScene({scrollbar->width()/2, scrollbar->height()*0.2});
+        moveTo(point); wait(160);
+        require(scrollbar->opacity() > 0.9, "pointing at the gutter brings the scrollbar back");
         const auto global = QPointF(window->mapToGlobal(point.toPoint()));
         QMouseEvent press(QEvent::MouseButtonPress,point,global,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
         QMouseEvent release(QEvent::MouseButtonRelease,point,global,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);

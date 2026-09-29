@@ -335,6 +335,15 @@ void GuiSelfTest::step() {
     case 0:
         if (!m_backend.connected() || m_backend.loading() || m_backend.conversation().isEmpty() || m_backend.draft().isEmpty()) return;
         if (m_backend.accounts().size() != 3) { failed("Expected three isolated synthetic accounts."); return; }
+        {
+            // Older Done months start folded; open them so paging has rows to prove.
+            bool opened = false;
+            for (const auto &value : m_backend.querySummary()["done_months"].toList()) {
+                const auto key = "done:" + value.toMap()["month"].toString();
+                if (m_backend.sectionCollapsed(key) && key != u"done:week" && key != u"done:month") { m_backend.setSectionCollapsed(key, false); opened = true; }
+            }
+            if (opened) return;
+        }
         m_id = m_backend.selectedId();
         m_sender = m_backend.conversation()["messages"].toList().first().toMap()["sender_email"].toString();
         // Automatic prefetch can finish the second page while the selected

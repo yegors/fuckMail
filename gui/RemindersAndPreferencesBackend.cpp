@@ -340,7 +340,11 @@ void MailBackend::tickClock() {
     const auto now = clockNow();
     const auto day = now.date().toString(Qt::ISODate) + '|' + now.toLocalTime().date().toString(Qt::ISODate) + '|' + now.toUTC().date().toString(Qt::ISODate);
     const double hour = now.time().hour() + now.time().minute() / 60.0;
-    if (day != m_clockDayKey) { m_clockDayKey = day; emit todayChanged(); }
+    if (day != m_clockDayKey) {
+        const bool rollover = !m_clockDayKey.isEmpty();
+        m_clockDayKey = day; emit todayChanged();
+        if (rollover) refreshDoneSections();
+    }
     if (hour != m_clockHour) { m_clockHour = hour; emit clockChanged(); }
     m_clockTimer.start(60000 - int(QDateTime::currentMSecsSinceEpoch() % 60000) + 20);
 }
@@ -450,7 +454,9 @@ void MailBackend::loadPreferences() {
         if (preferences != m_preferences) {
             const bool reloadCalendar = changesCalendarQuery(m_preferences, preferences);
             const bool declinedChanged = m_preferences.value("calendar_show_declined") != preferences.value("calendar_show_declined");
+            const bool weekChanged = m_preferences.value("mail_week_start") != preferences.value("mail_week_start");
             m_preferences = preferences;
+            if (weekChanged) refreshDoneSections();
             if (declinedChanged && !reloadCalendar) { emit eventsChanged(); emit timelineChanged(); }
             m_calendarView = preferences.value("calendar_view", "week").toString();
             m_calendarDate = preferences.value("calendar_date").isNull() ? todayDate() : preferences.value("calendar_date").toString();
@@ -469,7 +475,9 @@ void MailBackend::loadPreferences() {
 void MailBackend::setPreferences(const QVariantMap &patch) {
     if (patch.isEmpty() && m_preferencesPending.isEmpty()) return;
     const auto previousVisibility = m_preferences.value("calendar_account_visibility"), previousDeclined = m_preferences.value("calendar_show_declined");
+    const auto previousWeek = m_preferences.value("mail_week_start");
     for (auto it = patch.cbegin(); it != patch.cend(); ++it) { m_preferences[it.key()] = it.value(); m_preferencesPending[it.key()] = it.value(); }
+    if (previousWeek != m_preferences.value("mail_week_start")) refreshDoneSections();
     if (previousVisibility != m_preferences.value("calendar_account_visibility") || previousDeclined != m_preferences.value("calendar_show_declined")) { emit eventsChanged(); emit timelineChanged(); }
     m_preferencesStatus = "Saving…"; emit preferencesChanged(); savePreferences();
 }

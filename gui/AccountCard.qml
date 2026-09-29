@@ -138,12 +138,39 @@ Rectangle {
         Text { text: stageLabel.text; color: stageLabel.textColor; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } Layout.fillWidth: true; elide: Text.ElideRight }
     }
     component StageRow: Rectangle {
+        id: stageRow
         default property alias cells: rowLayout.data
         property color rule: Theme.line
+        // A row that opens an editor is one button, with a faint wash on hover.
+        property string actionName: ""
+        property string actionLabel: ""
+        property bool actionEnabled: true
+        readonly property bool actionHovered: rowAction.visible && rowAction.enabled && rowAction.hovered
+        signal activated()
         Layout.fillWidth: true; implicitHeight: Math.max(46, rowLayout.implicitHeight + 12)
-        color: "transparent"
+        color: actionHovered ? Theme.inkAlpha(.03) : "transparent"
+        Behavior on color { ColorAnimation { duration: 150 } }
         Rectangle { width: parent.width; height: 1; color: parent.rule }
         RowLayout { id: rowLayout; anchors.fill: parent; anchors.leftMargin: 18; anchors.rightMargin: 18; spacing: 14 }
+        AbstractButton {
+            id: rowAction
+            objectName: stageRow.actionName
+            visible: stageRow.actionName.length > 0
+            anchors.fill: parent; z: 1
+            hoverEnabled: true; enabled: stageRow.actionEnabled
+            background: Rectangle { color: "transparent"; border.width: rowAction.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+            onClicked: stageRow.activated()
+            Accessible.name: stageRow.actionLabel
+            HoverHandler { cursorShape: rowAction.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        }
+    }
+    // The "Edit ›" cue on a row that opens an editor; the row takes the click.
+    component EditCue: Row {
+        property string text: "Edit"
+        property bool lit: false
+        spacing: 4
+        Text { text: parent.text; color: parent.lit ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } anchors.verticalCenter: parent.verticalCenter }
+        FmIcon { name: "next"; size: 10; color: parent.lit ? Theme.text : Theme.inkAlpha(.75); anchors.verticalCenter: parent.verticalCenter }
     }
 
     ColumnLayout {
@@ -224,34 +251,13 @@ Rectangle {
                 enabled: backend.connected && !backend.googleAuthBusy
                 onClicked: card.host.reconnect(card.modelData)
             }
-            Row {
-                spacing: 4
-                IconButton {
-                    objectName: "refreshGoogle_" + card.accountId
-                    visible: !card.archived && !backend.syntheticProfile && !card.pipeline.err
-                    iconName: "refresh"; spinning: card.syncing && card.syncState.active === true
-                    tip: card.syncState.active ? "Sync now" : "Resume syncing"
-                    enabled: backend.connected && !card.syncState.changing
-                    onClicked: card.syncState.active ? backend.refreshGoogleSync(card.accountId) : card.host.startSync(card.accountId)
-                }
-                IconButton {
-                    objectName: "googleSync_" + card.accountId
-                    visible: !card.archived && !backend.syntheticProfile && !card.pipeline.err
-                    iconName: card.syncState.owned ? "pause" : "play"
-                    tip: card.syncState.owned ? "Pause this account · downloading and the local model" : "Resume this account"
-                    enabled: backend.connected && !card.syncState.changing
-                    onClicked: {
-                        if (card.syncState.owned) { backend.pauseGoogleSync(card.accountId); card.progress.markPaused(card.accountId, true) }
-                        else { card.host.startSync(card.accountId); card.progress.markPaused(card.accountId, false) }
-                    }
-                }
-                IconButton {
-                    id: moreButton
-                    objectName: "accountOptions_" + card.accountId
-                    visible: !card.archived
-                    iconName: "more"; tip: "More"
-                    onClicked: { const point = mapToItem(Overlay.overlay, width, height); accountActions.x = point.x - accountActions.width; accountActions.y = point.y + 6; accountActions.open() }
-                }
+            // Sync, pause, edit and remove live in one menu.
+            IconButton {
+                id: moreButton
+                objectName: "accountOptions_" + card.accountId
+                visible: !card.archived
+                iconName: "more"; tip: "Sync, pause, edit or remove"
+                onClicked: { const point = mapToItem(Overlay.overlay, width, height); accountActions.x = point.x - accountActions.width; accountActions.y = point.y + 6; accountActions.open() }
             }
         }
         // Download: Mail. Hidden when mail sync is off.
@@ -269,31 +275,24 @@ Rectangle {
             Item { implicitWidth: 0 }
         }
         StageRow {
+            id: labelsRow
             visible: !card.archived
+            actionName: "editLabels_" + card.accountId; actionLabel: "Edit labels"; actionEnabled: backend.connected
+            onActivated: card.host.openLabels(card.accountId)
             StageLabel { iconName: "tag"; text: "Labels"; iconColor: Theme.inkAlpha(.4) }
             Text {
                 objectName: "accountLabels_" + card.accountId
                 text: card.labelNames.length ? card.labelNames.slice(0, 4).join(", ") + (card.labelNames.length > 4 ? " +" + (card.labelNames.length - 4) : "") : "No labels yet"
                 Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
             }
-            AbstractButton {
-                id: editLabels
-                objectName: "editLabels_" + card.accountId
-                hoverEnabled: true; enabled: backend.connected
-                onClicked: card.host.openLabels(card.accountId)
-                contentItem: Row {
-                    spacing: 4
-                    Text { text: "Edit"; color: editLabels.hovered ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } anchors.verticalCenter: parent.verticalCenter }
-                    FmIcon { name: "next"; size: 10; color: editLabels.hovered ? Theme.text : Theme.inkAlpha(.75); anchors.verticalCenter: parent.verticalCenter }
-                }
-                background: null
-                Accessible.name: "Edit labels"
-            }
+            EditCue { lit: labelsRow.actionHovered }
         }
         // Signature for new messages and replies from this account.
         StageRow {
             id: signatureRow
             visible: !card.archived
+            actionName: "editSignature_" + card.accountId; actionLabel: "Edit signature"; actionEnabled: backend.connected
+            onActivated: card.host.editSignature(card.accountId)
             readonly property string signature: card.modelData.signature_text || ""
             StageLabel { iconName: "edit"; text: "Signature"; iconColor: Theme.inkAlpha(.4) }
             Text {
@@ -302,19 +301,7 @@ Rectangle {
                 Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
                 color: signatureRow.signature.length ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
             }
-            AbstractButton {
-                id: editSignature
-                objectName: "editSignature_" + card.accountId
-                hoverEnabled: true; enabled: backend.connected
-                onClicked: card.host.editSignature(card.accountId)
-                contentItem: Row {
-                    spacing: 4
-                    Text { text: (card.modelData.signature_text || "").length ? "Edit" : "Add"; color: editSignature.hovered ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } anchors.verticalCenter: parent.verticalCenter }
-                    FmIcon { name: "next"; size: 10; color: editSignature.hovered ? Theme.text : Theme.inkAlpha(.75); anchors.verticalCenter: parent.verticalCenter }
-                }
-                background: null
-                Accessible.name: "Edit signature"
-            }
+            EditCue { text: signatureRow.signature.length ? "Edit" : "Add"; lit: signatureRow.actionHovered }
         }
         // Local model: silver-blue tint, done and queued as solid and pale segments.
         StageRow {
@@ -453,14 +440,54 @@ Rectangle {
             }
         }
     }
-    Popup {
-        id: accountActions; parent: Overlay.overlay; width: 200; padding: 5; focus: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
+    // A connected account syncs or pauses here; a disconnected one reconnects.
+    // Sync now while paused resumes first.
+    FmMenu {
+        id: accountActions; parent: Overlay.overlay
+        readonly property bool live: !backend.syntheticProfile && !card.pipeline.err
+        readonly property bool paused: card.syncState.active !== true
         contentItem: ColumnLayout {
-            spacing: 2
-            FmButton { objectName: "editAccount_" + card.accountId; text: "Edit…"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: backend.connected; onClicked: { accountActions.close(); card.host.editAccount(card.modelData) } }
-            FmButton { objectName: "removeAccount_" + card.accountId; text: "Remove"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; foreground: Theme.error; enabled: backend.connected && !backend.googleAuthBusy && !card.removal.busy; onClicked: { accountActions.close(); backend.previewAccountRemoval(card.accountId) } }
+            spacing: 0
+            FmMenuItem {
+                objectName: "accountSyncNow_" + card.accountId
+                visible: accountActions.live
+                text: card.syncing && !accountActions.paused ? "Syncing…" : accountActions.paused ? "Resume and sync now" : "Sync now"
+                enabled: backend.connected && !card.syncState.changing && !(card.syncing && !accountActions.paused)
+                onClicked: {
+                    accountActions.close()
+                    if (accountActions.paused) { card.host.startSync(card.accountId); card.progress.markPaused(card.accountId, false) }
+                    else backend.refreshGoogleSync(card.accountId)
+                }
+            }
+            FmMenuItem {
+                objectName: "accountPauseSync_" + card.accountId
+                visible: accountActions.live
+                text: card.syncState.owned ? "Pause syncing" : "Resume syncing"
+                enabled: backend.connected && !card.syncState.changing
+                onClicked: {
+                    accountActions.close()
+                    if (card.syncState.owned) { backend.pauseGoogleSync(card.accountId); card.progress.markPaused(card.accountId, true) }
+                    else { card.host.startSync(card.accountId); card.progress.markPaused(card.accountId, false) }
+                }
+            }
+            FmMenuItem {
+                objectName: "accountReconnect_" + card.accountId
+                visible: !backend.syntheticProfile && card.pipeline.err === true
+                text: "Reconnect"
+                enabled: backend.connected && !backend.googleAuthBusy
+                onClicked: { accountActions.close(); card.host.reconnect(card.modelData) }
+            }
+            FmMenuItem {
+                objectName: "editAccount_" + card.accountId; text: "Edit account"
+                separatorAbove: !backend.syntheticProfile
+                enabled: backend.connected
+                onClicked: { accountActions.close(); card.host.editAccount(card.modelData) }
+            }
+            FmMenuItem {
+                objectName: "removeAccount_" + card.accountId; text: "Remove account"; separatorAbove: true; danger: true
+                enabled: backend.connected && !backend.googleAuthBusy && !card.removal.busy
+                onClicked: { accountActions.close(); backend.previewAccountRemoval(card.accountId) }
+            }
         }
     }
 }

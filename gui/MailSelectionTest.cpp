@@ -54,13 +54,29 @@ class MailSelectionTest {
         // Reply drafts by draft ID; a conversation's own reply uses its ID, as in Core.
         QHash<QString,QJsonObject> drafts;
         QList<Held> heldLists;
+        // Saved views; one naming missingMember is refused as Core refuses a removed message.
+        QList<QJsonObject> viewSaves;
+        QString missingMember;
+        // Core's Done group for a row: This Week from the requested weekday,
+        // the rest of this month, then its month. Row times here are midday UTC.
+        static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
+            static const QStringList days{"monday","tuesday","wednesday","thursday","friday","saturday","sunday"};
+            const auto today = QDate::fromString(params["today"].toString(), Qt::ISODate);
+            const auto day = QDate::fromString(row.value("latest_at").toString().left(10), Qt::ISODate);
+            const auto start = days.indexOf(params["done_week_start"].toString());
+            if (today.isValid() && start >= 0 && day >= today.addDays(-((today.dayOfWeek() - 1 - start + 7) % 7))) return "week";
+            if (today.isValid() && day.year() == today.year() && day.month() == today.month()) return "month";
+            return row.value("latest_at").toString().left(7);
+        }
         QJsonObject listReply(const QJsonObject &params) const {
             QJsonArray shown;
-            const auto months = params["collapsed_months"].toArray();
+            const auto months = params["collapsed_months"].toArray(), open = params["open_months"].toArray();
             for (const auto &value : rows) {
                 const auto row = value.toMap();
-                const auto month = row.value("latest_at").toString().left(7);
-                if (filterCollapsed && row.value("group") == "done" && months.contains(month)) continue;
+                const auto month = doneGroup(row, params);
+                const bool older = month != "week" && month != "month";
+                if (filterCollapsed && row.value("group") == "done"
+                    && (months.contains(month) || (params.contains("open_months") && older && !open.contains(month)))) continue;
                 shown.append(QJsonObject::fromVariantMap(row));
             }
             QJsonValue next = QJsonValue::Null;
@@ -83,6 +99,9 @@ class MailSelectionTest {
             backend.m_account = "personal";
             backend.m_syntheticProfile = false;
             backend.m_preferences = {{"notifications","off"},{"theme","graphite"},{"text_size","default"}};
+            // A fixed date, with September an older month the user opened.
+            backend.m_mailToday = QDate(2026,10,14);
+            backend.m_openSections = {"done:2026-09"};
             backend.m_allAccounts = {QVariantMap{{"id","personal"},{"name","Personal"},{"email","test@example.test"},
                 {"conversation_count",3},{"lifecycle",QVariantMap{{"state","active"},{"revision",1}}},
                 {"google",QVariantMap{{"connection_state","connected"},{"capabilities",QVariantMap{{"mail_read",true},{"mail_write",true}}}}}}};
@@ -131,7 +150,15 @@ class MailSelectionTest {
                     else if (method == "message_unsubscribe") { result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "google_unsubscribe_mail") { result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","mailto"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
-                    else if (method == "view_save") result["revision"] = 1;
+                    else if (method == "view_save") {
+                        const auto params = request["params"].toObject(); viewSaves.append(params);
+                        if (!missingMember.isEmpty() && params["view"].toObject()["selectedMember"] == missingMember) {
+                            peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",request["id"]},{"ok",false},{"error",QJsonObject{{"code","not_found"},
+                                {"message","Selected member is outside this account"},{"details",QJsonObject{{"view_key","selectedMember"}}}}}}).toJson(QJsonDocument::Compact)+'\n');
+                            return true;
+                        }
+                        result["revision"] = 1;
+                    }
                     else if (method == "draft_get" && drafts.contains(draftId)) result = drafts[draftId];
                     else if (method == "draft_get") result = {{"conversation_id",request["params"].toObject()["conversation_id"]},{"account","personal"},{"revision",0}};
                     else if (method == "draft_save" && drafts.contains(draftId)) {
@@ -149,7 +176,12 @@ class MailSelectionTest {
                     }
                     else if (method == "conversation") {
                         const auto id = request["params"].toObject()["id"].toString();
-                        result = {{"id",id},{"revision",3},{"message_ids",QJsonArray{id+"-original"}},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
+                        // A thread read reports the row's current members and revision.
+                        QJsonArray ids{id+"-original"}; qint64 revision=3;
+                        for (const auto &row : rows) if (row.toMap().value("id").toString()==id) {
+                            ids=QJsonArray::fromVariantList(row.toMap().value("message_ids").toList()); revision=row.toMap().value("revision").toLongLong();
+                        }
+                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
                             {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
                     }
                     peer->write(reply(request["id"].toString(),result));
@@ -311,6 +343,21 @@ class MailSelectionTest {
         h.finish(second,false); await([&]{return !h.backend.m_mutatingConversation;},"conflict stops batch");
         require(h.backend.mailSelectionStatus().startsWith("1 of 2 updated. Stopped"),"partial failure disclosed");
         require(h.writes.isEmpty(),"no automatic retry after failure");
+        h.backend.clearError();
+        // Unseen work (a summary, a label rule) moved only the revision: the
+        // same members are retried once at the current revision, without an error.
+        auto moved=h.rows[0].toMap(); moved["revision"]=5; h.rows[0]=moved;
+        const auto listed=h.backend.snapshotMailRows({"a"});
+        h.backend.applyMailSelection(listed,"read");
+        auto stale=h.take();
+        require(stale.request["params"].toObject()["expected_revision"]==listed[0].toMap()["revision"].toInt() && listed[0].toMap()["revision"]!=5,
+            "selection uses the revision it was shown at");
+        h.finish(stale,false);
+        auto retried=h.take();
+        require(retried.request["params"].toObject()["expected_revision"]==5 && retried.request["params"].toObject()["message_ids"].toArray()==QJsonArray{"a-original"}
+            && retried.request["params"].toObject()["request_id"]!=stale.request["params"].toObject()["request_id"],"unchanged members retry at the current revision");
+        h.finish(retried); await([&]{return !h.backend.m_mutatingConversation;},"retried read finishes");
+        require(h.backend.mailSelectionStatus().isEmpty() && h.backend.error().isEmpty() && h.writes.isEmpty(),"a retried read reports no conflict");
         h.backend.clearError();
         auto foreign=snapshots; auto f=foreign[0].toMap(); f["selection_account"]="other"; foreign[0]=f;
         h.backend.applyMailSelection(foreign,"delay"); require(!h.backend.m_mutatingConversation && h.writes.isEmpty(),"foreign account refused before write");
@@ -564,13 +611,13 @@ class MailSelectionTest {
             // Like Core, the refresh leaves the collapsed month's rows out.
             const auto month=h.rows; h.rows.clear();
             h.backend.m_nextOffset=5;
-            h.backend.setCollapsedGroups({"done:2026-09"});
+            h.backend.setSectionCollapsed("done:2026-09",true);
             require(h.backend.m_loading && list->property("count").toInt()==0 && !mail->property("firstLoading").toBool(),"collapsing empties the loaded rows while the refresh runs");
             require(shownCount("mailGroup_review")==1 && shownCount("mailGroup_done:2026-09")==1 && !loadingText(),"the headers stay and nothing says Searching or Loading");
             await([&]{return !h.backend.m_loading;},"the refresh after collapsing lands");
             require(shownCount("mailGroup_done:2026-09")==1 && !loadingText(),"no loading text after the refresh");
             h.rows=month;
-            h.backend.setCollapsedGroups({});
+            h.backend.setSectionCollapsed("done:2026-09",false);
             require(list->property("count").toInt()==5 && !loadingText(),"expanding puts the month's rows back at once with no loading text");
             await([&]{return !h.backend.m_loading;},"the refresh after expanding lands");
         }
@@ -1426,6 +1473,7 @@ public:
     // here; unsubscribing goes to the engine by method and is remembered.
     static void remoteMail() {
         Harness h;
+        h.backend.m_openSections << "done:2020-01";
         // Google operations open their own connection to the fake engine.
         h.backend.m_enginePid=QCoreApplication::applicationPid();
         h.backend.loadConversations(); await([&]{return !h.backend.m_loading;},"mailbox loads before a remote search");
@@ -1495,13 +1543,24 @@ public:
         auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
         await([&]{return window->isExposed();},"month window exposed");
         const auto settle=[&](int ms=150){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        // Opened once, every month's rows load.
+        h.backend.m_openSections=monthKeys;
         h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
         await([&]{return !h.backend.m_loading && h.backend.conversations().size()==h.rows.size();},"years of Inbox mail load");
         // Every month but the newest two is folded.
-        h.backend.setCollapsedGroups(monthKeys.mid(2));
+        h.backend.setSections({},monthKeys.mid(0,2));
         await([&]{return !h.backend.m_loading && h.backend.conversations().size()==8+10;},"older months fold");
         settle();
         auto *list=find(window->contentItem(),"conversationList"); require(list,"month list");
+        // To review's band stays at the top while its rows scroll, and only then.
+        auto *sticky=find(window->contentItem(),"mailStickyGroup"); require(sticky,"sticky band");
+        require(!sticky->isVisible(),"no sticky band while the real header shows");
+        if (qEnvironmentVariableIsSet("FM_MONTH_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_MONTH_CAPTURE")+"/months.png");
+        list->setProperty("contentY",list->property("originY").toReal()+120); settle();
+        require(sticky->isVisible() && sticky->property("stuck")=="review" && std::abs(sticky->mapToScene({0,0}).y()-list->mapToScene({0,0}).y())<1,"To review's band holds the top while its rows scroll");
+        if (qEnvironmentVariableIsSet("FM_MONTH_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_MONTH_CAPTURE")+"/sticky.png");
+        list->setProperty("contentY",list->property("originY")); settle();
+        require(!sticky->isVisible(),"back at the top the band lets go");
         QMetaObject::invokeMethod(list,"positionViewAtEnd"); settle();
         // A folded month in the middle of the screen.
         QQuickItem *header=nullptr; QString group;
@@ -1824,8 +1883,54 @@ public:
         }
         qInfo()<<"A refreshed row that moves is shown once.";
     }
+    static void danglingViewReference() {
+        Harness h;
+        h.missingMember="gone-member";
+        h.backend.remember("readerY",12); h.backend.remember("selectedMember","gone-member");
+        h.backend.saveView(h.backend.m_account);
+        await([&]{return h.viewSaves.size()>=2 && h.backend.m_viewSaving.isEmpty();},"view saves again without the removed message");
+        require(h.viewSaves[0]["view"].toObject()["selectedMember"]=="gone-member" && !h.viewSaves.last()["view"].toObject().contains("selectedMember")
+            && h.viewSaves.last()["view"].toObject()["readerY"]==12,"only the removed reference leaves the saved view");
+        require(h.backend.error().isEmpty() && h.backend.m_viewPending.value(h.backend.m_account).isEmpty(),"the rest of the view saves without an error");
+    }
     static void memoryChecks(){readerMemorySharing();controls();}
     static void refreshChecks(){scopedRefreshes();mutations();undoActions();remoteMail();reviewTransitions();}
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();undoActions();remoteMail();controls();reviewTransitions();monthToggles();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    // Done is This Week, This Month, then older months. Older months start
+    // folded and build no rows; each choice is remembered with the view, and
+    // the week follows its setting.
+    static void doneGroups() {
+        Harness h;
+        h.filterCollapsed = true;
+        h.backend.m_openSections.clear();
+        const auto make=[](const QString &id,const QString &group,const QString &at){
+            return QVariant(QVariantMap{{"id",id},{"subject","Thread "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",group},{"kind","people"},{"unread",group=="review"},{"starred",false}}); };
+        h.rows = {make("r","review","2026-10-14T12:00:00Z"), make("w","done","2026-10-13T12:00:00Z"), make("m","done","2026-10-02T12:00:00Z"),
+            make("s","done","2026-09-10T12:00:00Z"), make("o","done","2025-12-01T12:00:00Z")};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0},{"done",4}}},{"done_months",QJsonArray{
+            QJsonObject{{"month","week"},{"count",1}},QJsonObject{{"month","month"},{"count",1}},QJsonObject{{"month","2026-09"},{"count",1}},QJsonObject{{"month","2025-12"},{"count",1}}}}};
+        const auto ids=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["id"].toString()); return out; };
+        const auto sections=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["section"].toString()); return out; };
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading;},"the Inbox loads");
+        require(h.lastQuery["done_week_start"]=="monday" && h.lastQuery["today"]=="2026-10-14" && h.lastQuery["open_months"].toArray()==QJsonArray{},"the list asks for Monday weeks with every older month folded");
+        require(ids()==QStringList{"r","w","m"} && sections()==QStringList{"review","done:week","done:month"},"This Week and This Month show; older months build no rows");
+        require(!h.backend.sectionCollapsed("done:week") && !h.backend.sectionCollapsed("done:month") && h.backend.sectionCollapsed("done:2026-09") && h.backend.sectionCollapsed("done:undated"),"older months start folded");
+        h.backend.setSectionCollapsed("done:2026-09",false);
+        await([&]{return !h.backend.m_loading && ids().contains("s");},"opening a month loads its rows");
+        require(ids()==QStringList{"r","w","m","s"} && h.lastQuery["open_months"].toArray()==QJsonArray{"2026-09"},"only the opened month joins the list");
+        require(h.backend.m_views["personal"].toMap()["openSections"].toStringList()==QStringList{"done:2026-09"},"the opened month is remembered");
+        h.backend.setSectionCollapsed("done:week",true);
+        await([&]{return !h.backend.m_loading && !ids().contains("w");},"folding This Week");
+        require(h.backend.m_views["personal"].toMap()["collapsedSections"].toStringList()==QStringList{"done:week"} && h.lastQuery["collapsed_months"].toArray()==QJsonArray{"week"},"a folded This Week is remembered");
+        h.backend.setSectionCollapsed("done:week",false);
+        await([&]{return !h.backend.m_loading && ids().contains("w");},"This Week opens again");
+        // A Wednesday week starts today, so Tuesday's thread is This Month.
+        h.backend.m_preferences["mail_week_start"]="wednesday"; h.backend.refreshDoneSections();
+        await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
+        require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
+    }
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();doneGroups();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

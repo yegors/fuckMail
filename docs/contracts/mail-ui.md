@@ -1,5 +1,22 @@
 # Mail UI, reader and human composer
 
+## D168 — account menu, Done by week and month, bands and quiet scrollbars (Mail UI117)
+
+- **Account card.** Only ⋯ in the header, tooltip "Sync, pause, edit or remove". Connected: Sync now / Syncing… / Resume and sync now (unpauses first), Pause syncing / Resume syncing, rule, Edit account, rule, Remove account in red. Disconnected: Reconnect, rule, Edit account, rule, Remove account. The Labels and Signature rows are one button each: pointer cursor, 3% ink wash over 150 ms, "Edit ›" as a cue.
+- **Done sections.** `done:week` ("This Week"), `done:month` ("This Month"), then `done:YYYY-MM` ("August", "December 2025") and `done:undated`. The week starts on `mail_week_start`. Week and month fold through `collapsedSections`; older months start folded and open through `openSections`. The list sends `done_week_start`, `today` and `open_months`, rebuilds sections when the date or the setting changes, and builds no rows for folded sections. Hovering a folded header prefetches its rows.
+- **Settings → Mail.** "Week starts on", a seven-day dropdown after "Show drafts in the corner".
+- **Section headers.** To review and Delayed: a 36px `bg2` band with hairlines above and below; 11px medium uppercase label at 0.07em and 82% ink; the count in a 1px `line2` box, 4px radius, monospace 10.5px, full ink; the chevron. The band whose rows fill the top of the list stays pinned there until the next header pushes it up. Done and date groups keep the lighter rule. To review's icon is a circle with an exclamation mark, also in the header count.
+- **Scrollbars.** The conversation list and thread reader bars are hidden at rest and when content fits. Real pointer movement over the view (not Qt's per-frame hover repeats), user scrolling, hover or drag shows the bar within 90 ms; it fades out over 260 ms after 0.9 s at rest. The 14px gutter stays reserved and still takes hover, clicks and drags. This replaces Mail UI61's always-visible bars for those two views.
+
+Consumers: `AccountCard`, `SettingsView`, `MailView`, `FmScrollBar`, `MailBackend`, `RemoteMailBackend`; Core84.
+
+## D167 — stale reads retried, dangling view keys dropped (Mail UI116)
+
+- A mail action refused with `stale_revision` reloads the conversation. When its members equal the action's snapshot and only the revision moved, the action is sent once more with the new revision and a new request ID; otherwise the refusal shows as before.
+- A `view_save` refused as `not_found` with `details.view_key` drops that key from the saved and pending view and saves again.
+
+Consumers: `MailBackend` (`requestMailAction`, `saveView`); Core84.
+
 ## D166 — account menu (Mail UI115)
 
 - The Settings → Accounts "…" menu is non-modal and does not dim the window, like the app's other menus. Escape or a click outside closes it.

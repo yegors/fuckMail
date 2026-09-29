@@ -11,7 +11,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","show_draft_chips":true,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","show_draft_chips":true,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","mail_week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
 }
@@ -137,6 +137,7 @@ impl Store {
                 "calendar_recent_searches",
                 "sync_every_minutes",
                 "week_start",
+                "mail_week_start",
                 "calendar_start_hour",
                 "calendar_end_hour",
                 "timeline_start_hour",
@@ -339,6 +340,14 @@ impl Store {
             || ![Some("monday"), Some("sunday")].contains(&preferences["week_start"].as_str())
         {
             return Err(err("invalid_request", "Unknown density or week start"));
+        }
+        // Mail's This Week group has its own start day, apart from Calendar's.
+        if crate::queries::weekday(preferences["mail_week_start"].as_str().unwrap_or("")).is_none()
+        {
+            return Err(err(
+                "invalid_request",
+                "Mail week start must name a weekday",
+            ));
         }
         for prefix in ["calendar", "timeline"] {
             let start = preferences[format!("{prefix}_start_hour")].as_i64();

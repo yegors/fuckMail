@@ -921,6 +921,9 @@ impl Store {
                 "live_paging",
                 "month_zone",
                 "collapsed_months",
+                "done_week_start",
+                "today",
+                "open_months",
             ],
         )?;
         let limit = number(p, "limit", 50, 1, 100)?;
@@ -1111,27 +1114,14 @@ impl Store {
                     })?,
             ),
         };
-        let mut collapsed_months = HashSet::new();
-        if let Some(months) = p.get("collapsed_months") {
-            let months = months
-                .as_array()
-                .filter(|months| months.len() <= 256 && month_zone.is_some())
-                .ok_or_else(|| {
-                    err(
-                        "invalid_request",
-                        "collapsed_months needs month_zone and at most 256 months",
-                    )
-                })?;
-            for month in months {
-                let month = month
-                    .as_str()
-                    .filter(|m| valid_month(m))
-                    .ok_or_else(|| err("invalid_request", "Collapsed months use YYYY-MM"))?;
-                if !collapsed_months.insert(month) {
-                    return Err(err("invalid_request", "Collapsed months must be unique"));
-                }
-            }
-        }
+        let this_week = recent_done(p, month_zone.is_some())?;
+        let collapsed_months = month_set(p, "collapsed_months", month_zone.is_some())?;
+        // With `open_months`, older months start folded: only the listed ones
+        // show rows, so a long history costs nothing until it is opened.
+        let open_months = p
+            .get("open_months")
+            .map(|_| month_set(p, "open_months", this_week.is_some()))
+            .transpose()?;
         // Labels filter as toggles: mail with any listed label (comma-separated
         // ids). A label: in the query decides instead.
         let mut categories: Vec<&str> = if label_id.is_empty() {
@@ -1470,27 +1460,32 @@ impl Store {
                 2
             }
         };
-        // Done is presented by month in the client's zone. Counts cover the
-        // whole filtered set; a collapsed month's rows are left out of paging.
+        // Done is presented by week and month in the client's zone. Counts
+        // cover the whole filtered set; a collapsed group's rows are left out
+        // of paging. Each row's group is worked out once.
+        let folds = !collapsed.is_empty() || !collapsed_months.is_empty() || open_months.is_some();
         let mut done_months: BTreeMap<String, usize> = BTreeMap::new();
-        if let Some(zone) = month_zone {
-            for (_, state) in &page {
-                if group_rank(state) == 2 {
-                    *done_months
-                        .entry(month_key(zone, state.latest))
-                        .or_default() += 1;
-                }
+        let mut folded = Vec::with_capacity(if folds { page.len() } else { 0 });
+        for (_, state) in &page {
+            let rank = group_rank(state);
+            let mut fold = collapsed.contains(["review", "held", "done"][rank]);
+            if let (2, Some(zone)) = (rank, month_zone) {
+                let key = done_key(zone, state.latest, this_week.as_ref());
+                fold = fold
+                    || collapsed_months.contains(key.as_str())
+                    || open_months.as_ref().is_some_and(|open| {
+                        key != THIS_WEEK && key != THIS_MONTH && !open.contains(key.as_str())
+                    });
+                *done_months.entry(key).or_default() += 1;
+            }
+            if folds {
+                folded.push(fold);
             }
         }
-        if !collapsed.is_empty() || !collapsed_months.is_empty() {
-            page.retain(|(_, state)| {
-                let rank = group_rank(state);
-                let month_collapsed = rank == 2
-                    && month_zone.is_some_and(|zone| {
-                        collapsed_months.contains(month_key(zone, state.latest).as_str())
-                    });
-                !(collapsed.contains(["review", "held", "done"][rank]) || month_collapsed)
-            });
+        if folds {
+            // `retain` visits rows once, in order.
+            let mut folded = folded.into_iter();
+            page.retain(|_| !folded.next().unwrap_or(false));
         }
         let expanded_count = page.len();
         // Review group first when grouped, then newest first, then conversation
@@ -1650,13 +1645,21 @@ impl Store {
             out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&snippet_phrases),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
         }
         // Newest month first; conversations without a date sort last.
+        // This Week, This Month, then newest month first; undated last.
         let done_months = month_zone.map(|_| {
-            let undated = done_months.remove(UNDATED);
-            done_months
-                .iter()
-                .rev()
-                .map(|(month, count)| json!({"month":month,"count":count}))
-                .chain(undated.map(|count| json!({"month":UNDATED,"count":count})))
+            let [week, month, undated] =
+                [THIS_WEEK, THIS_MONTH, UNDATED].map(|key| done_months.remove(key));
+            let group = |key: &str, count| json!({"month":key,"count":count});
+            week.map(|count| group(THIS_WEEK, count))
+                .into_iter()
+                .chain(month.map(|count| group(THIS_MONTH, count)))
+                .chain(
+                    done_months
+                        .iter()
+                        .rev()
+                        .map(|(key, count)| group(key, *count)),
+                )
+                .chain(undated.map(|count| group(UNDATED, count)))
                 .collect::<Vec<_>>()
         });
         let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"done_months":done_months,"search_terms":search_terms,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
@@ -1969,19 +1972,120 @@ fn canonical_email(email: &str) -> Result<String> {
 /// Done conversations whose latest message has no usable date.
 const UNDATED: &str = "undated";
 
-/// `YYYY-MM` of a Julian day in `zone`, or `undated`.
-fn month_key(zone: fm_calendar::Tz, julian_day: f64) -> String {
+/// Done conversations from the first day of the current week on.
+const THIS_WEEK: &str = "week";
+/// The rest of the current month's Done conversations.
+const THIS_MONTH: &str = "month";
+
+/// Where This Week and This Month begin, in the client's zone.
+struct RecentDone {
+    week: chrono::NaiveDate,
+    month: String,
+}
+
+/// A weekday by its lowercase English name, as preferences store it.
+pub(crate) fn weekday(name: &str) -> Option<chrono::Weekday> {
+    use chrono::Weekday::*;
+    [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        .into_iter()
+        .zip([
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ])
+        .find_map(|(day, text)| (text == name).then_some(day))
+}
+
+/// Reads the unique Done group keys listed under `key`, at most 256; `allowed`
+/// says whether the request can group by month at all.
+fn month_set<'a>(p: &'a Value, key: &str, allowed: bool) -> Result<HashSet<&'a str>> {
+    let mut set = HashSet::new();
+    let Some(months) = p.get(key) else {
+        return Ok(set);
+    };
+    let months = months
+        .as_array()
+        .filter(|months| months.len() <= 256 && allowed)
+        .ok_or_else(|| {
+            err(
+                "invalid_request",
+                &format!("{key} needs month_zone (and done_week_start for open_months) and at most 256 months"),
+            )
+        })?;
+    for month in months {
+        let month = month
+            .as_str()
+            .filter(|m| valid_month(m))
+            .ok_or_else(|| err("invalid_request", "Collapsed months use YYYY-MM"))?;
+        if !set.insert(month) {
+            return Err(err("invalid_request", "Collapsed months must be unique"));
+        }
+    }
+    Ok(set)
+}
+
+/// Reads `done_week_start` (a weekday) and `today` (the client's local date,
+/// so a cached first page expires at midnight). Both or neither are given,
+/// and only with `month_zone`.
+fn recent_done(p: &Value, zoned: bool) -> Result<Option<RecentDone>> {
+    let (start, today) = match (p.get("done_week_start"), p.get("today")) {
+        (None, None) => return Ok(None),
+        (Some(start), Some(today)) if zoned => (start, today),
+        _ => {
+            return Err(err(
+                "invalid_request",
+                "done_week_start needs today and month_zone",
+            ))
+        }
+    };
+    let start = start
+        .as_str()
+        .and_then(weekday)
+        .ok_or_else(|| err("invalid_request", "done_week_start must name a weekday"))?;
+    let today = today
+        .as_str()
+        .and_then(|day| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
+        .ok_or_else(|| err("invalid_request", "today must be a YYYY-MM-DD date"))?;
+    use chrono::Datelike;
+    let back = (today.weekday().num_days_from_monday() + 7 - start.num_days_from_monday()) % 7;
+    Ok(Some(RecentDone {
+        week: today - chrono::Duration::days(back.into()),
+        month: today.format("%Y-%m").to_string(),
+    }))
+}
+
+/// The date of a Julian day in `zone`, if it has a usable one.
+fn local_date(zone: fm_calendar::Tz, julian_day: f64) -> Option<chrono::NaiveDate> {
     let seconds = ((julian_day - 2_440_587.5) * 86_400.0).round();
     if julian_day <= 0.0 || !seconds.is_finite() {
-        return UNDATED.into();
+        return None;
     }
     chrono::DateTime::from_timestamp(seconds as i64, 0)
-        .map(|at| at.with_timezone(&zone).format("%Y-%m").to_string())
-        .unwrap_or_else(|| UNDATED.into())
+        .map(|at| at.with_timezone(&zone).date_naive())
+}
+
+/// The Done group of a Julian day in `zone`: `week` and `month` when `recent`
+/// is given, otherwise its `YYYY-MM`, or `undated`.
+fn done_key(zone: fm_calendar::Tz, julian_day: f64, recent: Option<&RecentDone>) -> String {
+    let Some(date) = local_date(zone, julian_day) else {
+        return UNDATED.into();
+    };
+    let month = date.format("%Y-%m").to_string();
+    match recent {
+        Some(recent) if date >= recent.week => THIS_WEEK.into(),
+        Some(recent) if month == recent.month => THIS_MONTH.into(),
+        _ => month,
+    }
 }
 
 fn valid_month(month: &str) -> bool {
     month == UNDATED
+        || month == THIS_WEEK
+        || month == THIS_MONTH
         || (month.len() == 7
             && month.as_bytes()[4] == b'-'
             && chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").is_ok())

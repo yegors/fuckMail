@@ -2,6 +2,14 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-09-29
+
+- Opening new mail marks it read again after a relaunch, and marking it read by hand works: background labelling no longer makes those actions fail with "State changed". An account whose saved view pointed at a removed message saves its view again.
+- Settings → Accounts: each card has one ⋯ menu for Sync now, Pause or Resume syncing, Edit account and Remove account (Reconnect when disconnected). Clicking anywhere on the Labels or Signature row opens its editor.
+- Done is grouped This Week, This Month, then one section per older month. This Week and This Month start open and older months start folded; each section remembers being opened or closed, and folded months cost nothing to load. Settings → Mail → "Week starts on" picks the day This Week begins.
+- To review and Delayed have a solid header band that stays at the top while you scroll their mail. To review has a new icon.
+- The mail list and thread scrollbars hide when idle and appear as soon as you move the pointer, scroll or point at the edge.
+
 ## 2026-09-28
 
 - Sending a reply keeps the thread still: the message you answered stays open, the reply box turns into your sent message with a short fade, and the reader never scrolls past the end into blank space. While Gmail takes the message, a thin line sweeps along the bottom of the box.
