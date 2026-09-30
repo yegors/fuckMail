@@ -20,7 +20,8 @@ pub(crate) struct ProgressKey {
     catch_up: Option<i64>,
 }
 /// Only small result rows are cached; never message bodies or queued jobs.
-pub(crate) type ProgressCache = RefCell<HashMap<String, (ProgressKey, Value)>>;
+/// Each row keeps when it was counted, for callers that accept a recent count.
+pub(crate) type ProgressCache = RefCell<HashMap<String, (ProgressKey, Value, std::time::Instant)>>;
 
 /// Received mail the local model can analyse: with text, or with a subject
 /// that carries the whole message, as a reminder sent to oneself does.
@@ -176,6 +177,17 @@ impl Store {
     /// Per-account counts for the Accounts view and account tabs. Unchanged
     /// mail/model state reuses its counts; policy and time bounds are rechecked.
     pub fn local_model_progress(&self, account: Option<&str>) -> Result<Value> {
+        self.local_model_progress_within(account, None)
+    }
+    /// [`Store::local_model_progress`], but counts made less than `max_age`
+    /// ago are reused while only mail has changed since. Counting reads every
+    /// message, so a progress display polled during sync would otherwise hold
+    /// the store for seconds at a time. Policy and bound changes still recount.
+    pub fn local_model_progress_within(
+        &self,
+        account: Option<&str>,
+        max_age: Option<std::time::Duration>,
+    ) -> Result<Value> {
         let generation = self.mail_changes.model_progress_generation(&self.db);
         let cacheable = self.db.is_autocommit();
         if !cacheable {
@@ -198,11 +210,18 @@ impl Store {
                 cutoff: bounds.cutoff,
                 catch_up: bounds.catch_up,
             };
-            if let Some((_, value)) = self
+            let recent = |old: &ProgressKey, at: &std::time::Instant| {
+                max_age.is_some_and(|age| at.elapsed() < age)
+                    && old.policy == key.policy
+                    && old.configured == key.configured
+                    && old.cutoff == key.cutoff
+                    && old.catch_up == key.catch_up
+            };
+            if let Some((_, value, _)) = self
                 .model_progress_cache
                 .borrow()
                 .get(&id)
-                .filter(|(old, _)| cacheable && *old == key)
+                .filter(|(old, _, at)| cacheable && (*old == key || recent(old, at)))
             {
                 rows.push(value.clone());
                 continue;
@@ -233,7 +252,7 @@ impl Store {
                 if cache.len() >= 256 && !cache.contains_key(&id) {
                     cache.clear();
                 }
-                cache.insert(id, (key, value.clone()));
+                cache.insert(id, (key, value.clone(), std::time::Instant::now()));
             }
             rows.push(value);
         }
@@ -394,6 +413,57 @@ mod tests {
         eprintln!(
             "progress SQL steps: full={scanned}, cached={cached}, unrelated={after_unrelated}"
         );
+    }
+
+    #[test]
+    fn polling_progress_reuses_recent_counts_while_mail_changes() {
+        let (_dir, mut s) = store();
+        let minute = Some(std::time::Duration::from_secs(60));
+        let within = |s: &Store, age| {
+            s.local_model_progress_within(Some(ACCOUNT), age).unwrap()["accounts"][0].clone()
+        };
+        let first = within(&s, minute);
+        let next = s.local_model_next(&[], None, 1, &[]).unwrap().remove(0);
+        finish(&s, &next);
+        // A poll that accepts a recent count skips the recount...
+        let (_, recount) = measured_progress(&s);
+        let first_done = first["done"].as_i64().unwrap();
+        assert_eq!(
+            within(&s, minute)["done"],
+            first_done + 1,
+            "the exact read above refreshed the cache"
+        );
+        finish(
+            &s,
+            &s.local_model_next(&[], None, 1, &[]).unwrap().remove(0),
+        );
+        assert_eq!(
+            within(&s, minute)["done"],
+            first_done + 1,
+            "a recent count is reused"
+        );
+        // ...an exact read, or an expired allowance, recounts.
+        assert_eq!(
+            within(&s, Some(std::time::Duration::ZERO))["done"],
+            first_done + 2
+        );
+        finish(
+            &s,
+            &s.local_model_next(&[], None, 1, &[]).unwrap().remove(0),
+        );
+        assert_eq!(progress(&s)["done"], first_done + 3);
+        assert!(recount > 0);
+        // A policy change always recounts.
+        let mut settings = s.local_model_settings().unwrap();
+        settings["settings"]["accounts"][ACCOUNT]["summaries"] = json!(false);
+        settings["settings"]["accounts"][ACCOUNT]["classification"] = json!(false);
+        s.local_model_handle(
+            "assist_settings_save",
+            None,
+            &json!({"expected_revision":settings["revision"],"settings":settings["settings"]}),
+        )
+        .unwrap();
+        assert_eq!(within(&s, minute)["enabled"], false);
     }
 
     #[test]

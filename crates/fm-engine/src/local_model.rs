@@ -192,10 +192,17 @@ impl Runtime {
     }
     /// Cheap per-account progress for the Accounts view and account tabs.
     async fn progress(&self, account: Option<&str>) -> Result<Value> {
+        self.progress_within(account, None).await
+    }
+    async fn progress_within(
+        &self,
+        account: Option<&str>,
+        max_age: Option<std::time::Duration>,
+    ) -> Result<Value> {
         let account = account.map(str::to_owned);
         let mut progress = self
             .core
-            .call(move |s| s.local_model_progress(account.as_deref()))
+            .call(move |s| s.local_model_progress_within(account.as_deref(), max_age))
             .await?;
         let speeds = self.speeds.lock().unwrap().clone();
         let held = self.held.lock().unwrap().clone();
@@ -256,6 +263,7 @@ impl Runtime {
             "assist_job" | "assist_cancel" => &["job_id"],
             "assist_settings_save" => &["expected_revision", "settings"],
             "assist_catch_up" => &["range"],
+            "assist_progress" => &["max_age_ms"],
             _ => &[],
         };
         if !p.is_object()
@@ -276,7 +284,17 @@ impl Runtime {
                 .ok_or_else(|| failure("account_required", "Choose an account"))
         };
         match method {
-            "assist_progress" => self.progress(account).await,
+            "assist_progress" => {
+                // A polling display may accept counts up to a minute old.
+                let max_age = match p.get("max_age_ms") {
+                    None => None,
+                    Some(value) => match value.as_u64().filter(|ms| *ms <= 60_000) {
+                        Some(ms) => Some(std::time::Duration::from_millis(ms)),
+                        None => return Err(failure("invalid_request", "max_age_ms is 0 to 60000")),
+                    },
+                };
+                self.progress_within(account, max_age).await
+            }
             "assist_backlog" => {
                 let account = account_required()?;
                 self.core

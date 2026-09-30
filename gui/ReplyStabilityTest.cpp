@@ -9,6 +9,7 @@
 #include <QGuiApplication>
 #include <QFontDatabase>
 #include <QJsonArray>
+#include <QJSValue>
 #include <QKeyEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -60,16 +61,31 @@ static void run() {
         {"cc_recipients", QJsonArray{}}, {"bcc_recipients", QJsonArray{}}, {"attachment_ids", QJsonArray{}}, {"attachments", QJsonArray{}},
         {"google", QJsonObject{{"account", "fixture-account"}, {"draft_id", "reply-draft"}, {"revision", 0}, {"state", "local"}, {"local_revision", 1}, {"operation_is_current", true}}}};
     QList<Held> sends; int saves = 0, reads = 0, lists = 0;
+    // Other threads in the list, by id.
+    QJsonObject others;
     QJsonArray retainedOutgoing; QJsonObject sentContent;
     fixture.customRequest = [&](QLocalSocket *peer, const QJsonObject &request) {
         const auto method = request["method"].toString(), id = request["id"].toString(), account = request["account"].toString();
         const auto params = request["params"].toObject();
-        if (method == "conversation") { ++reads; peer->write(reply(id, thread)); }
+        if (method == "conversation") { ++reads; peer->write(reply(id, (others.contains(params["id"].toString()) ? others[params["id"].toString()].toObject() : thread))); }
+        else if (method == "flag" && others.contains(params["id"].toString())) {
+            // Reading on open: the thread comes back read, one revision on.
+            auto read = others[params["id"].toString()].toObject(); QJsonArray messages;
+            for (const auto &value : read["messages"].toArray()) { auto m = value.toObject(); m["unread"] = false; messages.append(m); }
+            read["messages"] = messages; read["revision"] = read["revision"].toInteger() + 1; others[params["id"].toString()] = read;
+            peer->write(reply(id, read));
+        }
         else if (method == "conversations") {
             ++lists;
             QJsonObject row{{"id", "thread"}, {"account", "fixture-account"}, {"subject", "Stable thread"}, {"sender_name", "Reader"}, {"sender_email", "reader@example.test"},
                 {"latest_at", "2026-09-28T09:00:00Z"}, {"group", "done"}, {"unread", false}, {"starred", false}, {"message_count", thread["messages"].toArray().size()}, {"revision", thread["revision"]}};
-            peer->write(reply(id, {{"conversations", QJsonArray{row}}, {"filtered_conversation_count", 1}, {"next_offset", QJsonValue::Null}}));
+            QJsonArray rows{row};
+            for (auto it = others.begin(); it != others.end(); ++it) {
+                const auto other = it.value().toObject();
+                rows.append(QJsonObject{{"id", it.key()}, {"account", "fixture-account"}, {"subject", other["subject"]}, {"sender_name", "Reader"}, {"sender_email", "reader@example.test"},
+                    {"latest_at", "2026-09-28T08:00:00Z"}, {"group", "review"}, {"unread", true}, {"starred", false}, {"message_count", other["messages"].toArray().size()}, {"revision", other["revision"]}});
+            }
+            peer->write(reply(id, {{"conversations", rows}, {"filtered_conversation_count", rows.size()}, {"next_offset", QJsonValue::Null}}));
         }
         else if (method == "draft_create") peer->write(reply(id, saved));
         else if (method == "draft_get") {
@@ -246,6 +262,40 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     await([&] { return !mail->property("expanded").toBool(); }, "Hide folds the thread");
     for (int i = 0; i < 3; ++i) { syncTick(); thread["revision"] = thread["revision"].toInteger() + 1; statusBump({"reader"}); settle(400); }
     require(!mail->property("expanded").toBool() && !item("messageMember_first")->isVisible(), "a folded thread stays folded through refreshes");
+    // Messages folded away are never built, or hidden.
+    const auto shown = [&](const QString &name) { auto found = item(name); return found && found->isVisible(); };
+    // A thread answered earlier gets a new reply. Its cached copy lacks the
+    // reply; the current copy arrives a moment later. Only the new reply opens.
+    const auto message = [&](const QString &id, const QString &at, bool unread, bool sent) {
+        auto m = received(id, at); m["unread"] = unread; m["sent"] = sent;
+        if (sent) { m["sender_name"] = "Me"; m["sender_email"] = "me@example.test"; }
+        return m;
+    };
+    const QJsonArray answered{message("asked", "2026-09-20T09:00:00Z", false, false), message("answered", "2026-09-21T09:00:00Z", false, true)};
+    QJsonObject stale{{"id", "answered-thread"}, {"account", "fixture-account"}, {"subject", "Answered thread"}, {"revision", 2}, {"messages", answered}, {"message_ids", QJsonArray{"asked", "answered"}}};
+    auto current = stale; auto grown = answered; grown.append(message("follow-up", "2026-09-28T08:00:00Z", true, false));
+    current["messages"] = grown; current["revision"] = 3; current["message_ids"] = QJsonArray{"asked", "answered", "follow-up"};
+    others["answered-thread"] = current;
+    backend.loadConversations(false, true);
+    await([&] { return std::any_of(backend.m_conversations.cbegin(), backend.m_conversations.cend(), [](const QVariant &row) { return row.toMap().value("id") == "answered-thread"; }); }, "the answered thread is listed");
+    backend.cacheConversation("fixture-account", "answered-thread", stale.toVariantMap(), 1);
+    backend.openConversation("answered-thread");
+    await([&] { auto m = item("messageMember_follow-up"); return m && m->isVisible() && item("messageBody_follow-up"); }, "the new reply shows");
+    settle(400);
+    require(!shown("messageMember_asked") && !shown("messageMember_answered") && !mail->property("expanded").toBool(),
+        "earlier messages, the user's own reply included, fold away");
+    require(mail->property("foldedCount").toInt() == 2, "they wait under 2 earlier messages");
+    // Two unanswered replies both open; what came before stays folded.
+    QJsonObject pair{{"id", "two-new"}, {"account", "fixture-account"}, {"subject", "Two new"}, {"revision", 1},
+        {"messages", QJsonArray{message("old", "2026-09-20T09:00:00Z", false, false), message("new-1", "2026-09-28T07:00:00Z", true, false), message("new-2", "2026-09-28T07:30:00Z", true, false)}},
+        {"message_ids", QJsonArray{"old", "new-1", "new-2"}}};
+    others["two-new"] = pair;
+    backend.loadConversations(false, true);
+    await([&] { return std::any_of(backend.m_conversations.cbegin(), backend.m_conversations.cend(), [](const QVariant &row) { return row.toMap().value("id") == "two-new"; }); }, "the second thread is listed");
+    backend.openConversation("two-new");
+    await([&] { auto a = item("messageBody_new-1"), b = item("messageBody_new-2"); return a && b && a->isVisible() && b->isVisible(); }, "both unread replies open");
+    settle(400);
+    require(!shown("messageMember_old"), "the read message before them folds away");
     require(!warnings, "production QML has no warnings");
     qInfo() << "PASS: typing keeps focus, cursor and box through background work; Send keeps the thread open and the reply in view";
 }

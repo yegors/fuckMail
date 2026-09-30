@@ -507,6 +507,9 @@ Item {
     property string settledScope: ""
     readonly property string listScope: backend.account + "\n" + backend.folder
     readonly property bool firstLoading: backend.loading && settledScope !== listScope
+    // A chosen thread still on its way: the reader waits blank rather than
+    // saying nothing is open.
+    readonly property bool readerLoading: !draftsMode && backend.selectedId.length > 0 && members.length === 0 && !replyOpen
     component ReaderAction: FmButton {
         leftPadding: 14; rightPadding: 14
         font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
@@ -886,17 +889,55 @@ Item {
     // so the thread never folds away under the reader.
     property var shownMembers: ({})
     property string lastMemberKey: ""
-    property string memberRestoredThread: ""
     function memberShown(id, index) { return expanded || index === members.length - 1 || shownMembers[expansionKey + id] === true }
     readonly property int foldedCount: {
         let count = 0
         for (let i = 0; i < members.length - 1; ++i) if (shownMembers[expansionKey + members[i].id] !== true) ++count
         return count
     }
-    function keepLatestShown(thread) {
+    // One visit to a thread. Its messages still to review open, or the
+    // latest alone when none are; everything earlier folds away. The layout
+    // follows the thread until its current copy has arrived (a cached copy
+    // may lack the newest mail), or until the user unfolds or folds anything.
+    property string visitThread: ""
+    property var visitUnread: ({})
+    property bool visitSettled: false
+    property bool visitTouched: false
+    function openThread(messages) {
+        const open = Object.assign({}, expandedMembers), shown = {}
+        for (const key of Object.keys(open)) if (key.startsWith(expansionKey)) delete open[key]
+        messages.forEach(function(m, i) {
+            if (i !== messages.length - 1 && visitUnread[m.id] !== true) return
+            open[expansionKey + m.id] = true
+            if (i !== messages.length - 1) shown[expansionKey + m.id] = true
+        })
+        expandedMembers = open; shownMembers = shown; expanded = false
+    }
+    function followThread(thread) {
         const messages = draftsMode ? [] : (backend.conversation.messages || [])
-        if (thread !== loadedThread) shownMembers = ({})
-        else if (lastMemberKey.startsWith(expansionKey)) {
+        if (thread !== visitThread) { visitThread = thread; visitUnread = ({}); visitSettled = false; visitTouched = false; lastMemberKey = ""; shownMembers = ({}) }
+        // Unread stays remembered for the visit, so reading on open changes nothing.
+        const unread = Object.assign({}, visitUnread), arrived = []
+        for (const m of messages) if (m.unread && unread[m.id] !== true) { unread[m.id] = true; arrived.push(m.id) }
+        visitUnread = unread
+        if (!messages.length) return
+        if (!visitSettled) {
+            if (!visitTouched) openThread(messages)
+            const row = rows.find(function(r) { return r.id === backend.selectedId })
+            visitSettled = !row || (backend.conversation.revision || 0) >= (row.revision || 0)
+            lastMemberKey = expansionKey + messages[messages.length - 1].id
+            return
+        }
+        keepLatestShown(messages)
+        // Several new messages at once all open, not only the last.
+        if (arrived.length > 1) {
+            const open = Object.assign({}, expandedMembers), shown = Object.assign({}, shownMembers)
+            for (const id of arrived) { open[expansionKey + id] = true; shown[expansionKey + id] = true }
+            expandedMembers = open; shownMembers = shown
+        }
+    }
+    function keepLatestShown(messages) {
+        if (lastMemberKey.startsWith(expansionKey)) {
             const id = lastMemberKey.slice(expansionKey.length)
             const at = messages.findIndex(function(m) { return m.id === id })
             if (at >= 0 && at < messages.length - 1 && shownMembers[lastMemberKey] !== true) {
@@ -911,11 +952,13 @@ Item {
         return state === undefined ? index === members.length - 1 : state === true
     }
     function toggleMember(id, index) {
+        visitTouched = true
         const next = Object.assign({}, expandedMembers), key = expansionKey + id
         next[key] = !memberIsExpanded(id,index); expandedMembers = next
         backend.remember("selectedMember", next[key] ? id : "")
     }
     function scrollToMember(id) {
+        visitTouched = true
         expanded = true; backend.remember("expanded",true)
         const next = Object.assign({},expandedMembers); next[expansionKey+id] = true; expandedMembers = next
         backend.remember("selectedMember",id)
@@ -1152,17 +1195,12 @@ Item {
     function restorePosition() {
         restoring = true
         const view = backend.presentation
-        expanded = view.expanded || false
         const identity = composerIdentity
         const sameDraft = backend.activeDraftId.length ? view.selectedDraft === backend.activeDraftId : !view.selectedDraft && view.selected === backend.selectedId
         if (sameDraft && view.replyOpen !== undefined) {
             const replies = Object.assign({},replyStates); replies[identity] = view.replyOpen === true; replyStates = replies
         }
         replyOpen = replyStates[identity] === true
-        const chosen = view.selectedMember || ""
-        if (chosen && members.some(function(m) { return m.id === chosen })) {
-            const next = Object.assign({},expandedMembers); next[expansionKey+chosen] = true; expandedMembers = next; expanded = true
-        }
         Qt.callLater(function() { mail.restoreListPosition(); if (!replyReveal.running) reader.contentY = Math.max(0,view.readerY||0); restoring = false })
     }
     Connections {
@@ -1188,17 +1226,9 @@ Item {
                 mail.replyOpen = mail.replyStates[identity] === true
                 if (!replyReveal.running && !sameThread) reader.contentY = Math.max(0,backend.presentation.readerY||0)
             }
-            mail.keepLatestShown(thread)
-            if (thread !== mail.loadedThread) mail.memberRestoredThread = ""
+            mail.followThread(thread)
             mail.loadedThread = thread
             if (mail.members.length) {
-                // The message last opened here reopens once per visit; the
-                // thread's later refreshes leave its folding as the user set it.
-                const selected = mail.memberRestoredThread === thread ? "" : backend.presentation.selectedMember || ""
-                mail.memberRestoredThread = thread
-                if (selected && mail.members.some(function(m) { return m.id === selected })) {
-                    const next = Object.assign({},mail.expandedMembers); next[mail.expansionKey+selected] = true; mail.expandedMembers = next; mail.expanded = true
-                }
                 if (mail.pendingReveal === backend.selectedId) { if (mail.matchingIds.length) mail.revealMatch(); mail.pendingReveal = "" }
             }
         }
@@ -1833,9 +1863,7 @@ Item {
                                 font.pointSize: Theme.fontPoints(12); implicitHeight: Math.round(Theme.fontSize(12) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                 foreground: hovered ? Theme.text : Theme.inkAlpha(.5)
                                 background: Rectangle { color: "transparent"; radius: 3; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
-                                // Hiding also forgets the opened message, so it
-                                // does not unfold the thread on the next visit.
-                                onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded); if (!mail.expanded) backend.remember("selectedMember","") }
+                                onClicked: { mail.visitTouched=true; mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded); if (!mail.expanded) backend.remember("selectedMember","") }
                             }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                         }
@@ -2308,7 +2336,7 @@ Item {
                         readonly property bool clear: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && ((backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0) === 0 && ((backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0) === 0
                         readonly property var nextEvent: (backend.todayEvents || []).find(function(e) { return !e.all_day && e.start_hour > backend.nowHour }) || null
                         readonly property bool inboxClear: clear && !mail.firstLoading
-                        visible: mail.members.length===0 && !mail.replyOpen; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * (inboxClear ? 0.16 : 0.18)); width: Math.min(inboxClear ? 520 : 640, parent.width-readerPane.margin*2); spacing: 0
+                        visible: mail.members.length===0 && !mail.replyOpen && !mail.readerLoading; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * (inboxClear ? 0.16 : 0.18)); width: Math.min(inboxClear ? 520 : 640, parent.width-readerPane.margin*2); spacing: 0
                         // Inbox clear: a small check, the title, one line and today's next event.
                         RowLayout {
                             visible: emptyReader.inboxClear

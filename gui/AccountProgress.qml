@@ -42,9 +42,12 @@ QtObject {
         return seconds < 60 ? "just now" : seconds < 3600 ? Math.floor(seconds / 60) + " min ago"
             : seconds < 86400 ? Math.floor(seconds / 3600) + " h ago" : Math.floor(seconds / 86400) + " days ago"
     }
-    function refresh() {
+    // The regular poll accepts counts up to 15 s old: counting reads every
+    // message, and during sync mail changes every second. After the user's
+    // own changes the counts are exact.
+    function refresh(exact) {
         if (!active || !backend.connected || ticket.length) return
-        ticket = backend.assistanceRequest("assist_progress", {}, "")
+        ticket = backend.assistanceRequest("assist_progress", exact ? {} : {max_age_ms: 15000}, "")
     }
     function markPaused(account, paused) {
         const next = Object.assign({}, pausedAt)
@@ -204,7 +207,7 @@ QtObject {
         target: backend
         function onAssistanceReply(ticket, method, result, ok) {
             // A person's action shows at once rather than on the next poll.
-            if (ok && ["assist_catch_up", "assist_cancel", "assist_settings_save"].indexOf(method) >= 0) { model.ticket = ""; model.refresh() }
+            if (ok && ["assist_catch_up", "assist_cancel", "assist_settings_save"].indexOf(method) >= 0) { model.ticket = ""; model.refresh(true) }
             if (ticket !== model.ticket) return
             model.ticket = ""
             if (!ok) return

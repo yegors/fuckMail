@@ -23,7 +23,7 @@ Item {
     // Main hands in the app's pipeline model; loaded alone, Settings keeps its own.
     property var progress: localProgress
     AccountProgress { id: localProgress; active: settings.progress === localProgress }
-    AccountPolicy { id: accountPolicy; onChanged: settings.progress.refresh() }
+    AccountPolicy { id: accountPolicy; onChanged: settings.progress.refresh(true) }
     AccountColorPicker { id: colorPicker }
     LabelsDialog { id: labelsDialog; onChanged: settings.labelsEdited(account) }
     SignatureDialog { id: signatureDialog }

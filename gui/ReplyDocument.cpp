@@ -1,10 +1,13 @@
 // ReplyDocument: loads saved drafts into the QML editor's QTextDocument without
 // disturbing selection or undo, applies bold/italic/underline, pastes as plain
-// text, and reduces HTML to the allowed formatting (also for received bodies).
+// text, reduces HTML to the allowed formatting (also for received bodies), and
+// connects the editor to the system spell checker.
 #include "ReplyDocument.h"
 #include <QSet>
 #include "ReceivedBody.h"
+#include "SpellChecker.h"
 #include <QClipboard>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QRegularExpression>
@@ -102,6 +105,40 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
     }
     return output;
 }
+ReplyDocument::ReplyDocument(QObject *parent)
+    : QObject(parent),
+      m_spelling(new SpellHighlighter(this, SpellChecker::system(), {
+          [this] { return typingCaret(); },
+          [this] { queueMarks(); },
+          [this] { queueRecheck(); }})) {}
+// Answers arrive in batches; one recheck covers all that arrived this turn.
+void ReplyDocument::queueRecheck() {
+    if (m_recheckQueued) return;
+    m_recheckQueued = true;
+    QMetaObject::invokeMethod(this, [this] {
+        m_recheckQueued = false;
+        if (m_document) restyle([this] { m_spelling->rehighlight(); });
+    }, Qt::QueuedConnection);
+}
+// Collected once per event-loop pass, after every highlight of that pass.
+void ReplyDocument::queueMarks() {
+    if (m_marksQueued) return;
+    m_marksQueued = true;
+    QMetaObject::invokeMethod(this, [this] {
+        m_marksQueued = false;
+        QVariantList marks;
+        if (m_document)
+            for (const auto &[start, length] : SpellHighlighter::marks(m_document->textDocument()))
+                marks.append(QVariantMap{{"start", start}, {"length", length}});
+        if (marks == m_misspellings) return;
+        m_misspellings = marks;
+        emit misspellingsChanged();
+    }, Qt::QueuedConnection);
+}
+template <class Change> void ReplyDocument::restyle(Change change) {
+    const QScopedValueRollback<bool> restyling(m_restyling, true);
+    change();
+}
 QVariantList ReplyDocument::receivedBody(const QString &html,const QString &plain) {
     return ReceivedBody::sections(html,plain,[](const QString &body){return limitedHtml(body,true);});
 }
@@ -109,7 +146,15 @@ void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
     if (document == m_document) return;
     if (m_document) m_document->textDocument()->disconnect(this);
     m_document = document;
+    m_correction = {};
+    restyle([this] {
+        m_spelling->setDocument(m_document ? m_document->textDocument() : nullptr);
+        if (m_document) { m_spelling->prefetch(m_document->textDocument()->toPlainText()); m_spelling->rehighlight(); }
+    });
+    queueMarks();
     if (m_document) connect(m_document->textDocument(), &QTextDocument::contentsChanged, this, [this] {
+        // Spelling marks change only the layout, not the draft.
+        if (m_restyling) return;
         // Loaded text updates property bindings (including action availability),
         // while only authored edits notify the autosave consumer.
         emit textChanged();
@@ -120,9 +165,15 @@ void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
 }
 void ReplyDocument::setEditor(QQuickItem *editor) {
     if (editor == m_editor) return;
-    if (m_editor) m_editor->removeEventFilter(this);
+    if (m_editor) { m_editor->removeEventFilter(this); disconnect(m_editor, nullptr, this, nullptr); }
     m_editor = editor;
-    if (m_editor) m_editor->installEventFilter(this);
+    if (m_editor) {
+        m_editor->installEventFilter(this);
+        // The word being typed is checked once the caret leaves it.
+        if (m_editor->metaObject()->indexOfSignal("cursorPositionChanged()") >= 0)
+            connect(m_editor, SIGNAL(cursorPositionChanged()), this, SLOT(caretMoved()));
+        connect(m_editor, &QQuickItem::activeFocusChanged, this, &ReplyDocument::caretMoved);
+    }
     emit documentChanged();
 }
 QString ReplyDocument::plainText() const { return m_document ? m_document->textDocument()->toPlainText() : QString{}; }
@@ -130,6 +181,8 @@ QString ReplyDocument::html() const { return m_document ? limitedHtml(m_document
 void ReplyDocument::setIdentity(const QString &identity) {
     if (m_identity == identity) return;
     m_identity = identity;
+    m_correction = {};
+    ++m_session;
     // Equal text still belongs to a different authoring session. Its undo stack
     // must never be able to restore words from the previously selected draft.
     const QScopedValueRollback<bool> loading(m_loading, true);
@@ -158,6 +211,9 @@ void ReplyDocument::load(const QString &body, const QString &value) {
     const int end = m_editor ? m_editor->property("selectionEnd").toInt() : 0;
     const int position = m_editor ? m_editor->property("cursorPosition").toInt() : 0;
     m_loading = true;
+    m_correction = {};
+    ++m_session;
+    m_spelling->prefetch(body);
     auto document = m_document->textDocument();
     if (value.isEmpty()) document->setPlainText(body);
     else {
@@ -191,15 +247,130 @@ void ReplyDocument::pastePlain() {
     QTextCursor cursor(m_document->textDocument());
     cursor.setPosition(m_editor->property("selectionStart").toInt());
     cursor.setPosition(m_editor->property("selectionEnd").toInt(), QTextCursor::KeepAnchor);
-    cursor.insertText(QGuiApplication::clipboard()->text());
+    const auto text = QGuiApplication::clipboard()->text();
+    m_spelling->prefetch(text);
+    cursor.insertText(text);
     m_editor->setProperty("cursorPosition", cursor.position());
 }
 void ReplyDocument::undo() { if (!m_readOnly && m_document && m_document->textDocument()->isUndoAvailable()) m_document->textDocument()->undo(); }
 void ReplyDocument::redo() { if (!m_readOnly && m_document && m_document->textDocument()->isRedoAvailable()) m_document->textDocument()->redo(); }
+namespace {
+// Characters that finish a word and so trigger automatic correction.
+bool endsWord(const QString &typed) {
+    return typed.size() == 1 && (typed[0].isSpace() || QStringLiteral(".,;:!?)]}\"\u201d").contains(typed[0]));
+}
+}
 // Paste shortcuts and drops would otherwise insert rich text from outside the
 // allowed formatting; paste goes through pastePlain() and drops are refused.
+// A finished word may be corrected, and Undo right after restores it.
 bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
-    if (watched == m_editor && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->matches(QKeySequence::Paste)) { pastePlain(); return true; }
-    if (watched == m_editor && event->type() == QEvent::Drop) return true;
+    if (watched != m_editor) return QObject::eventFilter(watched, event);
+    if (event->type() == QEvent::KeyPress) {
+        const auto key = static_cast<QKeyEvent *>(event);
+        if (key->matches(QKeySequence::Paste)) { pastePlain(); return true; }
+        // Undoing without the editor's cursor leaves the caret after the
+        // separator that was typed, as it was before the undo.
+        if (key->matches(QKeySequence::Undo) && correctionOnTop()) { undo(); return true; }
+        if (!(key->modifiers() & (Qt::ControlModifier | Qt::MetaModifier)) && endsWord(key->text())) correctBeforeCaret();
+    } else if (event->type() == QEvent::InputMethod) {
+        const auto input = static_cast<QInputMethodEvent *>(event);
+        if (input->preeditString().isEmpty() && endsWord(input->commitString())) correctBeforeCaret();
+    } else if (event->type() == QEvent::Drop) return true;
     return QObject::eventFilter(watched, event);
+}
+int ReplyDocument::typingCaret() const {
+    if (!m_editor || m_readOnly || !m_editor->hasActiveFocus()) return -1;
+    return m_editor->property("cursorPosition").toInt();
+}
+void ReplyDocument::caretMoved() {
+    const int pending = m_spelling->pending();
+    if (!m_document || pending < 0 || pending == typingCaret()) return;
+    const auto block = m_document->textDocument()->findBlock(qMax(0, pending - 1));
+    restyle([&] { m_spelling->rehighlightBlock(block); });
+}
+void ReplyDocument::setSpellChecker(SpellChecker *checker) {
+    m_spelling->setChecker(checker);
+    m_correction = {};
+    if (m_document) restyle([this] { m_spelling->prefetch(m_document->textDocument()->toPlainText()); m_spelling->rehighlight(); });
+}
+QVariantMap ReplyDocument::spellingAt(int position) {
+    const auto checker = m_spelling->checker();
+    if (!checker || !m_document) return {};
+    const auto block = m_document->textDocument()->findBlock(position);
+    if (!SpellHighlighter::checks(block)) return {};
+    const int offset = position - block.position();
+    for (const auto &word : SpellHighlighter::words(block.text())) {
+        if (offset < word.start || offset > word.start + word.text.size()) continue;
+        if (!m_spelling->misspelled(word.text)) return {};
+        // A menu that opens without guesses beats one that waits for them.
+        return {{"word", word.text}, {"start", block.position() + word.start}, {"suggestions", checker->suggestions(word.text, 200).mid(0, 6)}};
+    }
+    return {};
+}
+bool ReplyDocument::replaceText(int start, const QString &word, const QString &replacement) {
+    if (m_readOnly || !m_document || start < 0 || word.isEmpty()) return false;
+    const auto document = m_document->textDocument();
+    if (start + word.size() > document->characterCount() - 1) return false;
+    QTextCursor cursor(document);
+    cursor.setPosition(start); cursor.setPosition(start + int(word.size()), QTextCursor::KeepAnchor);
+    if (cursor.selectedText() != word) return false;
+    // The last letter's format, so a bold or linked word stays so.
+    const auto format = cursor.charFormat();
+    cursor.beginEditBlock(); cursor.insertText(replacement, format); cursor.endEditBlock();
+    return true;
+}
+bool ReplyDocument::replaceWord(int start, const QString &word, const QString &replacement) {
+    if (!replaceText(start, word, replacement)) return false;
+    if (m_editor) m_editor->setProperty("cursorPosition", start + int(replacement.size()));
+    return true;
+}
+void ReplyDocument::learnSpelling(const QString &word) {
+    const auto checker = m_spelling->checker();
+    if (!checker || word.isEmpty()) return;
+    checker->learn(word); m_spelling->accept(word);
+    if (m_document) restyle([this] { m_spelling->rehighlight(); });
+}
+void ReplyDocument::ignoreSpelling(const QString &word) {
+    const auto checker = m_spelling->checker();
+    if (!checker || word.isEmpty()) return;
+    checker->ignore(word); m_spelling->accept(word);
+    if (m_document) restyle([this] { m_spelling->rehighlight(); });
+}
+// Runs before the editor inserts the separator; the correction follows it as
+// its own undo step. A word whose correction was undone is left alone.
+void ReplyDocument::correctBeforeCaret() {
+    const auto checker = m_spelling->checker();
+    if (m_readOnly || !checker || !m_document || !m_editor) return;
+    if (m_editor->property("selectionStart").toInt() != m_editor->property("selectionEnd").toInt()) return;
+    const int caret = m_editor->property("cursorPosition").toInt();
+    const auto block = m_document->textDocument()->findBlock(caret);
+    if (!SpellHighlighter::checks(block)) return;
+    const int offset = caret - block.position();
+    for (const auto &word : SpellHighlighter::words(block.text())) {
+        if (word.start + word.text.size() != offset) continue;
+        const int start = block.position() + word.start;
+        if (m_correction.start == start && m_correction.original == word.text) return;
+        // Applied after the editor has inserted the separator, and only while
+        // the same word is still there in the same session, within a moment.
+        const QPointer<ReplyDocument> self(this);
+        const auto session = m_session;
+        QElapsedTimer asked; asked.start();
+        checker->correction(word.text, [self, session, asked, start, original = word.text](const QString &fixed) {
+            if (!self || fixed.isEmpty() || fixed == original) return;
+            QMetaObject::invokeMethod(self, [self, session, asked, start, original, fixed] {
+                if (!self || self->m_session != session || asked.elapsed() > 1500 || !self->replaceText(start, original, fixed)) return;
+                self->m_correction = {start, original, fixed, self->m_document->textDocument()->availableUndoSteps()};
+            }, Qt::QueuedConnection);
+        });
+        return;
+    }
+}
+bool ReplyDocument::correctionOnTop() const {
+    if (m_readOnly || !m_document || m_correction.steps < 0) return false;
+    const auto document = m_document->textDocument();
+    if (document->availableUndoSteps() != m_correction.steps) return false;
+    QTextCursor cursor(document);
+    cursor.setPosition(qMin(m_correction.start, document->characterCount() - 1));
+    cursor.setPosition(qMin(m_correction.start + int(m_correction.replacement.size()), document->characterCount() - 1), QTextCursor::KeepAnchor);
+    return cursor.selectedText() == m_correction.replacement;
 }

@@ -549,6 +549,7 @@ private:
     friend class DraftTransferControlsTest;
     friend class SendUndoTest;
     friend class ReplyStabilityTest;
+    friend class MailboxSwitchTest;
     friend class DraftDiscardTest;
     friend class CalendarOccurrenceBackendTest;
     friend class CalendarMailActivityTest;
@@ -861,6 +862,10 @@ private:
     struct ListView { QString folder, query; QVariantMap filters; QString category; };
     ListView currentView() const { return {m_folder, m_query, m_filters, m_category}; }
     ListView folderView(const QString &folder) const;
+    // Loads each other account's saved view once, after the first list of the
+    // session, so switching to it shows its mail at once.
+    void warmOtherAccounts();
+    bool m_accountsWarmed = false;
     QJsonObject listParams(const QStringList &collapsed, const QStringList &open, const ListView &view) const;
     // First pages of recent list views, by account and view, so going back to
     // one, or to one prefetched on hover, shows at once; its refresh then

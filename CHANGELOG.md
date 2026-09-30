@@ -4,6 +4,9 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-09-29
 
+- The message editor checks spelling as you type, using the system spell checker on macOS and Windows. Misspelled words get a dotted red underline once you finish them; right-click one for the system's suggestions, Ignore spelling or Learn spelling. On macOS, words are corrected automatically as you type when "Correct spelling automatically" is on in System Settings, and ⌘Z brings back what you typed. Quoted and forwarded text is left alone. Linux has no spell checking yet.
+- Switching mailboxes is instant: every account's current view is loaded ahead after launch, and one still loading shows nothing instead of "Inbox clear" or "Nothing open". Local-model progress no longer holds up the app while mail syncs.
+- Opening a thread shows what is new: its unread messages open, or just the latest, with everything earlier folded away, including your own earlier reply. Threads no longer reopen the message you last expanded.
 - Opening new mail marks it read again after a relaunch, and marking it read by hand works: background labelling no longer makes those actions fail with "State changed". An account whose saved view pointed at a removed message saves its view again.
 - Settings → Accounts: each card has one ⋯ menu for Sync now, Pause or Resume syncing, Edit account and Remove account (Reconnect when disconnected). Clicking anywhere on the Labels or Signature row opens its editor.
 - Done is grouped This Week, This Month, then one section per older month. This Week and This Month start open and older months start folded; each section remembers being opened or closed, and folded months cost nothing to load. Settings → Mail → "Week starts on" picks the day This Week begins.

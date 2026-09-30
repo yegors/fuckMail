@@ -1,5 +1,22 @@
 # Mail UI, reader and human composer
 
+## Spelling (Mail UI119)
+
+- **Where.** The composer body only (not Subject, which is a single-line field without a text document, nor recipients). Checked text excludes lines starting with `>` and everything from the `---------- Forwarded message` line on, plus tokens that contain a digit, `@`, `/`, `\`, `_`, `#`, `=` or a dot followed by a letter (links, addresses, domains, paths), all-capital words and single letters.
+- **Checker.** The system's: NSSpellChecker on macOS, the Windows Spell Checking API in the user's default language (else en-US) on Windows, none on Linux. macOS calls run on one serial background queue; typing never waits. Words count as correct until their answer arrives; answers are cached per word for the editor's life. Headless runs (offscreen, minimal) use no system checker.
+- **Underline.** A 1.6px dotted rule in `Theme.error` under each misspelled word, drawn over the editor from `ReplyDocument.misspellings` (layout-only marks, never document formats: the saved plain text and HTML are unchanged). The word the caret is still at the end of is not underlined until the caret leaves it or focus goes. Hidden for read-only (archived) drafts.
+- **Menu.** Right-click on an underlined word puts up to six suggestions first in the editor's usual menu (medium weight), or a disabled "No guesses found", then "Ignore spelling" (this session) and "Learn spelling" (the user's system dictionary), then the usual rows after a rule. Suggestions wait at most 200 ms. Choosing one replaces the word as one undoable edit that keeps its formatting, moves the caret after it and autosaves like typing.
+- **Correction (macOS).** When a space, Return or `. , ; : ! ? ) ] } " ”` follows a word and System Settings' "Correct spelling automatically" is on, the system's correction replaces the word as its own undo step, within 1.5 s and only if the word is unchanged. ⌘Z straight after restores the typed word and keeps the caret after the separator; that word is not corrected again at that spot. Windows does not correct automatically.
+
+Consumers: `ReplyComposer`, `TextMenu` (`leading` rows), `ReplyDocument`, `SpellHighlighter`/`SpellChecker`; SpellCheckTest, ComposerInputTest.
+
+## D169 — switching mailboxes and opening threads (Mail UI118)
+
+- **Switching.** After the session's first list, each other active account's saved view (not Drafts or Spam) is read ahead into the mail view cache. A switch to a cached account shows its rows in the same frame, and its first thread when its view has none open; showing is not reading. A switch to an account with nothing cached reports `loading` until its first list arrives or other navigation takes over. It never shows "Inbox clear" or "Nothing open" meanwhile. The reader stays blank while a chosen thread loads.
+- **Opening a thread.** Unread messages open, or the latest alone when none are unread; all earlier messages fold under "N earlier messages". The layout follows the thread until its revision reaches its list row's, or until the user unfolds or folds anything. Then new messages keep the one being read open (Mail UI113), and several arriving at once all open. A remembered opened message or "expanded" view key no longer unfolds a thread.
+
+Consumers: `MailView`, `MailBackend` account switching and view cache; `AccountProgress`; MailboxSwitchTest, ReplyStabilityTest.
+
 ## D168 — account menu, Done by week and month, bands and quiet scrollbars (Mail UI117)
 
 - **Account card.** Only ⋯ in the header, tooltip "Sync, pause, edit or remove". Connected: Sync now / Syncing… / Resume and sync now (unpauses first), Pause syncing / Resume syncing, rule, Edit account, rule, Remove account in red. Disconnected: Reconnect, rule, Edit account, rule, Remove account. The Labels and Signature rows are one button each: pointer cursor, 3% ink wash over 150 ms, "Edit ›" as a cue.

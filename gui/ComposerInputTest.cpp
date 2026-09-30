@@ -1,10 +1,12 @@
 // ReplyComposer UI test on a real MailBackend over the scripted engine: attaching
 // files one at a time, edits during an import, exact retry, recipient suggestions,
-// keyboard routing, multi-file drop and close protection.
+// keyboard routing, multi-file drop, close protection, and spelling underlines
+// and suggestions from a scripted spell checker.
 #include "GoogleOperationTestFixture.h"
 #include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
+#include "SpellChecker.h"
 #include <QGuiApplication>
 #include <QFontDatabase>
 #include <QJsonArray>
@@ -32,6 +34,15 @@ QJsonObject initialDraft(QString id = "draft-fixture") {
         {"attachment_ids",QJsonArray{}},{"attachments",QJsonArray{}}};
 }
 struct Held { QPointer<QLocalSocket> peer; QString id; QJsonObject params; };
+// Knows two words and suggests one fix.
+class ScriptedSpelling final : public SpellChecker {
+public:
+    void check(const QStringList &words, std::function<void(const QList<bool> &)> done) override { QList<bool> out; for (const auto &word : words) out << (word != "reply" && word != "Please"); done(out); }
+    QStringList suggestions(const QString &word, int) override { return word == "Plese" ? QStringList{"Please", "Pulse"} : QStringList{}; }
+    void correction(const QString &, std::function<void(const QString &)> done) override { done({}); }
+    void learn(const QString &) override {}
+    void ignore(const QString &) override {}
+};
 }
 
 class ComposerInputTest {
@@ -219,8 +230,69 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     backend.skipQueuedDraftAttachments();
     backend.importDraftAttachments({QUrl("https://example.test/file")},"fixture-account","draft-fixture");
     require(!backend.attachmentImportPending() && imports.size()==5,"remote URL cannot become a file import");
+
+    // Spelling: a red dotted rule under a misspelled word, and its suggestions
+    // first in the editor's menu; choosing one replaces the word undoably.
+    auto spelling=window->findChild<ReplyDocument*>("replyDocument"); require(spelling,"composer document");
+    auto body=find(window->contentItem(),"replyComposer"); require(body,"composer body");
+    ScriptedSpelling checker; spelling->setSpellChecker(&checker);
+    const auto bodyBefore=spelling->plainText();
+    spelling->load("Plese reply",{});
+    await([&]{return spelling->misspellings().size()==1;},"misspelled word published to the composer");
+    QRectF wordStart,wordEnd;
+    QMetaObject::invokeMethod(body,"positionToRectangle",Q_RETURN_ARG(QRectF,wordStart),Q_ARG(int,0));
+    QMetaObject::invokeMethod(body,"positionToRectangle",Q_RETURN_ARG(QRectF,wordEnd),Q_ARG(int,5));
+    const auto ruled=[&](qreal from,qreal to) {
+        const auto frame=window->grabWindow(); const qreal scale=frame.devicePixelRatio();
+        const auto a=body->mapToScene(QPointF(from,wordStart.bottom()-4)), b=body->mapToScene(QPointF(to,wordStart.bottom()+2));
+        int red=0;
+        for(int y=int(a.y()*scale);y<int(b.y()*scale);++y) for(int x=int(a.x()*scale);x<int(b.x()*scale);++x) {
+            const auto c=frame.pixelColor(x,y); if(c.red()-c.green()>50 && c.red()-c.blue()>40) ++red;
+        }
+        return red;
+    };
+    QRectF replyStart,replyEnd;
+    QMetaObject::invokeMethod(body,"positionToRectangle",Q_RETURN_ARG(QRectF,replyStart),Q_ARG(int,6));
+    QMetaObject::invokeMethod(body,"positionToRectangle",Q_RETURN_ARG(QRectF,replyEnd),Q_ARG(int,11));
+    require(ruled(wordStart.x(),wordEnd.x())>4,"the misspelled word has a red rule under it");
+    require(ruled(replyStart.x()+1,replyEnd.x())==0,"a correct word has none");
+    const auto point=body->mapToScene(QPointF((wordStart.x()+wordEnd.x())/2,wordStart.center().y()));
+    const auto global=window->mapToGlobal(point.toPoint());
+    QMouseEvent rightDown(QEvent::MouseButtonPress,point,global,Qt::RightButton,Qt::RightButton,Qt::NoModifier);
+    QMouseEvent rightUp(QEvent::MouseButtonRelease,point,global,Qt::RightButton,Qt::NoButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&rightDown); QCoreApplication::sendEvent(window,&rightUp);
+    auto root=window->contentItem()->parentItem() ? window->contentItem()->parentItem() : window->contentItem();
+    await([&]{auto item=find(root,"spellingSuggestion_0");return item && item->isVisible();},"suggestions open with the menu");
+    auto first=find(root,"spellingSuggestion_0"), second=find(root,"spellingSuggestion_1");
+    if(!captures.isEmpty()) { QCoreApplication::processEvents(); require(window->grabWindow().save(captures+"/composer-spelling.png"),"spelling capture"); }
+    require(first->property("text")=="Please" && second && second->property("text")=="Pulse","suggestions listed in the checker's order");
+    auto menuRows=first->parentItem()->parentItem();
+    auto undoRow=find(menuRows,"textMenuUndo");
+    require(undoRow,"the usual edit rows");
+    await([&]{return undoRow->property("separatorAbove").toBool();},"the usual edit rows follow the suggestions");
+    require(first->mapToScene(QPointF()).y()<undoRow->mapToScene(QPointF()).y(),"suggestions come first");
+    require(QMetaObject::invokeMethod(first,"clicked"),"choose a suggestion");
+    require(spelling->plainText()=="Please reply","the suggestion replaces the word");
+    await([&]{return spelling->misspellings().isEmpty();},"the replaced word loses its rule");
+    require(!find(window->contentItem(),"composer")->property("popupOpen").toBool(),"choosing closes the menu");
+    spelling->undo();
+    require(spelling->plainText()=="Plese reply","undo brings the word back");
+    QCoreApplication::sendEvent(window,&rightDown); QCoreApplication::sendEvent(window,&rightUp);
+    await([&]{auto item=find(menuRows,"spellingIgnore");return item && item->isVisible();},"menu reopens");
+    require(QMetaObject::invokeMethod(find(menuRows,"spellingIgnore"),"clicked"),"ignore the word");
+    await([&]{return spelling->misspellings().isEmpty();},"an ignored word loses its rule");
+    const auto correct=body->mapToScene(QPointF((replyStart.x()+replyEnd.x())/2,replyStart.center().y()));
+    QMouseEvent plainDown(QEvent::MouseButtonPress,correct,window->mapToGlobal(correct.toPoint()),Qt::RightButton,Qt::RightButton,Qt::NoModifier);
+    QMouseEvent plainUp(QEvent::MouseButtonRelease,correct,window->mapToGlobal(correct.toPoint()),Qt::RightButton,Qt::NoButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(window,&plainDown); QCoreApplication::sendEvent(window,&plainUp);
+    await([&]{return undoRow->isVisible();},"menu over a correct word");
+    require(!find(menuRows,"spellingSuggestion_0"),"a correct word offers no suggestions");
+    require(!find(menuRows,"spellingIgnore")->isVisible(),"and no spelling rows");
+    await([&]{return !undoRow->property("separatorAbove").toBool();},"the menu starts with Undo again");
+    QKeyEvent closeMenu(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QCoreApplication::sendEvent(window,&closeMenu);
+    spelling->setSpellChecker(nullptr); spelling->load(bodyBefore,{});
     require(!warnings,"production QML has no warnings");
-    qInfo()<<"Composer input passed: serial files, in-flight edits, exact uncertain replay, navigation, close protection, cached suggestions, keyboard routing and native multi-file drop";
+    qInfo()<<"Composer input passed: serial files, in-flight edits, exact uncertain replay, navigation, close protection, cached suggestions, keyboard routing, native multi-file drop and spelling";
 }
 };
 int main(int argc,char **argv) { QGuiApplication app(argc,argv); QQuickStyle::setStyle("Basic"); ComposerInputTest::run(); return 0; }

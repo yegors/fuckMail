@@ -2007,3 +2007,26 @@ The founder passed on the design notes with the Flight Progress v2 export (9), a
 - **Speed.** Core works out each row's Done group once per list. A hover still prefetches a folded section's rows, so opening it shows them at once.
 
 Core84, Mail UI117. No schema or protocol version change.
+
+## D169 — instant mailbox switches, threads open on what is new (2026-09-29T16:00:00Z)
+
+The founder reported two problems. Switching mailboxes sometimes took seconds and showed "Inbox clear" or "Nothing open" for a mailbox full of local mail. A new reply in a thread they had answered opened with their earlier messages unfolded, so they started reading mail already read.
+
+- **Found (switching).** The engine runs every store call on one writer thread. `assist_progress`, polled every 3 s for the account tabs, recounted every message whenever mail had changed. During sync that was every poll, about 2.2 s each on the founder's 270,000 messages, reading every body. A profile of the running engine put 70% of writer time there. The GUI's single request pipe then queued 10–20 requests behind it, so a switch waited up to 5 s. Meanwhile `loading` stayed false while the switch read the account's saved view, and an account restored from memory had no thread selected, so the reader said "Inbox clear" or "Nothing open".
+- **Change (switching).** `assist_progress` takes an optional `max_age_ms` (at most 60000). Counts made that recently are reused while only mail has changed; policy, cutoff and catch-up changes still recount. The account tabs' poll accepts 15 s; after the user's own catch-up, cancel or settings changes the counts are exact. A switch to an account with nothing in memory is loading until its list arrives, and the reader stays blank while a chosen thread loads. After the first list of the session, each other account's saved view is read ahead, so every switch shows rows from memory, and a list shown from memory opens its first thread without reading it.
+- **Found (threads).** A thread could appear from the reader cache before its current copy. The newest reply then arrived as a later message, and the Send-stability rule kept the previously newest message, the user's own reply, open. A remembered "last opened" message also unfolded the whole thread on each visit.
+- **Change (threads).** Opening a thread shows its unread messages open, or the latest alone when none are unread; everything earlier folds under "N earlier messages". The layout follows the thread until its current copy arrives (its revision reaches the list row's) or the user unfolds or folds anything. After that, mail arriving while it is open keeps the one being read, and several new messages at once all open. The remembered message and "expanded" no longer unfold threads.
+- **Not measured.** Switch times on the founder's profile after the change. Tests drive a held engine reply and the warm path. The residual cost is one 2 s recount at most every 15 s while mail changes.
+
+Mail UI118, Local assistance29, local protocol (additive `assist_progress` field). No schema or fixture change.
+
+## D170 — spelling in the composer (2026-09-29T17:00:00Z)
+
+The founder asked for a spell checker and autocorrect while writing, ideally the operating system's, with no new UI.
+
+- **Change.** The composer body uses the system checker. On macOS that is NSSpellChecker; on Windows, the Windows Spell Checking API (underlines and suggestions, no autocorrect); Linux has none. Misspelled words get a dotted red underline once finished. Right-clicking one puts the system's suggestions, Ignore and Learn at the top of the existing text menu. On macOS, "Correct spelling automatically" corrects a word when a space or punctuation follows it, and ⌘Z restores it. Quoted and forwarded text, links, addresses, words with digits and all-caps words are not checked.
+- **Why this way.** Qt Quick ignores underline colour and style on highlighter formats. The highlighter only marks the layout, and the composer draws the line. Saved text and HTML are unchanged by checking. Checks run on a background queue; the GUI thread waits only for right-click suggestions, at most 200 ms.
+- **Not verified here.** Typing in the real app, the GPU-rendered underline, autocorrect with the system setting on and off, non-English suggestions and the Windows build. Headless runs never use the system checker; tests use a fake checker, plus an opt-in native smoke check.
+
+Mail UI119. No schema, fixture or protocol change.
+

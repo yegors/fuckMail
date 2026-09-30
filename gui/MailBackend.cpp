@@ -523,15 +523,18 @@ void MailBackend::selectAccount(const QString &id) {
     dropEmptyNewDraft();
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
+    // Until its own list arrives, an account without cached rows is loading,
+    // never empty: its view is read first, then its list.
     m_searchTerms.clear(); m_searchError.clear(); m_searchPeople.clear(); m_searchPeopleQuery.clear(); ++m_searchPeopleGeneration;
     emit searchTermsChanged(); emit searchPeopleChanged(); emit recentSearchesChanged();
     // Restore only observed mail projections. The fresh view/source requests
     // below still own current state and every read-on-open mutation.
     // Publish the destination once. Clearing first destroys every delegate
     // before immediately replacing it with the already validated cached view.
-    if (!restoreMailView()) publishConversations({});
+    if (!restoreMailView()) { publishConversations({}); m_loading = true; }
+    emit loadingChanged();
     emit accountChanged(); emit currentAccountChanged(); emit accountLifecycleChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
-    request("view_get", id, {}, [this, id, generation](auto result, bool ok) {
+    request("view_get", id, {}, [this, id, generation, listGeneration = m_listGeneration](auto result, bool ok) {
         if (m_accountViewRestorationGeneration == generation) m_accountViewRestorationGeneration = -1;
         if (ok) {
             auto latest = result["view"].toObject().toVariantMap();
@@ -539,7 +542,12 @@ void MailBackend::selectAccount(const QString &id) {
             for (auto it = pending.cbegin(); it != pending.cend(); ++it) latest[it.key()] = it.value();
             m_views[id] = latest; m_viewRevisions[id] = result["revision"].toInteger();
         }
-        if (generation != m_generation) { resumeAccountRemovalAfterView(id, generation, false); return; }
+        if (generation != m_generation) {
+            // Other navigation took over before the view arrived; the list this
+            // switch was waiting for will not come from here.
+            if (id == m_account && m_loading && m_listGeneration == listGeneration) { m_loading = false; emit loadingChanged(); }
+            resumeAccountRemovalAfterView(id, generation, false); return;
+        }
         const auto previousSelected = m_selected;
         auto view = m_views.value(id).toMap();
         if (m_draftTransferDestination["account"].toString() == id) {
@@ -548,7 +556,11 @@ void MailBackend::selectAccount(const QString &id) {
             remember("replyOpen", true); remember("readerY", 0);
             view = m_views.value(id).toMap(); m_draftTransferDestination = {};
         }
-        m_query = view["query"].toString(); m_selected = view["selected"].toString();
+        // A view with nothing open keeps the thread shown from memory.
+        const auto saved = view["selected"].toString();
+        const bool shown = saved.isEmpty() && !previousSelected.isEmpty()
+            && std::any_of(m_conversations.cbegin(), m_conversations.cend(), [&](const QVariant &row) { return row.toMap().value("id") == previousSelected; });
+        m_query = view["query"].toString(); m_selected = shown ? previousSelected : saved;
         m_folder = view.value("folder", "inbox").toString();
         m_category = view.value("category").toString();
         m_filters = view.value("filters").toMap();
@@ -878,6 +890,10 @@ bool MailBackend::restoreMailView() {
     m_querySummary = cached->summary; m_categories = cached->categories;
     m_nextOffset = cached->nextOffset; m_nextCursor = cached->nextCursor;
     if (!publishConversations(cached->rows)) return false;
+    // As a loaded list does, open the first thread when none was open, so the
+    // reader never says nothing is open while the list is on screen. Showing it
+    // is not reading it.
+    if (m_selected.isEmpty() && !m_conversations.isEmpty()) m_selected = m_conversations.first().toMap().value("id").toString();
     restoreConversation(m_account, m_selected);
     return true;
 }
@@ -938,6 +954,48 @@ QString MailBackend::viewKey(const ListView &view, const QStringList &collapsed,
 // What choosing `folder` shows from the current view. Day chips are a Sent
 // control, so their dates never filter other views unseen; Drafts, Spam and
 // Trash show all their mail.
+void MailBackend::warmOtherAccounts() {
+    if (!m_connected || m_shutdown || m_syntheticProfile) return;
+    for (const auto &value : std::as_const(m_accounts)) {
+        const auto id = value.toMap().value("id").toString();
+        if (id.isEmpty() || id == m_account || accountRemoved(id) || m_mailViewCache.contains(id)) continue;
+        const auto lifecycle = lifecycleAccount(id).value("lifecycle").toMap().value("revision").toLongLong();
+        QScopedValueRollback<bool> origin(m_automaticReadScope, true);
+        request("view_get", id, {}, [this, id, lifecycle](auto result, bool ok) {
+            if (!ok || m_shutdown || id == m_account || m_mailViewCache.contains(id)) return;
+            // A view saved here since is newer than the engine's copy.
+            if (!m_views.contains(id)) { m_views[id] = result["view"].toObject().toVariantMap(); m_viewRevisions[id] = result["revision"].toInteger(); }
+            const auto view = m_views.value(id).toMap();
+            if (!view.value("selectedDraft").toString().isEmpty()) return;
+            const auto folder = view.value("folder", "inbox").toString();
+            if (folder == u"drafts" || folder == u"spam") return;
+            QStringList collapsed, open;
+            for (const auto &section : view.value("collapsedSections").toStringList())
+                if (fixedSection(section) && !collapsed.contains(section)) collapsed.append(section);
+            for (const auto &section : view.value("openSections").toStringList())
+                if (olderSection(section) && !open.contains(section) && open.size() < 256) open.append(section);
+            const ListView list{folder, view.value("query").toString(), view.value("filters").toMap(), view.value("category").toString()};
+            const QVariantMap scope{{"folder", list.folder}, {"query", list.query}, {"category", list.category}, {"filters", list.filters},
+                {"collapsed_groups", collapsed}, {"open_sections", open}};
+            QScopedValueRollback<bool> origin(m_automaticReadScope, true);
+            // Kept when the visible mailbox changes: it is not that mailbox's list.
+            request("conversations", id, listParams(collapsed, open, list), [this, id, lifecycle, scope](auto rows, bool listed) {
+                if (!listed || m_shutdown || id == m_account || m_mailViewCache.contains(id)
+                    || lifecycle != lifecycleAccount(id).value("lifecycle").toMap().value("revision").toLongLong()) return;
+                QScopedValueRollback<bool> origin(m_automaticReadScope, true);
+                request("categories", id, {}, [this, id, lifecycle, scope, rows](auto labels, bool labelled) {
+                    if (!labelled || m_shutdown || id == m_account || m_mailViewCache.contains(id)) return;
+                    const auto list = rows["conversations"].toArray().toVariantList();
+                    const auto categories = labels["categories"].toArray().toVariantList();
+                    const auto bytes = QJsonDocument(rows).toJson(QJsonDocument::Compact).size();
+                    if (bytes > 2 * maxFrame) return;
+                    m_mailViewCache.insert(id, new MailViewSnapshot{scope, listSummary(rows), list, categories, lifecycle,
+                        rows["next_offset"].isDouble() ? rows["next_offset"].toInt() : -1, rows["next_cursor"].toString()}, int(bytes + 512));
+                }, true);
+            }, true);
+        }, true);
+    }
+}
 MailBackend::ListView MailBackend::folderView(const QString &folder) const {
     ListView view{folder, m_query, m_filters, m_category};
     if (m_folder == u"sent") { view.filters.remove("after"); view.filters.remove("before"); }
@@ -1132,6 +1190,7 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 }
                 m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
                 cacheMailView(); rememberView(m_querySummary);
+                if (!m_accountsWarmed) { m_accountsWarmed = true; QTimer::singleShot(1500, this, &MailBackend::warmOtherAccounts); }
                 if (m_selected.isEmpty() && m_activeDraft.isEmpty() && !m_resolvingDraft && !m_conversations.isEmpty()) selectConversation(m_conversations.first().toMap()["id"].toString());
                 if (previous != m_conversations || previousNext != m_nextOffset || previousSummary != m_querySummary) emit conversationsChanged();
             }

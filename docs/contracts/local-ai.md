@@ -1,5 +1,12 @@
 # Local mail analysis
 
+## D169 — progress polled during sync (Local assistance29)
+
+- `assist_progress` takes an optional `max_age_ms`, 0 to 60000. Per-account counts made less than that long ago are returned while only mail has changed since. A change of policy, model, history cutoff or catch-up start still recounts. Without the field, counts are exact as before.
+- The GUI's regular poll sends 15000. After an explicit catch-up, cancel or settings save it asks for exact counts.
+
+Consumers: engine local model runtime, `AccountProgress`; Core assist backlog tests.
+
 ## D161 — subject-only mail (Local assistance28)
 
 - An eligible email needs text or a subject. Sync's "(no subject)" placeholder is no subject.

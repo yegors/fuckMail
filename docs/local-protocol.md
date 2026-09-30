@@ -415,7 +415,7 @@ Optional summaries, sender kind and labels from Ollama or an OpenAI-compatible s
 | `assist_discover` | — | Models at `endpoint`/`provider`, with eligibility. |
 | `assist_catalog` | yes | The labels the model sees. |
 | `assist_watch` | — | Register as a watcher and start the queue. |
-| `assist_progress` | opt | Per-account queue state. |
+| `assist_progress` | opt | Per-account queue state. Optional `max_age_ms` (≤ 60000) accepts counts that recent while only mail changed. |
 | `assist_backlog` | yes | Unprocessed counts per catch-up range. |
 | `assist_catch_up` | yes | `range` `week`, `month`, `year`, `all` or `stop`. |
 | `assist_start` | opt | Job for `message_id` (account required) or a test `sample`; returns `job_id`. |

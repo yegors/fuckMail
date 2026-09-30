@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtQuick.Shapes
 
 // The composer sits inline in the reading pane. A new message fills at least
 // max(420px, half the window) and its body grows; replies start smaller. The
@@ -271,11 +272,55 @@ Item {
                     ContextMenu.menu: null
                     TapHandler {
                         acceptedButtons: Qt.RightButton
-                        onTapped: function(point) { contextMenu.show(bodyEditor, point.position.x, point.position.y) }
+                        onTapped: function(point) {
+                            contextMenu.spelling = bodyEditor.readOnly ? ({}) : document.spellingAt(bodyEditor.positionAt(point.position.x, point.position.y))
+                            contextMenu.show(bodyEditor, point.position.x, point.position.y)
+                        }
+                    }
+                    // The system spell checker's misspelled words: a dotted red
+                    // rule under each. Drawn over the text, never saved with it.
+                    Repeater {
+                        model: root.readOnly ? [] : document.misspellings
+                        Shape {
+                            id: misspelling
+                            required property var modelData
+                            // Relayout (typing, wrapping, text size) moves the words.
+                            readonly property rect first: { bodyEditor.contentHeight; bodyEditor.width; return bodyEditor.positionToRectangle(modelData.start) }
+                            readonly property rect last: { bodyEditor.contentHeight; bodyEditor.width; return bodyEditor.positionToRectangle(modelData.start + modelData.length) }
+                            x: first.x; y: first.y + first.height - 2
+                            width: Math.max(4, last.y === first.y ? last.x - first.x : bodyEditor.width - bodyEditor.rightPadding - first.x); height: 3
+                            preferredRendererType: Shape.CurveRenderer
+                            ShapePath {
+                                strokeColor: Theme.error; strokeWidth: 1.6; fillColor: "transparent"
+                                strokeStyle: ShapePath.DashLine; dashPattern: [0.9, 1.4]; capStyle: ShapePath.RoundCap
+                                startX: 1; startY: 1.5
+                                PathLine { x: misspelling.width - 1; y: 1.5 }
+                            }
+                        }
                     }
                     // Pasting keeps the draft's own formatting: text comes in plain.
+                    // A misspelled word under the pointer puts the system's
+                    // suggestions first.
                     TextMenu {
                         id: contextMenu
+                        property var spelling: ({})
+                        readonly property var guesses: spelling.suggestions || []
+                        function respell(word) { close(); document.replaceWord(spelling.start, spelling.word, word); bodyEditor.forceActiveFocus() }
+                        leading: [
+                            Repeater {
+                                model: contextMenu.guesses
+                                FmMenuItem {
+                                    required property string modelData
+                                    required property int index
+                                    objectName: "spellingSuggestion_" + index
+                                    text: modelData; font.weight: Font.Medium
+                                    onClicked: contextMenu.respell(modelData)
+                                }
+                            },
+                            FmMenuItem { objectName: "spellingNoGuesses"; visible: !!contextMenu.spelling.word && contextMenu.guesses.length === 0; text: "No guesses found"; enabled: false },
+                            FmMenuItem { objectName: "spellingIgnore"; visible: !!contextMenu.spelling.word; separatorAbove: true; text: "Ignore spelling"; onClicked: { contextMenu.close(); document.ignoreSpelling(contextMenu.spelling.word) } },
+                            FmMenuItem { objectName: "spellingLearn"; visible: !!contextMenu.spelling.word; text: "Learn spelling"; onClicked: { contextMenu.close(); document.learnSpelling(contextMenu.spelling.word) } }
+                        ]
                         pasteLabel: "Paste plain text"; pasteText: function() { document.pastePlain() }
                         FmMenuItem { separatorAbove: true; text: "Bold"; shortcut: contextMenu.key + "B"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("bold") } }
                         FmMenuItem { text: "Italic"; shortcut: contextMenu.key + "I"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("italic") } }

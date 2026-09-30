@@ -1,11 +1,15 @@
 // Bridges the composer's QML TextEdit document to a draft's plain text and a
-// restricted HTML alternative; the plain text stays authoritative.
+// restricted HTML alternative; the plain text stays authoritative. Also owns
+// the editor's system spell checking: underlines, suggestions and correction.
 #pragma once
 #include <QObject>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickTextDocument>
 #include <QtQml/qqmlregistration.h>
+
+class SpellChecker;
+class SpellHighlighter;
 
 /// A human-authored, limited-format editor. Received messages never enter it.
 ///
@@ -29,12 +33,15 @@ class ReplyDocument : public QObject {
     /// Disables format(), pastePlain(), undo() and redo(). The TextEdit's own
     /// readOnly must be bound separately.
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
+    /// Misspelled words to underline, as {start, length} document positions.
+    /// Display only; updated shortly after each edit or recheck.
+    Q_PROPERTY(QVariantList misspellings READ misspellings NOTIFY misspellingsChanged)
 public:
     /// Reader sections for a received body: ReceivedBody::sections() with
     /// limitedHtml(..., true) as the sanitiser. Reentrant; MailBackend also
     /// calls it from its reader worker threads.
     static QVariantList receivedBody(const QString &html, const QString &plain);
-    explicit ReplyDocument(QObject *parent = nullptr) : QObject(parent) {}
+    explicit ReplyDocument(QObject *parent = nullptr);
     QQuickTextDocument *textDocument() const { return m_document; }
     QQuickItem *editor() const { return m_editor; }
     void setTextDocument(QQuickTextDocument *document);
@@ -42,6 +49,7 @@ public:
     QString plainText() const;
     QString html() const;
     bool readOnly() const { return m_readOnly; }
+    QVariantList misspellings() const { return m_misspellings; }
     void setReadOnly(bool value) { if (m_readOnly == value) return; m_readOnly = value; emit readOnlyChanged(); }
     /// Marks the start of a different authoring session (another draft or
     /// reply target). On a change it clears undo/redo, so undo cannot bring
@@ -70,8 +78,24 @@ public:
     /// runs of line breaks collapse, and nested or large tables are flattened
     /// to text so QTextDocument layout stays fast.
     static QString limitedHtml(const QString &html, bool received = false);
+    /// The misspelled word at document `position` as {word, start,
+    /// suggestions}, or an empty map when that word is spelled correctly, is
+    /// quoted or forwarded text, or there is no spell checker.
+    Q_INVOKABLE QVariantMap spellingAt(int position);
+    /// Replaces `word` at document position `start` with `replacement` as one
+    /// undoable edit that keeps the word's formatting, then puts the cursor
+    /// after it. Refused (false) when the text there is no longer `word`.
+    Q_INVOKABLE bool replaceWord(int start, const QString &word, const QString &replacement);
+    /// Adds `word` to the user's dictionary and removes its underlines.
+    Q_INVOKABLE void learnSpelling(const QString &word);
+    /// Accepts `word` for this session and removes its underlines.
+    Q_INVOKABLE void ignoreSpelling(const QString &word);
+    /// Uses `checker` instead of the system's (nullptr turns spelling off)
+    /// and rechecks the whole document. The caller keeps ownership.
+    void setSpellChecker(SpellChecker *checker);
 signals:
     void readOnlyChanged();
+    void misspellingsChanged();
     /// The textDocument or editor property changed.
     void documentChanged();
     /// The document content changed for any reason, including load().
@@ -81,10 +105,32 @@ signals:
     void contentChanged();
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+private slots:
+    void caretMoved();
 private:
+    /// A word the checker corrected automatically, and the undo depth right
+    /// after it, so Undo can restore the typed word in place.
+    struct Correction { int start = -1; QString original; QString replacement; int steps = -1; };
+    int typingCaret() const;
+    void correctBeforeCaret();
+    bool correctionOnTop() const;
+    bool replaceText(int start, const QString &word, const QString &replacement);
+    void queueMarks();
+    void queueRecheck();
+    /// Runs a highlighting pass. Layout-only format changes can still emit
+    /// contentsChanged; these must not look like edits.
+    template <class Change> void restyle(Change change);
     QPointer<QQuickTextDocument> m_document;
     QPointer<QQuickItem> m_editor;
+    SpellHighlighter *m_spelling = nullptr;
+    Correction m_correction;
+    QVariantList m_misspellings;
+    bool m_marksQueued = false;
+    bool m_recheckQueued = false;
+    // Bumped by load() and setIdentity(): late corrections for other text are dropped.
+    int m_session = 0;
     QString m_identity;
     bool m_loading = false;
     bool m_readOnly = false;
+    bool m_restyling = false;
 };
