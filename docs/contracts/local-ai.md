@@ -1,5 +1,13 @@
 # Local mail analysis
 
+## D171 — progress counted beside the writer (Local assistance30)
+
+- The engine counts progress on a read-only connection to the store, one count at a time, never on the writer. `assist_progress` waits for counts it lacks for at most 250 ms with `max_age_ms`, or 2 s without, then answers with each account's latest counts and its current settings. An account never counted is left out until its first count.
+- `complete: true` (optional, boolean) waits until every account has been counted since the request began. `fm assist progress` sends it.
+- Engine shutdown interrupts a running count. If the reader cannot be opened or fails, counting falls back to the writer for the rest of the session.
+
+Consumers: engine local model runtime, `AccountProgress`, CLI `assist progress`, `scripts/verify_ollama.py`; Core assist backlog tests.
+
 ## D169 — progress polled during sync (Local assistance29)
 
 - `assist_progress` takes an optional `max_age_ms`, 0 to 60000. Per-account counts made less than that long ago are returned while only mail has changed since. A change of policy, model, history cutoff or catch-up start still recounts. Without the field, counts are exact as before.

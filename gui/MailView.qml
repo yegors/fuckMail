@@ -1762,11 +1762,14 @@ Item {
                         visible:list.count===0 && mail.trailingSections.length===0 && !(mail.binMode && (!backend.loading || !!backend.listError))
                         Text {
                             Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap
-                            text:!backend.connected ? "Connecting to your local mail…" : !backend.accounts.length ? "No accounts connected." : mail.firstLoading ? "" : mail.filtering ? "No matches" : "No conversations in this view."
+                            text:!backend.connected ? (backend.error.length > 0 ? "Your local mail isn’t connected." : "Connecting to your local mail…") : !backend.accounts.length ? "No accounts connected." : mail.firstLoading ? "" : mail.filtering ? "No matches" : "No conversations in this view."
                             color:mail.filtering ? Theme.text : Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(mail.filtering ? 15 : 13);font.weight:mail.filtering ? Font.Medium : Font.Normal
                         }
                         Text {visible:mail.filtering && !mail.firstLoading;Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:"Nothing in "+(backend.currentAccount.name || "this account")+" for "+(mail.filterDescription || backend.query || "these filters");color:Theme.muted;font.pointSize:Theme.fontPoints(13)}
                         FmButton {visible:mail.filtering && !mail.firstLoading;Layout.alignment:Qt.AlignHCenter;text:"Clear filters";foreground:Theme.accent;onClicked:{backend.query="";backend.category="";backend.applyFilters({})}}
+                        // The engine stopped and was not started again on its own.
+                        Text {visible:!backend.connected && backend.error.length > 0;Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:backend.error;color:Theme.subtle;font.pointSize:Theme.fontPoints(12)}
+                        FmButton {objectName:"mailReconnect";visible:!backend.connected && backend.error.length > 0;Layout.alignment:Qt.AlignHCenter;text:"Reconnect";prominent:true;onClicked:backend.start()}
                         Text {visible:mail.filtering && backend.folder === "inbox" && !(backend.currentAccount.coverage || {}).inventory_complete;Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:"Older mail is still being indexed.";color:Theme.subtle;font.pointSize:Theme.fontPoints(12)}
                     }
                 }

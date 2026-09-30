@@ -11,7 +11,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use std::{cell::RefCell, collections::HashMap};
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct ProgressKey {
     generation: u64,
     policy: Value,
@@ -53,6 +53,7 @@ fn done_rule(policy: &Account) -> String {
         tasks.join(" AND ")
     }
 }
+#[derive(Clone)]
 struct Bounds {
     cutoff: Option<i64>,
     catch_up: Option<i64>,
@@ -74,6 +75,137 @@ impl Bounds {
             (Some(cutoff), Some(from)) => format!("{DATE_MS}>={}", from.min(cutoff)),
             (Some(cutoff), None) => format!("{DATE_MS}>={cutoff}"),
         }
+    }
+}
+/// One account's row in a [`ProgressPlan`].
+#[derive(Clone)]
+struct PlannedRow {
+    id: String,
+    policy: Account,
+    configured: bool,
+    bounds: Bounds,
+    key: ProgressKey,
+    /// Whether `last` answers this request as it is.
+    fresh: bool,
+    /// The latest counts made for this account, if any.
+    last: Option<Value>,
+}
+/// Progress rows for one request: those answered by earlier counts and those
+/// that need counting. Made by [`Store::local_model_progress_plan`].
+#[derive(Clone)]
+pub struct ProgressPlan {
+    rows: Vec<PlannedRow>,
+    cacheable: bool,
+}
+impl ProgressPlan {
+    /// Whether any row lacks counts that answer this request.
+    pub fn needs_count(&self) -> bool {
+        self.rows.iter().any(|row| !row.fresh)
+    }
+    /// The reply as far as counts allow. A row whose counts are out of date
+    /// keeps them with its current settings; one never counted is left out
+    /// until its first count finishes.
+    pub fn assemble(self) -> Value {
+        let rows: Vec<Value> = self
+            .rows
+            .into_iter()
+            .filter_map(|row| {
+                let mut value = row.last?;
+                if !row.fresh {
+                    policy_fields(&mut value, &row.policy, row.configured, &row.bounds);
+                }
+                // Raw counts that policy_fields reads stay out of the reply.
+                let fields = value.as_object_mut()?;
+                fields.remove("queued_found");
+                fields.remove("catching_up_found");
+                Some(value)
+            })
+            .collect();
+        json!({"accounts":rows})
+    }
+}
+/// Counts made for the rows of a [`ProgressPlan`] that needed them.
+pub struct ProgressCounts(HashMap<String, Value>);
+/// A read-only connection to the profile's store for progress counts. They
+/// read every message, which can take seconds on a large mailbox; here they
+/// run beside the writer instead of holding it.
+pub struct ProgressReader {
+    db: rusqlite::Connection,
+}
+impl ProgressReader {
+    /// Opens the store in `profile` for reading only.
+    pub fn open(profile: &std::path::Path) -> Result<Self> {
+        let db = rusqlite::Connection::open_with_flags(
+            profile.join("store.sqlite3"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        db.busy_timeout(std::time::Duration::from_secs(2))?;
+        db.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA mmap_size=1073741824; PRAGMA cache_size=-16384;")?;
+        Ok(Self { db })
+    }
+    /// Counts every row of `plan` that needs it.
+    pub fn count(&self, plan: &ProgressPlan) -> Result<ProgressCounts> {
+        count_progress(&self.db, plan)
+    }
+    /// A handle that stops a count in progress from another thread.
+    pub fn interrupter(&self) -> ProgressInterrupt {
+        ProgressInterrupt(self.db.get_interrupt_handle())
+    }
+}
+/// Stops a [`ProgressReader`]'s count in progress; the count fails.
+pub struct ProgressInterrupt(rusqlite::InterruptHandle);
+impl ProgressInterrupt {
+    pub fn interrupt(&self) {
+        self.0.interrupt();
+    }
+}
+fn count_progress(db: &rusqlite::Connection, plan: &ProgressPlan) -> Result<ProgressCounts> {
+    let mut counts = HashMap::new();
+    for row in plan.rows.iter().filter(|row| !row.fresh) {
+        counts.insert(row.id.clone(), count_row(db, row)?);
+    }
+    Ok(ProgressCounts(counts))
+}
+/// One account's counts. Reads every message of the account.
+fn count_row(db: &rusqlite::Connection, row: &PlannedRow) -> Result<Value> {
+    let local: i64 = db.query_row(
+        "SELECT count(*) FROM messages m WHERE m.account=?1 AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id AND g.deleted=1)",
+        [&row.id],
+        |r| r.get(0),
+    )?;
+    let catch_up = row.bounds.catch_up_class().unwrap_or_else(|| "0".into());
+    let (eligible, done, failed, queued, catching_up): (i64, i64, i64, i64, i64) = db.query_row(
+        &format!("SELECT count(*),COALESCE(SUM(done),0),COALESCE(SUM(NOT done AND failed),0),COALESCE(SUM(NOT done AND NOT failed AND queued),0),COALESCE(SUM(NOT done AND NOT failed AND catch_up),0)
+            FROM (SELECT {} AS done,{} AS failed,{} AS queued,{catch_up} AS catch_up FROM messages m WHERE {ELIGIBLE})",
+            done_rule(&row.policy), exhausted(), row.bounds.queued()),
+        [&row.id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    )?;
+    let mut value = json!({"account":row.id,"local":local,"eligible":eligible,"done":done,"queued_found":queued,
+        "failed":failed,"catching_up_found":catching_up > 0});
+    policy_fields(&mut value, &row.policy, row.configured, &row.bounds);
+    Ok(value)
+}
+/// The fields of a progress row that follow settings rather than counts.
+fn policy_fields(value: &mut Value, policy: &Account, configured: bool, bounds: &Bounds) {
+    let enabled = configured && (policy.summaries || policy.classification);
+    let queued = if enabled {
+        value["queued_found"].as_i64().unwrap_or(0)
+    } else {
+        0
+    };
+    let (eligible, done, failed) = (
+        value["eligible"].as_i64().unwrap_or(0),
+        value["done"].as_i64().unwrap_or(0),
+        value["failed"].as_i64().unwrap_or(0),
+    );
+    let fields = json!({"queued":queued,"unprocessed":(eligible-done-queued-failed).max(0),
+        "model_configured":configured,"enabled":enabled,
+        "summaries":policy.summaries,"classification":policy.classification,
+        "paused":policy.paused,"history_cutoff":bounds.cutoff,"catch_up_from":bounds.catch_up,
+        "catching_up":enabled && value["catching_up_found"].as_bool().unwrap_or(false)});
+    for (key, field) in fields.as_object().unwrap() {
+        value[key] = field.clone();
     }
 }
 impl Store {
@@ -188,6 +320,21 @@ impl Store {
         account: Option<&str>,
         max_age: Option<std::time::Duration>,
     ) -> Result<Value> {
+        let plan = self.local_model_progress_plan(account, max_age)?;
+        if !plan.needs_count() {
+            return Ok(plan.assemble());
+        }
+        let counts = count_progress(&self.db, &plan)?;
+        Ok(self.local_model_progress_save(plan, counts))
+    }
+    /// Works out which progress rows can be answered from counts already made
+    /// and which need counting. Cheap: settings, bounds and the cache only.
+    /// Counting itself can run on a [`ProgressReader`], off the writer.
+    pub fn local_model_progress_plan(
+        &self,
+        account: Option<&str>,
+        max_age: Option<std::time::Duration>,
+    ) -> Result<ProgressPlan> {
         let generation = self.mail_changes.model_progress_generation(&self.db);
         let cacheable = self.db.is_autocommit();
         if !cacheable {
@@ -199,6 +346,7 @@ impl Store {
             .prepare("SELECT id FROM accounts WHERE lifecycle_state='active' AND (?1 IS NULL OR id=?1) ORDER BY id")?
             .query_map([account], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
+        let cache = self.model_progress_cache.borrow();
         let mut rows = Vec::new();
         for id in accounts {
             let policy = settings.accounts.get(&id).cloned().unwrap_or_default();
@@ -217,46 +365,44 @@ impl Store {
                     && old.cutoff == key.cutoff
                     && old.catch_up == key.catch_up
             };
-            if let Some((_, value, _)) = self
-                .model_progress_cache
-                .borrow()
-                .get(&id)
-                .filter(|(old, _, at)| cacheable && (*old == key || recent(old, at)))
-            {
-                rows.push(value.clone());
+            let (fresh, last) = match cache.get(&id).filter(|_| cacheable) {
+                Some((old, value, at)) if *old == key || recent(old, at) => {
+                    (true, Some(value.clone()))
+                }
+                Some((_, value, _)) => (false, Some(value.clone())),
+                None => (false, None),
+            };
+            rows.push(PlannedRow {
+                id,
+                policy,
+                configured: settings.model.is_some(),
+                bounds,
+                key,
+                fresh,
+                last,
+            });
+        }
+        Ok(ProgressPlan { rows, cacheable })
+    }
+    /// Keeps `counts` for later polls and answers `plan` with them.
+    pub fn local_model_progress_save(&self, plan: ProgressPlan, counts: ProgressCounts) -> Value {
+        let mut plan = plan;
+        let now = std::time::Instant::now();
+        let mut cache = self.model_progress_cache.borrow_mut();
+        for row in &mut plan.rows {
+            let Some(value) = counts.0.get(&row.id) else {
                 continue;
-            }
-            let enabled = settings.model.is_some() && (policy.summaries || policy.classification);
-            let local: i64 = self.db.query_row(
-                "SELECT count(*) FROM messages m WHERE m.account=?1 AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id AND g.deleted=1)",
-                [&id],
-                |r| r.get(0),
-            )?;
-            let catch_up = bounds.catch_up_class().unwrap_or_else(|| "0".into());
-            let (eligible, done, failed, queued, catching_up): (i64, i64, i64, i64, i64) = self.db.query_row(
-                &format!("SELECT count(*),COALESCE(SUM(done),0),COALESCE(SUM(NOT done AND failed),0),COALESCE(SUM(NOT done AND NOT failed AND queued),0),COALESCE(SUM(NOT done AND NOT failed AND catch_up),0)
-                    FROM (SELECT {} AS done,{} AS failed,{} AS queued,{catch_up} AS catch_up FROM messages m WHERE {ELIGIBLE})",
-                    done_rule(&policy), exhausted(), bounds.queued()),
-                [&id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-            )?;
-            let queued = if enabled { queued } else { 0 };
-            let value = json!({"account":id,"local":local,"eligible":eligible,"done":done,"queued":queued,
-                "failed":failed,"unprocessed":(eligible-done-queued-failed).max(0),
-                "model_configured":settings.model.is_some(),"enabled":enabled,
-                "summaries":policy.summaries,"classification":policy.classification,
-                "paused":policy.paused,"history_cutoff":bounds.cutoff,"catch_up_from":bounds.catch_up,
-                "catching_up":enabled && catching_up > 0});
-            if cacheable {
-                let mut cache = self.model_progress_cache.borrow_mut();
-                if cache.len() >= 256 && !cache.contains_key(&id) {
+            };
+            if plan.cacheable {
+                if cache.len() >= 256 && !cache.contains_key(&row.id) {
                     cache.clear();
                 }
-                cache.insert(id, (key, value.clone(), std::time::Instant::now()));
+                cache.insert(row.id.clone(), (row.key.clone(), value.clone(), now));
             }
-            rows.push(value);
+            row.fresh = true;
+            row.last = Some(value.clone());
         }
-        Ok(json!({"accounts":rows}))
+        plan.assemble()
     }
     /// How many unprocessed emails each Catch up range would add.
     pub fn local_model_catch_up_counts(&self, account: &str) -> Result<Value> {
@@ -464,6 +610,55 @@ mod tests {
         )
         .unwrap();
         assert_eq!(within(&s, minute)["enabled"], false);
+    }
+
+    #[test]
+    fn progress_counts_on_a_reader_beside_the_writer() {
+        let (dir, s) = store();
+        let exact = progress(&s);
+        s.model_progress_cache.borrow_mut().clear();
+        let plan = s.local_model_progress_plan(Some(ACCOUNT), None).unwrap();
+        assert!(plan.needs_count());
+        assert_eq!(
+            plan.clone().assemble()["accounts"],
+            json!([]),
+            "an account never counted waits for its first count"
+        );
+        let reader = ProgressReader::open(dir.path()).unwrap();
+        let counts = reader.count(&plan).unwrap();
+        let reply = s.local_model_progress_save(plan, counts);
+        assert_eq!(
+            reply["accounts"][0], exact,
+            "the reader counts what the writer does"
+        );
+        assert!(!s
+            .local_model_progress_plan(Some(ACCOUNT), None)
+            .unwrap()
+            .needs_count());
+        // After more work the last counts answer, with current settings, until
+        // the next count finishes.
+        finish(
+            &s,
+            &s.local_model_next(&[], None, 1, &[]).unwrap().remove(0),
+        );
+        let plan = s.local_model_progress_plan(Some(ACCOUNT), None).unwrap();
+        assert!(plan.needs_count());
+        assert_eq!(
+            plan.clone().assemble()["accounts"][0]["done"],
+            exact["done"]
+        );
+        let counts = reader.count(&plan).unwrap();
+        assert_eq!(
+            s.local_model_progress_save(plan, counts)["accounts"][0]["done"],
+            exact["done"].as_i64().unwrap() + 1
+        );
+        assert!(
+            reader
+                .db
+                .execute("DELETE FROM local_model_results", [])
+                .is_err(),
+            "the reader cannot write"
+        );
     }
 
     #[test]

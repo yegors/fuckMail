@@ -1,5 +1,12 @@
 # Mail UI, reader and human composer
 
+## D171 — reconnecting and closing without the engine (Mail UI120)
+
+- **Reconnect.** When a live connection drops (a request past 15 s, an out-of-order reply or the engine exiting) and the window is not closing, the engine is started again after 1 s, at most three times in five minutes. After that the empty mail list reads "Your local mail isn’t connected.", shows the error and offers Reconnect (`mailReconnect`).
+- **Closing.** Without an engine, closing always quits. The unsaved view and settings are let go. An unsaved reply asks once: the engine reconnects and the error reads "Your reply isn't saved yet. Wait for the local engine to reconnect, or close again to quit without it." A second close quits. Reconnecting resets the question.
+
+Consumers: `MailBackend` (connection, `shutdown`), `MailView`; MailSelectionTest.
+
 ## Spelling (Mail UI119)
 
 - **Where.** The composer body only (not Subject, which is a single-line field without a text document, nor recipients). Checked text excludes lines starting with `>` and everything from the `---------- Forwarded message` line on, plus tokens that contain a digit, `@`, `/`, `\`, `_`, `#`, `=` or a dot followed by a letter (links, addresses, domains, paths), all-capital words and single letters.

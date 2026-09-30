@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-09-30
+
+- Large mailboxes no longer get stuck on "Connecting to your local mail…" shortly after launch. Local-model progress is counted beside your mail instead of in front of it, and if the local engine ever stops, the app starts it again by itself.
+- Closing the window always works, even with the local engine gone. An unsaved reply asks once first.
+
 ## 2026-09-29
 
 - The message editor checks spelling as you type, using the system spell checker on macOS and Windows. Misspelled words get a dotted red underline once you finish them; right-click one for the system's suggestions, Ignore spelling or Learn spelling. On macOS, words are corrected automatically as you type when "Correct spelling automatically" is on in System Settings, and ⌘Z brings back what you typed. Quoted and forwarded text is left alone. Linux has no spell checking yet.

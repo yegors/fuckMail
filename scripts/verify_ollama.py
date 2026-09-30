@@ -134,7 +134,7 @@ class Client:
         raise AssertionError("Job did not complete")
 
     def progress(self):
-        rows = self.call("assist_progress")["accounts"]
+        rows = self.call("assist_progress", {"complete": True})["accounts"]
         return next(r for r in rows if r["account"] == ACCOUNT)
 
 

@@ -907,10 +907,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         )
     });
     let services = SessionServices {
-        assistance: Arc::new(local_model::Runtime::new(core_tasks::CoreBridge::new(
-            queue.clone(),
-            background_slots.clone(),
-        ))),
+        assistance: Arc::new(
+            local_model::Runtime::new(core_tasks::CoreBridge::new(
+                queue.clone(),
+                background_slots.clone(),
+            ))
+            .with_progress_reader(&profile),
+        ),
         google: provider
             .as_ref()
             .zip(sync.as_ref())
@@ -1123,6 +1126,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     drop(listener);
     cleanup(&profile, &endpoint, pid);
     engine_cancel.cancel();
+    services.assistance.stop();
     while clients.join_next().await.is_some() {}
     drop(services);
     if let Some(sync) = &sync {

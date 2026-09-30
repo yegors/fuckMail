@@ -165,7 +165,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             }
             m_syntheticProfile = synthetic;
             m_connectTimer.stop();
-            m_connected = true; m_error.clear();
+            m_connected = true; m_error.clear(); m_closeUnsaved = false;
             m_calendarRevision = -1; m_mailRevision = -1;
             m_uiGenerations = {};
             emit connectedChanged(); emit errorChanged();
@@ -192,6 +192,15 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (m_shutdown) finishShutdown();
         else if ((wasConnected || !m_connectTimer.isActive()) && m_error.isEmpty())
             fail("The local engine disconnected. Your unsaved reply remains here. Reconnect to continue.");
+        // Mail is local, so a dropped engine is started again without a click.
+        // After three drops in five minutes the error stays, with Reconnect.
+        if (wasConnected && !m_shutdown && m_startupClock.isValid()) {
+            if (!m_autoReconnectWindow.isValid() || m_autoReconnectWindow.elapsed() > 300000) { m_autoReconnectWindow.start(); m_autoReconnects = 0; }
+            if (m_autoReconnects++ < 3)
+                QTimer::singleShot(1000, this, [this] {
+                    if (!m_connected && !m_shutdown && m_socket.state() == QLocalSocket::UnconnectedState) start();
+                });
+        }
     });
     connect(&m_socket, &QLocalSocket::errorOccurred, this, [this](auto) {
         if (m_connected) fail(m_socket.errorString());
@@ -2297,8 +2306,18 @@ void MailBackend::shutdown() {
     m_shutdown = true; m_resumeSearch = m_searchTimer.isActive(); m_searchTimer.stop(); m_viewTimer.stop();
     // The poll timer still enforces request timeouts while closing; its status
     // query is suppressed by m_shutdown. A failed save keeps the app usable.
-    if (!m_connected && (m_draftDirty || !m_preferencesPending.isEmpty() || !m_viewDirty.isEmpty())) {
-        cancelShutdown(); fail("Unsaved changes remain here. Reconnect before closing to save them."); return;
+    if (!m_connected) {
+        // Nothing can be saved without the engine. An unsaved reply asks once
+        // while the engine reconnects; the view and settings are let go, so
+        // closing always works.
+        if (m_draftDirty && !m_closeUnsaved) {
+            m_closeUnsaved = true; cancelShutdown();
+            if (m_socket.state() == QLocalSocket::UnconnectedState && !m_connectTimer.isActive()) start();
+            fail("Your reply isn't saved yet. Wait for the local engine to reconnect, or close again to quit without it.");
+            return;
+        }
+        m_connectTimer.stop(); m_pollTimer.stop(); m_viewDirty.clear(); m_preferencesPending.clear();
+        m_shutdownEmitted = true; m_socket.abort(); emit shutdownReady(); return;
     }
     for (const auto &account : m_viewDirty.values()) saveView(account);
     cancelGoogleOperations();

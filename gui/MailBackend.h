@@ -1058,6 +1058,11 @@ private:
     bool m_draftConflict = false, m_resolvingDraft = false;
     bool m_resumeSearch = false;
     bool m_shutdownEmitted = false;
+    // A reply was unsaved at a close while disconnected; the next close quits.
+    bool m_closeUnsaved = false;
+    // Engines started again after a drop, counted per five minutes.
+    int m_autoReconnects = 0;
+    QElapsedTimer m_autoReconnectWindow;
     QHash<QString, QJsonObject> m_draftTransferIntents;
     QHash<QString, QString> m_draftTransferMessages;
     QString m_draftTransferActive;

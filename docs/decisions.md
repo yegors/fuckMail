@@ -2030,3 +2030,15 @@ The founder asked for a spell checker and autocorrect while writing, ideally the
 
 Mail UI119. No schema, fixture or protocol change.
 
+
+## D171 — local mail stays open when the engine is slow or gone (2026-09-30T06:00:00Z)
+
+The founder relaunched the app on four accounts (about 356,000 messages, a 4.4 GB store). Within a minute it showed "Connecting to your local mail…" and stayed there, although mail is local. Closing the window did nothing; only a force quit worked.
+
+- **Found.** `assist_progress` still counted on the writer thread. It reads every message of each account, bodies included. A cold count took 13.8 s on this store, where D169 had assumed about 2 s. The GUI sends one request at a time, so everything else queued behind the count. The next poll counted again because its counts were already about 14 s old. At 15 s the GUI declared the engine dead and dropped it; the engine, with no client left, exited. Nothing started it again, and there is no Reconnect control after startup. Close then refused to quit while the view was unsaved and the engine was gone.
+- **Change (engine).** Counts run on a read-only connection to the store beside the writer, one count at a time. `assist_progress` waits for a count it needs for at most 250 ms (poll) or 2 s (exact), then answers with the latest counts, keeping current settings. An account never counted is left out until its first count. `complete: true` waits for every account, for clients that ask once, such as `fm assist progress`. Engine shutdown interrupts a running count.
+- **Change (GUI).** A dropped connection starts the engine again after 1 s, up to three times in five minutes. After that the mail list says it is not connected, shows the error and offers Reconnect. Closing without an engine always quits: the view and settings are let go. An unsaved reply asks once and reconnects; closing again quits without it.
+- **Measured on the founder's profile.** A cold poll answers in 0.37–0.57 s including engine start, down from 13.8 s. A complete count takes 6.4 s on a fresh engine and 64 ms warm. The engine exits 1.6 s after its last client while a count runs, down from 12 s.
+- **Not verified here.** The GUI on the founder's profile after the change.
+
+Local assistance30, Mail UI120, CLI (`assist progress` asks for complete counts). No schema, fixture or protocol version change; `complete` is additive.

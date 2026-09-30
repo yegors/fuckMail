@@ -1893,6 +1893,23 @@ public:
             && h.viewSaves.last()["view"].toObject()["readerY"]==12,"only the removed reference leaves the saved view");
         require(h.backend.error().isEmpty() && h.backend.m_viewPending.value(h.backend.m_account).isEmpty(),"the rest of the view saves without an error");
     }
+    // Mail is local: a dropped engine is started again without a click, and
+    // closing without one always works. An unsaved reply asks once first.
+    static void engineDrop() {
+        Harness h;
+        h.backend.m_startupClock.start();
+        h.backend.remember("readerY",40);
+        h.backend.m_socket.abort();
+        require(!h.backend.m_connected && !h.backend.m_viewDirty.isEmpty(),"the engine is gone with the view unsaved");
+        await([&]{return h.backend.m_launchAttempts>=1;},"the engine is started again");
+        bool closed=false;
+        QObject::connect(&h.backend,&MailBackend::shutdownReady,[&]{closed=true;});
+        h.backend.m_draftDirty=true;
+        h.backend.shutdown();
+        require(!closed && h.backend.error().contains("close again"),"an unsaved reply asks before closing");
+        h.backend.shutdown();
+        require(closed,"closing again quits without the engine");
+    }
     static void memoryChecks(){readerMemorySharing();controls();}
     static void refreshChecks(){scopedRefreshes();mutations();undoActions();remoteMail();reviewTransitions();}
     // Done is This Week, This Month, then older months. Older months start
@@ -1931,6 +1948,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();doneGroups();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

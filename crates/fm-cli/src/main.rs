@@ -2736,7 +2736,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     account(args)?;
                     ("assist_backlog", json!({}))
                 }
-                Assist::Progress => ("assist_progress", json!({})),
+                // Asked once, so wait for every account's counts.
+                Assist::Progress => ("assist_progress", json!({"complete":true})),
                 Assist::CatchUp { range } => {
                     account(args)?;
                     ("assist_catch_up", json!({"range":range}))

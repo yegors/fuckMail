@@ -8,15 +8,25 @@ use crate::{
     ollama::{self, failure},
 };
 use fm_assist::ollama::Settings;
-use fm_core::{local_model::Prepared, Result};
+use fm_core::{
+    assist_backlog::{ProgressInterrupt, ProgressPlan, ProgressReader},
+    local_model::Prepared,
+    Result,
+};
 use fm_google::transport::CancellationToken;
 use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{watch, Notify, Semaphore};
+/// How long a progress request waits for counts it lacks before answering
+/// with the latest ones. Clients send one request at a time, so a count that
+/// reads every message of a large mailbox must never hold their reply.
+const POLL_COUNT_WAIT: Duration = Duration::from_millis(250);
+const EXACT_COUNT_WAIT: Duration = Duration::from_secs(2);
 /// An explicit request from `assist_start`, visible only to the session that
 /// started it.
 struct Job {
@@ -60,6 +70,16 @@ pub struct Runtime {
     /// Settings whose model was last confirmed installed and local. Checked
     /// on first use and after model errors, not before every email.
     qualified: Mutex<Option<String>>,
+    /// The profile whose store progress counts read beside the writer. `None`
+    /// counts on the writer, as when no reader can be opened.
+    progress_profile: Mutex<Option<PathBuf>>,
+    /// The reader, opened on first use.
+    progress_reader: Arc<Mutex<Option<ProgressReader>>>,
+    /// The progress count in flight; its value turns true when it ends.
+    counting: Mutex<Option<watch::Receiver<bool>>>,
+    /// Stops the reader's count in progress when the engine stops.
+    progress_interrupt: Arc<Mutex<Option<ProgressInterrupt>>>,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
 }
 /// Failures of the runner or its authority, not of one message: the queue
 /// waits and retries rather than marking every remaining message failed.
@@ -92,7 +112,26 @@ impl Runtime {
             speeds: Mutex::new(BTreeMap::new()),
             held: Mutex::new(Default::default()),
             qualified: Mutex::new(None),
+            progress_profile: Mutex::new(None),
+            progress_reader: Arc::new(Mutex::new(None)),
+            counting: Mutex::new(None),
+            progress_interrupt: Arc::new(Mutex::new(None)),
+            stopped: Arc::new(Default::default()),
         }
+    }
+    /// Ends a progress count in progress, so the engine can close the store
+    /// without waiting for it.
+    pub fn stop(&self) {
+        self.stopped
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(interrupt) = self.progress_interrupt.lock().unwrap().as_ref() {
+            interrupt.interrupt();
+        }
+    }
+    /// Counts progress on a read-only connection to `profile`'s store.
+    pub fn with_progress_reader(self, profile: &Path) -> Self {
+        *self.progress_profile.lock().unwrap() = Some(profile.to_owned());
+        self
     }
     /// Pauses queue work for `account`, as when its sync is released.
     /// Explicit requests for the account still run.
@@ -191,19 +230,64 @@ impl Runtime {
         Ok(saved)
     }
     /// Cheap per-account progress for the Accounts view and account tabs.
-    async fn progress(&self, account: Option<&str>) -> Result<Value> {
-        self.progress_within(account, None).await
+    async fn progress(self: &Arc<Self>, account: Option<&str>) -> Result<Value> {
+        self.progress_within(account, None, false).await
     }
+    /// Progress from the latest counts. Rows needing a new count get one in
+    /// the background; the reply waits briefly for it, then keeps the last
+    /// counts (a never-counted account is left out until its first count).
+    /// `complete` waits until every row has been counted, for clients such as
+    /// the CLI that ask once.
     async fn progress_within(
-        &self,
+        self: &Arc<Self>,
         account: Option<&str>,
         max_age: Option<std::time::Duration>,
+        complete: bool,
     ) -> Result<Value> {
         let account = account.map(str::to_owned);
-        let mut progress = self
-            .core
-            .call(move |s| s.local_model_progress_within(account.as_deref(), max_age))
-            .await?;
+        let started = Instant::now();
+        let wait = if max_age.is_some() {
+            POLL_COUNT_WAIT
+        } else {
+            EXACT_COUNT_WAIT
+        };
+        let mut counted = false;
+        let mut progress = loop {
+            let profile = self.progress_profile.lock().unwrap().clone();
+            let Some(profile) = profile else {
+                let account = account.clone();
+                break self
+                    .core
+                    .call(move |s| s.local_model_progress_within(account.as_deref(), max_age))
+                    .await?;
+            };
+            // Once this request has waited for a count, counts made since it
+            // began answer it, even though mail changed meanwhile.
+            let age = if counted {
+                Some(max_age.unwrap_or_default().max(started.elapsed()))
+            } else {
+                max_age
+            };
+            let plan_account = account.clone();
+            let plan = self
+                .core
+                .call(move |s| s.local_model_progress_plan(plan_account.as_deref(), age))
+                .await?;
+            if !plan.needs_count() || (counted && !complete) {
+                break plan.assemble();
+            }
+            let mut done = self.count_progress(profile, plan.clone());
+            let ended = done.wait_for(|finished| *finished);
+            if complete {
+                let _ = ended.await;
+            } else if !tokio::time::timeout(wait, ended)
+                .await
+                .is_ok_and(|ended| ended.is_ok())
+            {
+                break plan.assemble();
+            }
+            counted = true;
+        };
         let speeds = self.speeds.lock().unwrap().clone();
         let held = self.held.lock().unwrap().clone();
         let worker = self.worker.lock().unwrap();
@@ -220,6 +304,73 @@ impl Runtime {
                 .map(|(_, m)| m));
         }
         Ok(progress)
+    }
+    /// Starts counting `plan`'s rows on the reader unless a count is already
+    /// running, and returns the running count's end signal. A later request
+    /// counts whatever that one did not cover. When the reader cannot be used,
+    /// progress falls back to counting on the writer.
+    fn count_progress(
+        self: &Arc<Self>,
+        profile: PathBuf,
+        plan: ProgressPlan,
+    ) -> watch::Receiver<bool> {
+        let mut counting = self.counting.lock().unwrap();
+        if let Some(running) = counting.as_ref().filter(|running| !*running.borrow()) {
+            return running.clone();
+        }
+        let (end, ended) = watch::channel(false);
+        if self.stopped.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = end.send(true);
+            return ended;
+        }
+        *counting = Some(ended.clone());
+        let runtime = self.clone();
+        tokio::spawn(async move {
+            let reader = runtime.progress_reader.clone();
+            let interrupt = runtime.progress_interrupt.clone();
+            let stopped = runtime.stopped.clone();
+            let started = Instant::now();
+            let counted = tokio::task::spawn_blocking(move || {
+                let mut reader = reader.lock().unwrap();
+                if reader.is_none() {
+                    let opened = ProgressReader::open(&profile)?;
+                    *interrupt.lock().unwrap() = Some(opened.interrupter());
+                    *reader = Some(opened);
+                }
+                if stopped.load(std::sync::atomic::Ordering::SeqCst) {
+                    return Err(fm_core::CoreError {
+                        code: "engine_stopped".into(),
+                        message: "The engine is stopping".into(),
+                        details: Value::Null,
+                    });
+                }
+                let counts = reader.as_ref().unwrap().count(&plan)?;
+                Ok::<_, fm_core::CoreError>((plan, counts))
+            })
+            .await;
+            match counted {
+                _ if runtime.stopped.load(std::sync::atomic::Ordering::SeqCst) => {}
+                Ok(Ok((plan, counts))) => {
+                    let _ = runtime
+                        .core
+                        .call(move |s| Ok(s.local_model_progress_save(plan, counts)))
+                        .await;
+                }
+                Ok(Err(error)) => {
+                    diagnostics::event(
+                        "Model",
+                        "progress_count_failed",
+                        json!({"code":error.code,"elapsed_ms":started.elapsed().as_millis() as u64}),
+                    );
+                    *runtime.progress_reader.lock().unwrap() = None;
+                    *runtime.progress_profile.lock().unwrap() = None;
+                }
+                Err(_) => {}
+            }
+            *runtime.counting.lock().unwrap() = None;
+            let _ = end.send(true);
+        });
+        ended
     }
     /// Reports whether the session should route `method` to [`Runtime::handle`].
     pub fn handles(method: &str) -> bool {
@@ -263,7 +414,7 @@ impl Runtime {
             "assist_job" | "assist_cancel" => &["job_id"],
             "assist_settings_save" => &["expected_revision", "settings"],
             "assist_catch_up" => &["range"],
-            "assist_progress" => &["max_age_ms"],
+            "assist_progress" => &["max_age_ms", "complete"],
             _ => &[],
         };
         if !p.is_object()
@@ -293,7 +444,13 @@ impl Runtime {
                         None => return Err(failure("invalid_request", "max_age_ms is 0 to 60000")),
                     },
                 };
-                self.progress_within(account, max_age).await
+                let complete = match p.get("complete") {
+                    None => false,
+                    Some(value) => value
+                        .as_bool()
+                        .ok_or_else(|| failure("invalid_request", "complete is true or false"))?,
+                };
+                self.progress_within(account, max_age, complete).await
             }
             "assist_backlog" => {
                 let account = account_required()?;
