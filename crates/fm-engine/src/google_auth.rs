@@ -797,23 +797,13 @@ impl Runtime {
     pub(crate) async fn retry_credential_access(&self, account: &str) -> Result<()> {
         let id = AccountId::new(account.to_owned()).map_err(google_error)?;
         let cancel = self.account_work_cancel(account).await?;
-        let guard = self
-            .inner
-            .coordinator
-            .account_guard(&id, &cancel)
-            .await
-            .map_err(google_error)?;
-        let vault = self.inner.vault.clone();
-        tokio::task::spawn_blocking(move || {
-            let _guard = guard;
-            if cancel.is_cancelled() {
-                return Err(GoogleError::TransportInterrupted);
-            }
-            vault.retry_access(&id)
-        })
-        .await
-        .map_err(|_| error("vault_unavailable", "Credential access could not resume"))?
-        .map_err(google_error)
+        if cancel.is_cancelled() {
+            return Err(cancelled());
+        }
+        // Forgetting a refusal takes the vault's short lock only. It never waits
+        // for a keychain prompt still open for this account: that prompt's own
+        // answer then decides, as if it had come after this retry.
+        self.inner.vault.retry_access(&id).map_err(google_error)
     }
     /// A child of the cancellation token for `account`'s current connection.
     /// Use it for the whole account job, including provider I/O after

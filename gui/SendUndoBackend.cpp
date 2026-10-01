@@ -61,8 +61,36 @@ void MailBackend::activateActionToast() {
 }
 // A negative Undo interval sends at once. Zero still goes through the queue, so
 // the send gets the same pre-dispatch check, but without an Undo toast.
+// A reply in a thread the user delayed finishes it, when they chose that in
+// Settings → Mail (on unless turned off).
+void MailBackend::rememberDoneAfterSend(const QJsonObject &params) {
+    const auto mode = m_draft.value("mode").toString();
+    if ((mode != "reply" && mode != "reply_all") || !m_preferences.value("reply_marks_delayed_done", true).toBool()
+        || m_selected.isEmpty() || m_draft.value("conversation_id").toString() != m_selected || m_conversation.value("id").toString() != m_selected) return;
+    const auto messages = m_conversation.value("messages").toList();
+    if (std::any_of(messages.cbegin(), messages.cend(), [](const QVariant &m) { return m.toMap().value("starred").toBool(); }))
+        m_doneAfterSend[params["request_id"].toString()] = {m_account, m_selected};
+}
+void MailBackend::markThreadDone(const QString &account, const QString &conversation) {
+    if (!m_connected || m_shutdown || accountRemoved(account)) return;
+    // On screen: the ordinary Done, with its Undo.
+    if (account == m_account && conversation == m_selected && m_conversation.value("id") == conversation && !m_mutatingConversation) {
+        doneConversation(); return;
+    }
+    // Elsewhere: read the thread's current state and clear it the same way.
+    request("conversation", account, {{"id", conversation}}, [this, account, conversation](auto thread, bool ok) {
+        if (!ok || m_shutdown || accountRemoved(account)) return;
+        QJsonObject params{{"request_id", QUuid::createUuid().toString(QUuid::WithoutBraces)}, {"id", conversation}, {"message_ids", thread["message_ids"]},
+            {"expected_revision", thread["revision"]}, {"read", true}, {"starred", false}};
+        request("flag", account, params, [this, account, conversation](auto result, bool done) {
+            if (!done || account != m_account) return;
+            if (conversation == m_selected) { m_conversation = retainReaderPresentation(result.toVariantMap()); emit conversationChanged(); }
+            loadAccounts(); loadConversations(false, true);
+        }, true);
+    }, true);
+}
 void MailBackend::queueGoogleSend(const QJsonObject &params) {
-    if (m_sendUndoMs < 0) { startGoogleSendOperation("google_send", params); return; }
+    if (m_sendUndoMs < 0) { rememberDoneAfterSend(params); startGoogleSendOperation("google_send", params); return; }
     const auto key = googleSendKey();
     if (m_queuedSends.contains(key)) return;
     if (m_queuedSends.size() >= 8) { fail("Wait for a pending send before sending another message."); return; }
@@ -71,6 +99,7 @@ void MailBackend::queueGoogleSend(const QJsonObject &params) {
         const auto recipient = value.toMap();
         names.append(recipient.value("name").toString().isEmpty() ? recipient.value("email").toString() : recipient.value("name").toString());
     }
+    rememberDoneAfterSend(params);
     QueuedSend send;
     send.preview = queuedOutgoing(params);
     send.params = params; send.account = m_account; send.from = m_draft.value("from").toString();
@@ -93,6 +122,7 @@ void MailBackend::queueGoogleSend(const QJsonObject &params) {
 void MailBackend::cancelQueuedSend(const QString &key, bool restore) {
     if (!m_queuedSends.contains(key)) return;
     const auto send = m_queuedSends.take(key);
+    m_doneAfterSend.remove(send.params["request_id"].toString());
     refreshOutgoingPresentation();
     m_googleSendUi[key].feedback = restore ? "Send undone. Your saved draft is kept." : "Send cancelled. Your saved draft is kept.";
     if (m_actionToast.value("key") == key) { m_actionToast = {}; emit actionToastChanged(); }
@@ -147,6 +177,7 @@ void MailBackend::dispatchQueuedSend(const QString &key) {
         if (!m_queuedSends.contains(key) || m_queuedSends[key].params != send.params) return;
         m_queuedSends[key].checking = false;
         auto stop = [this, key, send, draftId](const QString &text) {
+            m_doneAfterSend.remove(send.params["request_id"].toString());
             m_queuedSends.remove(key); refreshOutgoingPresentation(); m_googleSendUi[key].feedback = text; emit draftChanged();
             showActionToast(text, "open_draft", {{"account", send.account}, {"draft_id", draftId}}, 6000, true);
         };

@@ -171,7 +171,7 @@ void MailBackend::pollMailDelivery() {
 }
 
 void MailBackend::resumeStartupGoogleSync() {
-    if (m_syntheticProfile || !m_connected || m_shutdown || !m_initialAccountsLoaded || !m_initialPreferencesLoaded) return;
+    if (m_syntheticProfile || !m_connected || m_shutdown || !m_initialAccountsLoaded || !m_initialPreferencesLoaded || !m_localMailShown) return;
     const auto pending = m_startupGoogleAccounts;
     m_startupGoogleAccounts.clear(); // One attempt per launch, including a credential refusal.
     for (const auto &account : pending) {
@@ -182,6 +182,12 @@ void MailBackend::resumeStartupGoogleSync() {
             || googleSyncState(account).value("owned").toBool()) continue;
         startGoogleSync(account, {});
     }
+}
+
+void MailBackend::localMailShown() {
+    if (m_localMailShown) return;
+    m_localMailShown = true;
+    resumeStartupGoogleSync();
 }
 
 void MailBackend::startGoogleSync(const QString &account, const QVariantMap &limits) {

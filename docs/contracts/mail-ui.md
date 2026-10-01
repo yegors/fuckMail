@@ -1,5 +1,27 @@
 # Mail UI, reader and human composer
 
+## D175 — every Inbox list item is one row high (Mail UI124)
+
+- **Items.** The Inbox list holds, in section order: a header item per section (`section:<key>`), an empty item for an open section with no mail (`empty:<key>`, "Inbox zero. Enjoy it.", "All reviewed. Nice work." or "Nothing waiting on later."), then the rows of each open section. Rows of a folded section are not items, the kept (open) conversation included. The backend builds rows and items in one model update; the model's `itemType` role (`header`, `empty`, `row`) picks each item's delegate, and only rows build a row's content.
+- **One row high.** Every item is exactly the row height (52 px comfortable, 44 compact, scaled with text size). A header sits at the foot of its item, so the room above a header is the row height less the header's (18 px above a Done header in comfortable, 10 in compact). The list's top margin hides that room above the first header, which starts the list. Inbox rows draw no headings of their own. Sent and Drafts keep their day headings in rows.
+- **Length.** While older mail is still to load, headers show down to the section whose rows come next: the section the loaded rows end in, when it has more, else the next open section with mail. Folded and empty sections before it show at once. Everything after, headers included, is `unloadedItems`, and the space below the list is that many rows high. The list's length is always its items plus `unloadedItems`, in rows, so the scrollbar is exact through scrolling, paging, folds, new mail and density changes.
+- **Folds.** A folded or opened header keeps its item and its place; only the rows after it change. When rows above the view fold away, the rows on screen stay where they are. A fold at the list's end leaves the view at the new end.
+- **Kept rows** go back into their own section, by section order and after the rows of that section that were above them. A section's rows are never split.
+- **New lists.** A new list for the same account (another folder or search) starts at its top, and the saved list position follows it, as it does whenever the list moves. Switching accounts restores that account's own saved position.
+- **Search.** A search starts with every section open, and its list requests leave out `open_months`. A section folded during a search stays folded until the search text changes; it is not saved to the mailbox view. Clearing the search restores the mailbox's saved folds. Switching accounts starts the next account with its own folds.
+- **Plain-text links** end before trailing sentence punctuation (`. , ; : ! ? ' "`) and before a closing `)` or `]` the link did not open.
+
+This replaces Mail UI123's fold hosts and Mail UI122's header items.
+
+Consumers: `ConversationListModel` (`itemType`, `indexOf`), `MailBackend` (`listItems`, `inboxSections`, `unloadedItems`, `listIndex`, kept-row placement, search folds), `MailView` list delegates, sticky band, keyboard positioning and scroll range, `ReceivedBody`; MailSelectionTest (`listGeometry`, also with `--gpu`), MailNavigationCacheTest, GuiMailNavigationSelfTest, ReplyDocumentTest.
+
+## D172 — local mail first; replying finishes Delayed mail (Mail UI121)
+
+- **Launch.** The first mail view and list load before any Google sync starts. Sync starts after the first list has shown, or 3 s after connecting. A sync start or refresh may take up to 2 minutes (a keychain prompt waiting for the user) before the connection counts as unresponsive; other requests keep 15 s. Connection trouble shows in the account bar: the tab's red dot, and the header Sync button's Retry with its keychain tip.
+- **Reply to Delayed mail.** Settings → Mail → "Replying finishes Delayed mail" (On by default, `reply_marks_delayed_done`). A reply or reply-all sent in a thread with a starred message marks that thread Done once Gmail accepts it; on screen, with the Done Undo toast. A send undone, cancelled, refused or abandoned leaves the thread Delayed.
+
+Consumers: `MailBackend` startup sync and send completion, `SettingsView`; GoogleSendControlsTest, ReplyStabilityTest.
+
 ## D171 — reconnecting and closing without the engine (Mail UI120)
 
 - **Reconnect.** When a live connection drops (a request past 15 s, an out-of-order reply or the engine exiting) and the window is not closing, the engine is started again after 1 s, at most three times in five minutes. After that the empty mail list reads "Your local mail isn’t connected.", shows the error and offers Reconnect (`mailReconnect`).
@@ -223,7 +245,7 @@ Consumers: Gmail36.
 - Pending and unknown delivery states show nothing. The thread line and the message header show no status (`mailDeliveryStatus` and `messageDeliveryStatus` are gone).
 - **Section headers** have no tooltip.
 - **Loading texts.** `firstLoading` is true only while the first list read of an account's folder runs. The list's empty-state text is blank then; outside it the list shows "No matches" or "No conversations in this view", never "Searching…". The reader shows "Loading…" only then. "Inbox clear" and the other empty-reader lines stay up during refreshes.
-- **Collapsing everything loaded.** With more mail to read and no rows loaded, `trailingSections` lists the sections down to and including the first open one with mail. Its rows arrive under its header, and Load more stays hidden until they do.
+- **Collapsing everything loaded.** With more mail to read and no rows loaded, the list shows the sections down to and including the first open one with mail (Mail UI124). Its rows arrive under its header, and Load more stays hidden until they do.
 
 Consumers: none outside the GUI.
 

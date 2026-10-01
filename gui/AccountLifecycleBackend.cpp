@@ -73,6 +73,7 @@ void MailBackend::clearAccountSelection() {
     m_draftDirty = false; m_draftConflict = false; m_savingDraft = false; m_resolvingDraft = false;
     m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_folder = "inbox";
     m_pinnedRow.clear(); m_pinnedIndex = -1; m_collapsedGroups.clear(); m_openSections.clear(); m_categories.clear(); m_captures.clear();
+    m_searchFolds = false; m_savedCollapsedGroups.clear(); m_savedOpenSections.clear();
     m_captureNextOffset = -1; m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
     m_afterDraftSave = {}; m_afterConversationMutation = {}; clearSenderCard(); publishConversations({});
     emit accountChanged(); emit currentAccountChanged(); emit accountLifecycleChanged(); emit draftChanged();

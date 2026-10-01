@@ -10,77 +10,94 @@ use zeroize::Zeroizing;
 /// keychain prompt is not shown again by every worker.
 ///
 /// A native refusal is shared by every worker until an explicit user retry.
-/// The lock remains inside the blocking operation, including caller cancellation.
+/// Calls for one account are serialized through that account's lock, held
+/// inside the blocking operation, including caller cancellation. Accounts do
+/// not wait for each other: a keychain prompt left open for one account never
+/// holds up another, nor [`CredentialVault::retry_access`].
 /// After a failed load or remove, or a store the OS refused, the account's
 /// loads fail with `StoreUnavailable` without reaching the inner vault, until
-/// [`CredentialVault::retry_access`] or a successful `store` or `remove`.
-/// All calls, for every account, are serialized through one lock.
+/// `retry_access` or a successful `store` or `remove`.
 pub struct SessionCredentialVault<V: ?Sized> {
     inner: std::sync::Arc<V>,
+    accounts: Mutex<std::collections::BTreeMap<AccountId, std::sync::Arc<Mutex<()>>>>,
     denied: Mutex<std::collections::BTreeSet<AccountId>>,
 }
 impl<V: CredentialVault + ?Sized> SessionCredentialVault<V> {
     pub fn new(inner: std::sync::Arc<V>) -> Self {
         Self {
             inner,
+            accounts: Mutex::new(Default::default()),
             denied: Mutex::new(Default::default()),
         }
+    }
+    /// The lock serializing `account`'s calls to the inner vault.
+    fn account(&self, account: &AccountId) -> Result<std::sync::Arc<Mutex<()>>, GoogleError> {
+        Ok(self
+            .accounts
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?
+            .entry(account.clone())
+            .or_default()
+            .clone())
+    }
+    /// Records whether `account`'s loads are refused. The set's lock is never
+    /// held while the inner vault runs.
+    fn set_denied(&self, account: &AccountId, denied: bool) -> Result<(), GoogleError> {
+        let mut set = self
+            .denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        if denied {
+            set.insert(account.clone());
+        } else {
+            set.remove(account);
+        }
+        Ok(())
+    }
+    fn is_denied(&self, account: &AccountId) -> Result<bool, GoogleError> {
+        Ok(self
+            .denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?
+            .contains(account))
     }
 }
 impl<V: CredentialVault + ?Sized> CredentialVault for SessionCredentialVault<V> {
     fn retry_access(&self, account: &AccountId) -> Result<(), GoogleError> {
-        self.denied
-            .lock()
-            .map_err(|_| GoogleError::StoreUnavailable)?
-            .remove(account);
-        Ok(())
+        self.set_denied(account, false)
     }
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
-        let mut denied = self
-            .denied
-            .lock()
-            .map_err(|_| GoogleError::StoreUnavailable)?;
-        if denied.contains(account) {
+        let lock = self.account(account)?;
+        let _held = lock.lock().map_err(|_| GoogleError::StoreUnavailable)?;
+        if self.is_denied(account)? {
             return Err(GoogleError::StoreUnavailable);
         }
         let result = self.inner.load(account);
         if result.is_err() {
-            denied.insert(account.clone());
+            self.set_denied(account, true)?;
         }
         result
     }
     fn store(&self, account: &AccountId, token: StoredToken) -> Result<(), GoogleError> {
-        let mut denied = self
-            .denied
-            .lock()
-            .map_err(|_| GoogleError::StoreUnavailable)?;
+        let lock = self.account(account)?;
+        let _held = lock.lock().map_err(|_| GoogleError::StoreUnavailable)?;
         // A verified reconnect may replace the credential even after denial.
         // Refresh always loads first, so it cannot bypass the blocked load.
         let result = self.inner.store(account, token);
         match &result {
-            Ok(()) => {
-                denied.remove(account);
-            }
+            Ok(()) => self.set_denied(account, false)?,
             // Only a refusal by the OS store blocks later loads. A token the
             // inner vault rejected as invalid never reached the store.
-            Err(GoogleError::StoreUnavailable) => {
-                denied.insert(account.clone());
-            }
+            Err(GoogleError::StoreUnavailable) => self.set_denied(account, true)?,
             Err(_) => {}
         }
         result
     }
     fn remove(&self, account: &AccountId) -> Result<(), GoogleError> {
-        let mut denied = self
-            .denied
-            .lock()
-            .map_err(|_| GoogleError::StoreUnavailable)?;
+        let lock = self.account(account)?;
+        let _held = lock.lock().map_err(|_| GoogleError::StoreUnavailable)?;
         let result = self.inner.remove(account);
-        if result.is_err() {
-            denied.insert(account.clone());
-        } else {
-            denied.remove(account);
-        }
+        self.set_denied(account, result.is_err())?;
         result
     }
 }
@@ -436,6 +453,54 @@ mod denial_tests {
         vault.retry_access(&account).unwrap();
         assert!(vault.load(&account).unwrap().is_none());
         assert_eq!(inner.loads.load(Ordering::SeqCst), 3);
+    }
+    #[test]
+    fn a_prompt_left_open_for_one_account_holds_up_no_other() {
+        // The inner vault blocks "waiting" until released, as a keychain
+        // prompt does until the user answers it.
+        struct Prompt {
+            release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl CredentialVault for Prompt {
+            fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
+                if account.as_str() == "waiting" {
+                    self.release.lock().unwrap().recv().unwrap();
+                }
+                Ok(None)
+            }
+            fn store(&self, _: &AccountId, _: StoredToken) -> Result<(), GoogleError> {
+                Ok(())
+            }
+        }
+        let (answer, release) = std::sync::mpsc::channel();
+        let vault = Arc::new(SessionCredentialVault::new(Arc::new(Prompt {
+            release: std::sync::Mutex::new(release),
+        })));
+        let waiting = {
+            let vault = vault.clone();
+            std::thread::spawn(move || vault.load(&AccountId::new("waiting").unwrap()))
+        };
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let other = AccountId::new("other").unwrap();
+        let (done, finished) = std::sync::mpsc::channel();
+        {
+            let vault = vault.clone();
+            std::thread::spawn(move || {
+                vault.retry_access(&other).unwrap();
+                vault
+                    .retry_access(&AccountId::new("waiting").unwrap())
+                    .unwrap();
+                done.send(vault.load(&other).unwrap().is_none()).unwrap();
+            });
+        }
+        assert!(
+            finished
+                .recv_timeout(std::time::Duration::from_secs(2))
+                .unwrap(),
+            "another account and retries go ahead"
+        );
+        answer.send(()).unwrap();
+        assert!(waiting.join().unwrap().unwrap().is_none());
     }
     #[test]
     fn failed_refresh_storage_latches_and_verified_reconnect_clears_it() {

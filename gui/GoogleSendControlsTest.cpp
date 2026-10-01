@@ -444,6 +444,8 @@ ApplicationWindow { width: 900; height: 1200; visible: true
         };
         backend.resumeStartupGoogleSync();require(backend.m_startupGoogleAccounts.size()==3,"startup waits for saved service preferences");
         backend.m_initialPreferencesLoaded=true;backend.resumeStartupGoogleSync();
+        require(backend.m_startupGoogleAccounts.size()==3 && syncStarts==0,"startup sync waits until local mail is on screen");
+        backend.localMailShown();
         await([&]{return syncStarts==1 && backend.m_inFlight.isEmpty();},"startup sync and inventory refresh finish");
         backend.resumeStartupGoogleSync();require(syncStarts==1 && backend.m_startupGoogleAccounts.isEmpty(),"polling cannot restart a paused or denied startup attempt");
         require(!qmlError, "native Send controls generated no QML errors");

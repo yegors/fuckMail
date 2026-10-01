@@ -95,6 +95,13 @@ class MailBackend final : public QObject {
     // listed in collapsedGroups; older Done months unless listed in openSections.
     Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
     Q_PROPERTY(QStringList openSections READ openSections NOTIFY queryChanged)
+    // While searching every section starts open; only folds made during the
+    // search, listed in collapsedGroups, hide one.
+    Q_PROPERTY(bool allSectionsOpen READ allSectionsOpen NOTIFY queryChanged)
+    // Inbox sections in list order with their counts, {key, count}; and how
+    // many one-row items the list still has to load below what it shows.
+    Q_PROPERTY(QVariantList inboxSections READ inboxSections NOTIFY conversationsChanged)
+    Q_PROPERTY(int unloadedItems READ unloadedItems NOTIFY conversationsChanged)
     // How Core read the current search text, or why it could not.
     Q_PROPERTY(QVariantMap searchTerms READ searchTerms NOTIFY searchTermsChanged)
     Q_PROPERTY(QString searchError READ searchError NOTIFY searchTermsChanged)
@@ -246,6 +253,11 @@ public:
     QVariantMap filters() const { return m_filters; }
     QStringList collapsedGroups() const { return m_collapsedGroups; }
     QStringList openSections() const { return m_openSections; }
+    bool allSectionsOpen() const { return m_searchFolds; }
+    QVariantList inboxSections() const { return m_inboxSections; }
+    int unloadedItems() const { return m_unloadedItems; }
+    // Where the list shows the row or section item with `id`, or -1.
+    Q_INVOKABLE int listIndex(const QString &id) const { return m_conversationModel.indexOf(id); }
     QVariantMap searchTerms() const { return m_searchTerms; }
     QString searchError() const { return m_searchError; }
     QStringList recentSearches() const { return presentation().value("recentSearches").toStringList(); }
@@ -591,6 +603,10 @@ private:
     void pollGoogleSync();
     void resumeStartupGoogleSync();
     QSet<QString> m_startupGoogleAccounts;
+    // Local mail first: Google sync starts once the first list has shown, or
+    // a few seconds after connecting when no list comes.
+    bool m_localMailShown = false;
+    void localMailShown();
     void pollMailDelivery();
     void finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok);
     // A deletion, or a decline (an RSVP write), held for its Undo interval.
@@ -744,6 +760,11 @@ private:
         bool checking = false;
     };
     QHash<QString, QueuedSend> m_queuedSends;
+    // Replies sent in a Delayed thread, by send request id: the thread is
+    // marked Done once Gmail accepts the reply.
+    QHash<QString, QPair<QString, QString>> m_doneAfterSend;
+    void rememberDoneAfterSend(const QJsonObject &params);
+    void markThreadDone(const QString &account, const QString &conversation);
     QHash<QString, QString> m_sendNoticeRecipients;
     QHash<QString, QVariantList> m_outgoingPreviews;
     QVariantList m_outgoingThread;
@@ -857,6 +878,13 @@ private:
     void refreshDoneSections();
     QDate m_mailToday; // Set by tests; otherwise the clock's date.
     QString rowSection(const QVariantMap &row, const DoneSections &done) const;
+    // What the native list shows for `rows`. In the Inbox: a header item
+    // before each section, an empty item for an open section with no mail,
+    // and the rows of open sections, every item one row high. Headers of
+    // sections below the loaded rows wait with them in m_unloadedItems.
+    QVariantList listItems(const QVariantList &rows);
+    QVariantList m_inboxSections;
+    int m_unloadedItems = 0;
     QJsonObject listParams(const QStringList &collapsed, const QStringList &open) const;
     // A view of the account: its folder, search, filters and labels.
     struct ListView { QString folder, query; QVariantMap filters; QString category; };
@@ -952,6 +980,11 @@ private:
     QVariantMap m_conversation, m_draft, m_views;
     QVariantMap m_preferences, m_preferencesPending, m_diagnostics, m_filters, m_querySummary;
     QStringList m_collapsedGroups, m_openSections;
+    // A search keeps its own folds, starting all open; the mailbox's saved
+    // folds wait here until the search is cleared.
+    bool m_searchFolds = false;
+    QStringList m_savedCollapsedGroups, m_savedOpenSections;
+    void followSearchFolds(bool wasSearching);
     QVariantMap m_searchTerms;
     QString m_searchError, m_searchPeopleQuery;
     QVariantList m_searchPeople;
@@ -965,8 +998,8 @@ private:
     // {id, before, after}. Up and Down go on from there.
     QVariantMap m_navigationAnchor;
     void releasePin();
-    int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group) const;
-    int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group, const QString &id, int fallback) const;
+    int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &row) const;
+    int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &row, int fallback) const;
     // The kept row collapsing out of To review once another opens (Inbox only):
     // it stays in place, marked `leaving`, until its animation ends.
     QVariantMap m_leavingRow;

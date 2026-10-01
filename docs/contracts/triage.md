@@ -41,7 +41,7 @@ Proposed daily flow:
 1. Open an account's Unread conversation filter and review new mail. A successful user-activated open marks the loaded member snapshot read; show the relevant messages and preserve access to collapsed members.
 2. Assign the appropriate configured categories manually, accept a local model's suggestion, or use configured automatic classification/filing.
 3. If action remains, use Delay to set an untimed star hold and continue from the Starred conversation filter. Explicit read/unread controls remain available.
-4. Write replies personally, complete any other action, then choose Done to clear unread and stars on the targeted existing members, or explicitly remove the hold. Sending a reply alone does not prove all action is complete.
+4. Write replies personally, complete any other action, then choose Done to clear unread and stars on the targeted existing members, or explicitly remove the hold. Sending a reply alone does not prove all action is complete, with one user-chosen exception: with "Replying finishes Delayed mail" on (the default), a reply Gmail accepts in a Delayed thread marks it Done.
 5. Check the account's unread and starred totals. Categorizing, moving, archiving, generating a summary, or changing a filter never clears read/star state by itself.
 
 The app should make remaining work easy to find, including older holds. Propose showing the date a hold was set when known and an oldest-holds sort. For stars first discovered during synchronization, distinguish first observed locally from the unknown original star date. No tasks area, overdue scoring, streaks, or guilt notifications are needed. A legitimate unfinished action remains visible across days.

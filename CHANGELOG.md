@@ -4,6 +4,11 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-09-30
 
+- Folding and opening months keeps the mail list steady. Nothing flashes, the scrollbar always matches the list's real length, and the list is never left blank after a fold. Month labels no longer appear twice. Section headers have a little more room above them.
+- Links at the end of a sentence in plain-text mail no longer include the full stop (or comma, or closing bracket), so they open the right page.
+- A search opens every month that has matches, so results are never hidden in folded months. Months you fold during a search stay folded only for that search; your mailbox's own folds come back when you clear it or switch accounts.
+- The app opens your local mail straight away at launch, before it contacts Google. A keychain prompt for one account no longer holds up the others or makes the app think its engine has stopped; a problem shows as the account's red dot and Retry on the Sync button.
+- Replying to a Delayed thread marks it Done once Gmail accepts the reply, with the usual Undo. Turn it off in Settings → Mail → "Replying finishes Delayed mail".
 - Large mailboxes no longer get stuck on "Connecting to your local mail…" shortly after launch. Local-model progress is counted beside your mail instead of in front of it, and if the local engine ever stops, the app starts it again by itself.
 - Closing the window always works, even with the local engine gone. An unsaved reply asks once first.
 

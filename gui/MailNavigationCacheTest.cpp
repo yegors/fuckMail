@@ -108,17 +108,19 @@ class MailNavigationCacheTest {
             const auto &expected = pass % 2 ? before : after;
             require(backend.publishConversations(expected), "repeat forward/backward pinned page refresh"); emit backend.conversationsChanged();
             frame();
-            QSet<QString> visibleIds; int visibleIndex = 0; qreal bottom = -1;
+            QSet<QString> visibleIds, expectedIds; int visibleIndex = 0, lastIndex = -1; qreal bottom = -1;
+            for (const auto &row : expected) expectedIds.insert(row.toMap().value("id").toString());
             for (auto *item : rows()) {
                 const auto id = item->objectName().mid(QString("conversationRow_").size());
                 const auto index = item->parentItem()->property("index").toInt(); QQuickItem *owned = nullptr;
                 require(QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, owned), Q_ARG(int, index)), "current public ListView identity");
-                require(index >= 0 && index < expected.size() && expected[index].toMap().value("id") == id && !visibleIds.contains(id),
+                // Inbox section headers are list items too; rows keep their order.
+                require(index >= 0 && index == backend.listIndex(id) && expectedIds.contains(id) && !visibleIds.contains(id),
                     "every painted row has one exact current model identity and index");
                 const auto rect = item->mapRectToScene(item->boundingRect());
-                require(owned == item->parentItem() && index == visibleIndex++ && rect.top() >= bottom,
+                require(owned == item->parentItem() && index > lastIndex && rect.top() >= bottom,
                     "owned visible rows follow the current page without gaps or overlapping retired rows");
-                bottom = rect.bottom(); visibleIds.insert(id);
+                bottom = rect.bottom(); visibleIds.insert(id); lastIndex = index; ++visibleIndex;
             }
             require(pinned && pinned->isVisible() && pinned->isEnabled() && visibleIds.contains("row-13"), "selected surviving delegate remains stable and visible");
             require(!removed || (!removed->isVisible() && !removed->isEnabled()), "retired original delegate cannot paint or accept clicks");

@@ -1,5 +1,11 @@
 # Gmail provider
 
+## D172 — credential calls per account
+
+- The session credential vault serializes calls per account. Its refusal list takes a short lock of its own that is never held across a keychain call, so a prompt open for one account never blocks another account, or any sync start or refresh. Forgetting a refusal does not wait for that account's open prompt; the prompt's answer then decides.
+
+Consumers: engine Google auth and sync start; fm-google vault tests.
+
 ## D165 — forwards stay in their thread (Gmail43)
 
 - A forward's routing has `reply_to_message_id` (the source's Message-ID) and the source's `references`, as a reply's does, so its MIME carries `In-Reply-To` and `References`.

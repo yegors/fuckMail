@@ -289,6 +289,12 @@ void MailBackend::startGoogleSendForDraft(const QString &method, const QJsonObje
             saved.feedback = "Result not confirmed. " + result["message"].toString("Check the exact saved request.");
         }
         if (method == "google_send") finishQueuedSendNotice(key, result, valid);
+        // A reply in a Delayed thread finishes it once Gmail has it; a refused
+        // or abandoned one leaves the thread as it was.
+        if (valid && m_doneAfterSend.contains(requestId)) {
+            if (result["state"] == "accepted") { const auto [doneAccount, doneThread] = m_doneAfterSend.take(requestId); markThreadDone(doneAccount, doneThread); }
+            else if (result["state"] == "rejected" || result["state"] == "abandoned") m_doneAfterSend.remove(requestId);
+        }
         const auto previewKey = account + '\n' + params.value("request_id").toString();
         if (m_transientOutgoing.contains(previewKey)) {
             if ((valid && (result["state"] == "rejected" || result["state"] == "abandoned")) || (!valid && !saved.uncertain)) m_transientOutgoing.remove(previewKey);

@@ -61,14 +61,15 @@ static void run() {
         {"cc_recipients", QJsonArray{}}, {"bcc_recipients", QJsonArray{}}, {"attachment_ids", QJsonArray{}}, {"attachments", QJsonArray{}},
         {"google", QJsonObject{{"account", "fixture-account"}, {"draft_id", "reply-draft"}, {"revision", 0}, {"state", "local"}, {"local_revision", 1}, {"operation_is_current", true}}}};
     QList<Held> sends; int saves = 0, reads = 0, lists = 0;
-    // Other threads in the list, by id.
-    QJsonObject others;
+    // Other threads in the list, by id, and the flag changes asked of them.
+    QJsonObject others; QList<QJsonObject> flags;
     QJsonArray retainedOutgoing; QJsonObject sentContent;
     fixture.customRequest = [&](QLocalSocket *peer, const QJsonObject &request) {
         const auto method = request["method"].toString(), id = request["id"].toString(), account = request["account"].toString();
         const auto params = request["params"].toObject();
         if (method == "conversation") { ++reads; peer->write(reply(id, (others.contains(params["id"].toString()) ? others[params["id"].toString()].toObject() : thread))); }
         else if (method == "flag" && others.contains(params["id"].toString())) {
+            flags.append(params);
             // Reading on open: the thread comes back read, one revision on.
             auto read = others[params["id"].toString()].toObject(); QJsonArray messages;
             for (const auto &value : read["messages"].toArray()) { auto m = value.toObject(); m["unread"] = false; messages.append(m); }
@@ -87,7 +88,22 @@ static void run() {
             }
             peer->write(reply(id, {{"conversations", rows}, {"filtered_conversation_count", rows.size()}, {"next_offset", QJsonValue::Null}}));
         }
-        else if (method == "draft_create") peer->write(reply(id, saved));
+        else if (method == "draft_create") {
+            // A reply in another thread gets a draft of its own.
+            if (params["conversation_id"] != "thread") {
+                saved["draft_id"] = "draft-" + params["conversation_id"].toString(); saved["conversation_id"] = params["conversation_id"];
+                saved["source_message_id"] = params["source_message_id"]; saved["revision"] = 1; saved["body"] = ""; saved.remove("google_send");
+                saved["google"] = QJsonObject{{"account", "fixture-account"}, {"draft_id", saved["draft_id"]}, {"revision", 0}, {"state", "local"}, {"local_revision", 1}, {"operation_is_current", true}};
+            }
+            peer->write(reply(id, saved));
+        }
+        else if (method == "draft_get" && params.contains("conversation_id") && params["conversation_id"] != "thread" && saved["conversation_id"] != params["conversation_id"]) {
+            // Another thread's unsaved reply, as the engine offers one.
+            saved["draft_id"] = "draft-" + params["conversation_id"].toString(); saved["conversation_id"] = params["conversation_id"];
+            saved["source_message_id"] = "held"; saved["revision"] = 0; saved["body"] = ""; saved["mode"] = "reply"; saved.remove("google_send");
+            saved["google"] = QJsonObject{{"account", "fixture-account"}, {"draft_id", saved["draft_id"]}, {"revision", 0}, {"state", "local"}, {"local_revision", 0}, {"operation_is_current", true}};
+            peer->write(reply(id, saved));
+        }
         else if (method == "draft_get") {
             // The upload that followed the last save has finished by the next read.
             auto google = saved["google"].toObject();
@@ -296,6 +312,30 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     await([&] { auto a = item("messageBody_new-1"), b = item("messageBody_new-2"); return a && b && a->isVisible() && b->isVisible(); }, "both unread replies open");
     settle(400);
     require(!shown("messageMember_old"), "the read message before them folds away");
+    // A reply in a Delayed thread marks it Done once Gmail accepts the reply.
+    auto held = message("held", "2026-09-27T09:00:00Z", false, false); held["starred"] = true;
+    others["delayed"] = QJsonObject{{"id", "delayed"}, {"account", "fixture-account"}, {"subject", "Delayed thread"}, {"revision", 1},
+        {"messages", QJsonArray{held}}, {"message_ids", QJsonArray{"held"}}};
+    backend.loadConversations(false, true);
+    await([&] { return std::any_of(backend.m_conversations.cbegin(), backend.m_conversations.cend(), [](const QVariant &row) { return row.toMap().value("id") == "delayed"; }); }, "the delayed thread is listed");
+    backend.openConversation("delayed");
+    await([&] { return shown("messageBody_held") && item("replyButton"); }, "the delayed thread opens");
+    const auto readFlags = flags.size();
+    click("replyButton");
+    await([&] { return mail->property("replyOpen").toBool() && backend.m_draft.value("draft_id") == "draft-delayed"; }, "Reply opens in the delayed thread");
+    await([&] { return item("replyComposer") && item("replyComposer")->hasActiveFocus(); }, "the reply editor has the keyboard");
+    typed.clear(); type("On it"); settle(600);
+    click("captureReply"); settle(50); statusBump({"drafts"});
+    await([&] { return sends.size() == 2; }, "the reply goes to Gmail");
+    settle(200);
+    require(flags.size() == readFlags, "nothing is marked Done before Gmail accepts the reply");
+    const auto second = sends[1];
+    QJsonObject acceptedReply{{"account", "fixture-account"}, {"draft_id", "draft-delayed"}, {"request_id", second.params["request_id"]}, {"request", second.params},
+        {"revision", 1}, {"current_google_revision", 2}, {"google_revision", 1}, {"draft_revision", second.params["expected_revision"]},
+        {"state", "accepted"}, {"operation_is_current", true}, {"last_accepted_draft_revision", second.params["expected_revision"]}};
+    second.peer->write(reply(second.id, acceptedReply));
+    await([&] { return std::any_of(flags.cbegin() + readFlags, flags.cend(), [](const QJsonObject &f) { return f["id"] == "delayed" && f["starred"] == false && f["read"] == true; }); },
+        "the delayed thread is marked Done");
     require(!warnings, "production QML has no warnings");
     qInfo() << "PASS: typing keeps focus, cursor and box through background work; Send keeps the thread open and the reply in view";
 }

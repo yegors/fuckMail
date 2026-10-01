@@ -363,6 +363,17 @@ Item {
                             Divider {}
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                                PreferenceLabel { label: "Replying finishes Delayed mail"; detail: "Sending a reply in a Delayed thread marks it Done once Gmail accepts the reply." }
+                                FmSegmented {
+                                    objectName: "replyDonePreference"; model: ["On","Off"]
+                                    currentIndex: backend.preferences.reply_marks_delayed_done === false ? 1 : 0
+                                    onActivated: function(index) { backend.setPreferences({reply_marks_delayed_done:index === 0}); currentIndex = Qt.binding(function() { return backend.preferences.reply_marks_delayed_done === false ? 1 : 0 }) }
+                                    Accessible.name: "Replying finishes Delayed mail"
+                                }
+                            }
+                            Divider {}
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
                                 PreferenceLabel { label: "Week starts on"; detail: "Where “This Week” begins in the mail list." }
                                 FmComboBox {
                                     readonly property var days: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]

@@ -72,6 +72,12 @@ int main(int argc, char **argv) {
     require(content(gmail,false).trimmed()=="New","Gmail attribution and nested history create no disclosure rows");
     const auto links=ReplyDocument::receivedBody({},"Current https://example.test/current\n> History https://example.test/history");
     require(links.first().toMap().value("html").toString().contains("href=\"https://example.test/current\"") && !content(links,false).contains("/history"),"current links stay clickable without historical links");
+    // A sentence ending in a link keeps its full stop out of the link, and so
+    // do a comma and a closing bracket the link did not open.
+    const auto sentence=ReplyDocument::receivedBody({},"Pay here: buy.stripe.com https://buy.stripe.com/00wcN5. Or (see https://example.test/a), then https://en.example.test/wiki/X_(y).")
+        .first().toMap().value("html").toString();
+    require(sentence.contains("href=\"https://buy.stripe.com/00wcN5\">https://buy.stripe.com/00wcN5</a>.") && sentence.contains("href=\"https://example.test/a\">https://example.test/a</a>),")
+        && sentence.contains("href=\"https://en.example.test/wiki/X_(y)\""),"a link ends before the punctuation that ends its sentence");
     auto outlook=ReplyDocument::receivedBody({},"My answer\n\nFrom: Alex <alex@example.test>\nTo: Sam <sam@example.test>\nDate: Tuesday\nSubject: Review\n\nOld reply");
     require(content(outlook,false).trimmed()=="My answer","structured Outlook history is omitted");
     const auto leaked=ReplyDocument::receivedBody("<p>Actual answer</p><p>------ Original Message ------<br>From &quot;Alex&quot; &lt;alex@example.test&gt;<br>To Sam<br>Subject Review</p><blockquote><p>Previous email</p></blockquote>",{});

@@ -152,7 +152,7 @@ bool GuiMailNavigationSelfTest::retainNativeRow(const QString &id, bool requireS
     m_retainedRow=row;
     m_retainedListY=list->property("contentY").toDouble();
     m_retainedRowY=row->mapToScene(QPointF()).y();
-    return !requireScrolled || m_retainedListY>list->property("originY").toDouble()+1;
+    return !requireScrolled || m_retainedListY>list->property("originY").toDouble()-list->property("topMargin").toDouble()+1;
 }
 QString GuiMailNavigationSelfTest::retainedNativeRowError(const QString &id) const {
     const auto list=find(m_window->contentItem(),"conversationList");
@@ -499,9 +499,11 @@ void GuiMailNavigationSelfTest::step() {
         if (!list) { finish("Deferred-click setup lost the conversation list."); return; }
         // A loaded IPC result precedes QML's model/viewport restoration. Choose
         // source-check candidates from the restored view, not its reset origin.
-        const auto minimum=list->property("originY").toDouble();
-        const auto maximum=minimum+qMax(0.0,list->property("contentHeight").toDouble()-list->height());
-        const auto restored=qBound(minimum,minimum+m_backend.presentation()["listY"].toDouble(),maximum);
+        // The list's range starts at its top margin, which hides the room
+        // above the Inbox's first header.
+        const auto origin=list->property("originY").toDouble(), minimum=origin-list->property("topMargin").toDouble();
+        const auto maximum=qMax(minimum,origin+list->property("contentHeight").toDouble()+list->property("bottomMargin").toDouble()-list->height());
+        const auto restored=qBound(minimum,origin+m_backend.presentation()["listY"].toDouble(),maximum);
         if (qAbs(list->property("contentY").toDouble()-restored)>1) return;
         // Changing the filter can intentionally reset the saved view to its
         // origin. Establish the scrolled precondition this check requires.
@@ -1021,9 +1023,9 @@ void GuiMailNavigationSelfTest::step() {
         // list must show whatever offset the mailbox saved, from its origin.
         const auto list = find(m_window->contentItem(), "conversationList");
         if (!list) return;
-        const auto minimum = list->property("originY").toDouble();
-        const auto maximum = minimum + qMax(0.0,list->property("contentHeight").toDouble()-list->height());
-        const auto expectedY = qBound(minimum,minimum+m_backend.presentation().value("listY").toDouble(),maximum);
+        const auto origin = list->property("originY").toDouble(), minimum = origin - list->property("topMargin").toDouble();
+        const auto maximum = qMax(minimum, origin + list->property("contentHeight").toDouble() + list->property("bottomMargin").toDouble() - list->height());
+        const auto expectedY = qBound(minimum,origin+m_backend.presentation().value("listY").toDouble(),maximum);
         if (qAbs(list->property("contentY").toDouble()-expectedY)>1) return;
         for (auto it = m_originalView.cbegin(); it != m_originalView.cend(); ++it) m_backend.remember(it.key(), it.value());
         for (const auto &key : {"selectedMember", "readerY", "listY", "expanded", "replyOpen"})

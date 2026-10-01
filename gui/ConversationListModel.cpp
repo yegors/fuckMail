@@ -15,11 +15,17 @@ QVariant ConversationListModel::data(const QModelIndex &index, int role) const {
         || index.row() < 0 || index.row() >= m_rows.size()) return {};
     if (role == RowDataRole) return m_rows[index.row()].value;
     if (role == PreviousGroupRole) return m_rows[index.row()].previousGroup;
+    if (role == ItemTypeRole) { const auto type = m_rows[index.row()].value.value("item_type").toString(); return type.isEmpty() ? QStringLiteral("row") : type; }
     return {};
 }
 
 QHash<int, QByteArray> ConversationListModel::roleNames() const {
-    return {{RowDataRole, "rowData"}, {PreviousGroupRole, "previousGroup"}};
+    return {{RowDataRole, "rowData"}, {PreviousGroupRole, "previousGroup"}, {ItemTypeRole, "itemType"}};
+}
+
+int ConversationListModel::indexOf(const QString &id) const {
+    for (int i = 0; i < m_rows.size(); ++i) if (m_rows[i].key.second == id) return i;
+    return -1;
 }
 
 QString ConversationListModel::group(const Row &row) {

@@ -2042,3 +2042,50 @@ The founder relaunched the app on four accounts (about 356,000 messages, a 4.4 G
 - **Not verified here.** The GUI on the founder's profile after the change.
 
 Local assistance30, Mail UI120, CLI (`assist progress` asks for complete counts). No schema, fixture or protocol version change; `complete` is additive.
+
+## D172 — local mail first at launch; replying finishes Delayed mail (2026-09-30T14:00:00Z)
+
+The founder asked for two things. Launch should always open local mail at once, whatever the state of Gmail or the keychain, with any connection trouble shown in the account bar. Replying to a Delayed thread should mark it Done, as a Settings → Mail choice that is on by default.
+
+- **Found (launch).** At launch the GUI started each account's Google sync on its one engine connection before reading the mail view and list. The engine's session vault held one lock across every account's keychain call. A keychain prompt left open for one account, as unsigned development builds cause after each rebuild, blocked the next account's sync start behind it. The founder's log shows a 10.3 s start in one launch; in another, the start outlasted the GUI's 15 s limit and the app showed the engine as disconnected.
+- **Change (launch).** The vault serializes each account on its own lock, and its refusal list takes a short lock never held across a keychain call. Starting or refreshing sync forgets a refusal without waiting for that account's open prompt. The GUI starts Google sync only after the first mail list has shown, or 3 s after connecting when none comes, and allows sync start and refresh 2 minutes before calling the engine unresponsive. The account bar's existing states carry the connection: the red dot and the Sync button's Retry, with its keychain explanation.
+- **Change (reply).** Preference `reply_marks_delayed_done` defaults to true. Pressing Send on a reply or reply-all in a thread with a starred message records the thread; once Gmail accepts that send, the thread is marked Done. On screen, this is the ordinary Done with its Undo; elsewhere, the thread's current state is read and cleared the same way. A send that is undone, cancelled, refused or abandoned changes nothing. This supersedes the triage rule that sending alone never completes a thread. The user chooses it, it is on by default, and it is limited to Delayed threads.
+
+Mail UI121, Triage (reply-completes-Delayed), Gmail vault note. Preferences add one key; no schema, fixture or protocol change.
+
+## D173 — month headers are list items; searches open every month (2026-09-30T19:00:00Z)
+
+The founder reported two problems. Folding "August 2025" with every month above it folded made the whole mail list flash and redraw. A search whose matches fell in several months showed each month folded.
+
+- **Found (flash).** A section shown by its header alone (folded, empty or not loaded) was drawn inside the next row's delegate, or in the list footer after the last row. With every month above folded, the first August 2025 row carried all their headers. Folding August removed that row, so every header above was destroyed and built again in the footer. Frame tests with folded sections spread between open ones never showed it.
+- **Change (flash).** Each such section is its own list item, `section:<key>`, which the backend merges among the rows in section order in the same model update. Only the toggled section's header changes item; every other header keeps its delegate and place. Keyboard and position lookups use list positions from the model. A first attempt pushed the headers from QML after each row update. That gave the list two updates in a row, and Qt's ListView then kept a stale delegate; one update is required.
+- **Change (search).** While a search runs, every section starts open: the list request omits `open_months`, so Core folds no month by default. Folds made during a search last until its text changes, are not saved to the mailbox view, and clearing the search brings back the mailbox's own.
+
+Mail UI122. No schema, fixture or protocol change.
+
+## D174 — folded sections keep a host row; header items withdrawn (2026-09-30T21:00:00Z)
+
+With D173's header items the founder saw folding get slower, and month labels doubled after several folds. Cancelling a search also appeared to leave its months open, and plain-text links took a sentence's final full stop.
+
+- **Found.** Every header item was a full row delegate. The list also showed Qt ListView keeping stale delegates across repeated structural updates (`DelegateModel::cancel` warnings), which fits the doubled labels.
+- **Change.** D173's header items are withdrawn; rows again draw the headers of the sections above them, and the footer those after the last row. When a section folds, its first row stays in the list as a hidden `fold_host`, re-placed on every publish while its kept rows remain. The headers drawn in it stay in the same delegate. Opening the section replaces the host with its rows; the first of them has the host's identity. A header block, and the footer, rebuild only when their section keys change; counts update in place. Hosts are never selected, navigated or opened. A section merely read ahead on hover gets no host.
+- **Limit.** A month never loaded this session, opened for the first time, still moves the headers above it once, from the footer into its first row.
+- **Search.** D173's search folds stand. The reported case did not reproduce in tests that type, search on the app's timer and clear as the search box does; it waits on the founder's steps.
+- **Links.** Plain-text links end before trailing `. , ; : ! ? ' "`, and before a closing bracket the link did not open.
+
+Mail UI123. No schema, fixture or protocol change.
+
+## D175 — every Inbox list item is one row high (2026-09-30T22:00:00Z)
+
+With D174's hosts the founder saw the scrollbar resize at random when months folded or opened, and after a fold the list could stay blank while scrolling until another tab or a lot of scrolling redrew it. They asked for a list that is fast and predictable however its contents change.
+
+- **Found.** Qt's ListView sizes the items it has not built from the average height of those it has. Rows drawing a stack of folded headers were many rows high, rows kept for folded sections were zero, and headed rows were almost two. Each fold or scroll moved that average, so the list's length and the scrollbar swung. The view could also sit past the list's real end, and it stayed there, blank, while the user kept scrolling. The doubled labels came from a kept (open) conversation in a folded month drawing its own header, and from kept rows placed by To review, Delayed or Done rank rather than by month.
+- **Change.** D174's hosts are withdrawn. Every Inbox section is a header item, and an open section with no mail an empty item. The rows of open sections follow; a folded section's rows, the kept one included, are left out. All items are one row high, so Qt's estimate is exact. A header sits at the foot of its item, and the list's top margin hides the room above the first. Headers and empty lines get light delegates of their own, which avoids D173's cost of building every header as a row. The backend builds rows and items in one model update, which avoids the stale delegates D173 saw. It also counts what is still to load, headers included, as whole rows below the list. While older mail is still to load, headers show down to the section whose rows come next, so folding the month the loaded rows end in keeps its header. Kept rows go back by section order, within their own month.
+- **Search.** Switching accounts during a search carried the search's open months into the next account; that account now starts with its own folds.
+- **Saved position.** A new list for the same account starts at its top, and the saved list position now follows it even when the view did not move. Before, a cleared search left the old variable-height list 84 px down on its own, and that move saved the position. The native self-test's clear-search check passed only because of that shift.
+- **Cost.** In comfortable density the room above a header grows from 10 px to 18 px (16 above To review and Delayed bands), as the row height leaves it.
+- **Evidence.** MailSelectionTest `listGeometry`, software and GPU. It uses 6 To review rows, an empty Delayed, three open months of 60 and 37 folded months, paging 40 at a time. Scrolling, paging, folds while scrolled, at the end and with pages still to load, quick repeated folds, new mail and a density change all keep the list's length at its items plus what is still to load. Every item near the view sits at its exact place; each of 400 to 470 frames is fully painted and inside the list's range, and no header is painted twice. A fold of 60 rows paints in 10 to 16 ms and an opening in 16 to 37 ms. Restoring the old header rule fails the pages-still-to-load case.
+- **Not verified here.** The founder's mailbox. Sent and Drafts still fold days inside their rows.
+
+Mail UI124. No schema, fixture or protocol change.
+

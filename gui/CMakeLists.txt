@@ -323,7 +323,8 @@ if(BUILD_TESTING)
         target_link_libraries(gui-mail-selection-test PRIVATE advapi32)
     endif()
     add_test(NAME gui-mail-selection COMMAND gui-mail-selection-test)
-    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 60 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    # The list geometry case scrolls and folds a 40-month Inbox frame by frame.
+    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 90 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     # Photo circles and paint timing need the GPU renderer and a real window;
     # headless Linux has neither, so these run where a desktop exists.
     if(WIN32 OR APPLE)

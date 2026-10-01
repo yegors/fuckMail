@@ -24,7 +24,9 @@ public:
     /// `rowData` is the row's whole QVariantMap. `previousGroup` is the group
     /// of the row above it ("" for the first row), which QML compares with
     /// the row's own group to decide whether to draw a section header.
-    enum Role { RowDataRole = Qt::UserRole + 1, PreviousGroupRole };
+    /// `itemType` is the row's `item_type`: "header" or "empty" for the
+    /// Inbox's section items, otherwise "row".
+    enum Role { RowDataRole = Qt::UserRole + 1, PreviousGroupRole, ItemTypeRole };
     explicit ConversationListModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role) const override;
@@ -41,6 +43,8 @@ public:
     /// Scope includes account and view identity. False means invalid input;
     /// nothing changed. True includes a valid no-op. Never resets within scope.
     bool replace(const QString &scope, const QVariantList &rows);
+    /// The index of the row with `id`, or -1.
+    int indexOf(const QString &id) const;
 
 private:
     using Key = QPair<QString, QString>;

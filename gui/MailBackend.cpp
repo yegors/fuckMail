@@ -40,8 +40,8 @@ bool quietDiagnosticRead(const QString &method) {
 // A message source can carry up to ~1 MB of raw text that only the source
 // dialog shows. Readers and their caches keep the rest.
 QJsonObject withoutRaw(QJsonObject source) { source.remove(QStringLiteral("raw")); return source; }
-// Inbox sections in list order, as MailView's sectionOrder: To review,
-// Delayed, This Week, This Month, then older months newest first and undated last.
+// Inbox sections in list order: To review, Delayed, This Week, This Month,
+// then older months newest first and undated last.
 QString sectionOrder(const QString &key) {
     if (key == u"review") return QStringLiteral("0");
     if (key == u"held") return QStringLiteral("1");
@@ -174,6 +174,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             else refresh();
             m_pollTimer.start();
             if (!m_viewDirty.isEmpty()) m_viewTimer.start();
+            // A profile whose list never comes (no mail, a failed read) still syncs.
+            QTimer::singleShot(3000, this, &MailBackend::localMailShown);
         });
     });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
@@ -210,7 +212,11 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         const auto now = QDateTime::currentMSecsSinceEpoch();
         const auto keys = m_pending.keys();
         for (const auto &id : keys) {
-            if (m_pending[id].started > 0 && now - m_pending[id].started > 15000) {
+            // Starting sync can wait on a keychain prompt the user has not
+            // answered yet; that is not the engine failing.
+            const auto &pending = m_pending[id];
+            const qint64 limit = pending.method == "google_sync_start" || pending.method == "google_sync_refresh" ? 120000 : 15000;
+            if (pending.started > 0 && now - pending.started > limit) {
                 fail("The local engine did not answer in time. Reconnect to continue.");
                 m_socket.abort(); return;
             }
@@ -524,6 +530,7 @@ void MailBackend::selectAccount(const QString &id) {
     if (!m_account.isEmpty()) saveView(m_account);
     m_afterConversationMutation = {}; m_captureNextOffset = -1;
     m_collapsedGroups.clear(); m_openSections.clear();
+    m_searchFolds = false; m_savedCollapsedGroups.clear(); m_savedOpenSections.clear();
     ++m_generation; const int generation = m_generation;
     m_accountViewRestorationGeneration = generation;
     ++m_draftSaveGeneration;
@@ -578,7 +585,8 @@ void MailBackend::selectAccount(const QString &id) {
             if (fixedSection(section) && !sections.contains(section)) sections.append(section);
         for (const auto &section : view.value("openSections").toStringList())
             if (olderSection(section) && !open.contains(section) && open.size() < 256) open.append(section);
-        m_collapsedGroups = sections; m_openSections = open;
+        m_collapsedGroups = sections; m_openSections = open; m_searchFolds = false;
+        followSearchFolds(false);
         convertLegacyFilters();
         emit recentSearchesChanged();
         if (m_selected != previousSelected) {
@@ -601,11 +609,15 @@ void MailBackend::selectAccount(const QString &id) {
 void MailBackend::setQuery(const QString &value) {
     if (value == m_query) return;
     m_queryActivity.start();
+    const bool wasSearching = !m_query.trimmed().isEmpty();
     m_query = value; m_pinnedRow.clear(); m_pinnedIndex = -1; ++m_listGeneration; remember("query", value);
+    followSearchFolds(wasSearching);
     // A search seen moments ago, or the mailbox a cleared search returns to,
     // shows before the position restore that follows this change; Core's
     // answer still waits for typing to pause.
     m_queryShown = showInstantView(m_filters, m_category);
+    // Rows on screen follow the search's folds at once.
+    if (!m_queryShown && m_folder == u"inbox" && !m_query.trimmed().isEmpty() != wasSearching && publishConversations(m_conversations)) emit conversationsChanged();
     emit queryChanged(); m_searchTimer.start();
 }
 void MailBackend::setFolder(const QString &value) {
@@ -630,12 +642,20 @@ void MailBackend::setCategory(const QString &value) {
     rescope(m_filters, previous);
 }
 bool MailBackend::sectionCollapsed(const QString &section) const {
-    return m_collapsedGroups.contains(section) || (olderSection(section) && !m_openSections.contains(section));
+    return m_collapsedGroups.contains(section) || (!m_searchFolds && olderSection(section) && !m_openSections.contains(section));
+}
+// Entering a search opens every section; changing it starts its folds anew;
+// clearing it brings back the mailbox's own.
+void MailBackend::followSearchFolds(bool wasSearching) {
+    const bool searching = !m_query.trimmed().isEmpty();
+    if (searching && !wasSearching) { m_savedCollapsedGroups = m_collapsedGroups; m_savedOpenSections = m_openSections; }
+    if (searching) { m_searchFolds = true; m_collapsedGroups.clear(); m_openSections.clear(); }
+    else if (wasSearching) { m_searchFolds = false; m_collapsedGroups = m_savedCollapsedGroups; m_openSections = m_savedOpenSections; }
 }
 void MailBackend::setSectionCollapsed(const QString &section, bool collapsed) {
     if (!validSection(section) || sectionCollapsed(section) == collapsed) return;
     auto groups = m_collapsedGroups, open = m_openSections;
-    if (fixedSection(section)) { if (collapsed) groups.append(section); else groups.removeAll(section); }
+    if (fixedSection(section) || m_searchFolds) { if (collapsed) groups.append(section); else groups.removeAll(section); }
     else if (collapsed) open.removeAll(section);
     else if (open.size() < 256) open.append(section);
     else return;
@@ -645,7 +665,8 @@ void MailBackend::setSections(const QStringList &collapsed, const QStringList &o
     m_queryActivity.start();
     const auto previousCollapsed = m_collapsedGroups, previousOpen = m_openSections;
     m_collapsedGroups = collapsed; m_openSections = open; m_pinnedRow.clear(); m_pinnedIndex = -1;
-    remember("collapsedSections", collapsed); remember("openSections", open);
+    // A search's folds are its own and are not saved with the mailbox.
+    if (!m_searchFolds) { remember("collapsedSections", collapsed); remember("openSections", open); }
     ++m_listGeneration;
     // Hide or show the sections from rows in memory now; the refresh then
     // reconciles them with Core and refills the page.
@@ -682,10 +703,9 @@ QString MailBackend::rowSection(const QVariantMap &row, const DoneSections &done
 void MailBackend::applyCollapsedSections(const QStringList &previousCollapsed, const QStringList &previousOpen) {
     const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
     const auto wasCollapsed = [&](const QString &section) {
-        return previousCollapsed.contains(section) || (olderSection(section) && !previousOpen.contains(section));
+        return previousCollapsed.contains(section) || (!m_searchFolds && olderSection(section) && !previousOpen.contains(section));
     };
     auto rows = m_conversations;
-    bool changed = false;
     // A collapsed section's rows leave the list and are kept for its expand.
     QStringList folding;
     for (const auto &value : std::as_const(rows)) {
@@ -701,7 +721,6 @@ void MailBackend::applyCollapsedSections(const QStringList &previousCollapsed, c
             return true;
         }), rows.end());
         if (kept.isEmpty()) continue;
-        changed = true;
         const int cost = int(kept.size());
         m_sectionRows.insert(viewKey(currentView(), {}, {}) + u'\n' + section, new SectionRows{std::move(kept), lifecycle}, cost);
     }
@@ -719,10 +738,10 @@ void MailBackend::applyCollapsedSections(const QStringList &previousCollapsed, c
         for (const auto &value : std::as_const(kept->rows)) {
             if (ids.contains(value.toMap().value("id").toString())) continue;
             rows.insert(index++, value);
-            changed = true;
         }
     }
-    if (changed && publishConversations(std::move(rows))) emit conversationsChanged();
+    // Headers and empty sections follow the folds even when no rows moved.
+    if (publishConversations(std::move(rows))) emit conversationsChanged();
 }
 void MailBackend::prefetchSection(const QString &section) {
     if (!m_connected || m_shutdown || m_account.isEmpty() || m_folder != u"inbox" || !validSection(section) || !sectionCollapsed(section)) return;
@@ -830,6 +849,9 @@ bool MailBackend::publishConversations(QVariantList rows) {
     // latest message, in the same zone and week Core counts them in.
     if (m_folder == u"inbox") {
         const auto done = doneSections();
+        QList<std::pair<QString, QVariant>> ordered;
+        ordered.reserve(rows.size());
+        bool sorted = true;
         for (auto &value : rows) {
             auto row = value.toMap();
             const auto section = rowSection(row, done);
@@ -840,6 +862,15 @@ bool MailBackend::publishConversations(QVariantList rows) {
                 if (from == u"done") counted = done.of(row.value("latest_at").toString());
                 if (row.value("counted_section").toString() != counted) { row["counted_section"] = counted; value = row; }
             }
+            ordered.append({sectionOrder(section), value});
+            if (ordered.size() > 1 && ordered[ordered.size() - 2].first > ordered.last().first) sorted = false;
+        }
+        // A section is never split: a kept row placed among another section's
+        // rows joins its own, keeping its place among them.
+        if (!sorted) {
+            std::stable_sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+            rows.clear();
+            for (auto &entry : ordered) rows.append(std::move(entry.second));
         }
     }
     // The protocol-facing list remains authoritative. Only the native view uses
@@ -851,7 +882,7 @@ bool MailBackend::publishConversations(QVariantList rows) {
     // These fields already fit one accepted IPC frame. Keep the complete,
     // deterministic serialization, with bounded room for its wrapper keys.
     const auto reject = [this](const QString &error) {
-        m_conversations.clear();
+        m_conversations.clear(); m_inboxSections.clear(); m_unloadedItems = 0;
         m_conversationModel.replace({}, {});
         emit conversationsChanged();
         fail(error);
@@ -859,10 +890,89 @@ bool MailBackend::publishConversations(QVariantList rows) {
     };
     if (scope.size() > 2 * maxFrame) return reject("The mail view context is too large to display.");
     m_conversations = std::move(rows);
-    if (!m_conversationModel.replace(QString::fromUtf8(scope), conversations())) {
+    if (!m_conversationModel.replace(QString::fromUtf8(scope), listItems(conversations()))) {
         return reject("The local engine returned missing or duplicate mail row identities.");
     }
     return true;
+}
+
+QVariantList MailBackend::listItems(const QVariantList &rows) {
+    m_inboxSections.clear(); m_unloadedItems = 0;
+    if (m_folder != u"inbox") return rows;
+    struct Section { QString key, order; int count = 0; bool open = true; QVariantList rows; int loaded = 0; };
+    QList<Section> sections;
+    QHash<QString, qsizetype> at;
+    const auto add = [&](const QString &key, int count) {
+        at.insert(key, sections.size());
+        sections.append({key, sectionOrder(key), count, !sectionCollapsed(key)});
+    };
+    // Core's counts, with the kept conversation counted where it shows.
+    QHash<QString, int> kept;
+    for (const auto &value : rows) {
+        const auto row = value.toMap();
+        if (!row.value("pinned").toBool()) continue;
+        ++kept[row.value("section").toString()];
+        if (const auto counted = row.value("counted_section").toString(); !counted.isEmpty()) --kept[counted];
+    }
+    const auto summaryCounts = m_querySummary.value("filtered_group_counts");
+    if (summaryCounts.metaType().id() == QMetaType::QVariantMap) {
+        const auto counts = summaryCounts.toMap();
+        const bool filtering = !m_query.isEmpty() || !m_filters.isEmpty() || !m_category.isEmpty();
+        // To review and Delayed stay while browsing, even when empty; a search
+        // or filter shows only sections with matches.
+        for (const auto *fixed : {"review", "held"}) {
+            const auto key = QString::fromLatin1(fixed);
+            const int count = std::max(0, counts.value(key).toInt() + kept.value(key));
+            if (!filtering || count > 0) add(key, count);
+        }
+        for (const auto &value : m_querySummary.value("done_months").toList()) {
+            const auto key = u"done:" + value.toMap().value("month").toString();
+            const int count = std::max(0, value.toMap().value("count").toInt() + kept.value(key));
+            if (count > 0 && !at.contains(key)) add(key, count);
+        }
+    }
+    for (const auto &value : rows) {
+        const auto row = value.toMap();
+        const auto key = row.value("section").toString();
+        if (!at.contains(key)) add(key, 0);
+        auto &section = sections[at.value(key)];
+        if (!section.open) continue;
+        section.rows.append(value);
+        if (!row.value("leaving").toBool()) ++section.loaded;
+    }
+    // Found only through its rows: counted by them.
+    for (auto &section : sections) section.count = std::max(section.count, section.loaded);
+    std::stable_sort(sections.begin(), sections.end(), [](const Section &a, const Section &b) { return a.order < b.order; });
+    // While older mail is still to load, headers show down to the section
+    // whose rows come next: the one the loaded rows end in when it has more,
+    // else the next open one with mail. Folded and empty sections before it
+    // get no rows, so they show now; the rest wait below with the rows.
+    const bool more = hasMore();
+    qsizetype through = sections.size() - 1;
+    if (more) {
+        qsizetype last = 0;
+        for (qsizetype i = 0; i < sections.size(); ++i) if (!sections[i].rows.isEmpty()) last = i;
+        for (qsizetype i = last; i < sections.size(); ++i)
+            if (sections[i].open && sections[i].count > sections[i].loaded) { through = i; break; }
+    }
+    QVariantList items;
+    items.reserve(rows.size() + sections.size() * 2);
+    for (qsizetype i = 0; i < sections.size(); ++i) {
+        const auto &section = sections[i];
+        m_inboxSections.append(QVariantMap{{"key", section.key}, {"count", section.count}});
+        const bool empty = section.open && section.count == 0 && section.rows.isEmpty();
+        if (i > through) {
+            if (more) m_unloadedItems += 1 + (section.open ? std::max(section.count, empty ? 1 : 0) : 0);
+            continue;
+        }
+        items.append(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}});
+        if (empty) items.append(QVariantMap{{"id", u"empty:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("empty")}});
+        items += section.rows;
+        if (i == through && more && section.open) m_unloadedItems += std::max(0, section.count - section.loaded);
+    }
+    // No counts from Core yet: the rest of the view by its total.
+    if (more && sections.isEmpty()) m_unloadedItems = std::max(0, m_querySummary.value("filtered_conversation_count").toInt() - int(rows.size()));
+    return items;
 }
 
 QVariantMap MailBackend::mailViewScope() const {
@@ -895,6 +1005,11 @@ bool MailBackend::restoreMailView() {
     m_category = wanted.value("category").toString(); m_filters = wanted.value("filters").toMap();
     m_collapsedGroups = wanted.value("collapsed_groups").toStringList();
     m_openSections = wanted.value("open_sections").toStringList();
+    // A search's folds are what was cached; the mailbox's own come back
+    // when it is cleared.
+    m_searchFolds = !m_query.trimmed().isEmpty();
+    m_savedCollapsedGroups = m_searchFolds ? view.value("collapsedSections").toStringList() : QStringList{};
+    m_savedOpenSections = m_searchFolds ? view.value("openSections").toStringList() : QStringList{};
     m_selected = view.value("selected").toString();
     m_querySummary = cached->summary; m_categories = cached->categories;
     m_nextOffset = cached->nextOffset; m_nextCursor = cached->nextCursor;
@@ -950,7 +1065,8 @@ QJsonObject MailBackend::listParams(const QStringList &collapsed, const QStringL
         for (const auto &section : open) opened.append(section.mid(5));
         if (!groups.isEmpty()) params["collapsed_groups"] = groups;
         if (!months.isEmpty()) params["collapsed_months"] = months;
-        params["open_months"] = opened;
+        // A search opens every month; only the folds made during it apply.
+        if (view.query.trimmed().isEmpty()) params["open_months"] = opened;
     }
     if (!view.category.isEmpty()) params["category"] = view.category;
     return params;
@@ -1171,7 +1287,7 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                     if (leaving != m_selected) {
                         collected.erase(std::remove_if(collected.begin(), collected.end(),
                             [&leaving](const QVariant &row) { return row.toMap().value("id").toString() == leaving; }), collected.end());
-                        collected.insert(keptRowIndex(collected, previous, QStringLiteral("review"), leaving, m_leavingIndex), m_leavingRow);
+                        collected.insert(keptRowIndex(collected, previous, m_leavingRow, m_leavingIndex), m_leavingRow);
                     }
                 }
                 // The open conversation keeps its place while it stays open: read
@@ -1185,21 +1301,26 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                     if (returned == collected.end()) {
                         auto pinned = m_pinnedRow;
                         pinned["display_group"] = shown; pinned["pinned"] = true;
-                        collected.insert(keptRowIndex(collected, previous, shown), pinned);
+                        collected.insert(keptRowIndex(collected, previous, pinned), pinned);
                     } else if (shown == u"review" && returned->toMap().value("group").toString() != u"review") {
                         auto fresh = returned->toMap();
                         collected.erase(returned);
                         // Core counts it in its real section; the view counts it here.
                         fresh["pinned_from"] = fresh.value("group"); fresh["display_group"] = shown; fresh["pinned"] = true;
-                        collected.insert(keptRowIndex(collected, previous, shown), fresh);
+                        collected.insert(keptRowIndex(collected, previous, fresh), fresh);
                     }
                 }
+                // Paging is known before publishing: it decides which section
+                // headers the list shows and how much it has still to load.
+                const auto previousPaging = std::pair{m_nextOffset, m_nextCursor};
+                m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
                 if (!publishConversations(std::move(collected))) {
+                    std::tie(m_nextOffset, m_nextCursor) = previousPaging;
                     m_querySummary = previousSummary; m_loading = false; emit loadingChanged(); return;
                 }
-                m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
                 cacheMailView(); rememberView(m_querySummary);
                 if (!m_accountsWarmed) { m_accountsWarmed = true; QTimer::singleShot(1500, this, &MailBackend::warmOtherAccounts); }
+                localMailShown();
                 if (m_selected.isEmpty() && m_activeDraft.isEmpty() && !m_resolvingDraft && !m_conversations.isEmpty()) selectConversation(m_conversations.first().toMap()["id"].toString());
                 if (previous != m_conversations || previousNext != m_nextOffset || previousSummary != m_querySummary) emit conversationsChanged();
             }
@@ -1207,25 +1328,25 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
             m_loading = false; emit loadingChanged();
         });
 }
-// Where the open conversation goes back into a reloaded Inbox: inside its
+// Where a kept conversation goes back into a reloaded Inbox: inside its
 // section, after the rows of that section that were above it, so a section
 // is never split. Other folders keep its old position.
-int MailBackend::keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group) const {
-    return keptRowIndex(rows, shownRows, group, m_selected, m_pinnedIndex);
+int MailBackend::keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &row) const {
+    return keptRowIndex(rows, shownRows, row, m_pinnedIndex);
 }
-int MailBackend::keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group, const QString &id, int fallback) const {
-    const auto groupOf = [](const QVariantMap &row) { const auto shown = row.value("display_group").toString(); return shown.isEmpty() ? row.value("group").toString() : shown; };
-    const auto rank = [](const QString &name) { return name == u"review" ? 0 : name == u"held" ? 1 : 2; };
+int MailBackend::keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &kept, int fallback) const {
     if (m_folder != u"inbox") return qMin(fallback, int(rows.size()));
+    const auto done = doneSections();
+    const auto id = kept.value("id").toString(), section = rowSection(kept, done), order = sectionOrder(section);
     int was = -1;
     for (int i = 0; i < shownRows.size() && was < 0; ++i) if (shownRows[i].toMap().value("id").toString() == id) was = i;
     if (was < 0) was = qMin(fallback, int(shownRows.size()));
     QSet<QString> above;
-    for (int i = 0; i < was; ++i) { const auto row = shownRows[i].toMap(); if (groupOf(row) == group) above.insert(row.value("id").toString()); }
+    for (int i = 0; i < was; ++i) { const auto row = shownRows[i].toMap(); if (rowSection(row, done) == section) above.insert(row.value("id").toString()); }
     int at = 0;
     for (; at < rows.size(); ++at) {
-        const auto row = rows[at].toMap(); const auto order = rank(groupOf(row));
-        if (order > rank(group) || (order == rank(group) && !above.contains(row.value("id").toString()))) break;
+        const auto row = rows[at].toMap(); const auto other = sectionOrder(rowSection(row, done));
+        if (other > order || (other == order && !above.contains(row.value("id").toString()))) break;
     }
     return at;
 }

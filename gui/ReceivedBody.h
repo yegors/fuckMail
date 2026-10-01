@@ -43,8 +43,17 @@ inline QString plainHtml(QString text, int gap = 24, int last = -1) {
         auto links=QRegularExpression("https?://[^\\s<>]+",QRegularExpression::CaseInsensitiveOption).globalMatch(p);
         while(links.hasNext()) {
             const auto link=links.next();rendered+=p.mid(end,link.capturedStart()-end).toHtmlEscaped();
-            const auto escaped=link.captured().toHtmlEscaped();const QUrl url(link.captured(),QUrl::StrictMode);
-            rendered+=url.isValid()?"<a href=\""+escaped+"\">"+escaped+"</a>":escaped;end=link.capturedEnd();
+            // Punctuation ending the sentence is not part of the link, nor a
+            // closing bracket the link did not open.
+            auto target=link.captured();
+            while(!target.isEmpty()) {
+                const QChar last=target.back();
+                if(QStringLiteral(".,;:!?'\"").contains(last)
+                    || (last==u')' && target.count(u'(')<target.count(u')')) || (last==u']' && target.count(u'[')<target.count(u']'))) target.chop(1);
+                else break;
+            }
+            const auto escaped=target.toHtmlEscaped();const QUrl url(target,QUrl::StrictMode);
+            rendered+=url.isValid()?"<a href=\""+escaped+"\">"+escaped+"</a>":escaped;end=link.capturedStart()+target.size();
         }
         rendered+=p.mid(end).toHtmlEscaped();
         // A blank line between paragraphs keeps one reader line of space.
