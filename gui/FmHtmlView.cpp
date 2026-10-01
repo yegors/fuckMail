@@ -599,19 +599,8 @@ QSGNode *FmHtmlView::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
         m_selectionDirty = false;
         while (auto *child = m_selectionRoot->firstChild()) { m_selectionRoot->removeChildNode(child); delete child; }
         // Search matches first, the selection over them.
-        // Each text range becomes one rectangle per run it touches, measured
-        // with the run's own font so it lines up with the painted glyphs.
         const auto paint = [this](int first, int last, const QColor &color) {
-            for (const auto &run : std::as_const(m_snapshot.runs)) {
-                const int start = run.offset, end = run.offset + int(run.text.size());
-                if (end <= first || start >= last) continue;
-                const QFontMetricsF metrics(run.font);
-                const int from = std::max(0, first - start), to = std::min(int(run.text.size()), last - start);
-                const qreal left = run.rect.left() + metrics.horizontalAdvance(run.text.left(from));
-                const qreal right = run.rect.left() + metrics.horizontalAdvance(run.text.left(to));
-                const QRectF box(left * m_scale, run.rect.top() * m_scale, (right - left) * m_scale, run.rect.height() * m_scale);
-                if (box.width() > 0) m_selectionRoot->appendChildNode(new QSGSimpleRectNode(box, color));
-            }
+            for (const auto &box : rangeBoxes(first, last)) m_selectionRoot->appendChildNode(new QSGSimpleRectNode(box, color));
         };
         for (const auto &range : std::as_const(m_highlights)) paint(range.first, range.second, m_highlightColor);
         if (hasSelection()) paint(m_selectionStart, m_selectionEnd, QColor(51, 144, 255, 90));
@@ -706,6 +695,30 @@ void FmHtmlView::copySelection() const {
 }
 void FmHtmlView::selectAll() { setSelection(0, int(m_snapshot.text.size())); }
 void FmHtmlView::clearSelection() { setSelection(0, 0); }
+
+// Each text range is one box per run it touches, measured with the run's own
+// font so it lines up with the painted glyphs.
+QList<QRectF> FmHtmlView::rangeBoxes(int first, int last) const {
+    QList<QRectF> boxes;
+    for (const auto &run : std::as_const(m_snapshot.runs)) {
+        const int start = run.offset, end = run.offset + int(run.text.size());
+        if (end <= first || start >= last) continue;
+        const QFontMetricsF metrics(run.font);
+        const int from = std::max(0, first - start), to = std::min(int(run.text.size()), last - start);
+        const qreal left = run.rect.left() + metrics.horizontalAdvance(run.text.left(from));
+        const qreal right = run.rect.left() + metrics.horizontalAdvance(run.text.left(to));
+        const QRectF box(left * m_scale, run.rect.top() * m_scale, (right - left) * m_scale, run.rect.height() * m_scale);
+        if (box.width() > 0) boxes.append(box);
+    }
+    return boxes;
+}
+
+QRectF FmHtmlView::highlightRect(int index) const {
+    if (index < 0 || index >= m_highlights.size()) return {};
+    QRectF box;
+    for (const auto &part : rangeBoxes(m_highlights[index].first, m_highlights[index].second)) box = box.united(part);
+    return box;
+}
 
 QVariantList FmHtmlView::linkRects(int id) const {
     QVariantList rects;

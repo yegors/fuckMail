@@ -907,7 +907,7 @@ Item {
         backend.remember("selectedMember",id)
         reader.cancelFlick()
         matchReveal.identity = backend.account + "/" + backend.selectedId
-        matchReveal.query = backend.query; matchReveal.memberId = id
+        matchReveal.query = backend.query; matchReveal.memberId = id; matchReveal.toMatch = false
         matchReveal.pass = 0; matchReveal.stable = 0; matchReveal.lastTop = -1; matchReveal.lastHeight = -1
         matchReveal.restart()
     }
@@ -917,6 +917,8 @@ Item {
         property string identity: ""
         property string query: ""
         property string memberId: ""
+        // Also brings the first match in the body into view, a third down.
+        property bool toMatch: false
         property int pass: 0
         property int stable: 0
         property real lastTop: -1
@@ -934,13 +936,40 @@ Item {
             // Expansion changes several nested layouts. Wait for their mapped
             // geometry, then confirm it again after positioning the reader.
             if (item.height>0 && height>=top+item.height-1 && (stable>=1 || pass>=20)) {
-                reader.contentY = Math.max(0,Math.min(Math.max(0,height-reader.height),top-12))
+                const match = toMatch ? mail.firstMatchTop(item, memberId) : -1
+                reader.contentY = Math.max(0,Math.min(Math.max(0,height-reader.height),match >= 0 ? match - Math.round(reader.height / 3) : top-12))
                 backend.remember("readerY",reader.contentY)
                 if (stable>=2 || pass>=20) stop()
             } else if (pass>=20) stop()
         }
     }
-    function revealMatch() { if (matchingIds.length) scrollToMember(matchingIds[0]) }
+    function revealMatch(toMatch) { if (!matchingIds.length) return; scrollToMember(matchingIds[0]); matchReveal.toMatch = !!toMatch }
+    // Whether a matching message's text holds a match, so Show match has
+    // somewhere to go; a match in the subject alone does not.
+    readonly property bool bodyMatches: members.some(function(m) { return matchingIds.indexOf(m.id) >= 0 && backend.matchRanges(m.text || "", bodyPhrases).length > 0 })
+    // The top of the first search match in a message's body, in the reader's
+    // content coordinates, or -1: the HTML view's first tinted range, or the
+    // first match in its text rows.
+    function firstMatchTop(memberItem, id) {
+        let top = -1
+        const visit = function(item) {
+            if (!item || !item.visible) return
+            const name = item.objectName || ""
+            if (name === "messageBody_" + id || name.indexOf("messageBodyPart_" + id + "_") === 0) {
+                let box = null
+                if (typeof item.highlightRect === "function") { const r = item.highlightRect(0); if (r.width > 0) box = r }
+                else if (typeof item.positionToRectangle === "function") {
+                    const ranges = backend.matchRanges(item.getText(0, item.length), mail.bodyPhrases)
+                    if (ranges.length) box = item.positionToRectangle(ranges[0][0])
+                }
+                if (box) { const y = item.mapToItem(reader.contentItem, 0, box.y).y; if (top < 0 || y < top) top = y }
+                return
+            }
+            for (let i = 0; i < item.children.length; ++i) visit(item.children[i])
+        }
+        visit(memberItem)
+        return top
+    }
     function openRow(id) {
         if (draftsMode) { backend.openDraft(id); return }
         pendingReveal = id; backend.openConversation(id)
@@ -1762,7 +1791,9 @@ Item {
                         }
                         Item {
                             objectName: "readerSubjectLine"
-                            width: Math.min(readerSubject.implicitWidth, readerHeading.width); height: readerSubject.lineCount * readerHeading.titleLine
+                            // Whole title lines, from the text's laid-out height: Qt's
+                            // lineCount can stay stale once a search tints the subject.
+                            width: Math.min(readerSubject.implicitWidth, readerHeading.width); height: Math.max(1, Math.round(readerSubject.contentHeight / readerHeading.titleLine)) * readerHeading.titleLine
                             Text { id: readerSubject; objectName: "readerSubject"; y: -Math.max(0, Math.round((Theme.fontSize(28) * Theme.naturalLeading - readerHeading.titleLine) / 2)); readonly property string marked: mail.markedHtml(mail.thread.subject || "", mail.subjectPhrases); text: marked || mail.thread.subject || ""; width: parent.width; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: readerHeading.titleLine; textFormat: marked ? Text.RichText : Text.PlainText }
                         }
                     }
@@ -1771,7 +1802,7 @@ Item {
                         // The message header already names the sender and time
                         // of a single-message thread.
                         readonly property bool threadLine: mail.members.length > 1
-                        visible: threadLine || mail.matchingIds.length > 0
+                        visible: threadLine || (mail.matchingIds.length > 0 && mail.bodyMatches)
                         Layout.fillWidth: true; spacing: 12
                         Row {
                             visible: parent.threadLine
@@ -1804,7 +1835,7 @@ Item {
                             }
                         }
                         Item { visible: !parent.threadLine; Layout.fillWidth: true }
-                        FmButton { visible: mail.matchingIds.length>0; text: "Show match"; font.pointSize: Theme.fontPoints(11); implicitHeight: 22; onClicked: mail.revealMatch() }
+                        FmButton { objectName: "showMatch"; visible: mail.matchingIds.length>0 && (parent.threadLine || mail.bodyMatches); text: "Show match"; font.pointSize: Theme.fontPoints(11); implicitHeight: 22; onClicked: mail.revealMatch(true) }
                     }
                 }
                 Flickable {
@@ -2137,7 +2168,8 @@ Item {
                                             // Search matches tinted in the document.
                                             readonly property var matchKey: [mail.bodyPhrases, Theme.matchTint]
                                             onMatchKeyChanged: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)
-                                            Component.onCompleted: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)
+                                            Component.onCompleted: { backend.drawWholeText(bodyText); backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint) }
+                                            onTextChanged: backend.drawWholeText(bodyText)
                                             Layout.fillWidth: true; text: mail.presentLinks(modelData.html)
                                             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                             palette.link: Theme.text

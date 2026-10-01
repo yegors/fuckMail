@@ -2089,3 +2089,18 @@ With D174's hosts the founder saw the scrollbar resize at random when months fol
 
 Mail UI124. No schema, fixture or protocol change.
 
+## D176 — long message text draws whole; search result heading and Show match (2026-10-01T22:00:00Z)
+
+The founder reported a message with a long signature and legal notice whose text stayed blank until clicked and was cut off on scrolling. In search results the reader showed a gap under the subject, and Show match did nothing.
+
+- **Found (text).** Qt's TextEdit draws only the blocks in view when its source text passes 10,000 characters (`QQuickTextEditPrivate::largeTextSizeThreshold`, measured on the HTML a body row is given), and redraws as the view scrolls. A footer with no blank lines is one paragraph, here about 5,800 px tall. Qt counts it as drawn while drawing only what was in view, so scrolling within it never redraws. With the founder's message the reader was blank at every position tested past the first screen; with that mode off it drew fully.
+- **Change (text).** Each body row turns the mode off when its text is set (`MailBackend.drawWholeText`), so the whole text is drawn. The composer sets its document directly and never enters the mode; the raw-source view keeps it, since its lines are short blocks.
+- **Found (heading).** The subject's box was `lineCount` title lines tall. When a search tint arrived after the subject laid out as plain text, Qt reported two lines for a one-line rich-text subject.
+- **Change (heading).** The box is the text's laid-out height rounded to title lines.
+- **Found (Show match).** It scrolled to the top of the first matching message, which a single-message thread already shows.
+- **Change (Show match).** It scrolls the body's first match to a third of the way down the reader, falling back to the message's top. It is hidden when only the subject matches in a single-message thread. Opening a result is unchanged.
+- **Also.** A navigation test dated its rows in September without fixing the date; on October 1 September became an older month and folded, so its date is now fixed.
+- **Evidence.** MailSelectionTest `longBodyPaints` (software and GPU) uses twenty short paragraphs, then a 150-line notice with no blank lines. It fails before the change with every band of the view blank after scrolling, and passes after. `searchReader` covers the tint arriving late, a wrapped subject, Show match reaching a match 40 paragraphs down, and a subject-only match hiding the button.
+
+Mail UI125. No schema, fixture or protocol change.
+

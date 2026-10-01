@@ -6,6 +6,8 @@
 #include "CalendarLayout.h"
 #include "SearchMatch.h"
 #include <QTextDocument>
+#include <QQuickItem>
+#include <QTimer>
 #include <QDate>
 #include <QJsonArray>
 #include <QTimeZone>
@@ -276,6 +278,20 @@ QVariantList MailBackend::matchRanges(const QString &text, const QStringList &ph
     QVariantList out;
     for (const auto &range : SearchMatch::ranges(text, phrases)) out.append(QVariant(QVariantList{range.first, range.second}));
     return out;
+}
+void MailBackend::drawWholeText(QObject *textEdit) const {
+    auto *item = qobject_cast<QQuickItem *>(textEdit);
+    if (!item) return;
+    const auto apply = [item] {
+        if (!item->flags().testFlag(QQuickItem::ItemObservesViewport)) return;
+        item->setFlag(QQuickItem::ItemObservesViewport, false);
+        // Nodes already built for the part in view give way to the whole text.
+        QMetaObject::invokeMethod(item, "updateWholeDocument");
+    };
+    apply();
+    // Setting the text turns the mode on after its change is announced, so
+    // once more when that returns; never after the item is gone.
+    QTimer::singleShot(0, item, apply);
 }
 // The highlighter belongs to the text edit's own document and goes with it.
 void MailBackend::markDocument(QObject *textEdit, const QStringList &phrases, const QColor &color) const {

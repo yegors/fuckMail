@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D176 — long message text, search result heading, Show match (Mail UI125)
+
+- **Long message text.** The reader's text rows draw all of their text, whatever their length. Qt's TextEdit draws only the part in view once its source passes 10,000 characters, and a paragraph taller than the view then stays blank when scrolled into. `MailBackend.drawWholeText` turns that off for each body row when its text is set.
+- **Subject.** The reader's subject box is its text's laid-out height in whole title lines. A search tint arriving after the subject laid out no longer adds lines of space below it.
+- **Show match** shows when a matching message's text holds a match, or the thread has more than one message. It expands the first matching message and scrolls its body's first match to a third of the way down the reader: the HTML view's first tinted range (`FmHtmlView.highlightRect`) or the first match in its text rows. Without a match in the body it scrolls to that message, as before. Opening a search result still brings the matching message into view, not the match inside it.
+
+Consumers: `MailBackend` (`drawWholeText`), `FmHtmlView` (`highlightRect`), `MailView` reader heading, body rows and match reveal; MailSelectionTest (`longBodyPaints`, also with `--gpu`; `searchReader`).
+
 ## D175 — every Inbox list item is one row high (Mail UI124)
 
 - **Items.** The Inbox list holds, in section order: a header item per section (`section:<key>`), an empty item for an open section with no mail (`empty:<key>`, "Inbox zero. Enjoy it.", "All reviewed. Nice work." or "Nothing waiting on later."), then the rows of each open section. Rows of a folded section are not items, the kept (open) conversation included. The backend builds rows and items in one model update; the model's `itemType` role (`header`, `empty`, `row`) picks each item's delegate, and only rows build a row's content.

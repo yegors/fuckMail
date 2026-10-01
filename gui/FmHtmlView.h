@@ -85,6 +85,9 @@ public:
     Q_INVOKABLE void clearSelection();
     // Item-coordinate boxes of one link, for tests and keyboard access.
     Q_INVOKABLE QVariantList linkRects(int id) const;
+    // The item-coordinate box around search match `index` (0 is the first in
+    // reading order), or an empty rectangle when there is none.
+    Q_INVOKABLE QRectF highlightRect(int index) const;
     // Status, scale, document size and tile and image memory counters, for tests.
     Q_INVOKABLE QVariantMap debugState() const;
     // Registers the type as FmHtmlView in the FuckMail.Html 1.0 QML module.
@@ -122,6 +125,8 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 private:
+    // Item-coordinate boxes of laid-out text offsets [first, last), one per run.
+    QList<QRectF> rangeBoxes(int first, int last) const;
     // `stale` tiles stay on screen until their repaint arrives.
     struct Tile { QImage image; QRectF rect; quint64 serial = 0; qint64 bytes = 0; bool stale = false; };
     struct Node { QSGImageNode *node = nullptr; quint64 serial = 0; };

@@ -301,6 +301,8 @@ class MailNavigationCacheTest {
         backend.m_account = "one"; backend.m_connected = true; backend.m_syntheticProfile = false;
         backend.m_enginePid = QCoreApplication::applicationPid();
         backend.m_preferences = {{"notifications","off"},{"theme","paper"},{"text_size","default"}};
+        // A fixed date: the rows are this month's Done mail, not an older month folded away.
+        backend.m_mailToday = QDate(2026,9,24);
         QVariantList rows;
         for (int i = 0; i < 1000; ++i) rows.append(QVariantMap{{"id",QString("thread-%1").arg(i)}, {"account","one"},
             {"subject",QString("Thread %1").arg(i)}, {"sender_name","Example sender"},{"sender_email","sender@example.test"},

@@ -204,6 +204,10 @@ public:
     // `text`, and a tint on a TextEdit's document where they appear.
     Q_INVOKABLE QVariantList matchRanges(const QString &text, const QStringList &phrases) const;
     Q_INVOKABLE void markDocument(QObject *textEdit, const QStringList &phrases, const QColor &color) const;
+    // Draws all of a TextEdit's text, not only the part in view. Qt does that
+    // for text over 10,000 characters, and a paragraph taller than the view
+    // then stays blank once scrolled into. Call when its text is set.
+    Q_INVOKABLE void drawWholeText(QObject *textEdit) const;
     QVariantMap currentAccount() const;
     QString account() const { return m_account; }
     QString query() const { return m_query; }

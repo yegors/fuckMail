@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-01
+
+- Long messages, such as ones with a big signature and legal notice, show all their text as you scroll. Before, parts stayed blank until you clicked.
+- In search results the subject no longer has a gap under it, and Show match jumps to the first match in the message. It only appears when there's a match to go to.
+
 ## 2026-09-30
 
 - Folding and opening months keeps the mail list steady. Nothing flashes, the scrollbar always matches the list's real length, and the list is never left blank after a fold. Month labels no longer appear twice. Section headers have a little more room above them.

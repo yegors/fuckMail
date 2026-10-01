@@ -63,6 +63,8 @@ class MailSelectionTest {
         // Saved views; one naming missingMember is refused as Core refuses a removed message.
         QList<QJsonObject> viewSaves;
         QString missingMember;
+        // Plain-text bodies by conversation, served without HTML.
+        QHash<QString,QString> texts;
         // Core's Done group for a row: This Week from the requested weekday,
         // the rest of this month, then its month. Row times here are midday UTC.
         static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
@@ -138,6 +140,11 @@ class MailSelectionTest {
                     }
                     else if (method == "assist_results") result={{"items",QJsonArray{QJsonObject{{"task","summary"},{"target","a-original"},{"stale",false},{"partial",false},{"source_ids",QJsonArray{"a-original"}},{"schema",2},{"output",QJsonObject{{"summary","You granted Example Mail access to your account data. Review access if you did not authorize it."},{"source_ids",QJsonArray{"a-original"}}}},{"model",QJsonObject{{"name","gemma4:e4b"}}}}}}};
                     else if (method == "assist_settings_get") result={{"revision",0},{"settings",QJsonObject{{"accounts",QJsonObject{}},{"model",QJsonObject{{"name","example.registry/team/a-very-long-qualified-model-name:large"},{"digest","synthetic"}}}}}};
+                    else if (method == "message_source" && texts.contains(request["params"].toObject()["id"].toString().chopped(QString("-original").size()))) {
+                        const auto params = request["params"].toObject();
+                        result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\n\r\nPlain"},
+                            {"body_text",texts.value(params["id"].toString().chopped(QString("-original").size()))},{"metadata",QJsonArray{}}};
+                    }
                     else if (method == "message_source") {
                         const auto params = request["params"].toObject();
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},{"metadata",QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}}}};
@@ -183,12 +190,14 @@ class MailSelectionTest {
                     else if (method == "conversation") {
                         const auto id = request["params"].toObject()["id"].toString();
                         // A thread read reports the row's current members and revision.
-                        QJsonArray ids{id+"-original"}; qint64 revision=3;
+                        QJsonArray ids{id+"-original"}; qint64 revision=3; QString subject;
                         for (const auto &row : rows) if (row.toMap().value("id").toString()==id) {
                             ids=QJsonArray::fromVariantList(row.toMap().value("message_ids").toList()); revision=row.toMap().value("revision").toLongLong();
+                            if (texts.contains(id)) subject=row.toMap().value("subject").toString();
                         }
-                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
+                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
                             {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
+                        if (!subject.isEmpty()) result["subject"]=subject;
                     }
                     peer->write(reply(request["id"].toString(),result));
                 }
@@ -1653,6 +1662,146 @@ public:
         for (int m=1; m<6; ++m) { auto *header=find(window->contentItem(),"mailGroup_"+monthKeys[m]); require(collapsed(monthKeys[m]),"every older month folds again"); Q_UNUSED(header); }
         qInfo()<<"A search opens every month with matches and leaves the mailbox's folds alone.";
     }
+    // A search result's reader: the subject keeps its one line with its
+    // match tinted, nothing opens a gap below it, and Show match goes to the
+    // first match in the body.
+    static void searchReader() {
+        Harness h;
+        QStringList paragraphs;
+        for (int n=0; n<40; ++n) paragraphs<<QString("Paragraph %1. Please review the attached engagement letter before we meet.").arg(n);
+        paragraphs<<"Our valuation of the shares is attached.";
+        for (int n=40; n<60; ++n) paragraphs<<QString("Paragraph %1. Regards, and thank you for your time.").arg(n);
+        h.rows={QVariantMap{{"id","match"},{"subject","Valuation - Engagement letter & RFI"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
+            {"message_ids",QVariantList{"match-original"}},{"matching_message_ids",QVariantList{"match-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},{"group","held"},{"kind","people"},{"unread",false},{"starred",true}}};
+        h.texts["match"]=paragraphs.join("\n\n");
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; Binding { target: Theme; property: 'textSize'; value: backend.preferences.text_size || 'default' } MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("SearchReader.qml")));
+        require(!qml.rootObjects().isEmpty(),"search reader MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"search reader window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==1;},"the result is listed");
+        h.backend.m_searchTerms={{"text","valuation"},{"phrases",QVariantList{QVariantMap{{"field","any"},{"text","valuation"}}}}}; emit h.backend.searchTermsChanged();
+        h.backend.openConversation("match");
+        QQuickItem *body=nullptr;
+        await([&]{ body=find(window->contentItem(),"messageBody_match-original"); return body && body->isVisible() && body->height()>1000; },"the result's body lays out");
+        settle(300);
+        auto *subjectLine=find(window->contentItem(),"readerSubjectLine"), *subject=find(window->contentItem(),"readerSubject");
+        auto *heading=find(window->contentItem(),"conversationHeadingRow"), *meta=find(window->contentItem(),"conversationMetaRow");
+        auto *reader=find(window->contentItem(),"reader"), *mail=find(window->contentItem(),"mailWorkspace");
+        require(subjectLine && subject && heading && meta && reader && mail,"reader heading parts");
+        const auto titleLine=heading->property("titleLine").toReal();
+        const auto phrases=[&](const QVariantList &list){ h.backend.m_searchTerms={{"text","valuation"},{"phrases",list}}; emit h.backend.searchTermsChanged(); settle(250); };
+        const auto any=[](const QString &text){ return QVariant(QVariantMap{{"field","any"},{"text",text}}); };
+        // The subject's box is its lines; Show match's row starts 16 px below
+        // it, or without that row the reader starts right under it.
+        const auto headingFits=[&](int lines, const char *step){
+            const auto below=(meta->isVisible() ? meta : reader)->mapToScene({0,0}).y()-(heading->mapToScene({0,0}).y()+heading->height());
+            if (std::abs(subjectLine->height()-lines*titleLine)>0.5 || std::abs(below-(meta->isVisible() ? 16 : 0))>0.5) {
+                qWarning()<<step<<"subject box"<<subjectLine->height()<<"for"<<lines<<"lines of"<<titleLine<<"; next row"<<below<<"below";
+                require(false,"the subject's box is its own lines");
+            }
+        };
+        headingFits(1,"opened while searching");
+        // The tint arriving after the subject laid out plain.
+        phrases({}); headingFits(1,"plain");
+        phrases({any("valuation")}); headingFits(1,"tinted later");
+        // A subject long enough to wrap keeps both lines, tinted or not.
+        window->setWidth(820); settle(250);
+        const int wrapped=int(std::round(subject->property("contentHeight").toReal()/titleLine));
+        require(wrapped>=2,"the subject wraps in a narrow reader");
+        headingFits(wrapped,"wrapped");
+        phrases({}); headingFits(wrapped,"wrapped plain"); phrases({any("valuation")}); headingFits(wrapped,"wrapped tinted");
+        window->setWidth(1280); settle(250);
+        // Show match brings the body's first match into view.
+        auto *show=find(window->contentItem(),"showMatch"); require(show && show->isVisible(),"Show match is offered for a match in the body");
+        reader->setProperty("contentY",0); settle(100);
+        QMetaObject::invokeMethod(show,"clicked"); settle(600);
+        QVariant top; QMetaObject::invokeMethod(mail,"firstMatchTop",Q_RETURN_ARG(QVariant,top),Q_ARG(QVariant,QVariant::fromValue(find(window->contentItem(),"messageBody_match-original")->parentItem())),Q_ARG(QVariant,"match-original"));
+        const auto contentY=reader->property("contentY").toReal();
+        require(top.toReal()>reader->height() && top.toReal()>=contentY && top.toReal()<contentY+reader->height(),"Show match scrolls the first match in the body into view");
+        // A match in the subject alone: nowhere to go, so no button.
+        phrases({QVariant(QVariantMap{{"field","subject"},{"text","valuation"}})});
+        require(!show->isVisible() && !meta->isVisible(),"a match in the subject alone offers no Show match");
+        headingFits(1,"subject match only");
+        qInfo()<<"A search result keeps its subject's own height, and Show match goes to the first match in the body.";
+    }
+    // A long plain-text body (a signature and legal notices well past Qt's
+    // large-text size) paints all of its text wherever the reader is
+    // scrolled, without a click to bring it in.
+    static void longBodyPaints() {
+        Harness h;
+        h.rows={QVariantMap{{"id","long"},{"subject","Engagement letter"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
+            {"message_ids",QVariantList{"long-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},{"group","review"},{"kind","people"},{"unread",false},{"starred",false}}};
+        // A letter, then a signature and legal notice with no blank lines:
+        // one paragraph many screens tall, as many firms' footers are.
+        QStringList paragraphs, notice;
+        for (int n=0; n<20; ++n) paragraphs<<QString("Paragraph %1. Please review, sign and return the attached engagement letter.").arg(n);
+        for (int n=0; n<150; ++n) notice<<QString("Notice line %1. The information contained in this e-mail and any attachments to it may be legally privileged.").arg(n);
+        paragraphs<<notice.join("\n");
+        h.texts["long"]=paragraphs.join("\n\n");
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("LongBody.qml")));
+        require(!qml.rootObjects().isEmpty(),"long body MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"long body window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==1;},"the long message is listed");
+        // Read while a search is on: its matches are tinted through the body.
+        h.backend.m_searchTerms={{"text",""},{"phrases",QVariantList{QVariantMap{{"field","any"},{"text","information"}}}}}; emit h.backend.searchTermsChanged();
+        h.backend.openConversation("long");
+        QQuickItem *body=nullptr;
+        await([&]{ body=find(window->contentItem(),"messageBody_long-original"); return body && body->isVisible() && body->height()>4000; },"the long body lays out");
+        auto *reader=find(window->contentItem(),"reader"); require(reader,"reader");
+        // Bands of the body on screen with no text in them: paragraphs are
+        // a few lines with one blank line between, so every 60 px band holds text.
+        const auto blankBands=[&]{
+            const auto image=window->grabWindow();
+            const auto dpr=image.devicePixelRatio();
+            const auto view=reader->mapRectToScene(reader->boundingRect()).intersected(body->mapRectToScene(body->boundingRect()));
+            int blank=0;
+            for (qreal top=view.top(); top+60<=view.bottom(); top+=60) {
+                bool ink=false;
+                const auto background=image.pixelColor(int((view.right()-4)*dpr),int((top+30)*dpr));
+                for (qreal y=top; y<top+60 && !ink; y+=2) for (qreal x=view.left(); x<view.left()+view.width()*.6 && !ink; x+=2) {
+                    const auto c=image.pixelColor(int(x*dpr),int(y*dpr));
+                    ink=std::abs(c.red()-background.red())+std::abs(c.green()-background.green())+std::abs(c.blue()-background.blue())>90;
+                }
+                if (!ink) ++blank;
+            }
+            return blank;
+        };
+        settle(300);
+        require(blankBands()==0,"the opened long body shows its text");
+        // Scrolled as a wheel does, a little at a time, and by a jump.
+        QStringList problems;
+        for (int step=0; step<60; ++step) { reader->setProperty("contentY",reader->property("contentY").toReal()+90); settle(20); }
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after scrolling down at %2").arg(blank).arg(reader->property("contentY").toReal());
+        for (int step=0; step<30; ++step) { reader->setProperty("contentY",std::max<qreal>(0,reader->property("contentY").toReal()-70)); settle(20); }
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after scrolling up at %2").arg(blank).arg(reader->property("contentY").toReal());
+        reader->setProperty("contentY",body->mapToItem(reader->property("contentItem").value<QQuickItem*>(),{0,body->height()*.8}).y()); settle(200);
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after a jump to %2").arg(blank).arg(reader->property("contentY").toReal());
+        // The body redrawn in part while the view is elsewhere, as a search
+        // or summary changes it, then read on further down.
+        const auto phrase=[&](const QString &text){ h.backend.m_searchTerms={{"text",""},{"phrases",QVariantList{QVariantMap{{"field","any"},{"text",text}}}}}; emit h.backend.searchTermsChanged(); };
+        reader->setProperty("contentY",0); settle(150);
+        phrase("addressee"); settle(150);
+        for (int step=0; step<40; ++step) { reader->setProperty("contentY",reader->property("contentY").toReal()+120); settle(16); }
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after a redraw at the top and scrolling down to %2").arg(blank).arg(reader->property("contentY").toReal());
+        phrase("Paragraph 3"); settle(150);
+        for (int step=0; step<40; ++step) { reader->setProperty("contentY",std::max<qreal>(0,reader->property("contentY").toReal()-100)); settle(16); }
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after a redraw low down and scrolling up to %2").arg(blank).arg(reader->property("contentY").toReal());
+        for (int step=0; step<80; ++step) { reader->setProperty("contentY",reader->property("contentY").toReal()+75); settle(16); }
+        if (const int blank=blankBands()) problems<<QString("%1 blank bands after scrolling down again to %2").arg(blank).arg(reader->property("contentY").toReal());
+        if (!problems.isEmpty()) { qWarning()<<problems; require(false,"a long body paints wherever the reader is scrolled"); }
+        qInfo()<<"A long plain-text body paints all its text wherever the reader is scrolled.";
+    }
     // The Inbox list is exact however it changes. Every item is one row high,
     // so its length (and the scrollbar) is what it holds plus what is still to
     // load. Scrolling, paging, folding and opening months never change it by
@@ -1708,7 +1857,7 @@ public:
             const auto count=list->property("count").toInt();
             auto *footer=list->property("footerItem").value<QQuickItem*>();
             const auto unloaded=h.backend.unloadedItems();
-            if (!footer || std::abs(footer->height()-unloaded*rowHeight)>0.5) problems<<where+": the footer is not what is still to load";
+            if (!footer || std::abs(footer->height()-unloaded*rowHeight)>0.5) problems<<QString("%1: the footer is %2 high for %3 rows still to load (more %4, loading %5)").arg(where).arg(footer ? footer->height() : -1).arg(unloaded).arg(h.backend.hasMore()).arg(h.backend.m_loading);
             if (std::abs(real("contentHeight")-(count+unloaded)*rowHeight)>0.5) problems<<QString("%1: length %2 for %3 items and %4 to load").arg(where).arg(real("contentHeight")).arg(count).arg(unloaded);
             if (expectedItems>=0 && count+unloaded!=expectedItems) problems<<QString("%1: %2 items and %3 to load, not %4").arg(where).arg(count).arg(unloaded).arg(expectedItems);
             // Each item near the view is where its index puts it from the
@@ -1722,10 +1871,11 @@ public:
                 if (std::abs(item->y()-real("originY")-index.toInt()*rowHeight)>0.5) { problems<<QString("%1: item %2 at %3 from origin %4").arg(where).arg(index.toInt()).arg(item->y()).arg(real("originY")); break; }
             }
         };
-        // Every frame: the view is filled, inside its range, and no header is
-        // painted twice.
+        // Every frame, as the scene graph takes it: the view is filled, inside
+        // its range, and no header is painted twice. Synchronizing blocks the
+        // GUI thread, so the items read here are the ones being drawn.
         int frames=0;
-        const auto frame=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{
+        const auto frame=QObject::connect(window,&QQuickWindow::afterSynchronizing,window,[&]{
             ++frames;
             const auto viewTop=list->mapToScene({0,0}).y(), viewBottom=viewTop+list->height();
             qreal covered=0; QHash<QString,int> headers;
@@ -1741,7 +1891,7 @@ public:
             if (covered < std::min<qreal>(list->height(), real("contentHeight")+real("topMargin"))-1) problems<<QString("frame %1: only %2 of the view painted at %3").arg(frames).arg(covered).arg(real("contentY"));
             for (auto it=headers.cbegin(); it!=headers.cend(); ++it) if (it.value()>1) problems<<it.key()+" painted twice";
             if (!list->property("moving").toBool() && (real("contentY")<top()-0.5 || real("contentY")>bottom()+0.5)) problems<<QString("frame %1: at %2 outside %3..%4").arg(frames).arg(real("contentY")).arg(top()).arg(bottom());
-        });
+        }, Qt::DirectConnection);
         const auto check=[&](const char *step){ if (!problems.isEmpty()) { problems.removeDuplicates(); qWarning()<<problems.mid(0,12); require(false,step); } };
         exact("first page",items(0));
         check("the first page is its full length");
@@ -1755,11 +1905,11 @@ public:
             list->setProperty("contentY",real("contentY")-200); settle(200);
             auto *item=header(monthKeys[1]); require(item && item->isVisible() && h.backend.hasMore(),"the last loaded month's header is on screen, older pages to load");
             const auto at=item->mapToScene({0,0}).y();
-            const auto held=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{
+            const auto held=QObject::connect(window,&QQuickWindow::afterSynchronizing,window,[&]{
                 auto *now=header(monthKeys[1]);
                 if (!now || !now->isVisible()) problems<<"the folded month's header left the list";
                 else if (std::abs(now->mapToScene({0,0}).y()-at)>0.5) problems<<QString("the folded month's header moved to %1 from %2").arg(now->mapToScene({0,0}).y()).arg(at);
-            });
+            }, Qt::DirectConnection);
             toggle(monthKeys[1]); settle(400);
             exact("folded with pages to load",items(60));
             toggle(monthKeys[1]); settle(400);
@@ -1784,7 +1934,7 @@ public:
         auto *month=header(monthKeys[1]); require(month && month->isVisible(),"the month's header is on screen");
         const auto at=month->mapToScene({0,0}).y();
         QList<qreal> places;
-        const auto follow=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{ if (auto *item=header(monthKeys[1])) places<<item->mapToScene({0,0}).y(); else places<<-1; });
+        const auto follow=QObject::connect(window,&QQuickWindow::afterSynchronizing,window,[&]{ if (auto *item=header(monthKeys[1])) places<<item->mapToScene({0,0}).y(); else places<<-1; }, Qt::DirectConnection);
         toggle(monthKeys[1]); settle(400);
         exact("folded while scrolled",items(60));
         for (const auto y : places) if (std::abs(y-at)>0.5) { problems<<QString("the folded month's header went from %1 to %2").arg(at).arg(y); break; }
@@ -2402,6 +2552,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
-int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}
+int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}
