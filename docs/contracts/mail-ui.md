@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D177 — the reply stays whole in view (Mail UI126)
+
+- **Size.** The reply form's body grows with its text up to its cap (400 px for replies), and never past the height that keeps the whole form, title to footer, within the reader with 12 px above and 24 below. Past that it scrolls inside. The rest of the form is measured once each layout settles.
+- **Following.** While the keyboard is in the form, the reader scrolls just enough to show the form's top and footer whenever the form grows with its text or attachments, the reader changes size or the thread above lays out. Writing follows the form while any of it shows. Other changes follow only while it was whole in view. Scrolling away by any means stops following until the form shows whole again.
+- **Done sections** refresh when the date changes in the zone Core counts them in, not on a change of the calendar's display zone or the UTC date.
+
+Consumers: `ReplyComposer` (`availableHeight`), `MailView` reply following; ReplyStabilityTest, CalendarMailActivityTest.
+
 ## D176 — long message text, search result heading, Show match (Mail UI125)
 
 - **Long message text.** The reader's text rows draw all of their text, whatever their length. Qt's TextEdit draws only the part in view once its source passes 10,000 characters, and a paragraph taller than the view then stays blank when scrolled into. `MailBackend.drawWholeText` turns that off for each body row when its text is set.

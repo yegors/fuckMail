@@ -1036,6 +1036,7 @@ private:
     QVariantMap m_navigationPending;
     QTimer m_navigationSaveTimer;
     QString m_clockDayKey;
+    QDate m_clockMailDay;
     double m_clockHour = -1;
     mutable QString m_clockZoneId;
     mutable QTimeZone m_clockZone;

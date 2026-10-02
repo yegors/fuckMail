@@ -901,7 +901,7 @@ Item {
         backend.remember("selectedMember", next[key] ? id : "")
     }
     function scrollToMember(id) {
-        visitTouched = true
+        visitTouched = true; replyPinned = false
         expanded = true; backend.remember("expanded",true)
         const next = Object.assign({},expandedMembers); next[expansionKey+id] = true; expandedMembers = next
         backend.remember("selectedMember",id)
@@ -1095,6 +1095,7 @@ Item {
         if (replyRevealIdentity !== composerIdentity && reply.visible) replyOpening.restart()
         replyRevealIdentity = composerIdentity
         replyReveal.pass = 0; replyReveal.stable = 0; replyReveal.lastHeight = -1; replyReveal.focused = false; replyReveal.scrolled = false
+        replyPinned = true
         replyReveal.restart()
     }
     // The first move to the reply glides; later ones, as the thread lays out, follow at once.
@@ -1139,6 +1140,40 @@ Item {
             }
             if (((stable >= 15 && mail.members.length > 0) || pass >= 190) && !revealScroll.running) stop()
         }
+    }
+    // While the keyboard is in the reply, the form stays whole in view as it
+    // grows with its text, as the reader changes size and as the thread above
+    // it lays out: the reader scrolls just enough to show its top and footer.
+    // Writing follows the form while any of it shows; other changes only
+    // while it was whole in view, so reading back up the thread stays put.
+    property bool replyPinned: false
+    property bool replyAdjusting: false
+    function replyBounds() {
+        const top = reply.mapToItem(reader.contentItem, 0, 0).y - replyShift.y - 12
+        return {top: top, bottom: top + 12 + reply.height + 24}
+    }
+    function replyWhollyShown() {
+        if (!replyOpen || !reply.visible || reply.height <= 0) return false
+        const box = replyBounds()
+        return box.top >= reader.contentY - 1 && box.bottom <= reader.contentY + reader.height + 1
+    }
+    function keepReplyInView(writing) {
+        if (!replyOpen || !reply.visible || reply.height <= 0 || replyReveal.running || revealScroll.running || reader.moving || !replyHasFocus()) return
+        const box = replyBounds(), top = box.top, bottom = box.bottom
+        if (!(replyPinned || (writing && top < reader.contentY + reader.height && bottom > reader.contentY))) return
+        replyPinned = true
+        let target = reader.contentY
+        if (bottom > target + reader.height) target = bottom - reader.height
+        if (top < target) target = top
+        target = Math.max(0, target)
+        if (Math.abs(target - reader.contentY) <= .5) return
+        replyAdjusting = true; reader.cancelFlick(); reader.contentY = target; replyAdjusting = false
+        backend.remember("readerY", target)
+    }
+    function replyHasFocus() {
+        let item = mail.ApplicationWindow.window ? mail.ApplicationWindow.window.activeFocusItem : null
+        while (item) { if (item === reply) return true; item = item.parent }
+        return false
     }
     // After Send the sent message takes the box's place and the thread gets
     // shorter. The reader never rests past its end and shows the sent message
@@ -1844,11 +1879,15 @@ Item {
                     contentWidth: width; contentHeight: readerColumn.implicitHeight + (mail.chipsVisible ? 64 : 40); clip: true; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: FmScrollBar { id: readerBar; autoHide: true }
                     HoverHandler { onPointChanged: readerBar.pointerMoved(point.scenePosition) }
-                    onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
+                    onMovementEnded: { if (!mail.restoring) backend.remember("readerY",contentY); mail.replyPinned = mail.replyWhollyShown() }
                     // Scrolling takes over from a reply being brought into view.
-                    onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop() }
+                    onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop(); mail.replyPinned = false }
+                    onHeightChanged: mail.keepReplyInView(false)
                     // A shorter thread never leaves the reader past its end.
-                    onContentHeightChanged: if (sentReveal.running) sentReveal.follow()
+                    onContentHeightChanged: { if (sentReveal.running) sentReveal.follow(); mail.keepReplyInView(false) }
+                    // Scrolled by any means but the reply's own following: it
+                    // stays followed only while it shows whole.
+                    onContentYChanged: if (!mail.replyAdjusting && !replyReveal.running && !revealScroll.running) mail.replyPinned = mail.replyWhollyShown()
                     ColumnLayout {
                         id: readerColumn
                         x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
@@ -2110,7 +2149,10 @@ Item {
                                     // stored copy may come from an older one. The source can arrive
                                     // while a projection lays out, so it projects again afterwards.
                                     readonly property string sourceText: member.modelData.content_pending ? "" : messageSource.result.body_text || ""
-                                    onSourceTextChanged: Qt.callLater(project)
+                                    onSourceTextChanged: reproject.restart()
+                                    // Not Qt.callLater: a timer goes with this message's view,
+                                    // so a projection put off as the view closes never runs.
+                                    Timer { id: reproject; interval: 0; onTriggered: messageBody.project() }
                                     readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
                                     function project() {
                                         if (!member.isExpanded) { rows = []; return }
@@ -2325,6 +2367,9 @@ Item {
                                 NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: 200; easing.type: Easing.OutCubic }
                             }
                             minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
+                            // The whole form fits in the reader, with its 12 px above and 24 below.
+                            availableHeight: reader.height - 36
+                            onHeightChanged: mail.keepReplyInView(true)
                             onDismissed: mail.setReplyOpen(false)
                             onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
                             onAllMailWith: function(email) { if (email) backend.query = email }

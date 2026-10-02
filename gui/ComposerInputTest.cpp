@@ -290,6 +290,22 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     require(!find(menuRows,"spellingIgnore")->isVisible(),"and no spelling rows");
     await([&]{return !undoRow->property("separatorAbove").toBool();},"the menu starts with Undo again");
     QKeyEvent closeMenu(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QCoreApplication::sendEvent(window,&closeMenu);
+    // A short text replacing one marked far along: the underlines catch up a
+    // moment later and never ask the editor about places past its end.
+    static QStringList rangeWarnings;
+    static QtMessageHandler previousHandler = nullptr;
+    previousHandler = qInstallMessageHandler([](QtMsgType type, const QMessageLogContext &context, const QString &message) {
+        if (message.contains("out of range")) rangeWarnings << message;
+        if (previousHandler) previousHandler(type, context, message);
+    });
+    QStringList words; for (int i=0;i<60;++i) words<<"reply";
+    spelling->load(words.join(' ')+" Wrongg reply",{});
+    await([&]{return spelling->misspellings().size()==1 && spelling->misspellings().first().toMap()["start"].toInt()>300;},"a misspelled word far along is marked");
+    spelling->load("reply",{});
+    await([&]{return spelling->misspellings().isEmpty();},"the short text has no marks");
+    QElapsedTimer drawn; drawn.start(); while(drawn.elapsed()<200) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+    qInstallMessageHandler(previousHandler);
+    if(!rangeWarnings.isEmpty()) { qWarning()<<rangeWarnings.mid(0,4); require(false,"spelling underlines never reach past the text"); }
     spelling->setSpellChecker(nullptr); spelling->load(bodyBefore,{});
     require(!warnings,"production QML has no warnings");
     qInfo()<<"Composer input passed: serial files, in-flight edits, exact uncertain replay, navigation, close protection, cached suggestions, keyboard routing, native multi-file drop and spelling";

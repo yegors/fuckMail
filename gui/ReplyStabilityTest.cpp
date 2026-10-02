@@ -213,6 +213,51 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     };
     type("Thanks for the note");
     settle(600); checkEditor("after autosave");
+    // Written line by line in a short window, the box stays whole in view,
+    // its top and Send included, while it grows to its cap and scrolls inside.
+    {
+        const int tall = window->height(); window->setHeight(620); settle(400);
+        auto send = item("captureReply"); require(send, "Send");
+        int checks = 0;
+        const auto inView = [&](const QString &moment) {
+            ++checks;
+            const auto view = reader->mapRectToScene(reader->boundingRect());
+            const auto box = panel->mapRectToScene(panel->boundingRect()), button = send->mapRectToScene(send->boundingRect());
+            if (box.top() < view.top() - 1 || button.bottom() > view.bottom() + 1) {
+                qCritical() << moment << "box" << box << "Send" << button << "view" << view;
+                require(false, "a growing reply stays whole in view");
+            }
+        };
+        inView("in a short window");
+        // And in every frame drawn meanwhile.
+        QStringList frames;
+        const auto everyFrame = QObject::connect(window, &QQuickWindow::afterSynchronizing, window, [&] {
+            const auto view = reader->mapRectToScene(reader->boundingRect());
+            const auto box = panel->mapRectToScene(panel->boundingRect()), button = send->mapRectToScene(send->boundingRect());
+            if (box.top() < view.top() - 1 || button.bottom() > view.bottom() + 1) frames << QString("box top %1, Send bottom %2, view %3-%4").arg(box.top()).arg(button.bottom()).arg(view.top()).arg(view.bottom());
+        }, Qt::DirectConnection);
+        for (int line = 0; line < 30; ++line) {
+            QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier, "\r"), release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier, "\r");
+            QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); typed += '\n';
+            type(QString("Line %1").arg(line));
+            settle(40); inView(QString("after line %1").arg(line));
+        }
+        QObject::disconnect(everyFrame);
+        if (!frames.isEmpty()) { qCritical() << frames.mid(0, 5); require(false, "every frame shows the growing reply whole"); }
+        // Reading back up the thread while still writing: the reader stays
+        // where it was scrolled, through a new line and a resize.
+        reader->setProperty("contentY", 0); settle(100);
+        require(editor->hasActiveFocus(), "the editor keeps the keyboard while the thread is read");
+        {
+            QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier, "\r"), release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier, "\r");
+            QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release); typed += '\n';
+        }
+        type("More"); settle(100);
+        window->setHeight(660); settle(300);
+        require(reader->property("contentY").toReal() == 0, "reading up the thread is not pulled back to the reply");
+        window->setHeight(tall); settle(400);
+        checkEditor("after growing");
+    }
     // Gmail's draft copy lands while the next words are typed.
     type(", I will");
     auto google = saved["google"].toObject(); google["state"] = "synced"; google["revision"] = 4; saved["google"] = google;

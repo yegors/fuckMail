@@ -357,8 +357,14 @@ void MailBackend::tickClock() {
     const auto day = now.date().toString(Qt::ISODate) + '|' + now.toLocalTime().date().toString(Qt::ISODate) + '|' + now.toUTC().date().toString(Qt::ISODate);
     const double hour = now.time().hour() + now.time().minute() / 60.0;
     if (day != m_clockDayKey) {
-        const bool rollover = !m_clockDayKey.isEmpty();
         m_clockDayKey = day; emit todayChanged();
+    }
+    // Done sections follow the date in the zone Core counts them in, not the
+    // calendar's display zone or UTC.
+    const auto mailDay = now.toTimeZone(QTimeZone(mailMonthZone().toUtf8())).date();
+    if (mailDay != m_clockMailDay) {
+        const bool rollover = m_clockMailDay.isValid();
+        m_clockMailDay = mailDay;
         if (rollover) refreshDoneSections();
     }
     if (hour != m_clockHour) { m_clockHour = hour; emit clockChanged(); }

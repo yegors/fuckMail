@@ -19,6 +19,13 @@ Item {
     property bool bccOpen: false
     // A new message fills this much of the pane; 0 for replies.
     property real minimumHeight: 0
+    // The height the form can show in; its body stops growing where the
+    // whole form, footer included, would no longer fit. 0 sets no limit.
+    property real availableHeight: 0
+    // Everything but the body: the title, fields and footer. Measured once a
+    // layout settles; reading it in the body's own size would loop the layout.
+    property real chromeHeight: 0
+    function measureChrome() { chromeHeight = contents.height - composerScroll.height }
     readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property bool readOnly: backend.draftReadOnly || backend.accountArchived || backend.unsavedAccountBuffer
@@ -143,6 +150,7 @@ Item {
             id: contents
             anchors { fill: parent; leftMargin: 18 }
             spacing: 0
+            onHeightChanged: Qt.callLater(root.measureChrome)
             // What is being written, above the form in every mode.
             RowLayout {
                 objectName: "composerTitle"
@@ -235,11 +243,13 @@ Item {
             ScrollView {
                 id: composerScroll
                 objectName: "replyBodyScroll"
+                onHeightChanged: Qt.callLater(root.measureChrome)
                 ScrollBar.vertical: FmScrollBar { policy: bodyEditor.contentHeight + 24 > composerScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                 Layout.fillWidth: true; Layout.fillHeight: true
                 // The body grows with its text; past the cap it scrolls inside.
                 Layout.minimumHeight: root.mode === "new" ? 96 : 140
-                Layout.preferredHeight: Math.max(Layout.minimumHeight, Math.min(Math.max(400, (root.minimumHeight || 560) - 200), bodyEditor.contentHeight + 24))
+                Layout.preferredHeight: Math.max(Layout.minimumHeight, Math.min(Math.max(400, (root.minimumHeight || 560) - 200),
+                    root.availableHeight > 0 ? root.availableHeight - root.chromeHeight : Infinity, bodyEditor.contentHeight + 24))
                 contentWidth: availableWidth
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -284,9 +294,13 @@ Item {
                         Shape {
                             id: misspelling
                             required property var modelData
-                            // Relayout (typing, wrapping, text size) moves the words.
-                            readonly property rect first: { bodyEditor.contentHeight; bodyEditor.width; return bodyEditor.positionToRectangle(modelData.start) }
-                            readonly property rect last: { bodyEditor.contentHeight; bodyEditor.width; return bodyEditor.positionToRectangle(modelData.start + modelData.length) }
+                            // Relayout (typing, wrapping, text size) moves the words. The
+                            // marks catch up a moment after the text changes; one that
+                            // reaches past the current text draws nothing meanwhile.
+                            readonly property bool current: { bodyEditor.contentHeight; bodyEditor.width; return modelData.start + modelData.length <= bodyEditor.length }
+                            readonly property rect first: { bodyEditor.contentHeight; bodyEditor.width; return modelData.start + modelData.length <= bodyEditor.length ? bodyEditor.positionToRectangle(modelData.start) : Qt.rect(0, 0, 0, 0) }
+                            readonly property rect last: { bodyEditor.contentHeight; bodyEditor.width; return modelData.start + modelData.length <= bodyEditor.length ? bodyEditor.positionToRectangle(modelData.start + modelData.length) : Qt.rect(0, 0, 0, 0) }
+                            visible: current
                             x: first.x; y: first.y + first.height - 2
                             width: Math.max(4, last.y === first.y ? last.x - first.x : bodyEditor.width - bodyEditor.rightPadding - first.x); height: 3
                             preferredRendererType: Shape.CurveRenderer

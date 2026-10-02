@@ -2104,3 +2104,14 @@ The founder reported a message with a long signature and legal notice whose text
 
 Mail UI125. No schema, fixture or protocol change.
 
+## D177 — the reply stays whole in view (2026-10-02T00:40:00Z)
+
+The founder opened a reply at the end of a thread and saw the whole form with Send and Discard. As they typed, the form grew and pushed its footer below the reader. They expect the whole form and its buttons in view at all times.
+
+- **Found.** The reader brought the form into view only while it opened. The body then grew with its text up to 400 px, whatever the reader's height, and nothing scrolled after it. Shrinking the window also left the footer below the reader.
+- **Change.** The body stops growing where the whole form would no longer fit in the reader, and scrolls inside past that. While the keyboard is in the form, the reader keeps its top and footer in view as it grows, as the window changes size and as the thread above lays out. It never pulls someone reading back up the thread down to the form. The space around the body is measured after each layout, since reading it in the body's own size loops Qt's layout.
+- **Also.** Done sections refreshed whenever the clock's date key changed, including the UTC date and the calendar's display zone. Between 8 pm and midnight in Toronto that re-read the Inbox needlessly and failed a calendar test. They now refresh when the date changes in the zone Core counts them in.
+- **Evidence.** ReplyStabilityTest, offscreen and in a native window: at 620 px tall the reply shows whole from the start. Over 30 typed lines every drawn frame shows the form's top and Send inside the reader. Reading back to the top of the thread stays put through a new line and a resize. Before the change it failed at the first check.
+
+Mail UI126. No schema, fixture or protocol change.
+
