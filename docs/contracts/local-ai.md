@@ -1,5 +1,11 @@
 # Local mail analysis
 
+## D178 — queue date rules use the date index (Local assistance31)
+
+- The New and Catch up rules, and the queued total, test `sent_at` against text bounds one second wider than the exact millisecond rules, as well as the rules themselves. Results are unchanged; the `messages_order` index limits the rows read.
+
+Consumers: `local_model_next`, progress counts; Core assist backlog tests.
+
 ## D171 — progress counted beside the writer (Local assistance30)
 
 - The engine counts progress on a read-only connection to the store, one count at a time, never on the writer. `assist_progress` waits for counts it lacks for at most 250 ms with `max_age_ms`, or 2 s without, then answers with each account's latest counts and its current settings. An account never counted is left out until its first count.

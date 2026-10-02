@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-02
+
+- After the app reconnects to its local engine, Google sync starts again on its own for the accounts that were syncing. Before, they stayed paused until you clicked one.
+- The local model finds the next emails to read much faster, so it holds up the rest of the app less.
+
 ## 2026-10-01
 
 - Long messages, such as ones with a big signature and legal notice, show all their text as you scroll. Before, parts stayed blank until you clicked.

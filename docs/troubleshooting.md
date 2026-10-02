@@ -106,6 +106,8 @@ In the profile's `diagnostics/` folder:
 | `engine.log` | One JSON object per line from the engine: time, level, area, event and metadata such as error codes, counts and timings. Account and message identifiers are replaced by hashes that change each time the engine starts. |
 | `gui.log` | The app's log lines. Addresses, links, file paths, quoted text, tokens and long opaque values are replaced before they're written. |
 
+A `slow_step` line in `engine.log` names a step that held the local store for over a second; the app waits behind such steps.
+
 Each file rolls over at 2.5 MiB and keeps one previous file (`engine.log.1`, `gui.log.1`), so logs use at most about 10 MiB. Nothing is sent anywhere.
 
 To look at them in the app, press `` ` `` or `~` for the debug console. `export` there saves the filtered lines to your Downloads folder.

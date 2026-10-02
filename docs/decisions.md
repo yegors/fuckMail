@@ -2115,3 +2115,15 @@ The founder opened a reply at the end of a thread and saw the whole form with Se
 
 Mail UI126. No schema, fixture or protocol change.
 
+
+## D178 — sync resumes after a reconnect; the store says what holds it (2026-10-02T07:00:00Z)
+
+On the D171 build the founder's four-account profile still timed out three times in two hours, each while the local model and mail sync were busy and the machine was under heavy CPU load. The GUI restarted the engine each time (D171), but Google sync stayed off on every account until one was clicked. Two accounts then asked to be signed in again.
+
+- **Sync after a reconnect.** The GUI resumed sync once per launch, so a restarted engine never got it back. Now the accounts whose sync this window ran are resumed on the engine that reconnects, with the startup checks (connected, a service on). Sync the user paused stays paused.
+- **Queue lookup.** The model queue's "next messages" query compared a computed date, so it read every message of the account each time. Its date rules now also bound `sent_at` as text, one second wider than the exact test, so the `messages_order` index limits the read. Read-only on the founder's store: 48–63 ms down to 2–6 ms per account and class, warm, same rows.
+- **Slow store steps are logged.** Any writer step over a second writes `Store slow_step` to `engine.log`, naming the request method or the code that queued the call. Mail page timings include downloads, so they could not show whether the store was the hold-up.
+- **Sign-in again.** Both accounts' refreshes were rejected by Google's token endpoint (or found no stored credential); the engine does not drop tokens on a timeout. Unverified hypothesis: an OAuth client in Testing status, whose refresh tokens expire after seven days; the profile is seven days old.
+- **Not found yet.** What held the writer for 15 s. The slow-step log is for the next occurrence.
+
+Local assistance31, Mail UI127. No schema, fixture or protocol change.

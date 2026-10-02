@@ -8,6 +8,8 @@ use tokio::sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore};
 /// been dropped, so queued calls count against the slot limit.
 pub(crate) struct CoreCall {
     run: Box<dyn FnOnce(&mut Store) + Send>,
+    /// Where the call was made, for the slow-step log.
+    pub(crate) origin: &'static str,
     _permit: OwnedSemaphorePermit,
 }
 impl CoreCall {
@@ -58,6 +60,7 @@ impl CoreBridge {
                         let _ = reply.send(operation(store));
                     }
                 }),
+                origin: std::any::type_name::<F>(),
                 _permit: permit,
             }))
             .await

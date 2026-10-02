@@ -1,5 +1,11 @@
 # Mail UI, reader and human composer
 
+## D178 — sync resumes after a reconnect (Mail UI127)
+
+- When a live connection drops, the accounts whose sync this window owned are resumed on the next connection, with the same checks as at launch. Sync the user paused, and accounts that need signing in again, are not started.
+
+Consumers: `MailBackend` (disconnect, `resumeStartupGoogleSync`); MailSelectionTest.
+
 ## D177 — the reply stays whole in view (Mail UI126)
 
 - **Size.** The reply form's body grows with its text up to its cap (400 px for replies), and never past the height that keeps the whole form, title to footer, within the reader with 12 px above and 24 below. Past that it scrolls inside. The rest of the form is measured once each layout settles.

@@ -2503,8 +2503,10 @@ public:
         Harness h;
         h.backend.m_startupClock.start();
         h.backend.remember("readerY",40);
+        h.backend.m_googleSync={{"personal",QVariantMap{{"owned",true}}},{"paused",QVariantMap{{"owned",false}}}};
         h.backend.m_socket.abort();
         require(!h.backend.m_connected && !h.backend.m_viewDirty.isEmpty(),"the engine is gone with the view unsaved");
+        require(h.backend.m_startupGoogleAccounts==QSet<QString>{"personal"},"sync this window ran resumes after the reconnect; paused sync stays paused");
         await([&]{return h.backend.m_launchAttempts>=1;},"the engine is started again");
         bool closed=false;
         QObject::connect(&h.backend,&MailBackend::shutdownReady,[&]{closed=true;});

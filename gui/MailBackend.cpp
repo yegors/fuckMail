@@ -185,6 +185,10 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         cancelQueuedCalendarDeletions();
         m_mailViewCache.clear(); m_readerCache.clear();
         cancelGoogleOperations();
+        // Sync this window ran starts again on the engine that reconnects.
+        if (wasConnected && !m_shutdown)
+            for (auto it = m_googleSync.cbegin(); it != m_googleSync.cend(); ++it)
+                if (it.value().toMap().value("owned").toBool()) m_startupGoogleAccounts.insert(it.key());
         m_googleSync.clear(); m_googleSyncLimits.clear(); emit googleSyncChanged();
         m_googleAuthAttempt.clear();
         if (m_googleAuthBusy) setGoogleAuth({{"phase", "cancelled"}});

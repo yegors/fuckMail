@@ -18,7 +18,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
@@ -160,6 +160,19 @@ impl PendingWork {
         let work = self.requests.pop_front()?;
         self.foreground_burst = self.foreground_burst.saturating_add(1);
         Some(work)
+    }
+}
+
+/// Logs a writer step that held the store for more than a second: every
+/// client request waits behind it.
+fn slow_step(kind: &str, name: &str, started: Instant) {
+    let elapsed = started.elapsed();
+    if elapsed >= Duration::from_secs(1) {
+        diagnostics::event(
+            "Store",
+            "slow_step",
+            json!({kind: name, "elapsed_ms": elapsed.as_millis() as u64}),
+        );
     }
 }
 
@@ -997,7 +1010,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 if background_active {
                     pending.foreground_burst = 0;
                     if let Some(call) = pending.provider.pop_front() {
+                        let (origin, started) = (call.origin, Instant::now());
                         call.run(&mut store);
+                        slow_step("call", origin, started);
                         continue;
                     }
                     if let Some(fixture) = &mut fixture {
@@ -1034,6 +1049,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 .as_ref()
                 .is_some_and(|fixture| fixture.should_inject(&work.request));
             let id = work.request.id;
+            let (method, started) = (work.request.method.clone(), Instant::now());
             let result = store.handle_cancellable(
                 &work.request.method,
                 work.request.account.as_deref(),
@@ -1058,6 +1074,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             let _ = work.reply.send(reply);
+            slow_step("method", &method, started);
         }
         if let Some(fixture) = &mut fixture {
             fixture.finish(&worker_schedule);

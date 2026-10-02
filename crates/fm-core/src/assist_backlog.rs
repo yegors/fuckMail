@@ -58,22 +58,42 @@ struct Bounds {
     cutoff: Option<i64>,
     catch_up: Option<i64>,
 }
+/// Mail dated at or after `ms`. Besides the exact test, a text bound a
+/// second wider lets SQLite read only that range of `messages_order`
+/// instead of every message of the account.
+fn since(ms: i64) -> String {
+    match iso(ms - 1000) {
+        Some(at) => format!("m.sent_at>='{at}' AND {DATE_MS}>={ms}"),
+        None => format!("{DATE_MS}>={ms}"),
+    }
+}
+/// Mail dated before `ms`, bounded the same way.
+fn before(ms: i64) -> String {
+    match iso(ms + 1000) {
+        Some(at) => format!("m.sent_at<'{at}' AND {DATE_MS}<{ms}"),
+        None => format!("{DATE_MS}<{ms}"),
+    }
+}
+/// `ms` in the stored `sent_at` format.
+fn iso(ms: i64) -> Option<String> {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|at| at.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+}
 impl Bounds {
     fn new_class(&self) -> String {
-        self.cutoff
-            .map_or("1".into(), |ms| format!("{DATE_MS}>={ms}"))
+        self.cutoff.map_or("1".into(), since)
     }
     /// None when this account has nothing in the Catch up class.
     fn catch_up_class(&self) -> Option<String> {
         let (cutoff, from) = (self.cutoff?, self.catch_up?);
-        (from < cutoff).then(|| format!("{DATE_MS}<{cutoff} AND {DATE_MS}>={from}"))
+        (from < cutoff).then(|| format!("{} AND {}", before(cutoff), since(from)))
     }
     /// Everything the queue reaches for this account.
     fn queued(&self) -> String {
         match (self.cutoff, self.catch_up) {
             (None, _) => "1".into(),
-            (Some(cutoff), Some(from)) => format!("{DATE_MS}>={}", from.min(cutoff)),
-            (Some(cutoff), None) => format!("{DATE_MS}>={cutoff}"),
+            (Some(cutoff), Some(from)) => since(from.min(cutoff)),
+            (Some(cutoff), None) => since(cutoff),
         }
     }
 }
