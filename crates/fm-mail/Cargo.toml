@@ -9,15 +9,15 @@ publish.workspace = true
 
 [dependencies]
 ammonia = "4.1.4"
-cssparser = "0.37"
-html5ever = "0.39"
+cssparser = "0.38"
+html5ever = "0.40"
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 markup5ever_rcdom = "=0.39.0"
 url = "2.5"
 lettre = { version = "0.11.23", default-features = false, features = ["builder"] }
 mail-parser = "0.11"
 regex = "1.13"
-sha2 = "0.10.8"
+sha2 = "0.11.0"
 
 [dev-dependencies]
 fm-google = { path = "../fm-google" }
