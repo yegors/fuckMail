@@ -121,6 +121,9 @@ Rectangle {
             color: Theme.ai; selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
             font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
             Accessible.name: card.title
+            ContextMenu.menu: null
+            TextMenuHandler {}
+            HoverHandler { cursorShape: Qt.IBeamCursor }
         }
         Text {
             objectName: "summaryCoverage"; visible: !card.busy && !!card.result && (card.result.stale || card.result.partial)

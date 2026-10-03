@@ -2502,21 +2502,23 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces), account = m_account;
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     const auto key = account + '\n' + id + '\n' + version;
-    const auto generation = m_generation;
-    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, generation, withRaw] {
-        if (generation != m_generation || account != m_account) return;
+    // A reload of the thread, such as a draft opening, must not cancel or
+    // drop the request: the reply is matched to its message by id and
+    // version, so only the account is checked.
+    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, withRaw] {
+        if (account != m_account) return;
         // The cache holds sources without raw text, so a raw request always reads.
         if (auto cached = m_sourceCache.object(key); !withRaw && cached && cached->lifecycle == lifecycle) {
             emit messageSourceReady(ticket, cached->data, true); return;
         }
-        request("message_source", account, {{"id",id},{"source_version",version}}, [this, ticket, account, key, lifecycle, generation, withRaw](auto result, bool ok) {
+        request("message_source", account, {{"id",id},{"source_version",version}}, [this, ticket, account, key, lifecycle, withRaw](auto result, bool ok) {
             const auto prepared = withoutRaw(result);
             if (ok && lifecycle == lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) {
                 const auto bytes = QJsonDocument(prepared).toJson(QJsonDocument::Compact).size();
                 m_sourceCache.insert(key, new ReaderSnapshot{prepared.toVariantMap(), lifecycle}, int(bytes + 128));
             }
-            if (account == m_account && generation == m_generation) emit messageSourceReady(ticket, (withRaw ? result : prepared).toVariantMap(), ok);
-        });
+            if (account == m_account) emit messageSourceReady(ticket, (withRaw ? result : prepared).toVariantMap(), ok);
+        }, true);
     });
     return ticket;
 }

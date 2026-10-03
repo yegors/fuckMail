@@ -1,5 +1,69 @@
 # Mail UI, reader and human composer
 
+## D186 — copy the reader's header text (Mail UI134)
+
+- `readerSubject`, an open message's `messageSenderName_<id>` and `messageSenderAddress_<id>`, and `summaryBody` are read-only, mouse-selectable text (`CopyText` in `MailView`). Each copies with the platform copy key and has the app's text menu (Copy) on right-click, with an I-beam cursor.
+- A click focuses them, as the message body does. Read-only focus leaves single-key shortcuts on.
+- The sender name stays inside its contact pill. A click with nothing selected opens the contact card, and it is selectable only while the message is open, so a folded message expands from its whole row. A long name is elided to its space.
+- The subject is rich text with a fixed 26px line (`line-height` with `-qt-line-height-type: fixed`). A search tints matches with spans, as before.
+
+Consumers: `MailView` (`CopyText`, `SenderPill`, reader heading and member header), `SummaryCard`; MailSelectionTest.
+
+## D185 — Reply after a forward; a message's own Reply (Mail UI133)
+
+- **Thread actions.** Reply, Reply all and Forward under a thread, and their keys, answer the newest message that isn't a forward you sent: a message of yours whose subject starts with "Fwd:" or "Fw:" (any case). A thread of nothing else answers its newest message.
+- **A message's "…" menu** answers that message (`MailBackend::beginDraftFrom`):
+  - `contextReply` and `contextForward` reply to or forward it.
+  - `contextReplyAll` shows when it has someone on To or Cc besides you and its sender. For your own message, only Cc counts, since Reply already goes to its To.
+  - The thread's own "…" menu shows Reply all when the thread's Reply all button does. A list row's menu has none.
+- **Switching** between Reply and Forward keeps the message the draft answers.
+- **Headers.** A message's header request (`requestMessageSource`) is kept through a reload of the same account's thread and accepted only for its own message and version. It is no longer dropped or cancelled when a draft opens.
+
+Consumers: `MailBackend` (`threadReplySource`, `beginDraftFrom`, `requestMessageSource`), `MailView` (`menuMember`, `replyAllFor`, `composeFrom`); MailSelectionTest.
+
+## D184 — a smaller reader subject (Mail UI132)
+
+- The reader subject (`readerSubject`) is 21px, weight 500, letter-spacing −0.02em, on a fixed line of 21 × 1.25 (`titleLine`, 26px at the default size), in Inbox, Sent and every other folder. Its box stays whole lines of its laid-out text. This replaces 28px on 1.15 lines.
+
+Consumers: `MailView` reader heading; MailSelectionTest.
+
+## D183 — forwards keep their files and show at once (Mail UI131)
+
+- A forward opens with the message's files as its attachment chips; `removeDraftAttachment_<id>` removes one. Send sends what is left.
+- The sent forward stays in its thread from Send until Gmail's copy takes its place, as Mail UI114 meant.
+- Switching between Reply and Forward moves the words written unless the draft holds files the writer added. A forward's starting files (its source message's) don't count; they stay with the retired forward, and a new forward starts with them again.
+
+Consumers: `MailBackend` (`draftAddedFiles`, outgoing previews), `ReplyComposer` attachment chips; Core86; MailSelectionTest.
+
+## D182 — section headers, starred contacts (Mail UI130)
+
+- **To review and Delayed headers** replace Mail UI117's band:
+  - The row is 40px tall with 24px side padding, no background and no rules. It scrolls with the list; nothing is pinned. A click still folds or opens the section.
+  - Left to right: the 12px icon (exclamation circle for To review, clock for Delayed), 7px, the label at 13px weight 500 in full ink and normal case, then the count chip 2px further on, space, and the chevron.
+  - The count chip (`mailGroupCount_<key>`) is at least 22×20 with 6px side padding and 5px corners, filled with ink at 8% and no border. Its text is 12px, weight 600, full ink, tabular figures.
+  - Date groups are unchanged.
+- **Starred contacts.** A contact card for anyone but yourself has a 28×28 star at the end of its name row (`senderCardStar`, 4px corners, `bg4` on hover, 14px icon).
+  - Unstarred, it is an outline at 40% ink with tooltip "Star this contact". Starred, it is filled amber with "Starred — click to remove".
+  - A click adds or removes `{account, email}` (the card's account and lowercase address) in `preferences.starred_senders`.
+  - Mail from a starred contact shows the filled amber star in place of the sender-kind glyph on list rows. In the reader, the star (`messageSenderStar_<id>`, tooltip "Starred contact") sits before the kind-correction button, which stays.
+
+Consumers: `MailView` (`GroupHeader`, `starredSenders`, rows, reader header), `SenderCard`, `FmIconItem` (`contactStar`, `contactStarFilled`); Core85; MailSelectionTest.
+
+## D181 — one-line mail text stays on one line (Mail UI129)
+
+- Subjects, senders and summaries shown on one line (list rows, the reader's subject, sender card and recent-mail rows, capture and source lists) read line breaks and runs of spaces as one space (`Theme.oneLine`). List row subject, sender and preview are also capped at one line, so a row never grows past its height.
+
+Consumers: `Theme`, `MailView`, `SenderCard`, `MessageSource`, `ReplyComposer`; MailSelectionTest (`oneLineRows`).
+
+## D180 — format bar and lists (Mail UI128)
+
+- **Format bar.** Under the body of every editable draft: Bold, Italic, Underline, Bulleted list, Numbered list, Undo, Redo. It is always shown, so selecting text moves nothing. A style is shown on (`selected`) where the selection or caret has it (`ReplyDocument.formats`). Tooltips name the shortcuts.
+- **Styles.** Bold, Italic and Underline (⌘B, ⌘I, ⌘U, or the bar and the editor's menu) apply to the selection. With nothing selected they apply to what is typed next at the caret, in the same undo step as the typing; moving the caret elsewhere drops the choice.
+- **Lists.** Bulleted (⌘⇧8) and Numbered (⌘⇧7) turn the selected paragraphs, or the caret's, into list items, or back into paragraphs when all already are. A list of the same kind just above is continued. Each is one undo step. Return adds the next item; Return on an empty item, or Backspace at an item's start, ends that item's list. Lists are one level.
+- **Saved and sent.** The HTML keeps `ul`, `ol` and `li`. The plain text puts "• " or "1. " before each item, as received lists read in plain text, and a reload compares the plain text the same way.
+
+Consumers: `ReplyDocument` (`format`, `formats`, `plainText`), `ReplyComposer`, `FmIconItem` (`bulletList`, `numberedList`); ComposerInputTest.
+
 ## D178 — sync resumes after a reconnect (Mail UI127)
 
 - When a live connection drops, the accounts whose sync this window owned are resumed on the next connection, with the same checks as at launch. Sync the user paused, and accounts that need signing in again, are not started.
@@ -73,7 +137,7 @@ Consumers: `MailView`, `MailBackend` account switching and view cache; `AccountP
 - **Account card.** Only ⋯ in the header, tooltip "Sync, pause, edit or remove". Connected: Sync now / Syncing… / Resume and sync now (unpauses first), Pause syncing / Resume syncing, rule, Edit account, rule, Remove account in red. Disconnected: Reconnect, rule, Edit account, rule, Remove account. The Labels and Signature rows are one button each: pointer cursor, 3% ink wash over 150 ms, "Edit ›" as a cue.
 - **Done sections.** `done:week` ("This Week"), `done:month` ("This Month"), then `done:YYYY-MM` ("August", "December 2025") and `done:undated`. The week starts on `mail_week_start`. Week and month fold through `collapsedSections`; older months start folded and open through `openSections`. The list sends `done_week_start`, `today` and `open_months`, rebuilds sections when the date or the setting changes, and builds no rows for folded sections. Hovering a folded header prefetches its rows.
 - **Settings → Mail.** "Week starts on", a seven-day dropdown after "Show drafts in the corner".
-- **Section headers.** To review and Delayed: a 36px `bg2` band with hairlines above and below; 11px medium uppercase label at 0.07em and 82% ink; the count in a 1px `line2` box, 4px radius, monospace 10.5px, full ink; the chevron. The band whose rows fill the top of the list stays pinned there until the next header pushes it up. Done and date groups keep the lighter rule. To review's icon is a circle with an exclamation mark, also in the header count.
+- **Section headers.** Replaced by Mail UI130: To review and Delayed are plain 40px rows with a count chip, not pinned. Done and date groups keep the lighter rule.
 - **Scrollbars.** The conversation list and thread reader bars are hidden at rest and when content fits. Real pointer movement over the view (not Qt's per-frame hover repeats), user scrolling, hover or drag shows the bar within 90 ms; it fades out over 260 ms after 0.9 s at rest. The 14px gutter stays reserved and still takes hover, clicks and drags. This replaces Mail UI61's always-visible bars for those two views.
 
 Consumers: `AccountCard`, `SettingsView`, `MailView`, `FmScrollBar`, `MailBackend`, `RemoteMailBackend`; Core84.

@@ -926,6 +926,21 @@ fn reply_reply_all_and_forward_reuse_exact_retained_source_and_threading() {
             .unwrap(),
         1
     );
+    // Until Gmail's copies arrive, the thread lists every send that joins it.
+    let thread = store
+        .google_sent(&scope.account, &json!({"conversation_id":cid}))
+        .unwrap();
+    let mut modes: Vec<_> = thread["outgoing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            assert_eq!(row["conversation_id"], cid);
+            row["headers"]["mode"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    modes.sort();
+    assert_eq!(modes, ["forward", "reply", "reply_all"]);
 }
 
 #[test]

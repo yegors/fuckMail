@@ -147,6 +147,9 @@ QtObject {
     }
     function eventOpen(event) { const answer = rsvpOf(event); return answer === "maybe" || answer === "" }
     function eventDeclined(event) { return rsvpOf(event) === "no" }
+    // Text for one line: line breaks and runs of spaces read as one space.
+    // Mail subjects and summaries sometimes carry a stray line break.
+    function oneLine(text) { return String(text || "").replace(/\s+/g, " ").trim() }
     // Sender initials: both first letters when the second word is capitalised,
     // otherwise the first letter. Punctuation and symbols count as spaces.
     function initialsOf(name) {

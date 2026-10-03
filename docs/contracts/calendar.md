@@ -2,6 +2,12 @@
 
 
 
+## D179 — every event shows in the Mail timeline (Calendar42)
+
+- **Rows.** The Mail timeline shows up to three rows. An event goes in the first row where its whole title fits. Otherwise it opens a new row while there are fewer than three. Otherwise it shares a row whose last event it does not overlap in time, choosing the one whose title loses least. That earlier title then ends with an ellipsis where the event starts; hover still shows it whole. Only an event overlapping three others in time is left out of the strip.
+
+Consumers: `TodayStrip`; CalendarSearchTest.
+
 ## D166 — no scope banner (Calendar41)
 
 - Calendar no longer names a hidden-calendar or current-account restriction above the grid, and has no Show all button there. The header's All calendars switch does what Show all did: clears `selected_calendars` and sets `calendar_account_visibility` to `all`. This replaces the banner described under Calendar coverage below.

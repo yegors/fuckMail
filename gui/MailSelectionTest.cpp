@@ -65,6 +65,13 @@ class MailSelectionTest {
         QString missingMember;
         // Plain-text bodies by conversation, served without HTML.
         QHash<QString,QString> texts;
+        // Files on each thread's message; a forward starts with them, as in Core.
+        QJsonArray sourceFiles;
+        // Messages after each thread's first, and headers by message.
+        QJsonArray laterMessages;
+        QHash<QString,QJsonArray> sourceMetadata;
+        // Every draft_create request, in order.
+        QList<QJsonObject> creations;
         // Core's Done group for a row: This Week from the requested weekday,
         // the rest of this month, then its month. Row times here are midday UTC.
         static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
@@ -147,7 +154,8 @@ class MailSelectionTest {
                     }
                     else if (method == "message_source") {
                         const auto params = request["params"].toObject();
-                        result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},{"metadata",QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}}}};
+                        result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},
+                            {"metadata",sourceMetadata.value(params["id"].toString(),QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}})}};
                     }
                     else if (method == "attachment") result = attachments.value(request["params"].toObject()["id"].toString());
                     else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}},
@@ -176,15 +184,25 @@ class MailSelectionTest {
                     else if (method == "draft_get") result = {{"conversation_id",request["params"].toObject()["conversation_id"]},{"account","personal"},{"revision",0}};
                     else if (method == "draft_save" && drafts.contains(draftId)) {
                         const auto params = request["params"].toObject(); auto draft = drafts[draftId];
-                        draft["body"] = params["body"]; draft["discarded"] = false; draft["revision"] = params["expected_revision"].toInteger()+1; drafts[draftId] = draft; result = draft;
+                        draft["body"] = params["body"]; draft["discarded"] = false; draft["revision"] = params["expected_revision"].toInteger()+1;
+                        if (params.contains("attachment_ids")) {
+                            QJsonArray kept;
+                            for (const auto &file : draft["attachments"].toArray()) if (params["attachment_ids"].toArray().contains(file.toObject()["id"])) kept.append(file);
+                            draft["attachment_ids"] = params["attachment_ids"]; draft["attachments"] = kept;
+                        }
+                        drafts[draftId] = draft; result = draft;
                     }
                     else if (method == "draft_create") {
-                        const auto params = request["params"].toObject(); const auto id = QString("reply-%1").arg(drafts.size());
+                        const auto params = request["params"].toObject(); const auto id = QString("reply-%1").arg(drafts.size()); creations.append(params);
                         const auto body = params["mode"]=="forward" ? QString("\n\n---------- Forwarded message ----------\n> Retained plain body") : QString();
                         result = {{"account","personal"},{"draft_id",id},{"conversation_id",params["conversation_id"]},{"mode",params["mode"]},{"source_message_id",params["source_message_id"]},
                             {"revision",1},{"discarded",false},{"body",body},{"subject",params["mode"]=="new" ? "" : "Re: Labeled message a"},
                             {"to_recipients",params["mode"]=="new" ? QJsonArray{} : QJsonArray{QJsonObject{{"email","sender@example.test"},{"name","Sender"}}}},
                             {"cc_recipients",QJsonArray{}},{"bcc_recipients",QJsonArray{}},{"attachment_ids",QJsonArray{}},{"attachments",QJsonArray{}}};
+                        if (params["mode"]=="forward") {
+                            QJsonArray ids; for (const auto &file : sourceFiles) ids.append(file.toObject()["id"]);
+                            result["attachment_ids"] = ids; result["attachments"] = sourceFiles;
+                        }
                         drafts[id] = result;
                     }
                     else if (method == "conversation") {
@@ -195,9 +213,14 @@ class MailSelectionTest {
                             ids=QJsonArray::fromVariantList(row.toMap().value("message_ids").toList()); revision=row.toMap().value("revision").toLongLong();
                             if (texts.contains(id)) subject=row.toMap().value("subject").toString();
                         }
-                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
+                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",sourceFiles}}}},
                             {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
                         if (!subject.isEmpty()) result["subject"]=subject;
+                        if (!laterMessages.isEmpty()) {
+                            auto messages=result["messages"].toArray(); auto ids=result["message_ids"].toArray();
+                            for (const auto &message : laterMessages) { messages.append(message); ids.append(message.toObject()["id"]); }
+                            result["messages"]=messages; result["message_ids"]=ids;
+                        }
                     }
                     peer->write(reply(request["id"].toString(),result));
                 }
@@ -554,7 +577,7 @@ class MailSelectionTest {
             const auto markedHeight=subject->height();
             if (qEnvironmentVariableIsSet("FM_SELECTION_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_SELECTION_CAPTURE"));
             h.backend.m_searchTerms.clear(); emit h.backend.searchTermsChanged();
-            await([&]{return subject->property("textFormat").toInt()==Qt::PlainText && !find(window->contentItem(),"mailSubjectMatch_h1")->isVisible();},"clearing the search removes the tints");
+            await([&]{return !subject->property("text").toString().contains("background-color") && !find(window->contentItem(),"mailSubjectMatch_h1")->isVisible();},"clearing the search removes the tints");
             settle();
             qInfo()<<"subject heights"<<markedHeight<<subject->height();
             require(qAbs(markedHeight-subject->height())<1,"a tinted subject keeps the heading's line height");
@@ -974,6 +997,34 @@ class MailSelectionTest {
             QMetaObject::invokeMethod(popup(),"close");
             await([&]{return !popup();},"the card closes");
             require(address->property("selectedText").toString().isEmpty(),"closing the card clears its selection");
+        }
+        {
+            // A contact starred from their card: an amber star by their name in
+            // the reader; starring again removes it. Your own card has no star.
+            auto *name=find(window->contentItem(),"participantName_first");
+            move(name->mapToScene(name->boundingRect().center()));
+            await([&]{return popup() && popup()->property("email")=="priya@example.test" && popup()->property("opened").toBool();},"card opens to star");
+            auto *cardItem=qvariant_cast<QQuickItem *>(popup()->property("contentItem"));
+            QQuickItem *star=nullptr; await([&]{star=find(cardItem,"senderCardStar");return star && star->isVisible();},"the card offers a star");
+            require(star->property("tip").toString()=="Star this contact" && star->property("iconName")=="contactStar","an unstarred contact shows the outline");
+            require(QMetaObject::invokeMethod(star,"clicked"),"star the contact");
+            const auto starredList=h.backend.preferences().value("starred_senders").toList();
+            require(starredList.size()==1 && starredList[0].toMap()["email"]=="priya@example.test" && starredList[0].toMap()["account"]==h.backend.account(),"starring saves the contact for this account");
+            require(star->property("iconName")=="contactStarFilled" && star->property("tip").toString()=="Starred — click to remove","the card shows the contact starred");
+            auto *readerStar=find(window->contentItem(),"messageSenderStar_first");
+            require(readerStar && readerStar->isVisible(),"a starred contact's message shows a star by their name");
+            require(QMetaObject::invokeMethod(star,"clicked"),"unstar the contact");
+            require(h.backend.preferences().value("starred_senders").toList().isEmpty() && !readerStar->isVisible(),"starring again removes it");
+            QMetaObject::invokeMethod(popup(),"close"); move({5,5});
+            await([&]{return !popup();},"the star card closes");
+            auto *self=find(window->contentItem(),"senderAvatar_self");
+            move(self->mapToScene(self->boundingRect().center()));
+            await([&]{return popup() && popup()->property("email")=="test@example.test" && popup()->property("opened").toBool();},"own card opens");
+            auto *ownCard=qvariant_cast<QQuickItem *>(popup()->property("contentItem"));
+            auto *ownStar=find(ownCard,"senderCardStar");
+            require(!ownStar || !ownStar->isVisible(),"your own card has no star");
+            QMetaObject::invokeMethod(popup(),"close"); move({5,5});
+            await([&]{return !popup();},"own card closes");
         }
         auto heading=find(window->contentItem(),"messageHeading_first");
         move(heading->mapToScene({heading->width()/2,heading->height()/2}));
@@ -1572,15 +1623,16 @@ public:
         await([&]{return !h.backend.m_loading && shownRows(h.backend)==8+10;},"older months fold");
         settle();
         auto *list=find(window->contentItem(),"conversationList"); require(list,"month list");
-        // To review's band stays at the top while its rows scroll, and only then.
-        auto *sticky=find(window->contentItem(),"mailStickyGroup"); require(sticky,"sticky band");
-        require(!sticky->isVisible(),"no sticky band while the real header shows");
+        // To review's header: a 40px row with a count chip, and it scrolls
+        // away with its rows; nothing is pinned over the list.
+        auto *review=find(window->contentItem(),"mailGroup_review"), *chip=find(window->contentItem(),"mailGroupCount_review");
+        require(review && chip && review->height()==40 && chip->isVisible() && chip->width()>=22 && chip->height()==20,"To review's header is 40px with a count chip");
+        require(!find(window->contentItem(),"mailStickyGroup"),"no header is pinned over the list");
         if (qEnvironmentVariableIsSet("FM_MONTH_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_MONTH_CAPTURE")+"/months.png");
-        list->setProperty("contentY",list->property("originY").toReal()+120); settle();
-        require(sticky->isVisible() && sticky->property("stuck")=="review" && std::abs(sticky->mapToScene({0,0}).y()-list->mapToScene({0,0}).y())<1,"To review's band holds the top while its rows scroll");
-        if (qEnvironmentVariableIsSet("FM_MONTH_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_MONTH_CAPTURE")+"/sticky.png");
-        list->setProperty("contentY",list->property("originY")); settle();
-        require(!sticky->isVisible(),"back at the top the band lets go");
+        const auto headerTop=review->mapToScene({0,0}).y();
+        list->setProperty("contentY",list->property("contentY").toReal()+120); settle();
+        require(std::abs(review->mapToScene({0,0}).y()-(headerTop-120))<1,"To review's header scrolls away with its rows");
+        list->setProperty("contentY",list->property("originY").toReal()-list->property("topMargin").toReal()); settle();
         QMetaObject::invokeMethod(list,"positionViewAtEnd"); settle();
         // A folded month in the middle of the screen.
         QQuickItem *header=nullptr; QString group;
@@ -1662,6 +1714,35 @@ public:
         for (int m=1; m<6; ++m) { auto *header=find(window->contentItem(),"mailGroup_"+monthKeys[m]); require(collapsed(monthKeys[m]),"every older month folds again"); Q_UNUSED(header); }
         qInfo()<<"A search opens every month with matches and leaves the mailbox's folds alone.";
     }
+    // A subject or summary with a stray line break reads on one line, and its
+    // row stays one row high instead of spilling onto its neighbours.
+    static void oneLineRows() {
+        Harness h;
+        auto broken=h.rows[1].toMap(); broken["subject"]="Get 50% Off All Seedance Models on OpenArt\n🎬"; broken["summary"]="You can get 50% off\n\nall models this week."; h.rows[1]=broken;
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("OneLine.qml")));
+        require(!qml.rootObjects().isEmpty(),"one-line MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"one-line window exposed");
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && find(window->contentItem(),"mailSubjectMatch_b");},"the rows lay out");
+        QElapsedTimer t; t.start(); while(t.elapsed()<200) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        auto *subject=find(window->contentItem(),"mailSubjectMatch_b")->parentItem(), *preview=find(window->contentItem(),"mailPreview_b");
+        auto *row=find(window->contentItem(),"conversationRow_b"), *next=find(window->contentItem(),"conversationRow_c");
+        require(subject->property("lineCount").toInt()==1 && !subject->property("text").toString().contains('\n'),"a subject with a line break reads on one line");
+        require(preview->property("lineCount").toInt()==1 && !preview->property("text").toString().contains('\n'),"a summary with line breaks reads on one line");
+        const auto bottom=[](QQuickItem *item){ return item->mapToScene({0,item->height()}).y(); };
+        require(bottom(preview)<=bottom(row)+0.5 && subject->mapToScene({0,0}).y()>=row->mapToScene({0,0}).y()-0.5 && bottom(row)<=next->mapToScene({0,0}).y()+0.5,"the row's text stays inside its row");
+        // A starred sender's rows show the star where the kind would be.
+        auto *kind=find(window->contentItem(),"mailSenderKind_a");
+        require(kind && kind->property("name")!="contactStarFilled","an unstarred sender shows its kind");
+        h.backend.m_preferences["starred_senders"]=QVariantList{QVariantMap{{"account",h.backend.account()},{"email","sender@example.test"}}}; emit h.backend.preferencesChanged();
+        QCoreApplication::processEvents();
+        require(kind->isVisible() && kind->property("name")=="contactStarFilled","a starred sender's row shows the star");
+        qInfo()<<"Subjects and summaries with line breaks read on one line and stay in their rows.";
+    }
     // A search result's reader: the subject keeps its one line with its
     // match tinted, nothing opens a gap below it, and Show match goes to the
     // first match in the body.
@@ -1671,7 +1752,7 @@ public:
         for (int n=0; n<40; ++n) paragraphs<<QString("Paragraph %1. Please review the attached engagement letter before we meet.").arg(n);
         paragraphs<<"Our valuation of the shares is attached.";
         for (int n=40; n<60; ++n) paragraphs<<QString("Paragraph %1. Regards, and thank you for your time.").arg(n);
-        h.rows={QVariantMap{{"id","match"},{"subject","Valuation - Engagement letter & RFI"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
+        h.rows={QVariantMap{{"id","match"},{"subject","Valuation - Engagement letter & RFI for the quarter"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
             {"message_ids",QVariantList{"match-original"}},{"matching_message_ids",QVariantList{"match-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},{"group","held"},{"kind","people"},{"unread",false},{"starred",true}}};
         h.texts["match"]=paragraphs.join("\n\n");
         QTemporaryDir copy; copyModule(copy);
@@ -1700,8 +1781,8 @@ public:
         // it, or without that row the reader starts right under it.
         const auto headingFits=[&](int lines, const char *step){
             const auto below=(meta->isVisible() ? meta : reader)->mapToScene({0,0}).y()-(heading->mapToScene({0,0}).y()+heading->height());
-            if (std::abs(subjectLine->height()-lines*titleLine)>0.5 || std::abs(below-(meta->isVisible() ? 16 : 0))>0.5) {
-                qWarning()<<step<<"subject box"<<subjectLine->height()<<"for"<<lines<<"lines of"<<titleLine<<"; next row"<<below<<"below";
+            if (std::abs(subjectLine->height()-lines*titleLine)>0.5 || std::abs(subject->property("contentHeight").toReal()-lines*titleLine)>1 || std::abs(below-(meta->isVisible() ? 16 : 0))>0.5) {
+                qWarning()<<step<<"subject box"<<subjectLine->height()<<"text"<<subject->property("contentHeight").toReal()<<"for"<<lines<<"lines of"<<titleLine<<"; next row"<<below<<"below";
                 require(false,"the subject's box is its own lines");
             }
         };
@@ -2118,19 +2199,6 @@ public:
         h.holdLists=false;
         QObject::disconnect(frame);
         if (!problems.isEmpty()) { problems.removeDuplicates(); qWarning()<<problems.mid(0,12); require(false,"folding a month repaints only what changes"); }
-        // Scrolled into To review, with a thread open: its band stays stuck
-        // at the top through every frame of a fold below.
-        h.backend.selectConversation("r2"); settle(300);
-        list->setProperty("contentY",list->property("originY").toReal()+60); settle(300);
-        auto *sticky=find(window->contentItem(),"mailStickyGroup"); require(sticky && sticky->isVisible(),"To review's band is stuck");
-        QStringList bandProblems;
-        const auto bandFrame=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{ if (!sticky->isVisible()) bandProblems<<"band hidden"; if (list->opacity()<1) bandProblems<<"list dimmed"; });
-        for (int round=0; round<2; ++round) {
-            QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,monthKeys[1]),Q_ARG(QVariant,QVariant::fromValue(find(window->contentItem(),"mailGroup_"+monthKeys[1]))));
-            settle(300);
-        }
-        QObject::disconnect(bandFrame);
-        if (!bandProblems.isEmpty()) { bandProblems.removeDuplicates(); qWarning()<<bandProblems; require(false,"the stuck band holds while a month folds below"); }
         // Scrolled far down with many months open: no frame of a fold or an
         // opening is blank.
         h.backend.setSections({},monthKeys.mid(0,12));
@@ -2201,6 +2269,102 @@ public:
     }
     // Reply after discarding the thread's reply reopens it, and it stays open
     // through later refreshes; typing revives it.
+    // After a forward, the thread's Reply and Forward answer the newest
+    // message that isn't it. A message's own menu answers that message, with
+    // Reply all when it has other people on it.
+    static void replySources() {
+        Harness h;
+        h.laterMessages={QJsonObject{{"id","a-forward"},{"unread",false},{"starred",false},{"sender_name","You"},{"sender_email","test@example.test"},{"subject","Fwd: Labeled message a"},
+            {"sent_at","2026-09-15T10:00:00Z"},{"text","---------- Forwarded message ----------\n> Retained plain body"},{"source_available",true},{"source_version",QString(64,'b')},{"sent",true}}};
+        h.sourceMetadata["a-original"]=QJsonArray{QJsonObject{{"label","To"},{"people",QJsonArray{QJsonObject{{"name","Test"},{"email","test@example.test"}}}}},
+            QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Duncan"},{"email","duncan@example.test"}}}}}};
+        h.sourceMetadata["a-forward"]=QJsonArray{QJsonObject{{"label","To"},{"people",QJsonArray{QJsonObject{{"name","Accounts"},{"email","accounts@example.test"}}}}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Sources.qml")));
+        require(!qml.rootObjects().isEmpty(),"reply-source MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"reply-source window exposed");
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
+        const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible(); };
+        const auto press=[&](const QString &name){ auto *item=find(window->contentItem(),name); require(item && item->isVisible() && item->isEnabled(),qPrintable("visible control "+name)); require(QMetaObject::invokeMethod(item,"clicked"),"control handler"); };
+        const auto created=[&](int count, const QString &mode, const QString &source, const char *what){
+            await([&]{return h.creations.size()==count && !h.backend.m_resolvingDraft && !h.backend.m_draftDirty;},what);
+            require(h.creations.last()["mode"]==mode && h.creations.last()["source_message_id"]==source,what);
+        };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{return h.backend.m_conversation.value("messages").toList().size()==2;},"the thread with its forward loads");
+        // The forward is the newest message; the thread still answers Sender.
+        press("forwardButton"); created(1,"forward","a-original","Forward forwards the message, not the forward");
+        h.backend.beginDraft("reply"); created(2,"reply","a-original","Reply after a forward answers the message, not the forward's recipient");
+        // Each message's own menu answers that message.
+        QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QVariant("a-original")));
+        await([&]{return shown("messageMore_a-original");},"the earlier message opens");
+        press("messageMore_a-original");
+        await([&]{return shown("contextReply") && shown("contextReplyAll") && shown("contextForward");},"a message Cc'd to someone offers Reply all");
+        press("contextReplyAll"); created(3,"reply_all","a-original","the message's Reply all answers it");
+        press("messageMore_a-forward");
+        await([&]{return shown("contextReply") && shown("contextForward");},"the forward's menu");
+        require(!shown("contextReplyAll"),"your own message with no Cc has no Reply all");
+        press("contextReply"); created(4,"reply","a-forward","the forward's own Reply answers the forward");
+        qInfo()<<"Thread actions skip a sent forward, and each message's menu answers that message.";
+    }
+    // The reader's subject, a sender's name and address, and a summary select
+    // with the mouse and copy with the copy key and the text menu.
+    static void headerCopies() {
+        Harness h;
+        h.laterMessages={QJsonObject{{"id","a-reply"},{"unread",false},{"starred",false},{"sender_name","Nicole Doutre"},{"sender_email","nicole@example.test"},
+            {"sent_at","2026-09-15T10:00:00Z"},{"text","Thanks, paid."},{"source_available",false},{"sent",false}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Copies.qml")));
+        require(!qml.rootObjects().isEmpty(),"copy MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"copy window exposed");
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{return h.backend.m_conversation.value("messages").toList().size()==2;},"the thread loads");
+        h.backend.m_conversation["subject"]="Invoice 2026036191 for Matter 210631"; emit h.backend.conversationChanged();
+        QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QVariant("a-original")));
+        const auto copies=[&](const QString &name, const QString &expected){
+            QQuickItem *item=nullptr;
+            await([&]{ item=find(window->contentItem(),name); return item && item->isVisible() && item->width()>10; },qPrintable("shown: "+name));
+            settle(200);
+            const auto from=item->mapToScene({1,3}), to=item->mapToScene({item->width()-1,item->height()-3});
+            QTest::mousePress(window,Qt::LeftButton,{},from.toPoint()); settle(20);
+            QTest::mouseMove(window,((from+to)/2).toPoint()); settle(20);
+            QTest::mouseMove(window,to.toPoint()); settle(20);
+            QTest::mouseRelease(window,Qt::LeftButton,{},to.toPoint()); settle(150);
+            const auto selected=item->property("selectedText").toString();
+            QGuiApplication::clipboard()->clear();
+            QTest::keyClick(window,Qt::Key_C,Qt::ControlModifier); settle(50);
+            const auto copied=QGuiApplication::clipboard()->text();
+            if (selected!=expected || copied!=expected) { qWarning()<<name<<"selected"<<selected<<"copied"<<copied<<"focus"<<item->hasActiveFocus(); require(false,qPrintable("select and copy "+name)); }
+            // The text menu copies the same selection.
+            QGuiApplication::clipboard()->clear();
+            QTest::mouseClick(window,Qt::RightButton,{},item->mapToScene({item->width()/2,item->height()/2}).toPoint()); settle(150);
+            std::function<QQuickItem*(QQuickItem*)> shownCopy=[&](QQuickItem *at)->QQuickItem* {
+                if (at->objectName()=="textMenuCopy" && at->isVisible()) return at;
+                for (auto *child : at->childItems()) if (auto *found=shownCopy(child)) return found;
+                return nullptr;
+            };
+            QQuickItem *menuCopy=nullptr; await([&]{ menuCopy=shownCopy(window->contentItem()); return menuCopy && menuCopy->isEnabled(); },qPrintable("text menu on "+name));
+            require(QMetaObject::invokeMethod(menuCopy,"clicked"),"text menu Copy"); settle(50);
+            require(QGuiApplication::clipboard()->text()==expected,qPrintable("text menu copies "+name));
+        };
+        copies("readerSubject","Invoice 2026036191 for Matter 210631");
+        copies("messageSenderName_a-reply","Nicole Doutre");
+        copies("messageSenderAddress_a-reply","nicole@example.test");
+        copies("summaryBody","You granted Example Mail access to your account data. Review access if you did not authorize it.");
+        qInfo()<<"Subject, sender, address and summary select and copy.";
+    }
     static void replyAfterDiscard() {
         Harness h;
         h.drafts["a"] = {{"account","personal"},{"draft_id","a"},{"conversation_id","a"},{"mode","reply"},{"source_message_id","a-original"},{"legacy_reply",true},
@@ -2219,6 +2383,8 @@ public:
         const auto panelShown=[&]{ auto *panel=find(window->contentItem(),"replyPanel"); return mail->property("replyOpen").toBool() && panel && panel->isVisible() && panel->height()>0; };
         h.backend.m_folder="inbox"; h.backend.loadConversations();
         await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.sourceFiles={QJsonObject{{"id","file-plan"},{"name","plan.pdf"},{"mime_type","application/pdf"},{"size",2048},{"state","available"}},
+            QJsonObject{{"id","file-notes"},{"name","notes.txt"},{"mime_type","text/plain"},{"size",300},{"state","available"}}};
         h.backend.selectConversation("a");
         await([&]{return h.backend.m_draft.value("draft_id")=="a" && !h.backend.m_conversation.value("messages").toList().isEmpty();},"the thread and its reply load");
         press("replyButton"); await(panelShown,"Reply opens the thread's reply");
@@ -2262,6 +2428,19 @@ public:
         require(body.startsWith("Half a thought") && body.contains("Forwarded message"),"the words written come along, above the forwarded message");
         require(!blanked && member && find(window->contentItem(),"messageMember_a-original")==member.data(),"the thread is not blanked or rebuilt");
         require(prominent("forwardButton") && !prominent("replyButton") && shown("replyButton"),"Forward is marked, Reply is still there");
+        // The forward carries the message's files, each removable.
+        await([&]{return shown("removeDraftAttachment_file-plan") && shown("removeDraftAttachment_file-notes");},"the forward shows the message's files");
+        const auto forwardId=h.backend.m_draft.value("draft_id").toString();
+        press("removeDraftAttachment_file-plan");
+        await([&]{return h.drafts[forwardId]["attachment_ids"].toArray()==QJsonArray{"file-notes"} && !h.backend.m_draftDirty;},"removing a file saves the forward without it");
+        require(!shown("removeDraftAttachment_file-plan") && shown("removeDraftAttachment_file-notes"),"only the kept file remains");
+        // The files it started with don't hold the forward back: Reply takes
+        // the words and retires it.
+        press("replyButton");
+        await([&]{return h.backend.m_draft.value("mode")=="reply" && h.drafts[forwardId]["discarded"].toBool();},"Reply retires the forward");
+        require(h.backend.m_draft.value("body").toString().startsWith("Half a thought") && h.backend.m_draft.value("attachment_ids").toList().isEmpty(),"the words move back, the files stay with the forward");
+        press("forwardButton");
+        await([&]{return h.backend.m_draft.value("mode")=="forward" && h.backend.m_draft.value("attachment_ids").toList().size()==2 && panelShown();},"a new forward starts with every file again");
         // Discard goes back to the buttons.
         settle(300); press("discardReply"); await([&]{return find(window->contentItem(),"confirmDiscardDraft");},"discard asks");
         settle(100); press("confirmDiscardDraft");
@@ -2554,6 +2733,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();replyAfterDiscard();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

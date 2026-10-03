@@ -6,6 +6,8 @@
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickTextDocument>
+#include <QTextFormat>
+class QKeyEvent;
 #include <QtQml/qqmlregistration.h>
 
 class SpellChecker;
@@ -33,6 +35,9 @@ class ReplyDocument : public QObject {
     /// Disables format(), pastePlain(), undo() and redo(). The TextEdit's own
     /// readOnly must be bound separately.
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
+    /// What the selection, or the caret with what is typed next, carries:
+    /// bold, italic, underline, bullet and numbered, each true or false.
+    Q_PROPERTY(QVariantMap formats READ formats NOTIFY formatsChanged)
     /// Misspelled words to underline, as {start, length} document positions.
     /// Display only; updated shortly after each edit or recheck.
     Q_PROPERTY(QVariantList misspellings READ misspellings NOTIFY misspellingsChanged)
@@ -50,6 +55,7 @@ public:
     QString html() const;
     bool readOnly() const { return m_readOnly; }
     QVariantList misspellings() const { return m_misspellings; }
+    QVariantMap formats() const { return m_formats; }
     void setReadOnly(bool value) { if (m_readOnly == value) return; m_readOnly = value; emit readOnlyChanged(); }
     /// Marks the start of a different authoring session (another draft or
     /// reply target). On a change it clears undo/redo, so undo cannot bring
@@ -62,8 +68,11 @@ public:
     /// When only the formatting changed, the selection is kept. Emits
     /// textChanged but not contentChanged.
     Q_INVOKABLE void load(const QString &body, const QString &html);
-    /// Toggles "bold", "italic" or "underline" on the editor's selection.
-    /// Other values are ignored.
+    /// Toggles "bold", "italic" or "underline" on the editor's selection or,
+    /// with none, on the text typed next at the caret. "bullet" or "numbered"
+    /// turns the selected paragraphs (or the caret's) into that list, or out
+    /// of it when they all are already; a list just above with the same style
+    /// is continued. Each is one undo step. Other values are ignored.
     Q_INVOKABLE void format(const QString &kind);
     /// Replaces the selection with the clipboard's plain text.
     Q_INVOKABLE void pastePlain();
@@ -96,6 +105,7 @@ public:
 signals:
     void readOnlyChanged();
     void misspellingsChanged();
+    void formatsChanged();
     /// The textDocument or editor property changed.
     void documentChanged();
     /// The document content changed for any reason, including load().
@@ -107,6 +117,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 private slots:
     void caretMoved();
+    void updateFormats();
 private:
     /// A word the checker corrected automatically, and the undo depth right
     /// after it, so Undo can restore the typed word in place.
@@ -120,6 +131,9 @@ private:
     /// Runs a highlighting pass. Layout-only format changes can still emit
     /// contentsChanged; these must not look like edits.
     template <class Change> void restyle(Change change);
+    void toggleList(bool numbered);
+    bool leaveList(const QKeyEvent *key);
+    void typedAt(int position, int removed, int added);
     QPointer<QQuickTextDocument> m_document;
     QPointer<QQuickItem> m_editor;
     SpellHighlighter *m_spelling = nullptr;
@@ -133,4 +147,9 @@ private:
     bool m_loading = false;
     bool m_readOnly = false;
     bool m_restyling = false;
+    // Bold, italic or underline chosen with nothing selected, for what is
+    // typed next at m_typingAt; the caret moving elsewhere drops it.
+    QTextCharFormat m_typing;
+    int m_typingAt = -1;
+    QVariantMap m_formats;
 };

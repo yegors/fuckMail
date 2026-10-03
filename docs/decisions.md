@@ -2127,3 +2127,86 @@ On the D171 build the founder's four-account profile still timed out three times
 - **Not found yet.** What held the writer for 15 s. The slow-step log is for the next occurrence.
 
 Local assistance31, Mail UI127. No schema, fixture or protocol change.
+
+## D179 — every event shows in the Mail timeline (2026-10-02T17:00:00Z)
+
+The founder's Mail timeline left out "How to Grow Growth" (12:00–12:30), which Day view showed.
+
+- **Found.** The strip gave each event a row by the full width of its title, not its time, and showed three rows. Long titles at 10:30 and 11:30 filled every row past 12:00, so the 12:00 event went to a hidden fourth row with nothing to say so.
+- **Change.** A title that fits keeps its row as before, and a fourth row only takes events that overlap three others in time. Otherwise an event shares the row it fits by time where the title before it loses least; that title is cut short with an ellipsis where the event starts, and its tooltip keeps it whole.
+- **Evidence.** CalendarSearchTest lays out the founder's six events of that day at 1280 px. Before the change "How to Grow Growth" was hidden; after it all six show, no two in a row overlap and none is hidden.
+- **Open.** Four events at the same time still hide the fourth; the strip has no overflow mark yet.
+
+Calendar42. No schema, fixture or protocol change.
+
+## D180 — format bar always shown; bulleted and numbered lists (2026-10-02T18:30:00Z)
+
+The founder found that the composer's B/I/U bar appeared only with a selection, which moved the form as it came and went. They asked for it to be always shown and usable, with bulleted and numbered lists.
+
+- **Change.** The bar is always under an editable draft's body, and it adds Bulleted and Numbered list buttons. A style is shown on where the selection or caret has it. With nothing selected, Bold, Italic and Underline apply to what is typed next, joined to the typing's undo step. Lists toggle on the selected paragraphs and continue a list of the same kind just above. Return on an empty item and Backspace at an item's start end the item's list; Qt's editor would otherwise add an empty item and join paragraphs. Lists are one level, since the sanitised HTML keeps no list styles to nest by.
+- **Plain text.** Qt's plain text drops list markers. The draft's plain text, which is authoritative on reload and is sent as the text part, now puts "• " or "1. " before items, as the engine writes received lists. Reload compares it the same way, so a saved list keeps its HTML.
+- **Evidence.** ComposerInputTest: the bar shows with nothing selected, and selecting text leaves the form's height unchanged. Bold chosen at the caret styles the typed words and not those around them. ⌘⇧8 turns two paragraphs into "• First\n• Second"; Return adds an item, and Return on an empty one ends the list. A list saves and loads unchanged, Numbered numbers and un-numbers the chosen items in one undo step, and Backspace at an item's start ends its item.
+
+Mail UI128. No schema, fixture or protocol change.
+
+## D181 — one-line mail text stays on one line (2026-10-02T20:45:00Z)
+
+The founder's Inbox drew an OpenArt row over its neighbours.
+
+- **Found.** That message's stored subject ends with a line break before an emoji. List rows show subjects as plain text without wrapping, but a plain-text Text still breaks at a literal newline. The row's text became two lines tall, centred in a one-row delegate, and spilled over the rows around it. Summaries had the same exposure, since only snippets had their whitespace collapsed.
+- **Change.** Text shown on one line reads line breaks as spaces (`Theme.oneLine`), and the list row's subject, sender and preview are capped at one line.
+- **Evidence.** MailSelectionTest `oneLineRows`: a subject and a summary with line breaks each read on one line and stay inside their row. With the old list row the test fails at the subject.
+- **Not changed.** The stored subject keeps its line break; the engine's header unfolding was not examined.
+
+Mail UI129. No schema, fixture or protocol change.
+
+## D182 — To review and Delayed headers; starred contacts (2026-10-02T21:30:00Z)
+
+The founder supplied an October 2 offline Flight Progress export ([research](research/flight-progress-v2.md#october-2-offline-export--d182)) with notes that replace the earlier item on section headers. They also pointed out that starring a sender, shown in earlier mockups, was never built.
+
+- **Headers.** To review and Delayed drop the full-width band, the uppercase label, the boxed count and the pinned header. They become a 40px row: icon, 13px weight-500 label in full ink, an ink-8% count chip, and the chevron. They scroll away with their rows. Date groups are unchanged. This supersedes D168's band and sticky header.
+- **Starred contacts.** Starred from the contact card, kept per account and lowercase address in a new preference, `starred_senders`, shaped and validated like `html_senders`. The engine writes it, and the CLI reads and saves it like other preferences. Such a sender's list rows show an amber star in place of the kind glyph, and the reader shows the star beside the name. Your own card has no star. This sender star is separate from message stars, which stay Delay (C17); it changes no state, count or filter.
+- **Evidence.** MailSelectionTest: To review's header is 40px with a count chip and scrolls with its rows, and nothing is pinned. Starring Priya from her card saves `{account, email}`, turns the card's star filled and shows a star by her name in the reader; starring again removes both. Your own card has no star. A starred sender's list row shows the star. fm-core `starred_senders_are_per_account_lowercase_and_durable` checks the default, the round trip and rejections (uppercase, repeats, no address, missing email, not a list).
+
+Mail UI130, Core85, CLI61. No schema, fixture or protocol change.
+
+## D183 — forwards keep their files and show in their thread at once (2026-10-02T23:00:00Z)
+
+The founder forwarded a message. Sent had it at once, but the thread it came from showed nothing until Gmail's copy synced. They also found that a forward left out the message's attachments, and asked for them to come along as removable attachments, as when writing a reply.
+
+- **Found.** D165 sends a forward into its source's Gmail thread, but the engine's outgoing list still linked only replies to their conversation. The GUI's own preview showed the forward in the thread until the engine's list replaced it just after Send, and then it was gone until sync. Forward drafts started with no attachments, as Core12 chose before forwarding could send anything.
+- **Change.** `google_sent` lists a forward with its source conversation, like a reply. A forward draft starts with the source message's retained attachments, in message order, as many as fit 50 files and 25 MiB. They show as the draft's attachment chips, and the writer removes any or all before sending (CLI: `draft save --attachment` or `--clear-attachments`). Replies still start with none. Switching between Reply and Forward still moves the words written unless the draft has files the writer added; a forward's starting files don't count.
+- **Evidence.** fm-core: a forward of a message with a file starts with it and its capture carries the file's bytes; a forward saved without it captures none; replies start with none. The Google send test lists the reply, reply-all and forward in their thread before Gmail's copies arrive, and fails on the earlier query. MailSelectionTest: a forward shows both of the message's files, removing one saves the draft without it, Reply then retires the forward and takes the words, and a new Forward starts with both files again. That check fails on the earlier switch rule.
+- **Not verified here.** A live forward with attachments through Gmail; the founder checks it on the next real forward.
+
+Core86, Mail UI131, CLI62. No schema, fixture or protocol change.
+
+## D184 — a smaller reader subject (2026-10-02T23:30:00Z)
+
+The founder passed on a design note: the subject at the top of the reader goes from 28px to 21px in Inbox and Sent, with slightly looser lines so long subjects still wrap cleanly ([research](research/flight-progress-v2.md#later-note-reader-subject--d184)).
+
+- **Change.** The reader subject is 21px, weight 500, letter-spacing −0.02em, on 1.25 lines (26px at the default text size). Its box is still whole lines of its laid-out text. The label chip beside it keeps its place.
+- **Evidence.** MailSelectionTest's search reader checks the subject box is exactly one line in the wide reader and exactly its wrapped lines in a narrow one, plain and tinted. Its subject was lengthened so it still wraps at 21px.
+- **Not verified here.** The founder looks at it on screen.
+
+Mail UI132. No schema, fixture or protocol change.
+
+## D185 — Reply after a forward; a message's own Reply (2026-10-02T23:45:00Z)
+
+The founder forwarded a message, then found every Reply went to the person they forwarded it to. The thread's Reply did, and so did Reply in the menu of the message they wanted to answer. That menu also had no Reply all, though the message was copied to someone.
+
+- **Found.** Reply, Reply all and Forward under a thread answer its newest message. Once Gmail's copy of the forward synced, that was the forward. A reply to your own message goes to its To, so it went to the forward's recipient. The menu on each message acted on the whole thread, not the message it was opened on. Separately, the request for a message's headers could be dropped or cancelled when the thread reloaded, for example as a draft opened. That message then never showed its To and Cc, or showed "Message source is unavailable".
+- **Change.** Under a thread, Reply, Reply all, Forward and their keys answer the newest message that isn't a forward you sent (your message whose subject starts with "Fwd:" or "Fw:"). A message's own "…" menu answers that message: Reply, Forward, and Reply all when it has someone besides you and the sender on To or Cc (Cc only, for your own message). Switching between Reply and Forward keeps the message being answered. A message's header request survives a reload of the same account and is matched to its message when it returns.
+- **Evidence.** MailSelectionTest builds a thread where your forward follows a message Cc'd to someone. Forward and Reply under the thread both answer the message, not the forward; this check fails on the earlier rule. The message's own menu shows Reply all and starts one to it. The forward's own menu has no Reply all, and its Reply answers the forward. The same test caught the dropped header request.
+
+Mail UI133. No schema, fixture or protocol change.
+
+## D186 — copy the reader's header text (2026-10-02T23:59:00Z)
+
+The founder asked for a message's subject, sender name and address, and its summary to be selectable and copyable.
+
+- **Found.** The subject and the sender name were plain display text. The address could be selected, but never took focus, so ⌘C did nothing, and right-click had no menu. The summary selected and copied, but had no right-click menu.
+- **Change.** The reader subject, an open message's sender name and address, and a summary select with the mouse, copy with ⌘C (Ctrl+C), and offer Copy on right-click through the app's text menu. A click gives them focus, as the message body has; being read-only, they leave single-key shortcuts working. A plain click on the sender name still opens the contact card. A folded message still expands from its whole row, name included. The subject keeps its fixed 26px lines and search tint as rich text. A name too long for its space is shortened with an ellipsis, so a copy then holds the shortened name; the contact card has it whole.
+- **Evidence.** MailSelectionTest drags across each of the four, presses the copy key and checks the clipboard holds exactly that text, then does the same through the right-click Copy. The address failed the copy-key check before the change. The search reader check now also requires the subject's laid-out height to be its lines at 26px.
+
+Mail UI134. No schema, fixture or protocol change.

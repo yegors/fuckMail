@@ -1,6 +1,7 @@
 use crate::*;
 use fm_google::sync::{prepare_full_page, ListPage, MessageContent, MessageRef, PageStore};
 use google_store::GooglePageStore;
+use mail_parser::MimeHeaders;
 use rusqlite::params;
 
 const ACCOUNT: &str = "windscribe";
@@ -258,7 +259,7 @@ fn composition_new_draft_capture_and_restart_never_manufacture_received_mail() {
 }
 
 #[test]
-fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attachments() {
+fn composition_reply_all_and_forward_freeze_retained_source_and_only_forward_carries_attachments() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let (cid, mid) = ingest(
@@ -266,17 +267,14 @@ fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attac
         "original",
         source_with_attachment("original", 0),
     );
-    assert_eq!(
-        store
-            .db
-            .query_row(
-                "SELECT COUNT(*) FROM attachments WHERE account=?1 AND message_id=?2",
-                params![ACCOUNT, mid],
-                |r| r.get::<_, i64>(0)
-            )
-            .unwrap(),
-        1
-    );
+    let attachment: String = store
+        .db
+        .query_row(
+            "SELECT id FROM attachments WHERE account=?1 AND message_id=?2",
+            params![ACCOUNT, mid],
+            |r| r.get(0),
+        )
+        .unwrap();
     let reply = call(
         &mut store,
         "draft_create",
@@ -307,7 +305,12 @@ fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attac
     assert_eq!(all["reply_to_message_id"], "<original@fixture.example>");
     assert_eq!(forward["subject"], "Fwd: Frozen source context");
     assert_eq!(forward["to_recipients"], json!([]));
-    assert_eq!(forward["attachment_ids"], json!([]));
+    // A forward starts with the source's attachments; replies start with none.
+    assert_eq!(reply["attachment_ids"], json!([]));
+    assert_eq!(all["attachment_ids"], json!([]));
+    assert_eq!(forward["attachment_ids"], json!([attachment]));
+    assert_eq!(forward["attachments"][0]["name"], "retained.txt");
+    assert_eq!(forward["attachments"][0]["state"], "available");
     assert_eq!(forward["references"], json!(["<ancestor@fixture.example>"]));
     assert_eq!(forward["reply_to_message_id"], "<original@fixture.example>");
     assert!(forward["body"]
@@ -359,8 +362,34 @@ fn composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attac
         parsed.in_reply_to().as_text(),
         Some("original@fixture.example")
     );
-    assert_eq!(parsed.attachments().count(), 0);
+    let forwarded: Vec<_> = parsed.attachments().collect();
+    assert_eq!(forwarded.len(), 1);
+    assert_eq!(forwarded[0].attachment_name(), Some("retained.txt"));
+    assert!(forwarded[0]
+        .contents()
+        .starts_with(b"Retained attachment bytes."));
     assert!(parsed.body_text(0).unwrap().contains("Human preface"));
+    // The writer can drop forwarded attachments like any other.
+    let trimmed = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"forward","conversation_id":cid,"source_message_id":mid,"request_id":"forward-trimmed"}),
+    );
+    assert_eq!(trimmed["attachment_ids"], json!([attachment]));
+    let saved = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":trimmed["draft_id"],"expected_revision":1,"request_id":"save-trimmed","body":"Without the file","attachment_ids":[],"to_recipients":[{"email":"forward@fixture.example"}]}),
+    );
+    assert_eq!(saved["attachments"], json!([]));
+    let captured = call(
+        &mut store,
+        "draft_capture",
+        json!({"draft_id":trimmed["draft_id"],"expected_revision":2,"request_id":"capture-trimmed"}),
+    );
+    let bytes = std::fs::read(captured["path"].as_str().unwrap()).unwrap();
+    let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+    assert_eq!(parsed.attachments().count(), 0);
 }
 
 #[test]

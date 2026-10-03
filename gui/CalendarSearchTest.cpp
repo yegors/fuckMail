@@ -684,6 +684,32 @@ class CalendarSearchTest {
         mouse(QEvent::MouseButtonRelease,strip->width()*.1,Qt::LeftButton,Qt::NoButton);
         await([&]{return h.backend.timelineDate()=="2026-09-15" && strip->property("dragOffset").toDouble()==0;},"drag commits one adjacent day and recenters");
         require(h.backend.todayEvents().size()==1 && h.backend.todayEvents()[0].toMap()["title"]=="Next day","navigation retains the painted neighbor's events");
+        // A day whose long titles would fill every row: each event still shows,
+        // in a row where it fits by time, and a title gives way where the next
+        // event in its row starts.
+        {
+            const auto timed=[](const QString &id,const QString &title,const QString &from,const QString &to){
+                auto row=event("personal",title); row["id"]=id; row["event_id"]=id; row["occurrence_key"]="2026-09-15T"+from+":00Z";
+                row["start"]="2026-09-15T"+from+":00Z"; row["end"]="2026-09-15T"+to+":00Z"; return row; };
+            h.current={timed("postmortem","Post-Mortem Review: Redis Cloud Cutover Maintenance Incident 2026-09-13","10:30","11:00"),
+                timed("backend","Windscribe Backend Standup","11:30","12:00"),timed("design","Design standup","11:30","11:45"),
+                timed("growth","How to Grow Growth","12:00","12:30"),timed("upgrade","Windscribe Upgrade Page Strategy Sync","14:30","15:15"),
+                timed("diagrams","Windscribe - Diagrams Follow Up","15:00","16:00")};
+            h.backend.loadCalendar();
+            await([&]{h.drainSearches(); return h.backend.m_pending.isEmpty() && h.backend.timelineReady() && h.backend.todayEvents().size()==6;},"the busy day loads");
+            QCoreApplication::processEvents();
+            QList<QQuickItem*> blocks;
+            for (const auto *id : {"postmortem","backend","design","growth","upgrade","diagrams"}) {
+                auto *block=qobject_cast<QQuickItem*>(named(window,QString("timelineEvent-")+id));
+                if (!block || !block->isVisible()) { qWarning()<<id<<"is not shown"; require(false,"every event of a busy day shows in the timeline"); }
+                blocks<<block;
+            }
+            for (auto *a : blocks) for (auto *b : blocks) {
+                if (a==b || a->y()!=b->y() || a->x()>b->x()) continue;
+                if (a->x()+a->width()>b->x()+0.5) { qWarning()<<a->objectName()<<"runs into"<<b->objectName(); require(false,"events sharing a row never overlap"); }
+            }
+            require(strip->property("hiddenEvents").toInt()==0,"no event of the busy day is hidden");
+        }
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "calendar")), "return to Calendar for all-day activation");
         auto allDay = event(); allDay["event_id"] = "all-day"; allDay["all_day"] = true;
         allDay["start"] = "2026-09-14"; allDay["end"] = "2026-09-15";

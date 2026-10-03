@@ -324,7 +324,7 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-mail-selection COMMAND gui-mail-selection-test)
     # The list geometry case scrolls and folds a 40-month Inbox frame by frame.
-    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 90 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 180 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     # Photo circles and paint timing need the GPU renderer and a real window;
     # headless Linux has neither, so these run where a desktop exists.
     if(WIN32 OR APPLE)

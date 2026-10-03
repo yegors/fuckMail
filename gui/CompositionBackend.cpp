@@ -68,6 +68,19 @@ void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
 void MailBackend::beginDraft(const QString &mode) {
     beginDraftWithRecipient(mode, {}, {});
 }
+void MailBackend::beginDraftFrom(const QString &mode, const QString &messageId) {
+    if (mode == "new" || messageId.isEmpty()) return;
+    beginDraftWithRecipient(mode, {}, {}, false, messageId);
+}
+QString MailBackend::threadReplySource() const {
+    static const QRegularExpression forwarded(QStringLiteral(R"(^\s*fwd?\s*:)"), QRegularExpression::CaseInsensitiveOption);
+    const auto members = m_conversation.value("messages").toList();
+    for (auto it = members.crbegin(); it != members.crend(); ++it) {
+        const auto member = it->toMap();
+        if (!member.value("sent").toBool() || !forwarded.match(member.value("subject").toString()).hasMatch()) return member.value("id").toString();
+    }
+    return members.isEmpty() ? QString{} : members.last().toMap().value("id").toString();
+}
 void MailBackend::writeToSender(const QString &email, const QString &name) {
     const auto address = email.trimmed();
     if (address.isEmpty() || !validFilterSender(address)) return;
@@ -76,7 +89,7 @@ void MailBackend::writeToSender(const QString &email, const QString &name) {
 void MailBackend::switchDraft(const QString &mode) {
     if (mode != "new") beginDraftWithRecipient(mode, {}, {}, true);
 }
-void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry) {
+void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry, const QString &sourceId) {
     if (!m_connected || m_account.isEmpty() || accountArchived() || m_unsavedAccountBuffer) return;
     if (mode != "new" && mode != "reply" && mode != "reply_all" && mode != "forward") return;
     // A second press while that same kind is opening changes nothing.
@@ -86,28 +99,32 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     // the same account is still selected.
     if (m_draftDirty || draftBusy()) {
         const auto account = m_account;
-        m_afterDraftSave = [this, account, mode, email, name, carry] { if (account == m_account) beginDraftWithRecipient(mode, email, name, carry); };
+        m_afterDraftSave = [this, account, mode, email, name, carry, sourceId] { if (account == m_account) beginDraftWithRecipient(mode, email, name, carry, sourceId); };
         saveDraft(); return;
     }
     const auto members = m_conversation.value("messages").toList();
     if (mode != "new" && (members.isEmpty() || m_conversation.value("remote").toBool())) return;
+    if (!sourceId.isEmpty() && std::none_of(members.cbegin(), members.cend(), [&](const auto &member) { return member.toMap().value("id") == sourceId; })) return;
     if (mode == "new" && m_draft.value("mode").toString() != "new") m_newDraftOrigin = {m_account, m_selected, m_draft.value("discarded").toBool() ? QString{} : m_activeDraft};
     // Turning this thread's reply into a forward, or back, takes the words
     // written so far into the new draft and retires the old one once the new
-    // one is saved. A draft with files, one being sent, or one with words
-    // anywhere but above its starting text stays as it is.
+    // one is saved. A draft with files the writer added, one being sent, or
+    // one with words anywhere but above its starting text stays as it is.
     QString carried; QJsonObject retired;
     const auto currentMode = m_draft.value("mode").toString();
     if (carry && mode != "new" && !m_selected.isEmpty() && m_draft.value("conversation_id").toString() == m_selected
         && (currentMode.isEmpty() ? QStringLiteral("reply") : currentMode) != mode && m_draft.value("revision").toLongLong() > 0
         && !m_draft.value("discarded").toBool() && !draftReadOnly() && !googleSendBlocksDraftSync()
-        && m_draft.value("attachment_ids").toList().isEmpty() && !draftDiscardPending()) {
+        && !draftAddedFiles() && !draftDiscardPending()) {
         bool untouched = false;
         carried = authoredDraftText(&untouched);
         if (untouched) { retired = draftSelector(); retired["expected_revision"] = m_draft.value("revision").toLongLong(); }
     }
+    // Switching between Reply and Forward keeps the message being answered.
+    const auto kept = carry && m_draft.value("conversation_id").toString() == m_selected && (currentMode.isEmpty() ? QStringLiteral("reply") : currentMode) != mode
+        && !m_draft.value("discarded").toBool() ? m_draft.value("source_message_id").toString() : QString{};
     dropEmptyNewDraft();
-    const auto source = mode == "new" ? QString{} : members.last().toMap()["id"].toString();
+    const auto source = mode == "new" ? QString{} : !sourceId.isEmpty() ? sourceId : !kept.isEmpty() ? kept : threadReplySource();
     if (m_draftCreation.isEmpty() || m_draftCreationAccount != m_account
         || m_draftCreation["mode"].toString() != mode || m_draftCreation["source_message_id"].toString() != source || m_draftCreationEmail != email) {
         m_draftCreation = mutation(); m_draftCreation["mode"] = mode;
@@ -354,6 +371,17 @@ void MailBackend::dropEmptyNewDraft() {
     request("draft_discard", account, params, [this, account](auto, bool ok) {
         if (ok && account == m_account) { loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); m_draftChipsTimer.start(); }
     }, true);
+}
+bool MailBackend::draftAddedFiles() const {
+    QSet<QString> starting;
+    if (m_draft.value("mode") == "forward")
+        for (const auto &value : m_conversation.value("messages").toList()) {
+            const auto member = value.toMap();
+            if (member.value("id") != m_draft.value("source_message_id")) continue;
+            for (const auto &file : member.value("attachments").toList()) starting.insert(file.toMap().value("id").toString());
+        }
+    for (const auto &id : m_draft.value("attachment_ids").toList()) if (!starting.contains(id.toString())) return true;
+    return false;
 }
 QString MailBackend::authoredDraftText(bool *untouched) const {
     const auto body = m_draft.value("body").toString();

@@ -1,5 +1,5 @@
 // Contact popover for a sender or recipient name in MailView: name, address,
-// recent conversations, a filter link and Write. Opens on click or after a
+// a star for the contact, recent conversations, a filter link and Write. Opens on click or after a
 // hover dwell (hoverSender / leaveSender); data comes from backend.senderCard.
 import QtQuick
 import QtQuick.Controls
@@ -20,6 +20,16 @@ Popup {
     readonly property bool current: cardData.account === account && cardData.email === email
     readonly property var conversations: current && !cardData.loading && !cardData.error ? cardData.conversations || [] : []
     readonly property int total: current ? cardData.conversation_count || 0 : 0
+    readonly property bool mine: email.toLowerCase() === (backend.currentAccount.email || "").toLowerCase()
+    // A starred contact shows a star by their name across this account's mail
+    // (preferences.starred_senders, lowercase addresses per account).
+    readonly property string address: email.trim().toLowerCase()
+    readonly property bool starred: (backend.preferences.starred_senders || []).some(function(entry) { return entry.account === account && entry.email === address })
+    function toggleStar() {
+        const list = (backend.preferences.starred_senders || []).filter(function(entry) { return !(entry.account === account && entry.email === address) })
+        if (!starred) list.push({account: account, email: address})
+        backend.setPreferences({starred_senders: list})
+    }
     // Name, address and status can be selected. While one holds a selection
     // the card stays open until Esc or a click outside; Ctrl+C copies it.
     readonly property Item selectionField: nameField.selectedText ? nameField : emailField.selectedText ? emailField : statusField.selectedText ? statusField : null
@@ -144,7 +154,7 @@ Popup {
                 // otherwise initials on the name's hue.
                 SenderAvatar {
                     objectName: "senderCardAvatar"
-                    readonly property bool mine: card.email.toLowerCase() === (backend.currentAccount.email || "").toLowerCase()
+                    readonly property bool mine: card.mine
                     diameter: 36; brandSize: 24; own: mine
                     name: card.displayName; email: card.email
                     discColor: mine ? Theme.accentAlpha(0.18) : Theme.oklch(.36, .06, hue)
@@ -156,6 +166,17 @@ Popup {
                     Layout.fillWidth: true; spacing: 2
                     CardText { id: nameField; objectName: "senderCardName"; text: card.displayName; color: Theme.text; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium }
                     CardText { id: emailField; objectName: "senderCardEmail"; text: card.email; color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); wrapMode: TextEdit.WrapAnywhere }
+                }
+                FmButton {
+                    id: starButton; objectName: "senderCardStar"
+                    visible: !card.mine && card.address.indexOf("@") > 0
+                    Layout.alignment: Qt.AlignTop
+                    implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                    iconName: card.starred ? "contactStarFilled" : "contactStar"; iconSize: 14
+                    iconColor: card.starred ? Theme.amber : Theme.inkAlpha(.4)
+                    tip: card.starred ? "Starred — click to remove" : "Star this contact"
+                    background: Rectangle { radius: 4; color: starButton.hovered ? Theme.bg4 : "transparent" }
+                    onClicked: card.toggleStar()
                 }
             }
             CardText {
@@ -177,7 +198,7 @@ Popup {
                         background: Rectangle { color: parent.hovered ? Theme.selected : "transparent"; radius: 3 }
                         contentItem: RowLayout {
                             id: row; spacing: 10
-                            Text { text: modelData.subject; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pointSize: Theme.fontPoints(12.5); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
+                            Text { text: Theme.oneLine(modelData.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pointSize: Theme.fontPoints(12.5); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
                             Text { text: card.formatAge(modelData.latest_at); color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
                         }
                         onClicked: card.openConversation(modelData.id)

@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 fn defaults() -> Value {
     json!({"density":"comfortable","show_draft_chips":true,"reply_marks_delayed_done":true,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","mail_week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
-        "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
+        "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"starred_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
 }
 /// The account colour palette: muted swatches shown 8×2 in the picker. A new
 /// account takes the first one no other account uses, cycling when all are.
@@ -165,6 +165,7 @@ impl Store {
                 "blocked_hosts",
                 "remote_images_from",
                 "html_senders",
+                "starred_senders",
                 "remote_proxy",
                 "sender_pictures",
             ],
@@ -177,6 +178,8 @@ impl Store {
         }
         validate_shortcuts(&preferences["shortcuts"])?;
         crate::remote_prefs::validate(&preferences)?;
+        // Contacts starred from their card, per account.
+        crate::remote_prefs::senders(&preferences["starred_senders"], "Starred")?;
         let services = preferences["google_sync_services"]
             .as_object()
             .filter(|v| v.len() <= 200)
@@ -1201,6 +1204,37 @@ lines"]}),
         let reread = store.preferences().unwrap();
         assert!(reread["preferences"].get("message_format").is_none());
         assert_eq!(reread["preferences"]["html_senders"], senders);
+    }
+
+    #[test]
+    fn starred_senders_are_per_account_lowercase_and_durable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let before = store.preferences().unwrap();
+        assert_eq!(before["preferences"]["starred_senders"], json!([]));
+        let starred = json!([{"account":"acct-1","email":"maya@x.test"},{"account":"acct-2","email":"maya@x.test"}]);
+        let saved = store
+            .handle("preferences_save", None, json!({"request_id":"star","expected_revision":before["revision"],"preferences":{"starred_senders":starred}}))
+            .unwrap();
+        assert_eq!(
+            store.preferences().unwrap()["preferences"]["starred_senders"],
+            starred
+        );
+        for bad in [
+            json!([{"account":"acct-1","email":"Maya@X.test"}]),
+            json!([{"account":"acct-1","email":"maya@x.test"},{"account":"acct-1","email":"maya@x.test"}]),
+            json!([{"account":"acct-1","email":"no-address"}]),
+            json!([{"account":"acct-1"}]),
+            json!("maya@x.test"),
+        ] {
+            assert!(store
+                .handle("preferences_save", None, json!({"request_id":"bad-star","expected_revision":saved["revision"],"preferences":{"starred_senders":bad}}))
+                .is_err());
+        }
+        assert_eq!(
+            store.preferences().unwrap()["preferences"]["starred_senders"],
+            starred
+        );
     }
 
     #[test]

@@ -12,6 +12,10 @@
 #include <QJsonArray>
 #include <QJSValue>
 #include <QKeyEvent>
+#include <QElapsedTimer>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QQuickTextDocument>
 #include <QMimeData>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -45,6 +49,70 @@ public:
 };
 }
 
+// The format bar: always shown, so selecting text moves nothing; bold,
+// italic and underline for the selection or for what is typed next; bulleted
+// and numbered lists that type on, end on an empty item, save and reload, and
+// read "• " and "1. " in plain text.
+static void formatting(QQuickWindow *window, QQuickItem *body, ReplyDocument *document) {
+    const auto settle=[](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+    const auto key=[&](int code, Qt::KeyboardModifiers modifiers=Qt::NoModifier, const QString &text={}) {
+        QKeyEvent press(QEvent::KeyPress,code,modifiers,text), release(QEvent::KeyRelease,code,modifiers,text);
+        QCoreApplication::sendEvent(window,&press); QCoreApplication::sendEvent(window,&release); };
+    const auto type=[&](const QString &text){ for (const auto c : text) key(0,Qt::NoModifier,QString(c)); settle(30); };
+    const auto format=[&](const QString &name){ return document->formats().value(name).toBool(); };
+    auto bar=find(window->contentItem(),"formatBar"), panel=find(window->contentItem(),"composer"), bold=find(window->contentItem(),"formatBold");
+    require(bar && panel && bold,"format bar");
+    document->load("",{}); body->forceActiveFocus(); settle(100);
+    require(bar->isVisible(),"the format bar shows with nothing selected");
+    type("Plain words here"); settle(100);
+    const auto height=panel->height();
+    QMetaObject::invokeMethod(body,"select",Q_ARG(int,0),Q_ARG(int,5)); settle(100);
+    require(bar->isVisible() && panel->height()==height,"selecting text moves nothing");
+    QMetaObject::invokeMethod(body,"select",Q_ARG(int,16),Q_ARG(int,16)); body->setProperty("cursorPosition",16); settle(50);
+    // Bold with nothing selected: what is typed next is bold, and typing on stays so.
+    key(Qt::Key_B,Qt::ControlModifier); settle(50);
+    require(format("bold") && bold->property("selected").toBool(),"Bold lights up for the caret");
+    type(" strong"); settle(100);
+    QTextCursor check(document->textDocument()->textDocument());
+    const auto boldAt=[&](int position){ check.setPosition(position); check.setPosition(position+1,QTextCursor::KeepAnchor); return check.charFormat().fontWeight()>=QFont::DemiBold; };
+    require(!boldAt(10) && boldAt(17) && boldAt(22),"typed text takes the bold chosen with nothing selected");
+    key(Qt::Key_B,Qt::ControlModifier); type(" calm"); settle(100);
+    require(!boldAt(25) && !format("bold"),"bold turns off for what follows");
+    body->setProperty("cursorPosition",5); settle(50);
+    require(!format("bold"),"the caret in plain words shows no bold");
+    // A bold word, in the saved HTML and back.
+    require(document->html().contains("font-weight:700"),"bold saves in the HTML");
+    // Bulleted list: two paragraphs become items, typing on adds one, an
+    // empty item ends the list.
+    document->load("First\nSecond",{}); body->forceActiveFocus();
+    QMetaObject::invokeMethod(body,"select",Q_ARG(int,0),Q_ARG(int,12)); settle(50);
+    key(Qt::Key_8,Qt::ControlModifier|Qt::ShiftModifier,"*"); settle(100);
+    require(document->plainText()=="• First\n• Second" && document->html().contains("<ul>"),"⌘⇧8 makes the paragraphs a bulleted list");
+    require(format("bullet") && find(window->contentItem(),"formatBullets")->property("selected").toBool(),"Bulleted list lights up");
+    body->setProperty("cursorPosition",12); settle(30);
+    key(Qt::Key_Return,Qt::NoModifier,"\r"); type("Third"); settle(100);
+    require(document->plainText()=="• First\n• Second\n• Third","Return in a list starts the next item");
+    key(Qt::Key_Return,Qt::NoModifier,"\r"); key(Qt::Key_Return,Qt::NoModifier,"\r"); type("After"); settle(100);
+    require(document->plainText()=="• First\n• Second\n• Third\nAfter" && !format("bullet"),"Return on an empty item ends the list");
+    // Saved and loaded again, the list is the same.
+    const auto plain=document->plainText(), html=document->html();
+    document->load("",{}); document->load(plain,html); settle(50);
+    require(document->plainText()==plain && document->html()==html,"a list saves and loads unchanged");
+    // Numbered: the list turns into numbers; again turns them back to paragraphs.
+    QMetaObject::invokeMethod(body,"select",Q_ARG(int,0),Q_ARG(int,8)); settle(30);
+    QMetaObject::invokeMethod(find(window->contentItem(),"formatNumbers"),"clicked"); settle(100);
+    require(document->plainText()=="1. First\n2. Second\n• Third\nAfter","Numbered list numbers the chosen items");
+    QMetaObject::invokeMethod(body,"select",Q_ARG(int,0),Q_ARG(int,8)); settle(30);
+    QMetaObject::invokeMethod(find(window->contentItem(),"formatNumbers"),"clicked"); settle(100);
+    require(document->plainText()=="First\nSecond\n• Third\nAfter","Numbered list again turns them back to paragraphs");
+    document->undo(); settle(50);
+    require(document->plainText()=="1. First\n2. Second\n• Third\nAfter","undo brings a list change back in one step");
+    // Backspace at the start of an item takes it out of the list, keeping its words.
+    body->setProperty("cursorPosition",6); settle(30);
+    key(Qt::Key_Backspace); settle(100);
+    require(document->plainText()=="1. First\nSecond\n• Third\nAfter","Backspace at an item's start ends its list item");
+    qInfo()<<"Format bar: always shown, typing styles, lists that type on and save";
+}
 class ComposerInputTest {
 public:
 static void run() {
@@ -306,7 +374,9 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     QElapsedTimer drawn; drawn.start(); while(drawn.elapsed()<200) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
     qInstallMessageHandler(previousHandler);
     if(!rangeWarnings.isEmpty()) { qWarning()<<rangeWarnings.mid(0,4); require(false,"spelling underlines never reach past the text"); }
-    spelling->setSpellChecker(nullptr); spelling->load(bodyBefore,{});
+    spelling->setSpellChecker(nullptr);
+    formatting(window, body, spelling);
+    spelling->load(bodyBefore,{});
     require(!warnings,"production QML has no warnings");
     qInfo()<<"Composer input passed: serial files, in-flight edits, exact uncertain replay, navigation, close protection, cached suggestions, keyboard routing, native multi-file drop and spelling";
 }

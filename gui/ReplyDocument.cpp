@@ -1,7 +1,7 @@
 // ReplyDocument: loads saved drafts into the QML editor's QTextDocument without
-// disturbing selection or undo, applies bold/italic/underline, pastes as plain
-// text, reduces HTML to the allowed formatting (also for received bodies), and
-// connects the editor to the system spell checker.
+// disturbing selection or undo, applies bold/italic/underline and bulleted or
+// numbered lists, pastes as plain text, reduces HTML to the allowed formatting
+// (also for received bodies), and connects the editor to the system spell checker.
 #include "ReplyDocument.h"
 #include <QSet>
 #include "ReceivedBody.h"
@@ -12,8 +12,10 @@
 #include <QKeyEvent>
 #include <QRegularExpression>
 #include <QScopedValueRollback>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextList>
 #include <QUrl>
 
 QString ReplyDocument::limitedHtml(const QString &input, bool received) {
@@ -152,9 +154,11 @@ void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
         if (m_document) { m_spelling->prefetch(m_document->textDocument()->toPlainText()); m_spelling->rehighlight(); }
     });
     queueMarks();
+    if (m_document) connect(m_document->textDocument(), &QTextDocument::contentsChange, this, &ReplyDocument::typedAt);
     if (m_document) connect(m_document->textDocument(), &QTextDocument::contentsChanged, this, [this] {
         // Spelling marks change only the layout, not the draft.
         if (m_restyling) return;
+        updateFormats();
         // Loaded text updates property bindings (including action availability),
         // while only authored edits notify the autosave consumer.
         emit textChanged();
@@ -172,16 +176,36 @@ void ReplyDocument::setEditor(QQuickItem *editor) {
         // The word being typed is checked once the caret leaves it.
         if (m_editor->metaObject()->indexOfSignal("cursorPositionChanged()") >= 0)
             connect(m_editor, SIGNAL(cursorPositionChanged()), this, SLOT(caretMoved()));
+        for (const char *signal : {SIGNAL(cursorPositionChanged()), SIGNAL(selectionStartChanged()), SIGNAL(selectionEndChanged())})
+            if (m_editor->metaObject()->indexOfSignal(signal + 1) >= 0) connect(m_editor, signal, this, SLOT(updateFormats()));
         connect(m_editor, &QQuickItem::activeFocusChanged, this, &ReplyDocument::caretMoved);
     }
     emit documentChanged();
 }
-QString ReplyDocument::plainText() const { return m_document ? m_document->textDocument()->toPlainText() : QString{}; }
+// The words as sent in plain text: list items read "• " or "1. " first, as
+// the engine writes received lists.
+QString ReplyDocument::plainText() const {
+    if (!m_document) return {};
+    const auto document = m_document->textDocument();
+    bool lists = false;
+    for (auto block = document->begin(); block.isValid() && !lists; block = block.next()) lists = block.textList();
+    if (!lists) return document->toPlainText();
+    QStringList lines;
+    for (auto block = document->begin(); block.isValid(); block = block.next()) {
+        auto text = block.text();
+        text.replace(QChar::LineSeparator, u'\n').replace(QChar::Nbsp, u' ');
+        if (const auto list = block.textList())
+            text.prepend(list->format().style() == QTextListFormat::ListDecimal ? QString::number(list->itemNumber(block) + 1) + ". " : QStringLiteral("• "));
+        lines << text;
+    }
+    return lines.join(u'\n');
+}
 QString ReplyDocument::html() const { return m_document ? limitedHtml(m_document->textDocument()->toHtml()) : QString{}; }
 void ReplyDocument::setIdentity(const QString &identity) {
     if (m_identity == identity) return;
     m_identity = identity;
     m_correction = {};
+    m_typingAt = -1;
     ++m_session;
     // Equal text still belongs to a different authoring session. Its undo stack
     // must never be able to restore words from the previously selected draft.
@@ -212,6 +236,7 @@ void ReplyDocument::load(const QString &body, const QString &value) {
     const int position = m_editor ? m_editor->property("cursorPosition").toInt() : 0;
     m_loading = true;
     m_correction = {};
+    m_typingAt = -1;
     ++m_session;
     m_spelling->prefetch(body);
     auto document = m_document->textDocument();
@@ -219,8 +244,9 @@ void ReplyDocument::load(const QString &body, const QString &value) {
     else {
         document->setHtml(limitedHtml(value));
         // Plain content is authoritative: never silently substitute different
-        // words from a stale or incompatible HTML alternative.
-        if (document->toPlainText() != body) document->setPlainText(body);
+        // words from a stale or incompatible HTML alternative. Lists compare
+        // with their markers, as they were saved.
+        if (plainText() != body) document->setPlainText(body);
     }
     if (sameBody && m_editor) {
         // Another interface may remove formatting without changing the words.
@@ -232,15 +258,90 @@ void ReplyDocument::load(const QString &body, const QString &value) {
 }
 void ReplyDocument::format(const QString &kind) {
     if (m_readOnly || !m_document || !m_editor) return;
-    QTextCursor cursor(m_document->textDocument());
+    if (kind == "bullet" || kind == "numbered") { toggleList(kind == "numbered"); m_editor->forceActiveFocus(); return; }
+    if (kind != "bold" && kind != "italic" && kind != "underline") return;
+    updateFormats();
+    const bool on = m_formats.value(kind).toBool();
+    QTextCharFormat style;
+    if (kind == "bold") style.setFontWeight(on ? QFont::Normal : QFont::Bold);
+    else if (kind == "italic") style.setFontItalic(!on);
+    else style.setFontUnderline(!on);
     const auto start = m_editor->property("selectionStart").toInt(), end = m_editor->property("selectionEnd").toInt();
-    cursor.setPosition(start); cursor.setPosition(end, QTextCursor::KeepAnchor);
-    QTextCharFormat style = cursor.charFormat();
-    if (kind == "bold") style.setFontWeight(style.fontWeight() >= QFont::DemiBold ? QFont::Normal : QFont::Bold);
-    else if (kind == "italic") style.setFontItalic(!style.fontItalic());
-    else if (kind == "underline") style.setFontUnderline(!style.fontUnderline());
-    else return;
-    cursor.mergeCharFormat(style); m_editor->forceActiveFocus();
+    if (start != end) {
+        QTextCursor cursor(m_document->textDocument());
+        cursor.setPosition(start); cursor.setPosition(end, QTextCursor::KeepAnchor);
+        cursor.mergeCharFormat(style);
+    } else {
+        // Nothing selected: what is typed next here takes the style.
+        if (m_typingAt != start) m_typing = {};
+        m_typing.merge(style); m_typingAt = start;
+    }
+    updateFormats();
+    m_editor->forceActiveFocus();
+}
+// The paragraphs from the selection's first to its last become list items,
+// or stop being ones when they all already are of this kind.
+void ReplyDocument::toggleList(bool numbered) {
+    const auto document = m_document->textDocument();
+    const auto style = numbered ? QTextListFormat::ListDecimal : QTextListFormat::ListDisc;
+    const int last = document->characterCount() - 1;
+    const auto first = document->findBlock(qBound(0, m_editor->property("selectionStart").toInt(), last));
+    const auto end = document->findBlock(qBound(0, m_editor->property("selectionEnd").toInt(), last));
+    bool all = true;
+    for (auto block = first; block.isValid(); block = block.next()) {
+        const auto list = block.textList();
+        if (!list || list->format().style() != style) { all = false; break; }
+        if (block == end) break;
+    }
+    QTextCursor edit(document);
+    edit.beginEditBlock();
+    // Numbering runs on from a list of the same kind just above.
+    QTextList *list = nullptr;
+    if (!all) if (const auto above = first.previous().textList(); above && above->format().style() == style) list = above;
+    for (auto block = first; block.isValid(); block = block.next()) {
+        if (const auto current = block.textList()) current->remove(block);
+        QTextCursor at(block);
+        if (all) { auto plain = block.blockFormat(); plain.setIndent(0); at.setBlockFormat(plain); }
+        else if (list) list->add(block);
+        else { QTextListFormat format; format.setStyle(style); format.setIndent(1); list = at.createList(format); }
+        if (block == end) break;
+    }
+    edit.endEditBlock();
+    updateFormats();
+}
+// Text typed where a style was chosen with nothing selected takes it, in the
+// same undo step as the typing; typing on carries it along.
+void ReplyDocument::typedAt(int position, int removed, int added) {
+    if (m_typingAt < 0 || m_loading || m_restyling) return;
+    if (removed != 0 || added <= 0 || position != m_typingAt) return;
+    m_typingAt = position + added;
+    const auto style = m_typing;
+    QMetaObject::invokeMethod(this, [this, position, added, style, session = m_session] {
+        if (!m_document || session != m_session || position + added > m_document->textDocument()->characterCount() - 1) return;
+        QTextCursor cursor(m_document->textDocument());
+        cursor.setPosition(position); cursor.setPosition(position + added, QTextCursor::KeepAnchor);
+        cursor.joinPreviousEditBlock(); cursor.mergeCharFormat(style); cursor.endEditBlock();
+    }, Qt::QueuedConnection);
+}
+void ReplyDocument::updateFormats() {
+    QVariantMap next;
+    if (m_document && m_editor) {
+        const auto document = m_document->textDocument();
+        const int last = document->characterCount() - 1;
+        const int start = qBound(0, m_editor->property("selectionStart").toInt(), last), end = qBound(0, m_editor->property("selectionEnd").toInt(), last);
+        // The caret moved away from where a style waits for typing.
+        if (start != end || start != m_typingAt) m_typingAt = -1;
+        QTextCursor cursor(document);
+        cursor.setPosition(start); if (end > start) cursor.setPosition(end, QTextCursor::KeepAnchor);
+        auto format = cursor.charFormat();
+        if (m_typingAt >= 0) format.merge(m_typing);
+        const auto list = document->findBlock(start).textList();
+        const auto style = list ? list->format().style() : QTextListFormat::ListStyleUndefined;
+        next = {{"bold", format.fontWeight() >= QFont::DemiBold}, {"italic", format.fontItalic()}, {"underline", format.fontUnderline()},
+            {"bullet", style == QTextListFormat::ListDisc}, {"numbered", style == QTextListFormat::ListDecimal}};
+    }
+    if (next == m_formats) return;
+    m_formats = next; emit formatsChanged();
 }
 void ReplyDocument::pastePlain() {
     if (m_readOnly || !m_document || !m_editor) return;
@@ -268,6 +369,7 @@ bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
     if (event->type() == QEvent::KeyPress) {
         const auto key = static_cast<QKeyEvent *>(event);
         if (key->matches(QKeySequence::Paste)) { pastePlain(); return true; }
+        if (leaveList(key)) return true;
         // Undoing without the editor's cursor leaves the caret after the
         // separator that was typed, as it was before the undo.
         if (key->matches(QKeySequence::Undo) && correctionOnTop()) { undo(); return true; }
@@ -277,6 +379,25 @@ bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
         if (input->preeditString().isEmpty() && endsWord(input->commitString())) correctBeforeCaret();
     } else if (event->type() == QEvent::Drop) return true;
     return QObject::eventFilter(watched, event);
+}
+// Return on an empty list item, or Backspace at an item's start, takes that
+// paragraph out of its list instead of adding an item or joining paragraphs.
+bool ReplyDocument::leaveList(const QKeyEvent *key) {
+    if (m_readOnly || !m_document || !m_editor || key->modifiers() & ~(Qt::KeypadModifier)) return false;
+    const bool enter = key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter;
+    if (!enter && key->key() != Qt::Key_Backspace) return false;
+    const int start = m_editor->property("selectionStart").toInt(), end = m_editor->property("selectionEnd").toInt();
+    if (start != end) return false;
+    const auto block = m_document->textDocument()->findBlock(start);
+    const auto list = block.textList();
+    if (!list || (enter ? !block.text().isEmpty() : start != block.position())) return false;
+    QTextCursor cursor(block);
+    cursor.beginEditBlock();
+    list->remove(block);
+    auto plain = block.blockFormat(); plain.setIndent(0); cursor.setBlockFormat(plain);
+    cursor.endEditBlock();
+    updateFormats();
+    return true;
 }
 int ReplyDocument::typingCaret() const {
     if (!m_editor || m_readOnly || !m_editor->hasActiveFocus()) return -1;

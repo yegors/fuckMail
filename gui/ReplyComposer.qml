@@ -274,10 +274,15 @@ Item {
                     background: null
                     padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 16; bottomPadding: 8
                     Accessible.name: root.draftTitle+" body"
+                    // ⌘B, ⌘I and ⌘U style the selection or what is typed next;
+                    // ⌘⇧8 and ⌘⇧7 make bulleted and numbered lists.
                     Keys.onPressed: event => {
-                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_B && root.hasSelection) { document.format("bold"); event.accepted = true }
-                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_I && root.hasSelection) { document.format("italic"); event.accepted = true }
-                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_U && root.hasSelection) { document.format("underline"); event.accepted = true }
+                        if (!(event.modifiers & Qt.ControlModifier) || root.readOnly) return
+                        const shift = event.modifiers & Qt.ShiftModifier
+                        const kind = event.key === Qt.Key_B ? "bold" : event.key === Qt.Key_I ? "italic" : event.key === Qt.Key_U ? "underline"
+                            : shift && (event.key === Qt.Key_8 || event.key === Qt.Key_Asterisk) ? "bullet"
+                            : shift && (event.key === Qt.Key_7 || event.key === Qt.Key_Ampersand) ? "numbered" : ""
+                        if (kind) { document.format(kind); event.accepted = true }
                     }
                     ContextMenu.menu: null
                     TapHandler {
@@ -336,9 +341,11 @@ Item {
                             FmMenuItem { objectName: "spellingLearn"; visible: !!contextMenu.spelling.word; text: "Learn spelling"; onClicked: { contextMenu.close(); document.learnSpelling(contextMenu.spelling.word) } }
                         ]
                         pasteLabel: "Paste plain text"; pasteText: function() { document.pastePlain() }
-                        FmMenuItem { separatorAbove: true; text: "Bold"; shortcut: contextMenu.key + "B"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("bold") } }
-                        FmMenuItem { text: "Italic"; shortcut: contextMenu.key + "I"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("italic") } }
-                        FmMenuItem { text: "Underline"; shortcut: contextMenu.key + "U"; enabled: !root.readOnly && root.hasSelection; onClicked: { contextMenu.close(); document.format("underline") } }
+                        FmMenuItem { separatorAbove: true; text: "Bold"; shortcut: contextMenu.key + "B"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("bold") } }
+                        FmMenuItem { text: "Italic"; shortcut: contextMenu.key + "I"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("italic") } }
+                        FmMenuItem { text: "Underline"; shortcut: contextMenu.key + "U"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("underline") } }
+                        FmMenuItem { text: "Bulleted list"; shortcut: contextMenu.key + "⇧8"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("bullet") } }
+                        FmMenuItem { text: "Numbered list"; shortcut: contextMenu.key + "⇧7"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("numbered") } }
                     }
                 }
             }
@@ -379,14 +386,21 @@ Item {
                     }
                 }
             }
+            // Always there while the draft can be edited, so nothing moves as text
+            // is selected. A style lights up where the caret or selection has it.
             RowLayout {
-                visible: !root.readOnly && root.hasSelection
+                objectName: "formatBar"
+                visible: !root.readOnly
                 Layout.fillWidth: true; Layout.bottomMargin: 4
                 spacing: 1
-                FmButton { text: "B"; font.bold: true; tip: "Bold selected text"; enabled: root.hasSelection && !backend.draftLocked; onClicked: document.format("bold") }
-                FmButton { text: "I"; font.italic: true; tip: "Italic selected text"; enabled: root.hasSelection && !backend.draftLocked; onClicked: document.format("italic") }
-                FmButton { text: "U"; font.underline: true; tip: "Underline selected text"; enabled: root.hasSelection && !backend.draftLocked; onClicked: document.format("underline") }
-                FmButton { iconName: "undo"; tip: "Undo"; enabled: bodyEditor.canUndo && !backend.draftBusy; onClicked: document.undo() }
+                readonly property string key: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
+                readonly property var formats: document.formats
+                FmButton { objectName: "formatBold"; text: "B"; font.bold: true; selected: !!parent.formats.bold; tip: "Bold · " + parent.key + "B"; enabled: !backend.draftLocked; onClicked: document.format("bold") }
+                FmButton { objectName: "formatItalic"; text: "I"; font.italic: true; selected: !!parent.formats.italic; tip: "Italic · " + parent.key + "I"; enabled: !backend.draftLocked; onClicked: document.format("italic") }
+                FmButton { objectName: "formatUnderline"; text: "U"; font.underline: true; selected: !!parent.formats.underline; tip: "Underline · " + parent.key + "U"; enabled: !backend.draftLocked; onClicked: document.format("underline") }
+                FmButton { objectName: "formatBullets"; iconName: "bulletList"; selected: !!parent.formats.bullet; tip: "Bulleted list · " + parent.key + "⇧8"; enabled: !backend.draftLocked; Layout.leftMargin: 8; onClicked: document.format("bullet") }
+                FmButton { objectName: "formatNumbers"; iconName: "numberedList"; selected: !!parent.formats.numbered; tip: "Numbered list · " + parent.key + "⇧7"; enabled: !backend.draftLocked; onClicked: document.format("numbered") }
+                FmButton { iconName: "undo"; tip: "Undo"; enabled: bodyEditor.canUndo && !backend.draftBusy; Layout.leftMargin: 8; onClicked: document.undo() }
                 FmButton { iconName: "redo"; tip: "Redo"; enabled: bodyEditor.canRedo && !backend.draftBusy; onClicked: document.redo() }
                 Item { Layout.fillWidth: true }
             }
@@ -528,7 +542,7 @@ Item {
                     FmIcon { name: "arrowRight"; size: 11; color: Theme.inkAlpha(.4); rotation: recentRow.outgoing ? 0 : 180; Layout.preferredWidth: 14 }
                     Text {
                         Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.StyledText
-                        text: "<font color=\"" + Theme.inkAlpha(.85) + "\">" + String(recentRow.modelData.subject || "(No subject)").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font><font color=\"" + Theme.inkAlpha(.45) + "\"> · " + String(recentRow.modelData.snippet || "").replace(/\s+/g, " ").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font>"
+                        text: "<font color=\"" + Theme.inkAlpha(.85) + "\">" + (Theme.oneLine(recentRow.modelData.subject) || "(No subject)").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font><font color=\"" + Theme.inkAlpha(.45) + "\"> · " + String(recentRow.modelData.snippet || "").replace(/\s+/g, " ").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font>"
                         font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
                     }
                     Text { text: root.dayLabel(recentRow.modelData.latest_at); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1} }

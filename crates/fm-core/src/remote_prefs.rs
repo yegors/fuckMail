@@ -10,8 +10,9 @@ pub(crate) const MAX_BLOCKED_HOSTS: usize = 1_000;
 const MAX_SENDERS: usize = 2_000;
 
 /// A per-account sender list: at most 2,000 distinct `{account, email}`
-/// entries with lowercase addresses. `what` names the list in errors.
-fn senders(list: &Value, what: &str) -> Result<()> {
+/// entries with lowercase addresses. `what` names the list in errors. Also
+/// checks the starred contacts list.
+pub(crate) fn senders(list: &Value, what: &str) -> Result<()> {
     let entries = list
         .as_array()
         .filter(|v| v.len() <= MAX_SENDERS)

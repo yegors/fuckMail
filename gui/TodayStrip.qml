@@ -77,18 +77,31 @@ Rectangle {
                     })
                 }
                 // Geometry updates keep the occurrence model and its native delegates alive.
-                // Only this small lane-index array changes as the available width changes.
-                property var laneAssignments: {
-                    let ends = []
-                    return blocks.map(function(row) {
-                        const left = row.fraction * trackWidth
+                // Only these small arrays change as the available width changes.
+                // An event goes in the first row its whole title fits, else a new
+                // row while there are fewer than three, else a row it fits by time:
+                // the title before it there gives way where it starts. Only events
+                // overlapping three others in time need a fourth row.
+                property var laneLayout: {
+                    const lanes = [], limits = [], rows = []
+                    const order = blocks.map(function(row, index) { return index }).sort(function(a, b) { return blocks[a].fraction - blocks[b].fraction })
+                    for (const index of order) {
+                        const row = blocks[index], left = row.fraction * trackWidth
                         // The label starts with the 14px account avatar: about 20px more.
-                        const right = Math.max(left + row.fractionWidth * trackWidth, left + 36 + row.label.length * 6.6)
-                        let lane = ends.findIndex(function(end) { return left >= end + 6 })
-                        if (lane < 0) { lane = ends.length; ends.push(right) } else ends[lane] = right
-                        return lane
-                    })
+                        const timeRight = left + Math.max(row.fractionWidth * trackWidth, 36)
+                        const labelRight = Math.max(timeRight, left + 36 + row.label.length * 6.6)
+                        let lane = rows.findIndex(function(r, at) { return at < 3 && left >= r.labelEnd + 6 })
+                        if (lane < 0 && rows.length < 3) lane = rows.length
+                        // Of the rows it fits by time, the one whose title loses least.
+                        if (lane < 0) rows.forEach(function(r, at) { if (at < 3 && left >= r.timeEnd + 6 && (lane < 0 || r.labelEnd < rows[lane].labelEnd)) lane = at })
+                        if (lane < 0) lane = rows.length
+                        if (rows[lane]) limits[rows[lane].last] = left - rows[lane].left - 6
+                        rows[lane] = {labelEnd: labelRight, timeEnd: timeRight, last: index, left: left}
+                        lanes[index] = lane
+                    }
+                    return {lanes: lanes, limits: limits}
                 }
+                property var laneAssignments: laneLayout.lanes
                 property int lanes: Math.max(1, ...laneAssignments.map(function(lane) { return lane + 1 }))
                 property int shownLanes: Math.min(3, lanes)
                 property int hiddenEvents: panel.snapshot.events.length - laneAssignments.filter(function(lane) { return lane < shownLanes }).length
@@ -162,7 +175,9 @@ Rectangle {
                         readonly property int lane: panel.laneAssignments[index] === undefined ? 0 : panel.laneAssignments[index]
                         visible: lane < panel.shownLanes
                         x: 24 + modelData.fraction * timeline.trackWidth; y: 28 + lane * 28
-                        width: Math.min(panel.width - x - 24, Math.max(modelData.fractionWidth * timeline.trackWidth, blockLabel.x + blockLabel.implicitWidth + 8)); height: 22
+                        // A title gives way to the next event in its row.
+                        readonly property real limit: panel.laneLayout.limits[index] === undefined ? Infinity : panel.laneLayout.limits[index]
+                        width: Math.min(panel.width - x - 24, limit, Math.max(modelData.fractionWidth * timeline.trackWidth, blockLabel.x + blockLabel.implicitWidth + 8)); height: 22
                         activeFocusOnTab: panel.index === 1 && visible && backend.timelineReady
                         // Invitations as in Day and Week: Maybe striped, not answered
                         // outlined, declined (shown on request) faint and struck through.

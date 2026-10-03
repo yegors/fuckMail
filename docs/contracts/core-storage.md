@@ -1,5 +1,18 @@
 # Core and storage
 
+## D183 — forwards keep their files and stay in their thread (Core86)
+
+- **`draft_create`** in `forward` mode starts `attachment_ids` with the source message's `available` attachments in part order, up to 50 files and 25 MiB; a file that would pass 25 MiB is left out. This replaces Core12's "no implicit attachment selection" for forwards. Reply and reply-all start with none. Saves check them like any selected attachment.
+- **`google_sent`** with `conversation_id` includes forwards whose source is in that conversation, and a forward's row carries that `conversation_id`, as a reply's does. D067's filter named only replies.
+
+Consumers: Mail UI131, CLI62. Schema, fixtures and protocol unchanged.
+
+## D182 — starred contacts (Core85)
+
+- **Preferences** add `starred_senders`: up to 2,000 distinct `{account, email}` entries with lowercase addresses, validated like `html_senders`. Default `[]`. A save replaces the whole list. Starring changes only how the GUI marks a sender; it is not a message star and does not affect Done, Delay or counts.
+
+Consumers: Mail UI130, CLI61. Schema, fixtures and protocol unchanged.
+
 ## D167, D168 — Done by week and month, folded older months, dangling view keys (Core84)
 
 - **`conversations`** accepts `done_week_start` (a lowercase weekday) and `today` (`YYYY-MM-DD`), together and with `month_zone`. Done then groups as `week` (latest message on or after the most recent `done_week_start` through `today`, and later), `month` (the rest of `today`'s month), then `YYYY-MM` and `undated`. `done_months` lists them in that order.

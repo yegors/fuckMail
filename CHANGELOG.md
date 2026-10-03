@@ -4,8 +4,20 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-02
 
+- To review and Delayed have quieter headers: the icon, the name and a small count chip, without the band, and they scroll away with the list instead of staying pinned.
+- Star a contact from their card (the star at the top right). Mail from starred contacts shows an amber star by the sender's name. Starring a contact is separate from Delay and changes nothing else.
+- A forward brings the message's attachments along. They show under the draft like any attachment, and you can remove some or all before sending.
+- A forward you send shows in its conversation straight away, as a reply does. Before, it only appeared there once Gmail's copy synced.
+- After you forward a message, Reply under the conversation answers the message again, not the person you forwarded it to.
+- The "…" menu on a message now replies to or forwards that message, and offers Reply all when others were on it.
+- A message opened just as a draft starts no longer loses its To and Cc lines.
+- The subject at the top of an open message is smaller (21px), with a little more space between lines.
+- You can select and copy a message's subject, the sender's name and address, and its summary, with ⌘C or right-click → Copy.
 - After the app reconnects to its local engine, Google sync starts again on its own for the accounts that were syncing. Before, they stayed paused until you clicked one.
 - The local model finds the next emails to read much faster, so it holds up the rest of the app less.
+- The Mail timeline no longer hides an event because the titles before it are long. A long title now ends with an ellipsis where the next event starts.
+- Mail whose subject or summary contains a line break no longer draws over the rows around it in the list.
+- The formatting bar under a draft is always there, so selecting text no longer makes the box jump. Bold, italic and underline also work for what you type next, and the bar shows which are on. New: bulleted and numbered lists (⌘⇧8, ⌘⇧7). Return on an empty item ends the list.
 
 ## 2026-10-01
 

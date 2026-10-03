@@ -105,6 +105,13 @@ bool draw(const QString &name, Sketch &c) {
     else if (n == "external") { c.line({9,3,13,3,13,7}); c.line({13,3,7.5,8.5}); c.line({11.5,9.5,11.5,13,2.5,13,2.5,4.5,6,4.5}); }
     else if (n == "plus") { c.line({8,3,8,13}); c.line({3,8,13,8}); }
     else if (n == "minus") c.line({3.5,8,12.5,8});
+    else if (n == "bulletList") { for (const qreal y : {4.0, 8.0, 12.0}) { c.circle(3,y,0.9); c.line({6,y,13.5,y}); } }
+    else if (n == "numberedList") {
+        c.line({2,2.8,3,2.2,3,5.6});
+        c.moveTo(1.9,7.4); c.cubicTo(2.2,6.2,4.2,6.4,3.9,7.7); c.lineTo(1.9,9.8); c.lineTo(4.1,9.8);
+        c.moveTo(2,11.4); c.cubicTo(3,10.6,4.3,11.2,3.4,12.3); c.cubicTo(4.5,12.6,3.9,14.4,2,13.7);
+        for (const qreal y : {4.0, 8.0, 12.0}) c.line({6.5,y,13.5,y});
+    }
     else if (n == "combined") { c.roundedRect(2.5,2.5,6.5,6.5,1); c.roundedRect(7,7,6.5,6.5,1); }
     else if (n == "filter") { c.line({2.5,4,13.5,4}); c.line({5,8,11,8}); c.line({6.5,12,9.5,12}); }
     else if (n == "more") { c.circle(3,8,0.7); c.circle(8,8,0.7); c.circle(13,8,0.7); }
@@ -137,6 +144,11 @@ bool draw(const QString &name, Sketch &c) {
             const qreal a = M_PI * i / 4, b = a + 0.14, d = a + 0.64;
             c.line({8+5*qCos(a),8+5*qSin(a),8+6.4*qCos(b),8+6.4*qSin(b),8+6.4*qCos(d),8+6.4*qSin(d),8+5*qCos(a+M_PI/4),8+5*qSin(a+M_PI/4)});
         }
+    }
+    // A starred contact: the outline to star one, filled once starred.
+    else if (n == "contactStar" || n == "contactStarFilled") {
+        c.line({8,2.2,9.8,6,13.9,6.5,10.9,9.4,11.7,13.5,8,11.5,4.3,13.5,5.1,9.4,2.1,6.5,6.2,6,8,2.2});
+        if (n == "contactStarFilled") return false;
     }
     else if (n == "star") {
         for (int j = 0; j <= 10; ++j) {

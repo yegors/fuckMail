@@ -1,5 +1,13 @@
 # CLI and external agent interface
 
+## D183 — forwards with files (CLI62)
+
+`draft create --mode forward` returns a draft that already selects the source message's attachments (Core86). `draft save --attachment` replaces that selection and `--clear-attachments` empties it. `google sent --conversation-id` also lists forwards from that conversation. Other commands are unchanged.
+
+## D182 — starred contacts in preferences (CLI61)
+
+`preferences show` includes Core85's `starred_senders`; `preferences save` replaces the whole list. Other commands are unchanged.
+
 ## D162 — unchecked mail in sync status (CLI60)
 
 Account and status sync JSON add Core83's `unchecked_messages`: kept messages the current listing has yet to see. Other fields are unchanged.

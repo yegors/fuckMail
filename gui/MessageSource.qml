@@ -83,7 +83,7 @@ Item {
             spacing: 12; property bool blocksWorkspaceShortcuts: true
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: source.message.subject || ""; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.secondary; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
+                Text { text: Theme.oneLine(source.message.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.secondary; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
                 FmButton { text: "Copy"; outlined: true; implicitHeight: 28; enabled: !!source.raw; onClicked: backend.copyText(source.raw) }
             }
             Text { visible: !!source.error || !!source.result.raw_truncated; text: source.error || "This source preview is shortened. The full message remains stored locally."; color: source.error ? Theme.error : Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true }

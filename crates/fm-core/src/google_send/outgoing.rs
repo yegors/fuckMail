@@ -19,8 +19,8 @@ impl Store {
     /// Includes pending, unknown and accepted submissions; one disappears once
     /// a message with its acknowledged Gmail ID is stored. `request` may set
     /// `offset`, `limit` (1-100, default 50) and `conversation_id`, which keeps
-    /// replies in that conversation. Pages stop near 850 KiB of JSON;
-    /// `next_offset` continues them.
+    /// replies and forwards in that conversation; both join its Gmail thread.
+    /// Pages stop near 850 KiB of JSON; `next_offset` continues them.
     pub fn google_sent(&self, account: &str, request: &Value) -> Result<Value> {
         fields(request, &["offset", "limit", "conversation_id"])?;
         id(account)?;
@@ -48,7 +48,7 @@ impl Store {
             LEFT JOIN messages source ON source.account=c.account AND source.id=json_extract(c.json,'$.headers.source_message_id')
             WHERE c.execution_kind='google' AND c.account=?1 AND json_extract(c.json,'$.kind')='send'
             AND json_extract(c.json,'$.state') IN ('prepared','in_flight','acceptance_unknown','accepted')
-            AND (?2 IS NULL OR (source.conversation_id=?2 AND json_extract(c.json,'$.headers.mode') IN ('reply','reply_all')))
+            AND (?2 IS NULL OR (source.conversation_id=?2 AND json_extract(c.json,'$.headers.mode') IN ('reply','reply_all','forward')))
             AND NOT EXISTS(SELECT 1 FROM messages acquired WHERE acquired.account=c.account
                 AND acquired.remote_id=json_extract(c.json,'$.ack.message_id'))
             ORDER BY json_extract(c.json,'$.created_at') DESC,c.id DESC LIMIT ?3 OFFSET ?4")?;
@@ -101,7 +101,7 @@ impl Store {
             json!({"account":op.account,"id":format!("outgoing:{}",op.request_id),"request_id":op.request_id,
             "draft_id":op.draft_id,"draft_revision":op.draft_revision,"state":op.state,"request":op.request,
             "source_version":op.upload_sha256,"created_at":op.created_at,"headers":op.headers,
-            "conversation_id":if matches!(op.headers["mode"].as_str(),Some("reply"|"reply_all")) {source} else {None},
+            "conversation_id":if matches!(op.headers["mode"].as_str(),Some("reply"|"reply_all"|"forward")) {source} else {None},
             "observed_conversation_id":observed}),
         )
     }

@@ -1,6 +1,6 @@
 # Flight Progress v2 — Phase 1 design handoff
 
-Current native target: [September 14 second export](#september-14-second-export--d049--p2-ui), under D049/D050. Earlier inventories below retain their historical scope.
+Current native target: [September 14 second export](#september-14-second-export--d049--p2-ui), under D049/D050, with the [October 2 offline export](#october-2-offline-export--d182)'s section headers and starred contacts. Earlier inventories below retain their historical scope.
 
 Updated 2026-09-12. The founder supplied a second same-day update and requested close native implementation, replacing invented elements. [D018](../decisions.md) records Update 2 and P1-09; [D016/D017](../decisions.md) retain the earlier same-day design/composition authorization. [D014](../decisions.md) preserves confirmed read/Done/untimed Delay and combined calendar behavior. Earlier inventories below remain historical analysis.
 
@@ -184,3 +184,21 @@ The reference's provider/model pages remain useful later design material. Micros
 ## September 14 second export — D049 / P2-UI
 
 The founder supplied a newer 310,337-byte Flight Progress v2 export and support.js. Exact bytes and hashes are preserved in [reference provenance](assets/2026-09-14/flight-progress-v2-update-2/manifest.json). The changes include fixed-size dotted scope tabs, stable sender-kind placement, right-click menus, modifier/range selection, bulk flag/label/trash actions, collapsible message rows with avatars, Sent/Drafts date groups with a grouped/plain setting, refined account cards and AI styling. Prototype remote effects and state shortcuts do not replace the existing contracts. Native implementation and evidence are recorded in the Phase 2 execution report.
+
+## October 2 offline export — D182
+
+The founder supplied a bundled offline export ("changes since the last export, final state only"; its GitHub Hero graphic is not part of the app). It is preserved unchanged:
+
+| Repository reference | Bytes | SHA-256 |
+| --- | ---: | --- |
+| [Flight Progress v2 (offline).html](<assets/2026-10-02/Flight Progress v2 (offline).html>) | 901585 | `ba48a23d3a40c535bb009d37c27b15611553f1d239f25c1dab1c7ad7b2eeb67c` |
+
+The page template is a JSON string in its `__bundler/template` script; scripts and fonts are base64 in `__bundler/manifest` (gzip where `compressed`). Adopted from it:
+
+- **To review and Delayed headers.** A 40px row, 24px side padding, no background or rules, not pinned. A 12px icon (exclamation circle, clock), 7px, then the label at 13px, weight 500, full ink, letter-spacing −0.005em. After a further 2px comes a count chip: at least 22×20, 6px side padding, 5px radius, ink at 8%, and 12px weight-600 tabular figures in full ink. Then space and a 10px chevron. Date groups are unchanged.
+- **Starred contacts.** The contact card has a 28×28 star (4px radius, `bg4` on hover, 14px icon) at the end of its name row, absent on your own card. It is an outline at ink 40% with "Star this contact", or amber and filled with "Starred — click to remove". A starred contact's sender-kind glyph becomes the amber filled star ("Starred contact"). The prototype keys stars by display name; the app keys them by account and lowercase address.
+
+### Later note: reader subject — D184
+
+The designer's later note, with no new export: the reader's subject (Inbox and Sent) drops from 28px to 21px, with slightly looser line spacing so long subjects still wrap cleanly. The export above has 28px, weight 500, letter-spacing −0.02em and line-height 1.15. The app keeps the weight and letter-spacing and takes 1.25 as the looser line.
+

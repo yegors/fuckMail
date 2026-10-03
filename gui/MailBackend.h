@@ -387,6 +387,8 @@ public:
     Q_INVOKABLE void fileConversation(const QString &action);
     Q_INVOKABLE void editDraft(const QString &body);
     Q_INVOKABLE void beginDraft(const QString &mode);
+    // Reply, reply all or forward to one message of the open thread.
+    Q_INVOKABLE void beginDraftFrom(const QString &mode, const QString &messageId);
     QVariantMap actionToast() const;
     bool sendQueued() const;
     Q_INVOKABLE void activateActionToast();
@@ -836,7 +838,11 @@ private:
     // read cannot roll it back.
     bool mergeDraftDeletion(const QJsonObject &status, const QString &account, const QString &draftId);
     void mergeDraftDeletionProjection(QVariantMap &next, const QJsonObject &result) const;
-    void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry = false);
+    void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name, bool carry = false, const QString &sourceId = {});
+    // The message the thread's Reply, Reply all and Forward answer: the newest
+    // one that isn't a forward you sent, so a reply never goes to whoever the
+    // message was forwarded to.
+    QString threadReplySource() const;
     bool commitRecipientInputs();
     QString attachmentImportKey() const;
     bool attachmentImportPending() const;
@@ -1158,6 +1164,9 @@ private:
     // forwarded message when there is none). `untouched` says whether all
     // below them is still that starting text.
     QString authoredDraftText(bool *untouched = nullptr) const;
+    // Whether the draft has files beyond those it started with: a forward
+    // starts with its source message's.
+    bool draftAddedFiles() const;
     // Discards a draft whose words moved into a new one, with no Undo.
     void retireDraft(const QString &account, const QJsonObject &selector);
     // A discarded new message leaves the reader for where it was written from.

@@ -434,9 +434,9 @@ impl Store {
 /// A reply goes to Reply-To, else From; when that names only the account
 /// itself (`from`), it goes to the original To instead. Reply all adds the
 /// other To recipients and keeps Cc. The account's own address and duplicates
-/// are dropped, case-insensitively. A forward has no recipients or threading
-/// headers and quotes `body`, the stored text, line by line with `> `. The
-/// subject gains `Re:` or `Fwd:` unless it already starts with it.
+/// are dropped, case-insensitively. A forward has no recipients, keeps a
+/// reply's threading and quotes `body`, the stored text, line by line with
+/// `> `. The subject gains `Re:` or `Fwd:` unless it already starts with it.
 /// `references` holds the source's own References; composing appends its
 /// Message-ID from `reply_to_message_id`.
 pub(crate) fn routing_from_source(
@@ -560,9 +560,11 @@ impl Store {
     /// at revision 1 and returns it projected.
     ///
     /// Reply and forward modes take `conversation_id` and `source_message_id`
-    /// and read routing from the source's raw bytes. The body starts with the
-    /// account signature (see [`signed_body`]). The draft ID is derived from
-    /// the account and `request_id`, so one request cannot create two drafts.
+    /// and read routing from the source's raw bytes. A forward starts with the
+    /// source's retained attachments (see [`Self::forwarded_attachments`]).
+    /// The body starts with the account signature (see [`signed_body`]). The
+    /// draft ID is derived from the account and `request_id`, so one request
+    /// cannot create two drafts.
     pub(crate) fn create_composition(&self, account: &str, p: &Value) -> Result<Value> {
         let mode = string(p, "mode")?;
         if !["new", "reply", "reply_all", "forward"].contains(&mode) {
@@ -605,8 +607,12 @@ impl Store {
         let (name, signature, identity) = self.draft_identity(account)?;
         let timestamp = now()?;
         let body = signed_body(&body, &signature);
-        self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,'',?9,?10,?11,?11)",
-            params![account,draft_id,cid,mode,mid,hash,serde_json::to_string(&routing)?,body,name,identity,timestamp])?;
+        let attachments = match mid {
+            Some(mid) if mode == "forward" => self.forwarded_attachments(account, mid)?,
+            _ => vec![],
+        };
+        self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,attachments_json,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,?9,'',?10,?11,?12,?12)",
+            params![account,draft_id,cid,mode,mid,hash,serde_json::to_string(&routing)?,body,serde_json::to_string(&attachments)?,name,identity,timestamp])?;
         self.composition(account, &json!({"draft_id":draft_id}))
     }
 
@@ -805,6 +811,33 @@ impl Store {
             )?;
         }
         self.composition(account, &json!({"draft_id":draft["draft_id"]}))
+    }
+
+    /// The attachments a forward of `message` starts with: its retained ones in
+    /// message order, as many as fit a draft's 50 files and 25 MiB. The writer
+    /// removes any they don't want before sending.
+    fn forwarded_attachments(&self, account: &str, message: &str) -> Result<Vec<String>> {
+        let mut statement = self.db.prepare("SELECT a.id,a.size FROM attachments a LEFT JOIN attachment_sources s ON s.account=a.account AND s.id=a.id WHERE a.account=?1 AND a.message_id=?2 AND a.state='available' ORDER BY s.part_index,a.id")?;
+        let rows = statement.query_map(params![account, message], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        let (mut ids, mut total) = (Vec::new(), 0u64);
+        for row in rows {
+            let (aid, size) = row?;
+            let Some(next) = u64::try_from(size)
+                .ok()
+                .and_then(|size| total.checked_add(size))
+                .filter(|next| *next <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
+            else {
+                continue;
+            };
+            if ids.len() == 50 {
+                break;
+            }
+            total = next;
+            ids.push(aid);
+        }
+        Ok(ids)
     }
 
     /// Requires at most 50 distinct attachment IDs of this account, each fully
