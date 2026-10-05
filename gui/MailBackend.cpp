@@ -104,9 +104,11 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         }, "conversation", true);
     });
     connect(this, &MailBackend::accountChanged, this, [this] { loadOutgoing(); });
+    // The current-account view filters what was read for every account.
     connect(this, &MailBackend::accountChanged, this, [this] {
-        if (m_preferences.value("calendar_account_visibility").toString() == "current") loadCalendar();
+        if (m_preferences.value("calendar_account_visibility").toString() == "current") { emit eventsChanged(); emit timelineChanged(); }
     });
+    connect(this, &MailBackend::todayChanged, this, &MailBackend::followToday);
     connect(this, &MailBackend::conversationChanged, this, [this] {
         const auto scope = QJsonDocument(QJsonArray{m_account, m_selected}).toJson(QJsonDocument::Compact);
         if (!m_messageModel.replace(QString::fromUtf8(scope), conversation().value("messages").toList())) {
@@ -219,7 +221,9 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             // Starting sync can wait on a keychain prompt the user has not
             // answered yet; that is not the engine failing.
             const auto &pending = m_pending[id];
-            const qint64 limit = pending.method == "google_sync_start" || pending.method == "google_sync_refresh" ? 120000 : 15000;
+            // A busy store can hold a request for many seconds while the engine
+            // is alive; giving up on it then would stop the engine.
+            const qint64 limit = pending.method == "google_sync_start" || pending.method == "google_sync_refresh" ? 120000 : 60000;
             if (pending.started > 0 && now - pending.started > limit) {
                 fail("The local engine did not answer in time. Reconnect to continue.");
                 m_socket.abort(); return;
@@ -277,7 +281,9 @@ QString MailBackend::profilePath() const { return QDir::toNativeSeparators(m_pro
 void MailBackend::revealProfile() { QDesktopServices::openUrl(QUrl::fromLocalFile(m_profile)); }
 
 void MailBackend::attemptConnection() {
-    if (m_startupClock.elapsed() >= 30000) {
+    // An engine that is closing keeps the profile until it has finished, so
+    // a new one is started for up to two minutes.
+    if (m_startupClock.elapsed() >= 120000) {
         m_connectTimer.stop(); m_socket.abort(); fail("Cannot start the local engine. Check that fm-engine is installed beside the app, then reconnect."); return;
     }
     if (m_socket.state() != QLocalSocket::UnconnectedState) return;
@@ -302,7 +308,7 @@ void MailBackend::attemptConnection() {
             m_socket.connectToServer(endpoint);
         }
     }
-    if (m_launchAttempts < 10 && m_startupClock.elapsed() >= m_nextLaunch) {
+    if (m_launchAttempts < 40 && m_startupClock.elapsed() >= m_nextLaunch) {
         // Detached children keep their independent CLI-owned lifetime. Startup
         // retries are bounded; discovery can disappear before the old lock closes.
         ++m_launchAttempts;
@@ -636,6 +642,12 @@ void MailBackend::setFolder(const QString &value) {
     if (value != "spam") remember("folder", value);
     if (!m_binCounts.isEmpty()) { m_binCounts.clear(); emit binCountsChanged(); }
     emit queryChanged(); rescope(m_filters, m_category);
+    // Another folder's rows are never drawn as this one's: with nothing saved
+    // to show at once, the list is empty until this folder's rows arrive.
+    if (m_conversationModel.scope() != listScope()) {
+        m_conversations.clear(); m_inboxSections.clear(); m_unloadedItems = 0;
+        m_conversationModel.replace(listScope(), {}); emit conversationsChanged();
+    }
     if (value == "trash") refreshBinCounts();
 }
 void MailBackend::setCategory(const QString &value) {
@@ -848,6 +860,9 @@ QString MailBackend::mailMonthZone() const {
     const auto id = QString::fromUtf8(QTimeZone::systemTimeZoneId());
     return id.contains(u'/') ? id : QStringLiteral("UTC");
 }
+QString MailBackend::listScope() const {
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"account", m_account}, {"folder", m_folder}, {"query", m_query}}).toJson(QJsonDocument::Compact));
+}
 bool MailBackend::publishConversations(QVariantList rows) {
     // Inbox rows name their section; Done rows split by the date of their
     // latest message, in the same zone and week Core counts them in.
@@ -882,7 +897,7 @@ bool MailBackend::publishConversations(QVariantList rows) {
     // A search starts a new list, placed by the saved list position. Collapsing
     // a section, a filter or a label changes rows, not the view, so they diff
     // in place: rows still shown keep their delegates and the list its place.
-    const auto scope = QJsonDocument(QJsonObject{{"account", m_account}, {"folder", m_folder}, {"query", m_query}}).toJson(QJsonDocument::Compact);
+    const auto scope = listScope().toUtf8();
     // These fields already fit one accepted IPC frame. Keep the complete,
     // deterministic serialization, with bounded room for its wrapper keys.
     const auto reject = [this](const QString &error) {
@@ -903,7 +918,7 @@ bool MailBackend::publishConversations(QVariantList rows) {
 QVariantList MailBackend::listItems(const QVariantList &rows) {
     m_inboxSections.clear(); m_unloadedItems = 0;
     if (m_folder != u"inbox") return rows;
-    struct Section { QString key, order; int count = 0; bool open = true; QVariantList rows; int loaded = 0; };
+    struct Section { QString key, order; int count = 0; bool open = true; QVariantList rows; int loaded = 0; bool stays = false; int leavingKept = 0; };
     QList<Section> sections;
     QHash<QString, qsizetype> at;
     const auto add = [&](const QString &key, int count) {
@@ -927,7 +942,7 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
         for (const auto *fixed : {"review", "held"}) {
             const auto key = QString::fromLatin1(fixed);
             const int count = std::max(0, counts.value(key).toInt() + kept.value(key));
-            if (!filtering || count > 0) add(key, count);
+            if (!filtering || count > 0) { add(key, count); sections.last().stays = !filtering; }
         }
         for (const auto &value : m_querySummary.value("done_months").toList()) {
             const auto key = u"done:" + value.toMap().value("month").toString();
@@ -943,6 +958,7 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
         if (!section.open) continue;
         section.rows.append(value);
         if (!row.value("leaving").toBool()) ++section.loaded;
+        else if (row.value("pinned").toBool()) ++section.leavingKept;
     }
     // Found only through its rows: counted by them.
     for (auto &section : sections) section.count = std::max(section.count, section.loaded);
@@ -971,7 +987,11 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
         }
         items.append(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}});
         if (empty) items.append(QVariantMap{{"id", u"empty:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("empty")}});
-        items += section.rows;
+        // The last row folding out of a section that stays turns into its
+        // empty line in place rather than collapsing, so nothing below moves.
+        if (section.open && section.stays && section.loaded == 0 && section.leavingKept > 0 && section.count - section.leavingKept <= 0) {
+            for (const auto &value : section.rows) { auto row = value.toMap(); row["leaves_empty"] = true; items.append(row); }
+        } else items += section.rows;
         if (i == through && more && section.open) m_unloadedItems += std::max(0, section.count - section.loaded);
     }
     // No counts from Core yet: the rest of the view by its total.
@@ -2076,7 +2096,7 @@ int MailBackend::calendarBandRows() const {
 }
 MailBackend::CalendarWindow MailBackend::calendarWindow(const QString &from, int days) const {
     const QJsonObject params{{"from", from}, {"to", QDate::fromString(from, Qt::ISODate).addDays(days).toString(Qt::ISODate)},
-        {"calendars", effectiveCalendarSelection()}};
+        {"calendars", calendarQuerySelection()}};
     return {from, days, params, QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)) + "/"
         + m_preferences.value("calendar_display_time_zone").toString()};
 }
@@ -2211,7 +2231,7 @@ void MailBackend::loadCalendar() {
 }
 void MailBackend::loadTimeline(bool force) {
     const auto timeline = m_timelineDate;
-    const auto selection = effectiveCalendarSelection();
+    const auto selection = calendarQuerySelection();
     const auto timelineDay = QDate::fromString(timeline, Qt::ISODate);
     const QJsonObject params{{"from", timelineDay.addDays(-1).toString(Qt::ISODate)}, {"to", timelineDay.addDays(2).toString(Qt::ISODate)}, {"calendars", selection}};
     const auto displayZone = m_preferences.value("calendar_display_time_zone").toString();

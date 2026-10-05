@@ -31,6 +31,9 @@ pub enum ItemIssue {
     RemoteDraft,
     /// The ID was observed but deliberately not fetched on this page.
     NotFetched,
+    /// The downloaded source could not be kept: it vanished or changed as it
+    /// was written, as when antivirus quarantines a phishing message.
+    SourceBlocked,
 }
 impl ItemIssue {
     pub(super) fn key(self) -> &'static str {
@@ -44,6 +47,7 @@ impl ItemIssue {
             Self::InvalidInternalDate => "invalid_internal_date",
             Self::RemoteDraft => "remote_draft_pending",
             Self::NotFetched => "not_fetched",
+            Self::SourceBlocked => "source_blocked",
         }
     }
 }
@@ -288,8 +292,19 @@ pub fn prepare_google_item_since(
     manifest.history_id = Some(content.history_id.clone());
     manifest.internal_date_ms = date;
     // Retain exact source even when normalization or attachment policy rejects it.
+    let hash = match blobs.stage_blob(&content.source_mime) {
+        Ok(hash) => hash,
+        // The bytes were written but could not be read back, so something
+        // outside the app removed or changed them. Recording that for this
+        // one message lets the rest of the mailbox keep syncing.
+        Err(error) if error.code == "content_unavailable" => {
+            manifest.issue = Some(ItemIssue::SourceBlocked);
+            return proof(blobs, page, manifest);
+        }
+        Err(error) => return Err(error),
+    };
     manifest.source = Some(BlobRef {
-        hash: blobs.stage_blob(&content.source_mime)?,
+        hash,
         size: content.source_mime.len() as u64,
     });
     manifest.disposition = Disposition::SourceRetainedUnindexed;

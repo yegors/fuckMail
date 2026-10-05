@@ -621,14 +621,18 @@ Item {
         objectName: "mailSectionEmpty_" + group
         visible: index >= 0
         width: list.width; height: mail.rowHeight
-        Row {
-            x: 25; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-            FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "check"; size: 12; color: Theme.accent }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: emptyItem.group === "review" ? (mail.sectionCount("held") > 0 ? "All reviewed. Nice work." : "Inbox zero. Enjoy it.") : "Nothing waiting on later."
-                color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
-            }
+        EmptyLine { group: emptyItem.group }
+    }
+    // The line an open, empty section shows. A last row folding out of its
+    // section fades into the same line, so the swap moves nothing.
+    component EmptyLine: Row {
+        property string group
+        x: 25; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+        FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "check"; size: 12; color: Theme.accent }
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: parent.group === "review" ? (mail.sectionCount("held") > 0 ? "All reviewed. Nice work." : "Inbox zero. Enjoy it.") : "Nothing waiting on later."
+            color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
         }
     }
     // Inbox label toggles travel to Core as comma-separated ids; mail with any
@@ -732,7 +736,9 @@ Item {
                 id: pillName; objectName: pill.nameObjectName
                 x: 25; width: Math.max(0, parent.width - 25); anchors.verticalCenter: parent.verticalCenter
                 enabled: pill.open
-                text: nameMetrics.elidedText
+                // Elision measures a little wider than the advance the pill is
+                // sized to, so a name that fits is shown whole.
+                text: nameMetrics.advanceWidth <= width ? pill.personName : nameMetrics.elidedText
                 color: pill.own ? Theme.accent : Theme.text
                 font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
                 TapHandler { onTapped: if (!pillName.selectedText) pill.clicked() }
@@ -1611,14 +1617,22 @@ Item {
                                 // row of a group draws its heading.
                                 readonly property int headingHeight: firstInGroup && !mail.binMode && backend.folder !== "inbox" && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 ? 0 : 10) + mail.headerHeight(group) : 0
                                 // A row read in To review folds away once another opens: 170 ms,
-                                // faded by 70% of the way.
+                                // faded by 70% of the way. The last row of its section keeps its
+                                // height and fades into the section's empty line instead.
                                 readonly property bool leaving: !!modelData.leaving
+                                readonly property bool leavesEmpty: leaving && !!modelData.leaves_empty
                                 property real leave: 0
                                 NumberAnimation on leave { id: leaveAnimation; running: false; from: 0; to: 1; duration: 170; easing.type: Easing.InQuad }
                                 onLeavingChanged: { if (leaving) leaveAnimation.restart(); else { leaveAnimation.stop(); leave = 0 } }
                                 Component.onCompleted: if (leaving) leaveAnimation.restart()
-                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (1 - leave))
+                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (leavesEmpty ? 1 : 1 - leave))
                                 GroupHeader { group: groupedRow.group; visible: groupedRow.headingHeight > 0; width: parent.width; y: groupedRow.headingHeight - height }
+                                Loader {
+                                    active: groupedRow.leavesEmpty
+                                    y: groupedRow.headingHeight; width: parent.width; height: mail.rowHeight
+                                    opacity: groupedRow.leave
+                                    sourceComponent: Item { EmptyLine { group: groupedRow.group } }
+                                }
                                 ItemDelegate {
                                     id: row
                                     objectName: "conversationRow_"+groupedRow.modelData.id

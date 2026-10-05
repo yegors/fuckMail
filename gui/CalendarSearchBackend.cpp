@@ -45,11 +45,14 @@ void MailBackend::initializeCalendarSearch() {
 void MailBackend::setCalendarMailActivityContext(bool active, bool combined) {
     if (active == m_calendarMailActivityActive && combined == m_calendarMailActivityCombined) { refreshCalendarMailActivity(); return; }
     m_calendarMailActivityActive = active; m_calendarMailActivityCombined = combined;
-    if (active) { m_calendarMailActivityTimer.start(); refreshCalendarMailActivity(); m_calendarPrefetchTimer.start(); }
-    else {
+    if (active) {
+        m_calendarMailActivityDue = true;
+        m_calendarMailActivityTimer.start(); refreshCalendarMailActivity(); m_calendarPrefetchTimer.start();
+    } else {
+        // Hidden counts stop refreshing and late replies are dropped, but the
+        // last counts stay so returning to Calendar shows them at once.
         m_calendarMailActivityTimer.stop(); ++m_calendarMailActivityGeneration;
-        m_calendarMailActivityBusy = false; m_calendarMailActivityScope.clear(); m_calendarMailActivityStamp.clear();
-        m_calendarMailActivity.clear(); emit calendarMailActivityChanged();
+        m_calendarMailActivityBusy = false; m_calendarMailActivityStamp.clear();
     }
 }
 
@@ -80,8 +83,8 @@ void MailBackend::refreshCalendarMailActivity() {
     if (m_calendarMailActivityBusy || stamp == m_calendarMailActivityStamp) return;
     // Signals can arrive on every sync page. Keep repeated aggregate reads off
     // the foreground queue; a changed date/account still loads immediately.
-    if (!newScope && sender() != &m_calendarMailActivityTimer) return;
-    m_calendarMailActivityBusy = true; m_calendarMailActivityStamp = stamp;
+    if (!newScope && !m_calendarMailActivityDue && sender() != &m_calendarMailActivityTimer) return;
+    m_calendarMailActivityBusy = true; m_calendarMailActivityStamp = stamp; m_calendarMailActivityDue = false;
     const auto generation = m_calendarMailActivityGeneration;
     const auto zone = m_preferences.value("calendar_display_time_zone").toString();
     request("calendar_mail_activity", account, {{"from", from}, {"to", to}}, [this, generation, from, to, account, zone](auto result, bool ok) {
@@ -312,7 +315,7 @@ void MailBackend::applyCalendarSearchCommit(const QVariantMap &terms) {
     // with: alone shows this month with them.
     if (people && !words && (m_calendarView != "month" || m_calendarDate != todayDate())) {
         m_calendarView = "month"; m_calendarDate = todayDate();
-        rememberCalendarNavigation({{"calendar_view", "month"}, {"calendar_date", m_calendarDate}}); showCalendarRange();
+        rememberCalendarPlace(); showCalendarRange();
     }
 }
 
@@ -351,7 +354,7 @@ void MailBackend::openCalendarSearchResult(const QVariantMap &event) {
         // Show exactly this fresh read: it is cached under the visible day's own key.
         m_calendarView = "day"; m_calendarDate = date.toString(Qt::ISODate);
         if (epoch == m_calendarCacheEpoch) storeCalendarWindow(calendarWindow(m_calendarDate, 1).key, result);
-        rememberCalendarNavigation({{"calendar_view", "day"}, {"calendar_date", m_calendarDate}});
+        rememberCalendarPlace();
         showCalendarRange();
         emit calendarSearchChanged();
         emit calendarSearchResultReady(selected);

@@ -1,5 +1,19 @@
 # Phase 2 Google Calendar adapter
 
+## D188 — Mail/Calendar switch (2026-10-03)
+
+Windows 11 25H2, x86_64, Qt 6.11.2, Direct3D 11, 1440×900 logical at 1.25 device pixel ratio, synthetic demo profile, optimized build. Native input to the first correct frame, 100 samples per route after one warmup:
+
+| Route | p50 | p95 | max |
+| --- | --- | --- | --- |
+| Mail/Calendar switch | 12.8 ms | 15.9 ms | 18.3 ms |
+| Day/Week/Month switch | 57.8 ms | 90.3 ms | 102.2 ms |
+| Month date click | 14.6 ms | 32.1 ms | 46.9 ms |
+| Week step | 5.6 ms | 10.4 ms | 23.4 ms |
+| Month step | 12.6 ms | 16.0 ms | 25.2 ms |
+
+The switch spends about 7 ms to the workspace change and 5 ms to the frame. The old switch path was not measured: the benchmark window lost focus on each attempt while the desktop was in use.
+
 ## D098 — Calendar view performance (2026-09-23)
 
 The founder reported that Day/Week/Month switches were not instant, with content appearing and shifting into place, and that a Month day click took about two seconds on a test account with almost no events. An audit on a disposable demo profile found the time was spent in the GUI, not the engine.

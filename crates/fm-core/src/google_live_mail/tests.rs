@@ -426,6 +426,34 @@ fn oversized_and_malformed_items_do_not_poison_page_or_claim_offline_coverage() 
 }
 
 #[test]
+fn a_source_blocked_on_disk_is_recorded_and_the_page_still_completes() {
+    let (_directory, mut store, account) = setup();
+    let page = begin_list(
+        &mut store,
+        &account,
+        MailLane::Inventory,
+        &["good", "blocked"],
+        None,
+    );
+    // Antivirus that alters or removes the file as it is written leaves the
+    // same name holding other bytes, which staging then cannot verify.
+    let probe = prepared(&store, &page, "blocked", raw("blocked", "110", "phish"));
+    let source = probe.manifest.source.as_ref().unwrap();
+    let path = store.verified_blob(&source.hash, source.size).unwrap();
+    std::fs::write(&path, b"quarantined").unwrap();
+    let item = prepared(&store, &page, "blocked", raw("blocked", "110", "phish"));
+    assert!(item.manifest.source.is_none());
+    publish(&mut store, &page, item);
+    let item = prepared(&store, &page, "good", raw("good", "110", "good"));
+    publish(&mut store, &page, item);
+    store.google_live_finish_page(&page).unwrap();
+    assert_eq!(count(&store, &account), 1);
+    let blocked:(String,String)=store.db.query_row("SELECT source_state,issue FROM google_mail_coverage WHERE account=?1 AND remote_id='blocked'",[&account],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+    assert_eq!(blocked, ("unavailable".into(), "source_blocked".into()));
+    assert!(store.google_live_pending(&page, 10).unwrap().is_empty());
+}
+
+#[test]
 fn recovery_rehash_rejects_corruption_and_preparation_is_store_independent() {
     let (_directory, mut store, account) = setup();
     let page = begin_list(&mut store, &account, MailLane::Inventory, &["a"], None);
@@ -1298,4 +1326,28 @@ fn after_history_expires_kept_mail_is_unchecked_until_listed_again() {
     let item = prepared(&store, &page, "a", raw("a", "310", "alpha"));
     publish(&mut store, &page, item);
     assert_eq!(store.google_live_coverage(&account).unwrap().unchecked, 1);
+}
+
+#[test]
+fn one_spam_message_is_found_by_its_remote_id_not_by_scanning_the_account() {
+    let (_dir, store, _account) = setup();
+    store
+        .db
+        .execute_batch("CREATE TEMP TABLE IF NOT EXISTS retention_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,remote_id TEXT NOT NULL,source_hash TEXT NOT NULL,source_rowid INTEGER NOT NULL)")
+        .unwrap();
+    let plan: Vec<String> = store
+        .db
+        .prepare(&format!("EXPLAIN QUERY PLAN {}", spam_selection(true)))
+        .unwrap()
+        .query_map(rusqlite::params!["account", "remote"], |r| {
+            r.get::<_, String>(3)
+        })
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert!(
+        plan.iter()
+            .any(|step| step.starts_with("SEARCH m ") && step.contains("remote_id=?")),
+        "{plan:?}"
+    );
 }

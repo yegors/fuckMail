@@ -1,6 +1,7 @@
 // Developer benchmark for `fuckmail-gui --benchmark-calendar-output <report.json>
 // --profile <dir>`: times Calendar view and date input to the first frame whose
-// grid matches, and writes a JSON report. Not run by CTest.
+// grid matches, and Mail/Calendar switches to the first frame showing the
+// other workspace, and writes a JSON report. Not run by CTest.
 #include "GuiCalendarBenchmark.h"
 #include "GuiBenchmarkSupport.h"
 #include <QCoreApplication>
@@ -15,7 +16,7 @@
 
 using namespace GuiBenchmarkSupport;
 namespace {
-const QStringList labels{"view_switch", "month_day_click", "week_step", "month_step"};
+const QStringList labels{"view_switch", "month_day_click", "week_step", "month_step", "workspace_switch"};
 QList<QQuickItem *> ordered(QQuickItem *parent, const QString &prefix) {
     QList<QQuickItem *> items;
     namedItems(parent, prefix, items);
@@ -47,9 +48,10 @@ GuiCalendarBenchmark::GuiCalendarBenchmark(MailBackend &backend, QQuickWindow *w
     connect(&m_inspectTimer, &QTimer::timeout, this, &GuiCalendarBenchmark::inspect);
     m_watchdog.setSingleShot(true);
     connect(&m_watchdog, &QTimer::timeout, this, [this] {
-        finish(QString("Calendar input stalled: phase=%1 class=%2 sample=%3 view=%4 date=%5 target=%6/%7 ready=%8")
+        QJsonObject snapshot;
+        finish(QString("Calendar input stalled: phase=%1 class=%2 sample=%3 view=%4 date=%5 target=%6/%7 ready=%8 active=%9 events=%10 model=%11 visible=%12 miss=%13")
             .arg(int(m_phase)).arg(m_class).arg(m_iteration).arg(m_backend.calendarView(), m_backend.calendarDate(), m_targetView, m_targetDate)
-            .arg(m_backend.calendarReady()));
+            .arg(m_backend.calendarReady()).arg(m_window->isActive()).arg(m_backend.events().size()).arg(modelCorrect()).arg(visibleSnapshot(snapshot)).arg(m_snapshotMiss));
     });
     for (auto signal : {&MailBackend::eventsChanged, &MailBackend::calendarStatusChanged})
         connect(&m_backend, signal, this, &GuiCalendarBenchmark::inspect);
@@ -98,10 +100,15 @@ void GuiCalendarBenchmark::beginSample() {
     const auto view = m_backend.calendarView();
     const auto date = QDate::fromString(m_backend.calendarDate(), Qt::ISODate);
     QString control;
-    m_setup = false; m_targetDate = m_backend.calendarDate();
+    m_setup = false; m_targetDate = m_backend.calendarDate(); m_targetWorkspace = "calendar";
     // Routes needing a particular starting view first switch to it unmeasured.
     const QString needed = m_class == 1 || m_class == 3 ? "month" : m_class == 2 ? "week" : "";
-    if (!needed.isEmpty() && view != needed) {
+    if (m_class == 4) {
+        // Alternates Mail and Calendar; the Calendar keeps its view and date.
+        m_targetView = view;
+        m_targetWorkspace = m_window->property("workspace").toString() == "calendar" ? "mail" : "calendar";
+        control = m_targetWorkspace + "WorkspaceButton";
+    } else if (!needed.isEmpty() && view != needed) {
         m_setup = true; m_targetView = needed; control = "calendarView_" + needed;
     } else if (m_class == 0) {
         m_targetView = view == "week" ? "month" : view == "month" ? "day" : "week";
@@ -120,7 +127,7 @@ void GuiCalendarBenchmark::beginSample() {
         control = direction > 0 ? "calendarNext" : "calendarPrevious";
     }
     m_input = {{"input_object", control}, {"old_view", view}, {"old_date", date.toString(Qt::ISODate)},
-        {"target_view", m_targetView}, {"target_date", m_targetDate}};
+        {"target_view", m_targetView}, {"target_date", m_targetDate}, {"target_workspace", m_targetWorkspace}};
     m_modelAt = 0; m_intermediateFrames = 0; m_modelInvalidations = 0;
     m_armedGeneration = 0; m_armedSnapshot = {}; m_paint->arm(0);
     m_phase = Phase::AwaitingModel; m_watchdog.start(10000); m_inspectTimer.start();
@@ -129,17 +136,37 @@ void GuiCalendarBenchmark::beginSample() {
     inspect();
 }
 bool GuiCalendarBenchmark::modelCorrect() const {
+    if (m_window->property("workspace").toString() != m_targetWorkspace || m_window->property("settingsOpen").toBool()) return false;
+    if (m_targetWorkspace == "mail") return true;
     if (m_backend.calendarView() != m_targetView || m_backend.calendarDate() != m_targetDate || !m_backend.calendarReady()) return false;
     // Events must be those published for exactly the displayed range.
     const auto exact = m_backend.calendarWindow(m_backend.calendarFrom(), m_backend.calendarDays());
     return m_backend.m_calendarDisplayKey.endsWith('#' + exact.key);
 }
 bool GuiCalendarBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
-    if (!modelCorrect() || !m_window->isExposed()) return false;
+    // Records which check failed, for the stall report.
+    const auto miss = [this](int check, const QString &detail = {}) { m_snapshotMiss = QString::number(check) + detail; return false; };
+    if (!modelCorrect() || !m_window->isExposed()) return miss(1);
     auto calendar = findItem(m_window->contentItem(), "calendarWorkspace");
-    auto title = calendar ? findItem(calendar, "calendarTitle") : nullptr;
-    auto dateButton = calendar ? findItem(calendar, "calendarDatePickerButton") : nullptr;
-    if (!title || !dateButton) return false;
+    // Lookups skip hidden items, so the workspace not shown is not found.
+    auto mail = findItem(m_window->contentItem(), "mailWorkspace");
+    snapshot["workspace"] = m_targetWorkspace;
+    if (m_targetWorkspace == "mail") {
+        // Mail shows its list in place of the Calendar.
+        QJsonArray shown;
+        for (auto row : mail ? ordered(mail, "conversationRow_") : QList<QQuickItem *>{}) {
+            const auto rect = visibleRect(row, m_window);
+            if (rect.width() > 16 && rect.height() > 8) shown.append(row->objectName());
+        }
+        if (calendar || visibleRect(mail, m_window).isEmpty() || shown.isEmpty()) return miss(2);
+        snapshot["view"] = m_targetView; snapshot["date"] = m_targetDate; snapshot["rows"] = shown;
+        snapshot["identities"] = QJsonArray{};
+        return true;
+    }
+    if (mail || visibleRect(calendar, m_window).isEmpty()) return miss(3);
+    auto title = findItem(calendar, "calendarTitle");
+    auto dateButton = findItem(calendar, "calendarDatePickerButton");
+    if (!title || !dateButton) return miss(4);
     // The rows this view shows for the saved account visibility.
     const bool combined = calendar->property("combinedAccounts").toBool();
     QVariantList rows; QSet<QString> rowNames;
@@ -164,29 +191,30 @@ bool GuiCalendarBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
         auto actual = names(ordered(calendar, "calendarEvent-"));
         std::sort(expected.begin(), expected.end()); std::sort(actual.begin(), actual.end());
         expected.removeDuplicates(); actual.removeDuplicates();
-        if (expected != actual) return false;
+        if (expected != actual) return miss(5);
         painted = QJsonArray::fromStringList(actual);
         snapshot["all_day"] = QJsonArray::fromStringList(names(ordered(calendar, "calendarAllDay-")));
     } else if (m_targetView == "month") {
         const auto cells = ordered(calendar, "calendarMonthCell-");
-        if (cells.size() != calendar->property("monthCells").toInt()) return false;
+        if (cells.size() != calendar->property("monthCells").toInt()) return miss(6);
         QHash<QString, QStringList> shownByDay;
         for (int index = 0; index < cells.size(); ++index) {
             const auto iso = from.addDays(index).toString(Qt::ISODate);
             auto date = findItem(cells[index], "calendarMonthDate-" + QString::number(index));
             if (cells[index]->objectName() != "calendarMonthCell-" + iso || !date
-                || date->property("text").toString() != QString::number(from.addDays(index).day())) return false;
-            // Each cell shows the first rows of its own day that fit.
+                || date->property("text").toString() != QString::number(from.addDays(index).day())) return miss(7);
+            // Each cell shows a window of its own day's rows that fits: the
+            // first rows, or on today the rows around the current time.
             const auto dayEvents = cells[index]->property("dayEvents").toList();
-            const int shown = std::min<int>(cells[index]->property("shown").toInt(), std::min<qsizetype>(3, dayEvents.size()));
+            const auto cellRows = cells[index]->property("rows").toList();
+            const int first = cells[index]->property("first").toInt();
+            const int shown = std::min<int>(cells[index]->property("shown").toInt(), std::min<qsizetype>(3, cellRows.size() - first));
+            if (cellRows.size() != dayEvents.size()) return miss(8);
+            for (const auto &entry : dayEvents) if (!rowNames.contains(eventName(entry.toMap()))) return miss(8);
             QStringList expected;
-            for (int row = 0; row < dayEvents.size(); ++row) {
-                const auto name = eventName(dayEvents[row].toMap());
-                if (!rowNames.contains(name)) return false;
-                if (row < shown) expected.append("calendarMonthEvent-" + name);
-            }
+            for (int row = first; row < first + shown; ++row) expected.append("calendarMonthEvent-" + eventName(cellRows[row].toMap()));
             const auto actual = names(ordered(cells[index], "calendarMonthEvent-"));
-            if (expected != actual) return false;
+            if (expected != actual) return miss(9, " " + iso);
             if (!actual.isEmpty()) { shownByDay[iso] = actual; painted.append(QJsonObject{{"date", iso}, {"events", QJsonArray::fromStringList(actual)}}); }
         }
         // Every published row on a visible day reaches that day's cell.
@@ -197,12 +225,12 @@ bool GuiCalendarBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
             const auto cell = cells[from.daysTo(QDate::fromString(date, Qt::ISODate))];
             bool present = false;
             for (const auto &entry : cell->property("dayEvents").toList()) present |= eventName(entry.toMap()) == eventName(row);
-            if (!present) return false;
+            if (!present) return miss(10);
             identities.append(QJsonObject{{"account", row.value("account").toString()}, {"calendar_id", row.value("calendar_id").toString()},
                 {"event_id", row.value("event_id").toString()}, {"start", row.value("start").toString()}});
         }
         snapshot["cells"] = cells.size();
-    } else return false;
+    } else return miss(11);
     snapshot["view"] = m_targetView; snapshot["date"] = m_targetDate; snapshot["from"] = m_backend.calendarFrom();
     snapshot["title"] = title->property("text").toString(); snapshot["date_button"] = dateButton->property("text").toString();
     snapshot["painted"] = painted; snapshot["identities"] = identities; snapshot["published_rows"] = rows.size();
@@ -242,7 +270,7 @@ void GuiCalendarBenchmark::painted(GuiPaintObserver::Frame frame) {
         if (++m_iteration > 100) {
             qInfo() << "Native calendar class completed:" << labels[m_class] << "100 measured correct grid frames";
             m_iteration = 0;
-            if (++m_class == 4) { finish(); return; }
+            if (++m_class == 5) { finish(); return; }
         }
     }
     QTimer::singleShot(25, this, [this] { beginSample(); });
@@ -252,7 +280,7 @@ void GuiCalendarBenchmark::finish(const QString &error) {
     const int interruptedClass = m_class, interruptedSample = m_iteration;
     stopForShutdown();
     QJsonArray classes; bool passed = error.isEmpty();
-    for (int index = 0; index < 4; ++index) {
+    for (int index = 0; index < 5; ++index) {
         auto row = summary(m_samples[index], "input_to_paint_ms");
         row["class"] = labels[index]; row["observations"] = m_samples[index].size(); row["samples"] = m_samples[index];
         row["input_to_model"] = summary(m_samples[index], "input_to_model_ms");
@@ -265,8 +293,8 @@ void GuiCalendarBenchmark::finish(const QString &error) {
         {"budget_passed", passed}, {"p95_budget_ms", 100},
         {"interrupted_class", interruptedClass}, {"interrupted_sample", interruptedSample}, {"interrupted_input", m_input},
         {"boundary", "Native QQuickWindow mouse input on the actual Calendar control to the first frame whose view, date, exact-range published events and visible event delegates match. Generation captured afterSynchronizing, carried through afterRendering and directly timestamped frameSwapped."},
-        {"oracle", "Day/week: visible timed-event delegates equal the published timed rows for the displayed days. Month: every visible cell carries its own date, shows the first rows of its day that fit, and every published row on a visible day reaches that day's cell. Painted identities are recorded for independent store verification."},
-        {"sample_policy", "One unmeasured warmup per route; 100 measured inputs per route; next input 25 ms after the prior correct paint. Routes: Day/Week/Month segment cycle; a month-grid date click into Day; Week next/previous eight weeks each way; Month next/previous four months each way. Starting-view switches are unmeasured. Normal polling, idle neighbour prefetch and serial backend queues remain enabled."},
+        {"oracle", "Day/week: visible timed-event delegates equal the published timed rows for the displayed days. Month: every visible cell carries its own date, shows the window of its day's rows that fits (the first rows, or around the current time on today), and every published row on a visible day reaches that day's cell. Painted identities are recorded for independent store verification."},
+        {"sample_policy", "One unmeasured warmup per route; 100 measured inputs per route; next input 25 ms after the prior correct paint. Routes: Day/Week/Month segment cycle; a month-grid date click into Day; Week next/previous eight weeks each way; Month next/previous four months each way. Mail/Calendar workspace buttons alternate, ending at the first frame showing the other workspace: Mail with visible conversation rows, or Calendar with its unchanged grid matching. Starting-view switches are unmeasured. Normal polling, idle neighbour prefetch and serial backend queues remain enabled."},
         {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},
         {"qt_version", QT_VERSION_STR}, {"renderer_api", int(m_window->rendererInterface()->graphicsApi())},
         {"window_width", m_window->width()}, {"window_height", m_window->height()}, {"device_pixel_ratio", m_window->devicePixelRatio()},

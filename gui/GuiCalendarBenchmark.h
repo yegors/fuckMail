@@ -8,7 +8,8 @@
 
 // Developer-only native Calendar measurement on a disposable synthetic profile:
 // actual control input to the first frame whose visible grid matches the
-// requested view, date and published events.
+// requested view, date and published events, and Mail/Calendar switches to
+// the first frame showing the other workspace.
 class GuiCalendarBenchmark final : public QObject {
 public:
     GuiCalendarBenchmark(MailBackend &backend, QQuickWindow *window, QString output, QObject *parent);
@@ -27,10 +28,11 @@ private:
     MailBackend &m_backend;
     QQuickWindow *m_window;
     GuiPaintObserver *m_paint;
-    QString m_output, m_targetView, m_targetDate;
+    QString m_output, m_targetView, m_targetDate, m_targetWorkspace = "calendar";
     QTimer m_startTimer, m_inspectTimer, m_watchdog;
-    QJsonArray m_samples[4];
+    QJsonArray m_samples[5];
     QJsonObject m_input, m_armedSnapshot;
+    mutable QString m_snapshotMiss;
     int m_class = 0, m_iteration = 0;
     quint64 m_generation = 0, m_armedGeneration = 0, m_lastSerial = 0;
     qint64 m_inputAt = 0, m_modelAt = 0;

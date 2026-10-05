@@ -1742,8 +1742,9 @@ async fn service_ready(
     }
 }
 
-/// Drives the mail acquisition worker until the job is cancelled or a step
-/// fails with an error that is not transient.
+/// Drives the mail acquisition worker until the job is cancelled. A failed
+/// step is retried with backoff, or after Sync or five minutes when the
+/// error is not transient.
 async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = mail::MailWorker::new(ctx.account.clone());
     // `mail_backfill` lets the app show new-mail checks as syncing and leave
@@ -1798,9 +1799,15 @@ async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
             }
             Err(error) => {
                 progress_state(&progress, "mail", "paused", Some(&error.code));
-                let Some(delay) = retry_wait(&error, failures) else {
-                    return;
-                };
+                crate::diagnostics::event(
+                    "Sync",
+                    "mail_step_failed",
+                    json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),
+                    "code":error.code,"message":error.message}),
+                );
+                // A lasting failure waits for Sync or a slow retry; ending the
+                // worker would leave the account unsynced until a restart.
+                let delay = retry_wait(&error, failures).unwrap_or(Duration::from_secs(300));
                 failures = failures.saturating_add(1).min(6);
                 if !wait_sync(&ctx, &mut refresh, Some(delay)).await {
                     break;

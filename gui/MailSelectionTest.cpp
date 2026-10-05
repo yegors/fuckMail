@@ -21,6 +21,7 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QImage>
+#include <QMutex>
 #include <QCryptographicHash>
 #include <QBuffer>
 #include <QTextBlock>
@@ -531,11 +532,22 @@ class MailSelectionTest {
             h.backend.m_draftChips.clear(); emit h.backend.draftChipsChanged();
         }
         // Delay it: it moves to Delayed at once and the view says all reviewed.
+        // The empty line takes the row's place, so the Delayed header is drawn
+        // where it was in every frame.
+        auto *heldHeader=find(window->contentItem(),"mailGroup_held"); require(heldHeader,"Delayed header");
+        const auto heldTop=heldHeader->mapToScene({0,0}).y(); QList<qreal> heldDrawn; QMutex heldLock;
+        const auto heldFrames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ QMutexLocker lock(&heldLock); heldDrawn.append(qAbs(heldHeader->mapToScene({0,0}).y()-heldTop)); },Qt::DirectConnection);
         h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
         auto delay=h.take(); require(delay.request["params"].toObject()["starred"]==true,"Delay sends the hold");
         set("r3","held",false,true); order({"h1","r3","r1","r2","d1"}); counts(0,2,3); h.finish(delay);
         await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().indexOf("r3")==1;},"Delay moves the open conversation to Delayed");
-        settle();
+        settle(); window->update(); settle();
+        QObject::disconnect(heldFrames);
+        {
+            QMutexLocker lock(&heldLock);
+            const auto jump=heldDrawn.isEmpty() ? 0 : *std::max_element(heldDrawn.cbegin(),heldDrawn.cend());
+            if (jump>.5) { qWarning()<<"Delayed header moved by"<<jump<<"over"<<heldDrawn.size()<<"frames"; require(false,"Delay's swap to the empty line moves nothing below it"); }
+        }
         require(!h.backend.conversations()[1].toMap()["pinned"].toBool() && h.backend.conversations()[1].toMap()["section"]=="held" && unsplit(),"a delayed conversation is not kept in To review");
         require(count("review")==0 && count("held")==2 && shownCount("mailSectionEmpty_review")==1 && shownCount("mailGroup_review")==1,"after Delay To review shows its empty state once");
         require(h.backend.selectedId()=="r3","Delay keeps the conversation open");
@@ -625,12 +637,24 @@ class MailSelectionTest {
             kept["pinned"]=true; kept["display_group"]="review"; kept["pinned_from"]="done"; rows[0]=kept;
             h.backend.publishConversations(rows); emit h.backend.conversationsChanged(); settle();
             require(shownCount("mailSectionEmpty_review")==0,"the read one still stands in To review");
+            // Nothing below the folding row moves: it fades into the empty line.
+            auto *delayed=find(window->contentItem(),"mailGroup_held"); require(delayed,"Delayed header");
+            const auto delayedY=[&]{ return delayed->mapToScene({0,0}).y(); };
+            const auto before=delayedY(); qreal moved=0;
+            // Read where Delayed is drawn in every frame rendered, not between them.
+            QList<qreal> drawn; QMutex drawnLock;
+            const auto frames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ QMutexLocker lock(&drawnLock); drawn.append(qAbs(delayedY()-before)); },Qt::DirectConnection);
+            const auto watch=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,2); QMutexLocker lock(&drawnLock); for (const auto d:drawn) moved=std::max(moved,d); };
             h.holdLists=true;
             h.backend.startLeaving(h.backend.conversations()[0].toMap(),0);
-            QElapsedTimer folded; folded.start(); while(folded.elapsed()<330) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(h.backend.conversationModel()->data(h.backend.conversationModel()->index(1,0),ConversationListModel::RowDataRole).toMap()["leaves_empty"].toBool(),"the last row of To review turns into its empty line");
+            watch(330);
             require(shownCount("mailSectionEmpty_review")==1,"Inbox zero shows once the last row has folded away");
             h.holdLists=false; h.releaseLists(); await([&]{return !h.backend.m_loading;},"the refresh after it lands");
+            watch(150);
             require(shownCount("mailSectionEmpty_review")==1,"and stays when the refresh lands");
+            QObject::disconnect(frames);
+            if (moved>.5 || drawn.size()<5) { qWarning()<<"Delayed header moved by"<<moved<<"over"<<drawn.size()<<"frames"; require(false,"the last row's fold moves nothing below it"); }
         }
         // Collapsing the only loaded month while older mail isn't loaded keeps
         // the headers, and refreshes never show a loading text.

@@ -602,7 +602,12 @@ public:
         backend.setCategory("finance,travel");
         require(shown() == QStringList{"row-0", "row-3"}, "a second label widens the view, so Core decides");
         require(resets == 0, "filters and labels change rows in place, never resetting the list");
-        qInfo() << "Instant filters passed: kind and label narrowing, a revisited view, in-place rows.";
+        // Drafts has nothing saved to show at once, and the engine cannot
+        // answer here: the Inbox rows must not stay on screen as drafts.
+        backend.setFolder("drafts");
+        require(backend.folder() == "drafts" && shown().isEmpty() && backend.m_conversationModel.rowCount() == 0,
+            "another folder's rows are never shown as this one's");
+        qInfo() << "Instant filters passed: kind and label narrowing, a revisited view, in-place rows, a folder that cannot load yet.";
     }
 };
 int main(int argc, char **argv) { QGuiApplication app(argc,argv); QQuickStyle::setStyle("Basic"); MailNavigationCacheTest::run(); return 0; }

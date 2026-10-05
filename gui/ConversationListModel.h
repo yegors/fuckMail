@@ -43,6 +43,8 @@ public:
     /// Scope includes account and view identity. False means invalid input;
     /// nothing changed. True includes a valid no-op. Never resets within scope.
     bool replace(const QString &scope, const QVariantList &rows);
+    /// The scope of the rows held now.
+    const QString &scope() const { return m_scope; }
     /// The index of the row with `id`, or -1.
     int indexOf(const QString &id) const;
 

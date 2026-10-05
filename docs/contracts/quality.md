@@ -1,5 +1,9 @@
 # Quality, performance and release acceptance
 
+## D188 — Mail/Calendar switch route (Quality90)
+
+The native Calendar benchmark has five routes. `workspace_switch` alternates the Mail and Calendar workspace buttons, keeping the Calendar's view and date, and ends at the first frame showing the other workspace: Mail with visible conversation rows and no Calendar, or Calendar with its grid matching. Its budget is the same p95 <= 100 ms. The Month check follows each cell's own row window (on today, the rows around the current time). Mail UI135 and Calendar43. [Measurements](../research/phase-2-calendar.md#d188--mailcalendar-switch-2026-10-03).
+
 ## D162 — retention changes and download slots (Quality89)
 
 Gmail42, Core83, Mail UI112 and CLI60. Required checks:
@@ -243,7 +247,7 @@ Memory is measured on the optimized build with three fresh demo profiles per vie
 
 ## D098 — native Calendar view benchmark (Quality70)
 
-`fuckmail-gui --benchmark-calendar-output <file>` measures a disposable synthetic profile. `scripts/verify_interaction.py --mode calendar --bin <dir> --report <file>` owns the profile, engine and verification. There are four routes: Day/Week/Month segment cycle, Month date click into Day, Week next/previous and Month next/previous. Each route gets one warmup and 100 measured native mouse inputs. A sample runs from input to the first swapped frame whose view, date, exact-range published rows and visible event delegates match. The verifier checks every painted event identity against `calendar_sources`. The report also counts frames painted before the correct one, the visible jank. The cached calendar view switch budget stays p95 <= 100 ms per route, and the verifier's exit code follows it. Measure optimized builds; the debug build is for development only. Consumers: Mail UI69 and Core55. [Execution record](../research/phase-2-calendar.md#d098--calendar-view-performance-2026-09-23).
+`fuckmail-gui --benchmark-calendar-output <file>` measures a disposable synthetic profile. `scripts/verify_interaction.py --mode calendar --bin <dir> --report <file>` owns the profile, engine and verification. There are five routes: Day/Week/Month segment cycle, Month date click into Day, Week next/previous, Month next/previous and the Mail/Calendar workspace switch. Each route gets one warmup and 100 measured native mouse inputs. A sample runs from input to the first swapped frame whose view, date, exact-range published rows and visible event delegates match. The verifier checks every painted event identity against `calendar_sources`. The report also counts frames painted before the correct one, the visible jank. The cached calendar view switch budget stays p95 <= 100 ms per route, and the verifier's exit code follows it. Measure optimized builds; the debug build is for development only. Consumers: Mail UI69 and Core55. [Execution record](../research/phase-2-calendar.md#d098--calendar-view-performance-2026-09-23).
 
 ## D095 — legacy schema removal checks (Quality69)
 

@@ -2210,3 +2210,59 @@ The founder asked for a message's subject, sender name and address, and its summ
 - **Evidence.** MailSelectionTest drags across each of the four, presses the copy key and checks the clipboard holds exactly that text, then does the same through the right-click Copy. The address failed the copy-key check before the change. The search reader check now also requires the subject's laid-out height to be its lines at 26px.
 
 Mail UI134. No schema, fixture or protocol change.
+
+## D187 — one blocked message no longer stops an account's mail (2026-10-03T17:30:00Z)
+
+The founder's Windscribe mailbox stopped getting new mail for eight hours, and Sync did nothing. Only that account was affected.
+
+- **Found.** While downloading older mail, the account fetched a phishing message. Windows Defender detected `Trojan:HTML/Phish` in its stored source and quarantined the file as it was written (04:46:13 local, and again at 12:52:31 after a restart). Staging could not verify the file it had just written and failed with `content_unavailable`. The mail worker treated that as a lasting error and returned, so the account's mail stayed paused, and Sync could not start it again until the app restarted. After each restart the same message was downloaded and blocked again. A read-only hash check found all 395,614 retained blobs intact.
+- **Change.** A downloaded source that cannot be verified once written is recorded for that message alone (issue `source_blocked`, source unavailable), and the rest of the page publishes. Any mail step failure is logged as `mail_step_failed` with its code and message. An error that is not transient no longer ends the worker: it waits for Sync, or retries after five minutes, as remote drafts already did.
+- **Evidence.** A Core test leaves other bytes at a message's blob name, as quarantine does: preparing that message records `source_blocked`, another message on the page publishes and the page completes. Before the change, preparation failed with `content_unavailable`. Engine and Core tests and clippy pass.
+- **Not verified here.** The founder runs the new build against the live mailbox.
+
+Core87. No schema, fixture or protocol change.
+
+## D188 — Mail and Calendar switch at once (2026-10-03T21:00:00Z)
+
+The founder found switching between Mail and Calendar slow, about 300 ms, and asked for it to be instant: UX speed is the first goal.
+
+- **Found.** Each switch did three avoidable things. Remembering the open workspace went through the explicit preference save, which notified every preference binding (about 120 in QML) once immediately and again when the save returned. The Mail timeline sat beside the workspace stack, so showing or hiding it resized the stack and both Mail and Calendar laid out again. Hiding Calendar dropped its mail counts, so every return showed them loading, queried them again and laid the day headings out twice.
+- **Change.** The open workspace is remembered quietly with calendar navigation (`rememberWorkspace`), 800 ms later or at shutdown, without a preference notification. The timeline header and footer belong to the Mail page, so the stack keeps its size. Hidden Calendar counts stop refreshing and drop late replies but stay published; reopening Calendar shows them at once and refreshes them immediately.
+- **Evidence.** The native Calendar benchmark gains a fifth route, `workspace_switch`: the Mail and Calendar buttons alternate, timed from input to the first frame showing the other workspace (Mail with visible conversation rows, or Calendar with its unchanged grid matching). Optimized build, synthetic profile: p50 12.8 ms, p95 15.9 ms, max 18.3 ms over 100 switches; the other four routes stay within budget. CalendarMailActivityTest covers kept counts and the immediate refresh on return. The Month check had predated today's cell showing rows around the current time and now follows the cell's own row window.
+- **Not verified here.** The same benchmark on the old switch path (the window lost focus on each attempt), and the founder's own large mailbox.
+
+Mail UI135, Calendar43, Quality90. No schema, fixture or protocol change.
+
+## D189 — the last row of a section turns into its empty line (2026-10-03T22:00:00Z)
+
+The founder saw the Inbox list jump when the last To review or Delayed conversation was cleared: the "Inbox zero" line appeared after the row had gone, and asked for the change to be fast and clean.
+
+- **Found.** A conversation read in To review folds away when the next one opens: its row shrinks to nothing over 170 ms, then leaves the list. When it was the section's last row, the section's empty line was then added one row high, so everything below moved up a row during the fold and snapped back. A frame check measured the Delayed header 52 px (one row) off its place across 35 frames. A conversation that is Delayed or Done moves in one change, and its section's empty line takes its place in the same frame.
+- **Change.** When the folding row is the last in a section that stays shown (To review or Delayed while browsing), the model marks it `leaves_empty`. It keeps its height while its content fades out and the section's empty line fades in over it; the row is then replaced by the identical empty line. Other folding rows collapse as before.
+- **Also.** A sender name in an open message's header was shortened by its last letters ("Nicole Dout…") although its pill was sized for the whole name: elision measured slightly wider than the advance the pill uses. A name whose advance fits is now shown whole. This check had failed on Windows and stopped the rest of MailSelectionTest from running.
+- **Evidence.** MailSelectionTest reads the Delayed header's position at every rendered frame through the last row's fold and through Delay of the last To review row: it does not move. With the old fold the same check fails (52 px over 35 frames). The header copy check passes again, and so does the rest of MailSelectionTest. gui-mail-gpu's first-page length check fails on this host with and without these changes; it passed earlier the same day.
+
+Mail UI136. No schema, fixture or protocol change.
+
+## D190 — All calendars without a reload; Calendar follows today (2026-10-04T15:00:00Z)
+
+The founder found two Calendar problems: turning All calendars on or off redrew Day, Week and Month with a visible jank, and a Calendar left on today, this week or this month stayed on the old day once the date changed.
+
+- **Found (All calendars).** With All calendars off, the grid and the Mail timeline read only the current account's calendars. Turning the switch either way therefore changed the query. The app waited for the preference save to return, cleared the grid, showed "Loading calendars…" and drew it again from a new read. Every preference binding was also notified twice, once for the change and once when the save returned. Changing account with All calendars off read the calendar again too. The events were already filtered by account after reading, so the narrower read bought nothing.
+- **Change (All calendars).** The grid and timeline read every selected calendar. All calendars off filters those rows to the current account. Turning the switch, or changing account while it is off, redraws once from what was read, with no read. The switch sends only the visibility, and clears a narrower calendar choice only when turning on. The save's own status (`preferencesStatus`, `preferencesPending`) has its own notification, so a finished save no longer re-evaluates preference bindings.
+- **Found (today).** View and date were saved as a fixed date and never moved, so an open app, or a restart the next day, showed yesterday, last week or last month.
+- **Change (today).** A Calendar whose day, week or month contains today saves `calendar_date` as null, which already means today. So does a Mail timeline on today with `timeline_date`. When the date changes while the app is open, such a Calendar moves to the new day, week or month; within the same week or month it stays put. A timeline on today moves to the new day. A Calendar or timeline left on another date stays there.
+- **Evidence.** CalendarSearchTest: the grid and timeline request every selected calendar. Hiding other accounts, changing account and showing all again each apply at once, with one events notification for hiding and no calendar read. A controlled clock rolls over day, week and month: Day view and the timeline move to the new day, the same week stays, a new week and a new month move, and dates left elsewhere stay. Today is saved as null. All Calendar tests pass.
+
+Calendar44, Mail UI137. Core already accepts null dates; no schema, fixture or protocol change.
+
+## D191 — spam no longer stalls the store; a busy engine is waited for (2026-10-04T23:55:00Z)
+
+The founder's app stopped loading any mail, and Drafts showed Inbox conversations, after leaving a draft unsent in a thread.
+
+- **Found.** The draft was not the cause. At 23:02:48 a mail sync step held the store for 21 s. The drafts list request waited behind it, the app gave up after 15 s ("did not answer in time"), dropped the connection and so stopped the engine. The old engine took about 45 s to release the profile, and the app stopped starting a new one after 30 s, so it stayed disconnected; every later request was refused. Drafts then kept the Inbox rows on screen, drawn as drafts, because a folder that cannot load left the previous folder's rows in place. The engine logs for the day show the store held for over 5 s 12 times, all by a mail commit or a mail change. A message arriving in, or moved to, Gmail Spam is dropped by `forget_spam`, whose lookup put "this remote ID" and "everything labelled SPAM" in one `OR`. SQLite then scanned every message of the account for each spam message: 5.1 to 6.8 s on a copy of the founder's store for the 283,695-message account, against 0.2 ms by remote ID. Single-message history commits took 7 to 9.5 s, and two mail change steps took 13 s. Other commit and pending statements measured in milliseconds on the copy. `PRAGMA optimize` ran without an analysis limit when the store opened, every five minutes during sync, and when the engine closed. A full ANALYZE of the 5.4 GB copy took 4.5 s.
+- **Change.** One spam message is looked up by account and remote ID; the label scan is a separate statement used only by the one-time cleanup. The store sets `analysis_limit=1000`, so statistics refreshes sample indexes. The app waits up to 60 s for a reply from a running engine (120 s for starting sync, as before) and keeps starting an engine for up to two minutes while an old one releases the profile. A folder switch with nothing saved to show at once clears the list instead of showing another folder's rows.
+- **Evidence.** A Core test requires the single-message spam lookup to search `messages` by remote ID. Spam, retention and mutation tests pass; workspace tests and clippy pass. MailNavigationCacheTest switches to Drafts with no answer from the engine and finds an empty list. The query timings above are from a copy of the store, deleted afterwards.
+- **Not verified here.** The founder's live store under the new build, and the full app reconnecting after a long hold.
+
+Core88, Mail UI138. No schema, fixture or protocol change.

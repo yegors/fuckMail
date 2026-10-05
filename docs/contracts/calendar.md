@@ -2,6 +2,19 @@
 
 
 
+## D190 — visibility filters; today is followed (Calendar44)
+
+- **Reads.** The grid and Mail timeline read every calendar in `selected_calendars` (all when null), whatever `calendar_account_visibility` says. `current` filters the rows read to the current account (`MailBackend::visibleCalendarEvents`). Changing the visibility or the current account redraws from the rows already read. Contextual Calendar search still asks only for visible accounts.
+- **Following today.** A Calendar whose range contains today (Day or Agenda: that date; Week: that week; Month: that month) saves `calendar_date: null`; a timeline on today saves `timeline_date: null`. Null opens today. On a date change (`todayChanged`) a following Calendar moves to today when its range no longer contains it, and a following timeline moves to today. Other dates are saved and kept as they are.
+
+Consumers: `MailBackend` (`calendarQuerySelection`, `rememberCalendarPlace`, `followToday`), `CalendarView.setCombined`; CalendarSearchTest.
+
+## D188 — mail counts kept while hidden (Calendar43)
+
+- Hiding Calendar stops the mail count refresh and drops replies still in flight, but keeps the last published counts. Reopening Calendar shows them at once and requests fresh counts immediately, bypassing the refresh interval once. A different date window or account still shows loading first.
+
+Consumers: `MailBackend` (`setCalendarMailActivityContext`, `refreshCalendarMailActivity`), `CalendarView`; CalendarMailActivityTest.
+
 ## D179 — every event shows in the Mail timeline (Calendar42)
 
 - **Rows.** The Mail timeline shows up to three rows. An event goes in the first row where its whole title fits. Otherwise it opens a new row while there are fewer than three. Otherwise it shares a row whose last event it does not overlap in time, choosing the one whose title loses least. That earlier title then ends with an ellipsis where the event starts; hover still shows it whole. Only an event overlapping three others in time is left out of the strip.

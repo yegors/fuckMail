@@ -94,10 +94,10 @@ def verify_navigation(profile, data):
 
 
 def verify_calendar(profile, data):
-    expected = {"view_switch", "month_day_click", "week_step", "month_step"}
+    expected = {"view_switch", "month_day_click", "week_step", "month_step", "workspace_switch"}
     classes = data.get("classes", [])
     require({item.get("class") for item in classes} == expected and len(classes) == len(expected),
-            "The report must include all four Calendar routes")
+            "The report must include all five Calendar routes")
     checked = painted = 0
     with closing(sqlite3.connect((profile / "store.sqlite3").as_uri() + "?mode=ro", uri=True)) as db:
         sources = set(db.execute("SELECT account,calendar_id,event_id FROM calendar_sources"))

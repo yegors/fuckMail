@@ -58,11 +58,11 @@ ApplicationWindow {
         }
         startupPreferenceApplied = true
         if (!suppressStartupPreference && backend.preferences.last_workspace !== workspace)
-            backend.setPreferences({last_workspace: workspace})
+            backend.rememberWorkspace(workspace)
     }
     onWorkspaceChanged: {
         if (startupPreferenceApplied && backend.preferences.last_workspace !== workspace)
-            backend.setPreferences({last_workspace: workspace})
+            backend.rememberWorkspace(workspace)
         searchPopup.close(); calendarSearchPopup.close()
     }
     onSettingsOpenChanged: { searchPopup.close(); calendarSearchPopup.close() }
@@ -466,11 +466,17 @@ ApplicationWindow {
     ColumnLayout {
         id: workspaceLayer
         anchors.fill: parent; spacing: 0
-        Item { id: timelineHeaderSlot; visible: window.timelineVisible && window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
         StackLayout {
             Layout.fillWidth: true; Layout.fillHeight: true
             currentIndex: window.settingsOpen ? 2 : window.workspace === "mail" ? 0 : 1
-            MailView { id: mailView }
+            // The timeline belongs to the Mail page, so switching workspaces
+            // never resizes either view and neither has to lay out again.
+            ColumnLayout {
+                spacing: 0
+                Item { id: timelineHeaderSlot; visible: window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
+                MailView { id: mailView; Layout.fillWidth: true; Layout.fillHeight: true }
+                Item { id: timelineFooterSlot; visible: !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
+            }
             CalendarView { id: calendarView; onOpenMailRequested: window.navigate("mail") }
             Loader {
                 id: settingsLoader
@@ -480,7 +486,6 @@ ApplicationWindow {
                 sourceComponent: SettingsView { progress: accountProgress; onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
             }
         }
-        Item { id: timelineFooterSlot; visible: window.timelineVisible && !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
     }
     TodayStrip {
         id: timeline

@@ -290,7 +290,14 @@ Item {
     function agendaSub(event) { return [Theme.responseLabel(event), event.account !== backend.account ? event.account_name : "", event.location, conferenceLabel(event.conference_url), people(event)].filter(function(s) { return !!s }).join(" · ") }
     function eventPast(event) { return event.date < backend.todayDate || (event.date === backend.todayDate && !event.all_day && event.start_hour + event.duration_hours <= backend.nowHour) }
     function eventNow(event) { return event.date === backend.todayDate && !event.all_day && event.start_hour <= backend.nowHour && event.start_hour + event.duration_hours > backend.nowHour }
-    function setCombined(on) { cancelRange(); details.close(); backend.setPreferences({calendar_account_visibility: on ? "all" : "current", selected_calendars: on ? null : backend.preferences.selected_calendars}) }
+    // Showing every account clears a narrower calendar choice; otherwise only
+    // the visibility changes, which filters what was read without a reload.
+    function setCombined(on) {
+        cancelRange(); details.close()
+        const patch = {calendar_account_visibility: on ? "all" : "current"}
+        if (on && backend.preferences.selected_calendars != null) patch.selected_calendars = null
+        backend.setPreferences(patch)
+    }
     readonly property bool showDeclined: backend.preferences.calendar_show_declined === true
     function setShowDeclined(on) { details.close(); backend.setPreferences({calendar_show_declined: on}) }
     function preserveGridPosition() {

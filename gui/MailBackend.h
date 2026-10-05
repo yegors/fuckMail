@@ -86,8 +86,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString fixtureToday READ fixtureToday NOTIFY todayChanged)
     Q_PROPERTY(QVariantMap presentation READ presentation NOTIFY presentationChanged)
     Q_PROPERTY(QVariantMap preferences READ preferences NOTIFY preferencesChanged)
-    Q_PROPERTY(QString preferencesStatus READ preferencesStatus NOTIFY preferencesChanged)
-    Q_PROPERTY(bool preferencesPending READ preferencesPending NOTIFY preferencesChanged)
+    Q_PROPERTY(QString preferencesStatus READ preferencesStatus NOTIFY preferencesStatusChanged)
+    Q_PROPERTY(bool preferencesPending READ preferencesPending NOTIFY preferencesStatusChanged)
     Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
     // Collapsed Inbox sections, saved per account: review, held or done:YYYY-MM.
@@ -450,6 +450,8 @@ public:
     // role: "sender" or "recipient"; searchPeopleQuery answers as "role:part".
     Q_INVOKABLE void requestSearchPeople(const QString &part, const QString &role = QStringLiteral("sender"));
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
+    // Remembers the open workspace without re-notifying every preference binding.
+    Q_INVOKABLE void rememberWorkspace(const QString &workspace);
     Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false, const QString &color = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
@@ -534,6 +536,8 @@ signals:
     void clockChanged();
     void diagnosticsChanged();
     void preferencesChanged();
+    // The save status alone, so a finished save re-evaluates no preference bindings.
+    void preferencesStatusChanged();
     void accountPreferencesFinished(const QString &account, bool ok);
     void capturesChanged();
     void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
@@ -662,6 +666,8 @@ private:
     bool publishAccounts(QVariantList accounts);
     void loadConversations(bool append = false, bool preserveLoaded = false);
     bool publishConversations(QVariantList rows);
+    // The model scope of the current account, folder and search.
+    QString listScope() const;
     QVariantMap mailViewScope() const;
     void cacheMailView();
     bool restoreMailView();
@@ -686,6 +692,12 @@ private:
     void prefetchCalendarWindows();
     void setCalendarStatus(bool ready, const QString &coverage);
     void rememberCalendarNavigation(const QVariantMap &values);
+    // A Calendar or timeline left on today's day, week or month is saved as
+    // null and follows the date when it changes.
+    void rememberCalendarPlace();
+    bool calendarShowsToday() const;
+    void followToday();
+    bool m_calendarFollowsToday = false, m_timelineFollowsToday = false;
     void tickClock();
     QTimeZone clockZone() const;
     QString calendarCoverageText(const QJsonObject &coverage) const;
@@ -695,6 +707,8 @@ private:
     QVariantMap m_calendarMailActivity;
     QString m_calendarMailActivityScope, m_calendarMailActivityStamp;
     bool m_calendarMailActivityActive = false, m_calendarMailActivityCombined = true, m_calendarMailActivityBusy = false;
+    // Set when Calendar opens: the next count read skips the refresh throttle.
+    bool m_calendarMailActivityDue = false;
     int m_calendarMailActivityGeneration = 0;
     void refreshCalendarSearchContext();
     void runCalendarSearch();
@@ -731,6 +745,9 @@ private:
     QString draftContext() const;
     void loadDraftRows(bool append, bool preserveLoaded = true);
     QJsonValue effectiveCalendarSelection() const;
+    // The calendars the grid and timeline read: every selected calendar. The
+    // current-account view filters what was read, so switching reads nothing.
+    QJsonValue calendarQuerySelection() const;
     void loadDraftPage(const QString &account, int generation, int offset, QVariantList collected, int desiredCount);
     void loadActiveDraft();
     void acceptDraft(const QJsonObject &result, bool restoreView = false);
@@ -1061,6 +1078,7 @@ private:
     int m_calendarGeneration = 0;
     int m_calendarWrites = 0, m_accountWrites = 0;
     bool m_preferencesSaving = false, m_capturing = false, m_discarding = false, m_fixtureClock = false;
+    QDateTime m_fixtureNow = QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate);
     QJsonObject m_captureRequest;
     QString m_captureAccount, m_captureConversation;
     QTimer m_clockTimer;

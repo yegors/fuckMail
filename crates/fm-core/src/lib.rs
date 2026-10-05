@@ -250,6 +250,10 @@ impl Store {
         // Read pages straight from the mapped file instead of copying each 4 KiB
         // page through a small private cache; mapped pages stay reclaimable.
         db.execute_batch("PRAGMA mmap_size=1073741824; PRAGMA cache_size=-16384;")?;
+        // Statistics refreshes sample each index instead of reading it whole,
+        // so `PRAGMA optimize` stays short on a large mailbox, including while
+        // the engine closes and the next one waits for the profile.
+        db.execute_batch("PRAGMA analysis_limit=1000;")?;
         // Refuse schemas this build cannot read before writing anything, then
         // apply any steps added after the fresh baseline.
         let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;

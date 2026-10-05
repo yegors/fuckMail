@@ -1,5 +1,33 @@
 # Mail UI, reader and human composer
 
+## D191 — waiting for a busy engine; folders never show another's rows (Mail UI138)
+
+- A request to a connected engine fails as unanswered after 60 s (120 s for starting or refreshing sync). A slow reply is a busy store, not a lost engine.
+- After a disconnect the app keeps trying to reach or start the engine for up to two minutes, so an engine that is still closing does not leave it disconnected.
+- Switching folder shows that folder's saved rows at once when it has them; otherwise the list is empty until its rows arrive. Rows of another folder are never drawn as this one's.
+
+Consumers: `MailBackend` (request watchdog, `attemptConnection`, `setFolder`, `listScope`), `ConversationListModel::scope`; MailNavigationCacheTest.
+
+## D190 — save status apart from preferences (Mail UI137)
+
+- `preferencesStatus` and `preferencesPending` notify through `preferencesStatusChanged`. `preferencesChanged` is emitted when preference values change, not when a save only finishes or fails, so a save re-evaluates no preference bindings.
+
+Consumers: `MailBackend`, `SettingsView`, `AccountEditor`, `GoogleConnectionDialog`, `SignatureDialog`.
+
+## D189 — a last row turns into its empty line (Mail UI136)
+
+- A row folding out of To review (read, then another opened) that is the last in a section staying shown carries `leaves_empty` in the list model (`MailBackend::listItems`). It keeps its row height; its content fades out and the section's empty line (`EmptyLine`, the same one `SectionEmpty` shows) fades in over 170 ms. The empty line item then replaces it, so nothing below moves in any frame. Other folding rows still collapse.
+- A sender name in its contact pill is shown whole whenever its advance fits the pill; only a name that does not fit is elided.
+
+Consumers: `MailBackend`, `MailView` (`SectionEmpty`, `EmptyLine`, grouped rows, `SenderPill`); MailSelectionTest.
+
+## D188 — instant Mail/Calendar switch (Mail UI135)
+
+- The Mail timeline's header and footer slots are inside the Mail page of the workspace stack, so switching workspaces never changes the stack's size. Calendar and Settings still show no timeline and reserve no space.
+- The open workspace is remembered with `MailBackend::rememberWorkspace` ("mail" or "calendar"), merged into the quiet navigation save (800 ms, flushed at shutdown). It emits no `preferencesChanged`. `startup_view: last` reads it as before.
+
+Consumers: `Main.qml`, `MailBackend`; GuiSelfTest startup workspace check, the native Calendar benchmark.
+
 ## D186 — copy the reader's header text (Mail UI134)
 
 - `readerSubject`, an open message's `messageSenderName_<id>` and `messageSenderAddress_<id>`, and `summaryBody` are read-only, mouse-selectable text (`CopyText` in `MailView`). Each copies with the platform copy key and has the app's text menu (Copy) on right-click, with an I-beam cursor.

@@ -1,6 +1,7 @@
 // Backend test for the calendar grid's per-day mail counts on a real MailBackend
 // over the scripted engine: account and date scoping, refresh throttling on
-// revision changes, and discarding stale replies once the counts are hidden.
+// revision changes, discarding stale replies once the counts are hidden, and
+// keeping the last counts for an instant return.
 #include "GoogleOperationTestFixture.h"
 #include "MailBackend.h"
 #include <QGuiApplication>
@@ -49,8 +50,17 @@ public:
         backend.m_calendarDate="2026-10-01";emit backend.eventsChanged();await([&]{return held.size()==4;},"navigation refreshes immediately");
         backend.setCalendarMailActivityContext(false,false);complete(3,result(3,11));
         await([&]{return backend.m_pending.isEmpty();},"drain hidden reply");
-        require(backend.calendarMailActivity().isEmpty() && !backend.m_calendarMailActivityTimer.isActive(),"hidden counts stop and stale responses are fenced");
-        qInfo()<<"Calendar mail count backend passed: account/date fences, revision refresh, cached-only requests and hidden lifetime.";
+        require(backend.calendarMailActivity()["state"]=="loading" && !backend.m_calendarMailActivityTimer.isActive(),"hidden counts stop and stale responses are fenced");
+        held.clear();backend.setCalendarMailActivityContext(true,false);
+        await([&]{return held.size()==1;},"reopening Calendar refreshes kept counts at once");
+        complete(0,result(0,12));await([&]{return backend.calendarMailActivity()["state"]=="ready";},"reopened counts");
+        backend.setCalendarMailActivityContext(false,false);
+        require(backend.calendarMailActivity()["days"].toList().first().toMap()["received"]==12,"hiding Calendar keeps its counts");
+        backend.setCalendarMailActivityContext(true,false);
+        require(backend.calendarMailActivity()["state"]=="ready","returning to Calendar shows kept counts before the refresh");
+        await([&]{return held.size()==2;},"returning to Calendar refreshes kept counts");
+        complete(1,result(1,12));await([&]{return backend.m_pending.isEmpty();},"drain refresh");
+        qInfo()<<"Calendar mail count backend passed: account/date fences, revision refresh, cached-only requests and kept hidden counts.";
     }
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);CalendarMailActivityTest::run();}

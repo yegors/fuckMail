@@ -2,6 +2,21 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-04
+
+- Spam arriving in a large mailbox no longer freezes the app for seconds at a time. Before, each spam message held the local store for about 6 s on a mailbox of 280,000 messages.
+- A busy engine no longer disconnects the app. Before, one long sync step could leave every mailbox unable to load until the app was restarted.
+- Switching to Drafts, or another folder, never shows the previous folder's conversations while its own loads.
+- Turning All calendars on or off is instant in Day, Week and Month: no reload or flash. Switching mail account with it off is instant too.
+- Calendar left on today, this week or this month follows the date: it moves to the new day, week or month when the date changes, including after a restart. The Mail timeline does the same when left on today.
+
+## 2026-10-03
+
+- Clearing the last conversation in To review no longer makes the list jump: the row fades into "Inbox zero" (or "All reviewed") in place.
+- Sender names in an open message are no longer cut short by a letter or two when they fit.
+- Switching between Mail and Calendar is instant. Calendar's mail counts stay in place when you come back instead of reloading.
+- A message your antivirus blocks (such as phishing that Windows Defender quarantines) is skipped, and the rest of that mailbox keeps syncing. Before, the whole account stopped getting mail and Sync couldn't restart it.
+
 ## 2026-10-02
 
 - To review and Delayed have quieter headers: the icon, the name and a small count chip, without the band, and they scroll away with the list instead of staying pinned.

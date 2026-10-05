@@ -1462,13 +1462,29 @@ pub(crate) fn recount_coverage(db: &Connection, account: &str) -> Result<()> {
     Ok(())
 }
 
+/// Fills `retention_messages` with the spam to drop: the one message `?2`
+/// names, or every message labelled SPAM. Messages still used by pending
+/// work or a draft stay. One message is found by its remote ID; folding both
+/// cases into one condition made SQLite scan the whole account each time.
+fn spam_selection(one: bool) -> String {
+    let matching = if one {
+        "m.remote_id=?2"
+    } else {
+        "EXISTS(SELECT 1 FROM json_each(g.provider_labels_json) WHERE value='SPAM')"
+    };
+    format!("INSERT INTO retention_messages SELECT m.id,m.conversation_id,m.remote_id,m.source_hash,m.rowid FROM messages m JOIN google_message_state g ON g.account=m.account AND g.message_id=m.id WHERE m.account=?1 AND {matching} AND NOT EXISTS(SELECT 1 FROM google_mail_mutations w WHERE w.account=m.account AND w.message_id=m.id AND w.state IN ('pending','in_flight','reconcile')) AND NOT EXISTS(SELECT 1 FROM drafts d WHERE d.account=m.account AND d.source_message_id=m.id AND d.discarded=0)")
+}
+
 /// Drops local copies of Gmail Spam: one remote message, or every stored
 /// message whose Gmail labels include SPAM. A message that a draft or a
 /// pending change still uses stays until that work is done.
 pub(crate) fn forget_spam(db: &Connection, account: &str, remote: Option<&str>) -> Result<()> {
     // `purge_messages` takes its input from this temporary table.
     db.execute_batch("CREATE TEMP TABLE IF NOT EXISTS retention_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,remote_id TEXT NOT NULL,source_hash TEXT NOT NULL,source_rowid INTEGER NOT NULL); DELETE FROM retention_messages;")?;
-    db.execute("INSERT INTO retention_messages SELECT m.id,m.conversation_id,m.remote_id,m.source_hash,m.rowid FROM messages m JOIN google_message_state g ON g.account=m.account AND g.message_id=m.id WHERE m.account=?1 AND (m.remote_id=?2 OR (?2 IS NULL AND EXISTS(SELECT 1 FROM json_each(g.provider_labels_json) WHERE value='SPAM'))) AND NOT EXISTS(SELECT 1 FROM google_mail_mutations w WHERE w.account=m.account AND w.message_id=m.id AND w.state IN ('pending','in_flight','reconcile')) AND NOT EXISTS(SELECT 1 FROM drafts d WHERE d.account=m.account AND d.source_message_id=m.id AND d.discarded=0)",params![account,remote])?;
+    match remote {
+        Some(remote) => db.execute(&spam_selection(true), params![account, remote])?,
+        None => db.execute(&spam_selection(false), [account])?,
+    };
     crate::account_retention::purge_messages(db, account)?;
     if let Some(remote) = remote {
         // Never stored, or already gone: it is no longer part of the mailbox.

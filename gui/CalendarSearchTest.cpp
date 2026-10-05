@@ -248,44 +248,75 @@ class CalendarSearchTest {
             QVariantMap{{"account","personal"},{"calendar_id","same-calendar"}},
             QVariantMap{{"account","workspace"},{"calendar_id","same-calendar"}}};
         const auto storedSelection=h.backend.m_preferences["selected_calendars"];
-        h.backend.publishCalendarWindow({{"events",h.current},{"time_zone","UTC"}},"2026-09-14",7);
-        h.backend.m_todayEvents=h.backend.m_events;
+        const auto stored=QJsonArray::fromVariantList(storedSelection.toList());
+        // The grid and timeline read every selected calendar.
+        h.backend.loadCalendar();
+        auto calendar=h.take("calendar_combined");
+        require(calendar.request["params"].toObject()["calendars"].toArray()==stored,"Calendar reads every selected calendar");
+        h.complete(calendar,Harness::response(calendar.request,h.current));
+        auto strip=h.take("calendar_combined");
+        require(strip.request["params"].toObject()["calendars"].toArray()==stored,"the timeline reads every selected calendar");
+        h.complete(strip,Harness::response(strip.request,h.current));
+        await([&]{return h.backend.m_pending.isEmpty() && h.backend.calendarReady() && h.backend.events().size()==2 && h.backend.todayEvents().size()==2;},"both accounts show");
         h.backend.m_reminders=h.backend.m_events;
+        const auto reads=h.windows.size();
+        // Current account only: a filter of what was read, at once and without a read.
+        int eventSignals=0; const auto counting=QObject::connect(&h.backend,&MailBackend::eventsChanged,[&]{ ++eventSignals; });
         h.backend.setPreferences({{"calendar_account_visibility","current"}});
-        require(h.backend.events().size()==1 && h.backend.todayEvents().size()==1,"Hide applies immediately to cached Calendar and timeline");
+        require(h.backend.calendarReady() && h.backend.events().size()==1 && h.backend.events()[0].toMap()["account"]=="personal"
+            && h.backend.todayEvents().size()==1,"Hide applies immediately to Calendar and timeline");
         require(h.backend.reminders().size()==2,"view visibility does not suppress configured reminders");
-        const auto oldCalendar=h.take("calendar_combined");
-        const QJsonArray personal{QJsonObject{{"account","personal"},{"calendar_id","same-calendar"}}};
-        require(oldCalendar.request["params"].toObject()["calendars"].toArray()==personal,"Calendar uses current-account selection");
+        await([&]{return h.backend.m_pending.isEmpty() && !h.backend.m_preferencesSaving;},"the visibility saves");
+        require(h.windows.size()==reads && eventSignals==1,"hiding other accounts reads nothing and redraws once");
+        // Another account: its own events, also without a read.
         h.backend.m_account="workspace"; emit h.backend.accountChanged();
+        require(h.backend.events().size()==1 && h.backend.events()[0].toMap()["account"]=="workspace" && h.backend.todayEvents().size()==1,"the current-account view follows account changes");
         const QJsonArray workspace{QJsonObject{{"account","workspace"},{"calendar_id","same-calendar"}}};
-        // The production socket sends one request at a time. Switch accounts
-        // while the old query is held, then drain its queued timeline reply.
-        h.complete(oldCalendar,Harness::response(oldCalendar.request,{event()}));
-        const auto oldTimeline=h.take("calendar_combined");
-        require(oldTimeline.request["params"].toObject()["calendars"].toArray()==personal,"timeline shares current-account selection");
-        h.complete(oldTimeline,Harness::response(oldTimeline.request,{event()}));
-        require(h.backend.events().isEmpty() && h.backend.todayEvents().isEmpty(),"late prior-account replies cannot restore hidden events");
-        const auto nextCalendar=h.take("calendar_combined");
-        require(nextCalendar.request["params"].toObject()["calendars"].toArray()==workspace,"Calendar visibility follows account changes");
-        h.complete(nextCalendar,Harness::response(nextCalendar.request,{event("workspace")}));
-        const auto nextTimeline=h.take("calendar_combined");
-        require(nextTimeline.request["params"].toObject()["calendars"].toArray()==workspace,"timeline visibility follows account changes");
-        h.complete(nextTimeline,Harness::response(nextTimeline.request,{event("workspace")}));
-        require(h.backend.events().size()==1 && h.backend.events()[0].toMap()["account"]=="workspace","current account reply populates Calendar");
         require(h.backend.calendarSearchParams()["calendars"].toArray()==workspace,"contextual search respects visible accounts");
         require(h.backend.m_preferences["selected_calendars"]==storedSelection,"Show/Hide preserves individual calendar choices");
+        // All accounts again: everything read is shown at once.
         h.backend.setPreferences({{"calendar_account_visibility","all"}});
-        const auto allCalendar=h.take("calendar_combined");
-        require(allCalendar.request["params"].toObject()["calendars"].toArray()==QJsonArray::fromVariantList(storedSelection.toList()),"Show restores the full saved selection");
-        h.complete(allCalendar,Harness::response(allCalendar.request,h.current));
-        const auto allTimeline=h.take("calendar_combined");
-        h.complete(allTimeline,Harness::response(allTimeline.request,h.current));
+        require(h.backend.calendarReady() && h.backend.events().size()==2 && h.backend.todayEvents().size()==2,"Show restores every account at once");
+        await([&]{return h.backend.m_pending.isEmpty() && !h.backend.m_preferencesSaving;},"the visibility saves again");
+        QObject::disconnect(counting);
+        require(h.windows.size()==reads,"switching accounts and visibility never reads the calendar again");
         h.backend.m_preferences["calendar_account_visibility"]="current";
         h.backend.m_preferences["selected_calendars"]=QVariantList{};
         require(h.backend.effectiveCalendarSelection()==QJsonArray{},"an empty calendar selection stays empty");
         h.backend.m_preferences["selected_calendars"]=QVariant{};
         require(h.backend.effectiveCalendarSelection()==workspace,"all-source selection resolves current account from the catalog");
+    }
+    // A Calendar or timeline left on today follows the date when it changes;
+    // one left elsewhere stays where it was.
+    static void followsToday() {
+        Harness h; h.backend.m_fixtureClock=true;
+        h.backend.m_fixtureNow=QDateTime::fromString("2026-09-13T23:59:00Z",Qt::ISODate);
+        h.backend.tickClock();
+        require(h.backend.todayDate()=="2026-09-13","fixture clock sets today");
+        const auto saved=[&](const char *key){ return h.backend.m_navigationPending.value(key); };
+        const auto rollTo=[&](const char *at){ h.backend.m_fixtureNow=QDateTime::fromString(at,Qt::ISODate); h.backend.tickClock(); };
+        h.backend.m_calendarView="day"; h.backend.m_calendarDate="2026-09-10"; h.backend.m_timelineDate="2026-09-10";
+        h.backend.showCalendarToday(); h.backend.showTimelineToday();
+        require(saved("calendar_date").isNull() && saved("timeline_date").isNull() && saved("calendar_date").isValid(),"today is saved as null so a restart opens the new day");
+        rollTo("2026-09-14T00:01:00Z");
+        require(h.backend.todayDate()=="2026-09-14" && h.backend.calendarDate()=="2026-09-14" && h.backend.timelineDate()=="2026-09-14","Day view and the timeline move to the new day");
+        // Week: within the week nothing moves; past its end it moves on.
+        h.backend.setCalendarView("week"); h.backend.setCalendarDate("2026-09-16");
+        require(saved("calendar_date").isNull(),"a day in this week still follows today");
+        rollTo("2026-09-16T12:00:00Z");
+        require(h.backend.calendarDate()=="2026-09-16","the same week stays put");
+        rollTo("2026-09-21T00:01:00Z");
+        require(h.backend.calendarDate()=="2026-09-21","a new week shows the new week");
+        // Month: likewise.
+        h.backend.setCalendarView("month");
+        rollTo("2026-10-01T00:01:00Z");
+        require(h.backend.calendarDate()=="2026-10-01","a new month shows the new month");
+        // A date the user moved to stays.
+        h.backend.setCalendarView("day"); h.backend.setCalendarDate("2026-10-08"); h.backend.moveTimeline(-1);
+        require(saved("calendar_date")=="2026-10-08" && saved("timeline_date").toString()==h.backend.timelineDate(),"another date is saved as that date");
+        const auto timeline=h.backend.timelineDate();
+        rollTo("2026-10-02T00:01:00Z");
+        require(h.backend.calendarDate()=="2026-10-08" && h.backend.timelineDate()==timeline,"a Calendar or timeline left elsewhere does not move");
     }
     static void catalogPolling() {
         Harness h;
@@ -801,7 +832,7 @@ class CalendarSearchTest {
     }
 public:
     static void run() {
-        windowCache(); accountVisibility(); timelineNavigation(); catalogPolling(); contexts(); selection(); controls();
+        windowCache(); accountVisibility(); followsToday(); timelineNavigation(); catalogPolling(); contexts(); selection(); controls();
         qInfo() << "Calendar search passed: shared cached IPC, independent Main search, complete context fences, fresh exact occurrence navigation, full Combined visibility and three-theme/default-large controls. No provider or performance claim.";
     }
 };

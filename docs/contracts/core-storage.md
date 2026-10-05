@@ -1,5 +1,19 @@
 # Core and storage
 
+## D191 — bounded spam lookups and statistics (Core88)
+
+- Dropping one Gmail Spam message (`forget_spam` with a remote ID: a history or listing outcome labelled SPAM, or a completed Move to Spam) selects it by `(account, remote_id)`. Only the once-per-profile cleanup scans for the SPAM label.
+- The store connection sets `PRAGMA analysis_limit=1000`, so `PRAGMA optimize` at open, during sync and on close samples indexes instead of reading them whole.
+
+Consumers: mail sync and mail changes in the engine; Core tests.
+
+## D187 — a message antivirus blocks (Core87)
+
+- A downloaded Gmail source whose blob cannot be verified once written is recorded for that message alone: coverage `source_state='unavailable'`, issue `source_blocked`, no message row. Other messages on the page publish and the page completes. Any other staging failure still fails the part.
+- Like other issues, a `source_blocked` row stays unsettled, so a later reconciliation pass downloads it again.
+
+Consumers: Gmail, Quality. Schema, fixtures and protocol unchanged.
+
 ## D183 — forwards keep their files and stay in their thread (Core86)
 
 - **`draft_create`** in `forward` mode starts `attachment_ids` with the source message's `available` attachments in part order, up to 50 files and 25 MiB; a file that would pass 25 MiB is left out. This replaces Core12's "no implicit attachment selection" for forwards. Reply and reply-all start with none. Saves check them like any selected attachment.
