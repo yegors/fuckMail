@@ -257,18 +257,18 @@ void MailBackend::undoMailActions(const QVariantMap &context) {
 // failure; each token is bound to the revision its action produced.
 void MailBackend::runMailUndo() {
     if (m_pendingMailUndo.isEmpty()) {
-        m_mutatingConversation=false;emit mutationChanged();loadAccounts();loadCategories();loadConversations(false,true);
+        finishMailMutation();loadAccounts();loadCategories();loadConversations(false,true);
         if (!m_mailUndoSelection.isEmpty()) emit mailSelectionRestored(m_restoredMailSelection);
         m_mailUndoSelection.clear();m_restoredMailSelection.clear();showActionToast("Undone",{},{},2800);return;
     }
     const auto token=m_pendingMailUndo.takeFirst().toMap();
     const auto account=token.value("account").toString(), id=token.value("id").toString();
     if (!m_connected || m_shutdown || accountRemoved(account) || !accountCapability(account,"mail_write") || token.value("lifecycle").toLongLong()!=lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) {
-        m_pendingMailUndo.clear();m_mutatingConversation=false;emit mutationChanged();showActionToast("Undo stopped because account access changed",{},{},6000);return;
+        m_pendingMailUndo.clear();finishMailMutation();showActionToast("Undo stopped because account access changed",{},{},6000);return;
     }
     QJsonObject params{{"id",id},{"undo_request_id",token.value("undo_request_id").toString()},{"expected_revision",token.value("expected_revision").toLongLong()},{"request_id",QUuid::createUuid().toString(QUuid::WithoutBraces)}};
     request("mail_undo",account,params,[this,account,id,token](auto result,bool ok) {
-        if (!ok || result["account"]!=account || result["id"]!=id || result["undone_request_id"]!=token.value("undo_request_id").toString()) {m_mailUndoSelection.clear();m_restoredMailSelection.clear();m_pendingMailUndo.clear();m_mutatingConversation=false;emit mutationChanged();showActionToast("Could not undo: "+result["message"].toString(),{},{},6000);loadConversations(false,true);return;}
+        if (!ok || result["account"]!=account || result["id"]!=id || result["undone_request_id"]!=token.value("undo_request_id").toString()) {m_mailUndoSelection.clear();m_restoredMailSelection.clear();m_pendingMailUndo.clear();finishMailMutation();showActionToast("Could not undo: "+result["message"].toString(),{},{},6000);loadConversations(false,true);return;}
         auto row=retainReaderPresentation(result.toVariantMap());
         cacheConversation(account,id,row,token.value("lifecycle").toLongLong());
         row["selection_account"]=account;row["selection_lifecycle"]=token.value("lifecycle");

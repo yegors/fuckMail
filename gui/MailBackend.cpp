@@ -194,7 +194,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         m_googleSync.clear(); m_googleSyncLimits.clear(); emit googleSyncChanged();
         m_googleAuthAttempt.clear();
         if (m_googleAuthBusy) setGoogleAuth({{"phase", "cancelled"}});
-        m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear();
+        m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear(); m_queuedMailActions.clear();
         auto pending = std::move(m_pending); m_pending.clear();
         for (auto &item : pending) item.callback({}, false);
         if (m_shutdown) finishShutdown();
@@ -340,7 +340,8 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     }
     const bool automaticRead = method == "status" || method == "message_source" || method == "message_invite" || method == "assist_progress" || method == "google_send_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
         || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
-        || method == "google_sync_status" || method == "google_mail_mutation_status" || method == "conversations" || method == "google_sent" || method == "google_sent_message"));
+        || method == "google_sync_status" || method == "google_mail_mutation_status" || method == "conversations" || method == "google_sent" || method == "google_sent_message"
+        || method == "calendar_combined" || method == "calendar_sources"));
     // Synchronous cancellation/error callbacks can issue user work. The caller's
     // polling origin applies only to this read, never to a reentrant request.
     QScopedValueRollback<bool> origin(m_automaticReadScope, false);
@@ -387,16 +388,19 @@ void MailBackend::sendNext() {
     pruneSupersededQueries();
     while (!m_outgoing.isEmpty()) {
         qsizetype selected = 0;
-        // Only an explicit query can pass an unsent prefix of automatic reads.
-        // A manual read or write is an ordering barrier. After four bypasses a
-        // polling read runs first, so sustained search cannot starve refresh.
+        // An explicit query or a mail change passes an unsent prefix of
+        // automatic reads, so marking mail read or Done never waits behind
+        // polling. Any other manual read or write is an ordering barrier.
+        // After four bypasses a polling read runs first, so sustained use
+        // cannot starve refresh.
         for (qsizetype index = 0; index < m_outgoing.size(); ++index) {
             const auto pending = m_pending.constFind(m_outgoing[index].first);
             if (pending == m_pending.cend()) break;
             if (pending->automaticRead && pending->queryBypasses < 4) continue;
             if (!pending->automaticRead && (pending->method == "conversations"
                 || pending->method == "conversation" || pending->method == "view_get"
-                || pending->method == "drafts" || pending->method == "sender_summary")) selected = index;
+                || pending->method == "drafts" || pending->method == "sender_summary"
+                || isMailAction(pending->method) || pending->method == "mail_undo")) selected = index;
             break;
         }
         for (qsizetype index = 0; index < selected; ++index) ++m_pending[m_outgoing[index].first].queryBypasses;
@@ -1693,20 +1697,29 @@ void MailBackend::flag(const QString &name, bool value) {
 void MailBackend::mutateConversation(const QString &method, QJsonObject params, bool undoable) {
     // A pending send and a thread read live from the server have nothing to change here.
     if (m_selected.startsWith("outgoing:") || m_selected.startsWith("remote:")) return;
-    if (m_conversation.isEmpty() || m_mutatingConversation) return;
+    if (m_conversation.isEmpty()) return;
+    if (m_mutatingConversation) {
+        // Taken while another change saves: it runs next, on the same conversation.
+        const auto target = m_selected, account = m_account;
+        m_queuedMailActions.append([this, target, account, method, params, undoable] {
+            if (m_selected == target && m_account == account) mutateConversation(method, params, undoable);
+        });
+        return;
+    }
     if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change this conversation."); return; }
     params["request_id"] = uuid(); params["id"] = m_selected;
     params["message_ids"] = QJsonArray::fromVariantList(m_conversation["message_ids"].toList());
     params["expected_revision"] = m_conversation["revision"].toLongLong();
     const auto id = m_selected, account = m_account;
     m_mutatingConversation = true; emit mutationChanged();
+    if (method == "flag") showFlagChange({id}, params);
     const auto undoEpoch = m_mailUndoEpoch;
     requestMailAction(method, account, params, [this, id, account, method, params, undoable, undoEpoch](auto result, bool ok) {
         if (ok && undoable && undoEpoch == m_mailUndoEpoch) {
             const auto token=mailUndoToken(account,result);
             if (!token.isEmpty()) offerMailUndo(mailActionLabel(method,params), {token});
         }
-        m_mutatingConversation = false; emit mutationChanged();
+        finishMailMutation();
         if (!ok) cancelShutdown();
         if (ok && !m_syntheticProfile && result["delivery"].isObject()) {
             const auto key = qMakePair(account, id);
@@ -1743,6 +1756,39 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             loadConversations(false, true);
         }
     });
+}
+void MailBackend::finishMailMutation() {
+    m_mutatingConversation = false; emit mutationChanged();
+    // After the reply has been handled, so the next action reads its result.
+    if (!m_queuedMailActions.isEmpty()) QMetaObject::invokeMethod(this, [this] {
+        if (m_mutatingConversation || m_queuedMailActions.isEmpty() || m_shutdown || !m_connected) return;
+        m_queuedMailActions.takeFirst()();
+    }, Qt::QueuedConnection);
+}
+void MailBackend::showFlagChange(const QStringList &ids, const QJsonObject &params) {
+    const bool read = params.contains("read"), star = params.contains("starred");
+    if (!read && !star) return;
+    const bool unread = read && !params["read"].toBool(), starred = star && params["starred"].toBool();
+    const auto apply = [&](QVariantMap &item) {
+        bool changed = false;
+        if (read && item.value("unread").toBool() != unread) { item["unread"] = unread; changed = true; }
+        if (star && item.value("starred").toBool() != starred) { item["starred"] = starred; changed = true; }
+        return changed;
+    };
+    auto rows = m_conversations; bool rowsChanged = false;
+    for (auto &value : rows) {
+        auto row = value.toMap();
+        if (ids.contains(row.value("id").toString()) && apply(row)) { value = row; rowsChanged = true; }
+    }
+    if (ids.contains(m_pinnedRow.value("id").toString())) apply(m_pinnedRow);
+    if (rowsChanged && publishConversations(std::move(rows))) emit conversationsChanged();
+    if (!ids.contains(m_selected)) return;
+    auto members = m_conversation.value("messages").toList(); bool membersChanged = false;
+    for (auto &value : members) {
+        auto member = value.toMap();
+        if (apply(member)) { value = member; membersChanged = true; }
+    }
+    if (membersChanged) { m_conversation["messages"] = members; emit conversationChanged(); }
 }
 bool MailBackend::isMailAction(const QString &method) {
     return method == "flag" || method == "set_category" || method == "mail_filing";
@@ -1803,7 +1849,14 @@ QVariantList MailBackend::snapshotMailRows(const QStringList &ids) const {
 }
 
 void MailBackend::applyMailSelection(const QVariantList &rows, const QString &action, const QString &categoryId) {
-    if (m_mutatingConversation || rows.isEmpty() || rows.size() > 200 || !m_connected || m_shutdown) return;
+    if (rows.isEmpty() || rows.size() > 200 || !m_connected || m_shutdown) return;
+    if (m_mutatingConversation) {
+        // The rows are a snapshot, so the action runs as taken once the one
+        // saving now is done.
+        const auto account = m_account;
+        m_queuedMailActions.append([this, rows, action, categoryId, account] { if (m_account == account) applyMailSelection(rows, action, categoryId); });
+        return;
+    }
     if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change selected mail."); return; }
     const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
     QList<QJsonObject> commands;
@@ -1855,7 +1908,10 @@ void MailBackend::applyMailSelection(const QVariantList &rows, const QString &ac
     for (const auto &command : m_bulkCommands) if (command["method"] == "draft_discard") m_bulkDiscardTargets.insert(m_bulkAccount + '\n' + command["params"].toObject()["draft_id"].toString());
     // The rows themselves show the action; only a problem gets a line.
     m_mutatingConversation = true; m_mailSelectionStatus.clear();
-    emit mutationChanged(); runMailSelection();
+    emit mutationChanged();
+    for (const auto &command : m_bulkCommands)
+        if (command["method"] == "flag") showFlagChange({command["params"].toObject()["id"].toString()}, command["params"].toObject());
+    runMailSelection();
 }
 
 void MailBackend::runMailSelection() {
@@ -1866,7 +1922,7 @@ void MailBackend::runMailSelection() {
         // Done needs no line: the rows move and Undo is offered.
         m_mailSelectionStatus = valid ? QString() : QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
             + " updated. Remaining actions stopped after the account or session changed.";
-        m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo();
+        m_bulkCommands.clear(); finishMailMutation(); finishBulkDiscardUndo();
         if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
         m_bulkMailUndo.clear();
         if (m_shutdown) finishShutdown();
@@ -1883,7 +1939,7 @@ void MailBackend::runMailSelection() {
         if (!ok) {
             m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
                 + " updated. Stopped: " + result["message"].toString("selection changed or response was lost") + ". Refresh and inspect before selecting again.";
-            m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo();
+            m_bulkCommands.clear(); finishMailMutation(); finishBulkDiscardUndo();
         if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
         m_bulkMailUndo.clear(); cancelShutdown();
             if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
@@ -2309,7 +2365,7 @@ void MailBackend::refreshFromStatus(const QJsonObject &status) {
     const bool editing = m_queryActivity.isValid() && m_queryActivity.elapsed() < 500;
     const bool refreshList = m_listRefreshPending && !m_loading && !m_searchTimer.isActive() && !editing && !m_browsingOlder;
     if (refreshList) m_listRefreshPending = false;
-    if (calendarChanged) loadCalendarSources();
+    if (calendarChanged) { QScopedValueRollback<bool> origin(m_automaticReadScope, true); loadCalendarSources(); }
     if (!scoped) {
         // Older engines and incomplete status replies retain the full refresh.
         if (changed) refreshState(refreshList, calendarChanged, true);
@@ -2365,7 +2421,7 @@ void MailBackend::refreshState(bool refreshList, bool refreshCalendar, bool auto
         loadConversation(refreshDraft);
         if (m_selected.isEmpty() && !m_activeDraft.isEmpty() && refreshDraft) loadActiveDraft();
     }
-    if (refreshCalendar) loadCalendar();
+    if (refreshCalendar) { QScopedValueRollback<bool> origin(m_automaticReadScope, automatic); loadCalendar(); }
     {
         QScopedValueRollback<bool> origin(m_automaticReadScope, automatic);
         loadCaptures();

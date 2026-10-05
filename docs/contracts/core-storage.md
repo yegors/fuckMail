@@ -1,5 +1,11 @@
 # Core and storage
 
+## D192 — changed conversations are re-read, not rebuilt (Core89)
+
+- Conversation states (counts, groups and list order for `accounts`, lists and search) re-read only the changed conversations while they number at most 512 or a quarter of the account, and rebuild from every message otherwise.
+
+Consumers: `accounts`, conversation lists and counts; Core tests.
+
 ## D191 — bounded spam lookups and statistics (Core88)
 
 - Dropping one Gmail Spam message (`forget_spam` with a remote ID: a history or listing outcome labelled SPAM, or a completed Move to Spam) selects it by `(account, remote_id)`. Only the once-per-profile cleanup scans for the SPAM label.

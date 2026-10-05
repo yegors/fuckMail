@@ -125,7 +125,10 @@ pub(crate) struct ConversationProjection {
     max_rowid: i64,
     states: Arc<HashMap<String, ConversationState>>,
 }
-/// Above this many changed conversations one scan is cheaper than per-thread reads.
+/// Changed conversations are re-read one by one up to this many, or a quarter
+/// of the account's conversations if more. On a 280k-message mailbox a rescan
+/// took 2 s and re-reading 12,000 changed conversations 0.9 s, and background
+/// work can change thousands between two reads of a large account.
 const INCREMENTAL_STATE_LIMIT: usize = 512;
 /// Consumed change-log entries are dropped once this many have accumulated.
 const STATE_LOG_PRUNE: i64 = 4096;
@@ -541,8 +544,8 @@ impl Store {
     /// Returns every conversation state for `account`, keyed by conversation ID.
     ///
     /// Reuses the cached projection when the change log has nothing new,
-    /// re-reads up to `INCREMENTAL_STATE_LIMIT` changed conversations, and
-    /// otherwise rescans the account.
+    /// re-reads changed conversations up to `INCREMENTAL_STATE_LIMIT` or a
+    /// quarter of the account, and otherwise rescans the account.
     fn conversation_states(
         &self,
         account: &str,
@@ -571,7 +574,7 @@ impl Store {
                 old.log_seq = latest;
                 return Ok(old.states.clone());
             }
-            if changed.len() <= INCREMENTAL_STATE_LIMIT {
+            if changed.len() <= INCREMENTAL_STATE_LIMIT.max(old.states.len() / 4) {
                 let mut copy = HashMap::new();
                 let states = if persist {
                     Arc::make_mut(&mut old.states)
@@ -2674,6 +2677,31 @@ mod projection_tests {
         }
         // same_as_fresh_scan scans on purpose, once per account.
         assert_eq!(store.state_scans.get(), scans + 2);
+    }
+    #[test]
+    fn many_changed_threads_in_a_large_account_update_in_place() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let tx = store.db.unchecked_transaction().unwrap();
+        for index in 0..3000 {
+            append(
+                &store,
+                &format!("bulk-{index}"),
+                &format!("bulk-thread-{index}"),
+            );
+        }
+        tx.commit().unwrap();
+        correct(&store);
+        let scans = store.state_scans.get();
+        // More than the fixed floor, under a quarter of the account.
+        store.db.execute("UPDATE messages SET unread=0 WHERE account='windscribe' AND id IN (SELECT id FROM messages WHERE id LIKE 'bulk-%' ORDER BY rowid LIMIT 700)", []).unwrap();
+        correct(&store);
+        assert_eq!(
+            store.state_scans.get(),
+            scans,
+            "changed threads were re-read, not rescanned"
+        );
+        same_as_fresh_scan(&store, "windscribe");
     }
     #[test]
     fn listing_after_a_thread_is_removed_and_another_added() {

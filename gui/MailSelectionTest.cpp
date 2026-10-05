@@ -247,6 +247,47 @@ class MailSelectionTest {
             else held.peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",held.request["id"]},{"ok",false},{"error",QJsonObject{{"code","stale_revision"},{"message","Conversation changed"}}}}).toJson(QJsonDocument::Compact)+'\n');
         }
     };
+    // Opening unread mail shows it read at once, before the engine answers,
+    // and Done pressed meanwhile is kept and sent next, not dropped. A user
+    // write passes polling reads already queued.
+    static void actionsDuringRead() {
+        Harness h;
+        const auto make=[](const QString &id,bool unread){
+            return QVariant(QVariantMap{{"id",id},{"subject","Read "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T12:00:00Z"},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group","review"},{"kind","people"},{"unread",unread},{"starred",false}}); };
+        h.rows={make("n1",true),make("n2",true)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",2},{"held",0}}},{"done_months",QJsonArray{}}};
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==2;},"unread Inbox loads");
+        const auto row=[&](const QString &id){ for (const auto &value:h.backend.conversations()) if (value.toMap()["id"]==id) return value.toMap(); return QVariantMap{}; };
+        h.backend.openConversation("n1");
+        auto read=h.take(); require(read.request["params"].toObject()["read"]==true,"opening unread mail reads it");
+        require(!row("n1")["unread"].toBool(),"the row shows read before the engine answers");
+        require(!h.backend.conversation()["messages"].toList().first().toMap()["unread"].toBool(),"the reader shows read before the engine answers");
+        // Done while the read is still saving: kept, then sent once it lands.
+        h.backend.applyMailSelection(h.backend.snapshotMailRows({"n1"}),"done");
+        require(h.writes.isEmpty(),"one change saves at a time");
+        h.finish(read);
+        auto done=h.take();
+        require(done.request["params"].toObject()["id"]=="n1" && done.request["params"].toObject()["read"]==true
+            && done.request["params"].toObject()["starred"]==false,"Done pressed during the read is sent after it");
+        h.finish(done);
+        await([&]{return !h.backend.m_mutatingConversation && h.backend.m_pending.isEmpty();},"Done settles");
+        // Polling reads already queued do not hold up a write.
+        bool held=true; h.backend.request("status",{},{},[&](auto,bool){ held=false; });
+        h.backend.m_automaticReadScope=true;
+        h.backend.request("calendar_sources",{},{},[](auto,bool){});
+        h.backend.m_automaticReadScope=false;
+        h.backend.mutateConversation("flag",{{"starred",true}},false);
+        const auto star=h.take();
+        require(star.request["params"].toObject()["starred"]==true && h.methods.lastIndexOf("calendar_sources")<0,
+            "the write is sent before the queued calendar read");
+        require(row("n1")["starred"].toBool(),"Delay shows at once");
+        h.finish(star);
+        await([&]{return !held && h.backend.m_pending.isEmpty();},"the polling reads still run");
+        qInfo()<<"Read on open and Done show at once; an action during a save runs next; writes pass polling reads.";
+    }
     static void readerMemorySharing() {
         Harness h;
         h.backend.m_selected="a";
@@ -2757,6 +2798,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

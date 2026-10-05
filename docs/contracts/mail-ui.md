@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D192 — mail actions do not wait (Mail UI139)
+
+- **Order.** The engine connection still sends one request at a time. An explicit query (`conversations`, `conversation`, `view_get`, `drafts`, `sender_summary`) or a mail change (`flag`, `set_category`, `mail_filing`, `mail_undo`) passes queued automatic reads (polling, including calendar catalog and window reads started by polling); an automatic read runs after four bypasses. Any other manual read or write is a barrier, and manual requests keep their order.
+- **Shown at once.** Sending a read or star change (`flag`: read on open, Read, Unread, Delay, Done) shows it on the matching rows, the kept row and the open reader at once. Rows change section when the reply lands. A refusal reloads the stored state.
+- **Queued, not dropped.** A single-conversation action or a selection action taken while another mail change saves runs when it finishes. A single-conversation action runs only while that conversation is still open; a selection action only in the same account. A disconnect clears waiting actions.
+
+Consumers: `MailBackend` (`sendNext`, `showFlagChange`, `finishMailMutation`, `mutateConversation`, `applyMailSelection`, mail undo); MailSelectionTest.
+
 ## D191 — waiting for a busy engine; folders never show another's rows (Mail UI138)
 
 - A request to a connected engine fails as unanswered after 60 s (120 s for starting or refreshing sync). A slow reply is a busy store, not a lost engine.

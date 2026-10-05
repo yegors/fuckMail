@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-05
+
+- Opening unread mail shows it read at once, and Done, Delay, Read and Unread show the moment you choose them. They no longer wait behind background calendar refreshes, and Done pressed right after opening a message is no longer ignored.
+- Account counts and mail lists stay fast while many conversations change at once; on a 280,000-message mailbox they took up to 2 s each.
+
 ## 2026-10-04
 
 - Spam arriving in a large mailbox no longer freezes the app for seconds at a time. Before, each spam message held the local store for about 6 s on a mailbox of 280,000 messages.

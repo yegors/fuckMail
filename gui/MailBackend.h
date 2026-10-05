@@ -666,6 +666,12 @@ private:
     bool publishAccounts(QVariantList accounts);
     void loadConversations(bool append = false, bool preserveLoaded = false);
     bool publishConversations(QVariantList rows);
+    // Shows a read or star change on its rows and open reader at once; the
+    // engine's reply confirms it and a refusal reloads the stored state.
+    void showFlagChange(const QStringList &ids, const QJsonObject &params);
+    // Ends the running mail action and starts the next one taken meanwhile.
+    void finishMailMutation();
+    QList<std::function<void()>> m_queuedMailActions;
     // The model scope of the current account, folder and search.
     QString listScope() const;
     QVariantMap mailViewScope() const;
