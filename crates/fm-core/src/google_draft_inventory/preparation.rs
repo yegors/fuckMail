@@ -183,7 +183,10 @@ pub fn prepare_google_draft_import(
             if reply_to.is_some_and(|v| v.len() > 2048) {
                 issue(&mut source, "references_preview_limit");
             }
-            displayed.routing["reply_to_message_id"] = json!(reply_to.map(|v| bounded(v, 2048)));
+            // Stored like a reply composed here, in angle brackets: this
+            // routing becomes the editable draft that is later sent.
+            displayed.routing["reply_to_message_id"] =
+                json!(reply_to.map(|v| format!("<{}>", bounded(v, 2048))));
             let references = parsed.references().as_text_list().unwrap_or_default();
             if references.len() > 100 || references.iter().any(|v| v.len() > 2048) {
                 issue(&mut source, "references_preview_limit");
@@ -191,7 +194,7 @@ pub fn prepare_google_draft_import(
             let refs: Vec<_> = references
                 .iter()
                 .take(100)
-                .map(|v| bounded(v, 2048))
+                .map(|v| format!("<{}>", bounded(v, 2048)))
                 .collect();
             displayed.routing["references"] = json!(refs);
             match fm_mail::extract_parsed_incoming_text(&parsed) {

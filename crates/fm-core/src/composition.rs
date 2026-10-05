@@ -42,8 +42,11 @@ pub(crate) fn compose_request(
             body_text: draft["body"].as_str().unwrap_or("").into(),
             body_html: draft["body_html"].as_str().map(str::to_owned),
             message_id,
-            reply_to_message_id: draft["reply_to_message_id"].as_str().map(str::to_owned),
-            references: serde_json::from_value(draft["references"].clone())?,
+            reply_to_message_id: draft["reply_to_message_id"].as_str().map(bracketed),
+            references: serde_json::from_value::<Vec<String>>(draft["references"].clone())?
+                .iter()
+                .map(|id| bracketed(id))
+                .collect(),
             timestamp_secs,
         },
         fm_mail::AccountIdentity {
@@ -59,6 +62,16 @@ pub(crate) fn compose_request(
             signature_html: None,
         },
     ))
+}
+
+/// A Message-ID in angle brackets. Drafts mirrored from Gmail by earlier
+/// versions stored bare IDs, which the composer rightly refuses.
+fn bracketed(id: &str) -> String {
+    if id.starts_with('<') {
+        id.to_owned()
+    } else {
+        format!("<{id}>")
+    }
 }
 
 /// Reads the draft selector from `p`: a `draft_id`, or a `conversation_id`

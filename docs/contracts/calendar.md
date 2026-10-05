@@ -2,6 +2,13 @@
 
 
 
+## D193 — reminder actions stay on screen; the alarm stops a minute in (Calendar45)
+
+- **Layout.** The reminder and View screen scroll their details and keep Join, Snooze and Dismiss/Close in a row below them that never scrolls away, whatever the guest list or notes length.
+- **Sound.** No reminder sound plays once the event is more than 60 s old: the repeating alarm stops, a playing tone is cut, and a reminder first shown after that point comes forward silently. This supersedes the "repeat cadence" running until the event ends under D163.
+
+Consumers: `ReminderPopup`; NotificationBackendTest.
+
 ## D190 — visibility filters; today is followed (Calendar44)
 
 - **Reads.** The grid and Mail timeline read every calendar in `selected_calendars` (all when null), whatever `calendar_account_visibility` says. `current` filters the rows read to the current account (`MailBackend::visibleCalendarEvents`). Changing the visibility or the current account redraws from the rows already read. Contextual Calendar search still asks only for visible accounts.

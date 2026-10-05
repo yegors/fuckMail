@@ -207,6 +207,10 @@ class NotificationBackendTest {
         auto current = event(); current["title"] = "<b>Human meeting title</b> — a longer invitation 日本語 that wraps without pushing either action outside the card";
         current["start"]=QDateTime::currentDateTimeUtc().addSecs(600).toString(Qt::ISODate);
         current["end"]=QDateTime::currentDateTimeUtc().addSecs(2400).toString(Qt::ISODate);
+        // A long guest list and notes overflow the short window.
+        QJsonArray guests;
+        for (int i = 0; i < 18; ++i) guests.append(QJsonObject{{"email",QString("guest%1@example.test").arg(i)},{"responseStatus",i % 3 ? "accepted" : "needsAction"}});
+        current["attendees"]=guests; current["description"]="Agenda\nDial-in\nPhone: +1 000-000-0000";
         h.backend.m_reminders = {current.toVariantMap()};
         QQmlApplicationEngine engine; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&engine,&QQmlEngine::warnings,[&](const auto &errors) {
@@ -236,8 +240,12 @@ ApplicationWindow {
             await([&] {
                 const auto *dismiss = button("reminderDismiss"), *join = button("reminderPrimary"), *snooze=button("reminderSnooze");
                 const auto a = dismiss->mapRectToItem(panel,dismiss->boundingRect()), b = join->mapRectToItem(panel,join->boundingRect()), c=snooze->mapRectToItem(panel,snooze->boundingRect());
-                return panel->width()==430 && panel->height()==410 && a.width()>40 && b.width()>100 && c.width()>100 && !a.intersects(b) && !b.intersects(c);
+                const QRectF screen(0,0,panel->width(),panel->height());
+                return panel->width()==430 && panel->height()==410 && a.width()>40 && b.width()>100 && c.width()>100 && !a.intersects(b) && !b.intersects(c)
+                    && screen.contains(a) && screen.contains(b) && screen.contains(c);
             }, "short-window modal fills viewport and actions do not overlap");
+            const auto *details = button("reminderDetails");
+            require(details->property("contentHeight").toDouble() > details->height(), "long guest lists scroll in the details");
             require(!warnings, "popup produces no QML binding/type warnings");
         }
         // The window comes forward once at one minute and once at the start,
@@ -257,6 +265,11 @@ ApplicationWindow {
         panel->setProperty("nowMs", startMs + 5000);
         require(summoned == 2, "a started reminder asks only once");
         panel->setProperty("muted", false);
+        // An unattended alarm repeats through the first minute, then goes quiet.
+        panel->setProperty("nowMs", startMs + 59000);
+        require(panel->property("ringing").toBool(), "the alarm repeats during the event's first minute");
+        panel->setProperty("nowMs", startMs + 61000);
+        require(!panel->property("ringing").toBool() && chimes() == 2, "the alarm stops a minute after the start");
         h.backend.m_reminders = {}; emit h.backend.remindersChanged();
         await([&] { return !panel->isVisible(); }, "refresh hides the reminder");
         h.backend.m_reminders = {current.toVariantMap()}; emit h.backend.remindersChanged();

@@ -52,6 +52,10 @@ Item {
     // A viewed event that has started is simply in progress, and an ended
     // event is over: neither is an alarm.
     readonly property bool alerting: level > 0 && !ended && !(viewing && secondsLeft <= 0)
+    // Sound stops a minute after the start, so an unattended reminder goes quiet.
+    readonly property bool canSound: !ended && secondsLeft > -60
+    // The alarm repeats through the last minute and the first minute of the event.
+    readonly property bool ringing: visible && !muted && level > 0 && canSound && (!viewing || soundedLevel > revealedLevel)
     readonly property color alertColor: alerting ? Theme.error : ended ? Theme.inkAlpha(.45) : Theme.accent
     readonly property bool hasPrimary: !ended && !!event.conference_url
     readonly property bool canSnooze: !viewing && !ended
@@ -112,7 +116,7 @@ Item {
         const seen = heard[eventIdentity]
         if (seen !== undefined && level <= seen) { soundedLevel = seen; return }
         muted = false; chimes = 0; summons = 0; soundedLevel = level; remember(level)
-        if (!viewing && !ended) { play(); summon() }
+        if (!viewing && !ended) { if (canSound) play(); summon() }
     }
     onVisibleChanged: {
         if (visible) { reveal(); return }
@@ -121,15 +125,15 @@ Item {
     }
     onMutedChanged: if (muted) backend.stopReminderSound()
     onEventIdentityChanged: reveal()
-    // Viewing sounds only when the one-minute or start point passes while open,
-    // and never once the event is more than a minute old.
+    // Viewing sounds only when the one-minute or start point passes while open.
+    // Nothing sounds once the event is more than a minute old.
     onLevelChanged: {
         if (!visible || presentedIdentity !== eventIdentity || level <= soundedLevel) return
         soundedLevel = level; remember(level)
-        if (!ended && (!viewing || secondsLeft > -60)) play()
+        if (canSound) play()
         summon()
     }
-    onEndedChanged: if (ended) backend.stopReminderSound()
+    onCanSoundChanged: if (!canSound) backend.stopReminderSound()
     Keys.onReturnPressed: function(key) { if (keyAllowed(key)) primary() }
     Keys.onEnterPressed: function(key) { if (keyAllowed(key)) primary() }
     Keys.onEscapePressed: function(key) { if (keyAllowed(key)) dismiss() }
@@ -141,8 +145,7 @@ Item {
     Timer { interval: 1000; repeat: true; running: panel.visible; onTriggered: panel.nowMs = Date.now() }
     Timer {
         interval: panel.level === 2 && panel.secondsLeft > -30 ? 2600 : 8000; repeat: true
-        running: panel.visible && !panel.muted && panel.level > 0 && !panel.ended
-            && (!panel.viewing || (panel.soundedLevel > panel.revealedLevel && panel.secondsLeft > -60))
+        running: panel.ringing
         onTriggered: panel.play()
     }
     MultiEffect {
@@ -158,116 +161,129 @@ Item {
         property bool on: true
         Timer { interval: 500; repeat: true; running: panel.visible && panel.alerting; onTriggered: redBar.on = !redBar.on; onRunningChanged: redBar.on = true }
     }
-    Flickable {
-        id: viewport
-        anchors.fill: parent; anchors.margins: 24; anchors.topMargin:48; contentWidth: width; contentHeight: Math.max(height, body.implicitHeight)
-        clip: true; boundsBehavior: Flickable.StopAtBounds
-        ColumnLayout {
-            id: body
-            width: Math.min(viewport.width, 720); x: Math.max(0, (viewport.width - width) / 2)
-            y: Math.max(0, (viewport.height - implicitHeight) / 2)
-            spacing: 0
-            RowLayout { Layout.fillWidth: true; spacing: 10
-                Rectangle { id: statusDot; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: panel.alertColor; opacity: statusDot.on ? 1 : 0.45
-                    property bool on: true
-                    Timer { interval: 600; repeat: true; running: panel.visible && panel.alerting; onTriggered: statusDot.on = !statusDot.on; onRunningChanged: statusDot.on = true }
-                }
-                Text { objectName: "reminderKicker"; text: panel.kicker; color: panel.alertColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.letterSpacing:.96; font.weight: Font.Normal }
-                Item { Layout.fillWidth: true }
-                Text {font.family:Theme.fontFamily; text: (panel.event.account_name || "") + " / " + (panel.event.calendar_name || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth:true; horizontalAlignment:Text.AlignRight; textFormat: Text.PlainText }
-                FmButton { objectName: "reminderMute"; iconName: panel.muted ? "mute" : "volume"; tip: panel.muted ? "Sound off · M" : "Sound on · M";implicitWidth:28;implicitHeight:28;leftPadding:7;rightPadding:7;outlined:true; onClicked: panel.muted = !panel.muted }
-            }
-            Text {font.family:Theme.fontFamily; objectName: "reminderRelative"; Layout.topMargin: 36; text: panel.ended ? "This event is over" : panel.secondsLeft <= 0 ? "Started " + panel.clock(panel.secondsLeft) + " ago" : "Starts in"; color: Theme.muted; font.pointSize: Theme.fontPoints(13) }
-            Text { Layout.topMargin:4;objectName: "reminderCountdown"; text: panel.countdown; color: panel.ended ? Theme.inkAlpha(.4) : panel.alerting ? panel.alertColor : Theme.text; font.family: Theme.fontFamily; readonly property real size: Math.min(panel.countdownSize, body.width / 4); font.pixelSize: size; font.weight: Font.Medium; font.letterSpacing: -0.045 * size;lineHeightMode:Text.FixedHeight;lineHeight:size; font.features: { "tnum": 1 } }
-            Text { Layout.topMargin: 32; Layout.fillWidth: true; text: panel.event.title || "Event"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(36); font.weight: Font.Medium; font.letterSpacing: -0.02 * Theme.fontSize(36); lineHeightMode:Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(36) * 1.15) }
-            Text {font.family:Theme.fontFamily; Layout.topMargin: 10; Layout.fillWidth: true; text: backend.calendarReminderWhen(panel.event); textFormat: Text.PlainText; color: Theme.muted; font.pointSize: Theme.fontPoints(16); wrapMode: Text.Wrap }
+    // The details scroll; the actions below them always stay on screen. Short
+    // content and its actions are centred together.
+    Item {
+        id: frame
+        anchors.fill: parent; anchors.margins: 24; anchors.topMargin: 48
+        readonly property real columnWidth: Math.min(width, 720)
+        readonly property real columnX: Math.max(0, (width - columnWidth) / 2)
+        readonly property real actionsGap: 32
+        Flickable {
+            id: viewport
+            objectName: "reminderDetails"
+            width: parent.width; height: Math.max(0, Math.min(body.implicitHeight, frame.height - frame.actionsGap - reminderActions.height))
+            y: Math.max(0, (frame.height - height - frame.actionsGap - reminderActions.height) / 2)
+            contentWidth: width; contentHeight: body.implicitHeight
+            clip: true; boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: FmScrollBar {}
             ColumnLayout {
-                Layout.fillWidth:true;Layout.topMargin:28;spacing:0
-                Rectangle {visible:panel.meetingUrl.length>0 || panel.rows.length>0 || panel.hasGuests || panel.notes.length>0;Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
-                // The meeting's own link, without https://, wrapping rather than cut off.
-                ColumnLayout {
-                    visible: panel.meetingUrl.length > 0
-                    Layout.fillWidth:true;spacing:0
-                    RowLayout {
-                        Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                        Text {font.family:Theme.fontFamily;text:"Meeting URL";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
-                        Item {
-                            Layout.fillWidth:true; implicitHeight: meetingLink.implicitHeight + 2
-                            Text {
-                                id: meetingLink; objectName: "reminderMeetingUrl"
-                                width: Math.min(implicitWidth, parent.width)
-                                text: panel.meetingUrl.replace(/^https:\/\//i, ""); textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
-                                color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
-                                HoverHandler { id: meetingHover; cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: backend.openLink(panel.meetingUrl) }
-                                FmToolTip { shown: meetingHover.hovered; text: "Open meeting" }
-                            }
-                            Rectangle { y: meetingLink.height + 1; width: meetingLink.width; height: 1; color: meetingHover.hovered ? Theme.text : Theme.inkAlpha(.25) }
-                        }
+                id: body
+                width: frame.columnWidth; x: frame.columnX
+                spacing: 0
+                RowLayout { Layout.fillWidth: true; spacing: 10
+                    Rectangle { id: statusDot; Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4; color: panel.alertColor; opacity: statusDot.on ? 1 : 0.45
+                        property bool on: true
+                        Timer { interval: 600; repeat: true; running: panel.visible && panel.alerting; onTriggered: statusDot.on = !statusDot.on; onRunningChanged: statusDot.on = true }
                     }
-                    Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                    Text { objectName: "reminderKicker"; text: panel.kicker; color: panel.alertColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.letterSpacing:.96; font.weight: Font.Normal }
+                    Item { Layout.fillWidth: true }
+                    Text {font.family:Theme.fontFamily; text: (panel.event.account_name || "") + " / " + (panel.event.calendar_name || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth:true; horizontalAlignment:Text.AlignRight; textFormat: Text.PlainText }
+                    FmButton { objectName: "reminderMute"; iconName: panel.muted ? "mute" : "volume"; tip: panel.muted ? "Sound off · M" : "Sound on · M";implicitWidth:28;implicitHeight:28;leftPadding:7;rightPadding:7;outlined:true; onClicked: panel.muted = !panel.muted }
                 }
-                Repeater {
-                    model:panel.rows
+                Text {font.family:Theme.fontFamily; objectName: "reminderRelative"; Layout.topMargin: 36; text: panel.ended ? "This event is over" : panel.secondsLeft <= 0 ? "Started " + panel.clock(panel.secondsLeft) + " ago" : "Starts in"; color: Theme.muted; font.pointSize: Theme.fontPoints(13) }
+                Text { Layout.topMargin:4;objectName: "reminderCountdown"; text: panel.countdown; color: panel.ended ? Theme.inkAlpha(.4) : panel.alerting ? panel.alertColor : Theme.text; font.family: Theme.fontFamily; readonly property real size: Math.min(panel.countdownSize, body.width / 4); font.pixelSize: size; font.weight: Font.Medium; font.letterSpacing: -0.045 * size;lineHeightMode:Text.FixedHeight;lineHeight:size; font.features: { "tnum": 1 } }
+                Text { Layout.topMargin: 32; Layout.fillWidth: true; text: panel.event.title || "Event"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(36); font.weight: Font.Medium; font.letterSpacing: -0.02 * Theme.fontSize(36); lineHeightMode:Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(36) * 1.15) }
+                Text {font.family:Theme.fontFamily; Layout.topMargin: 10; Layout.fillWidth: true; text: backend.calendarReminderWhen(panel.event); textFormat: Text.PlainText; color: Theme.muted; font.pointSize: Theme.fontPoints(16); wrapMode: Text.Wrap }
+                ColumnLayout {
+                    Layout.fillWidth:true;Layout.topMargin:28;spacing:0
+                    Rectangle {visible:panel.meetingUrl.length>0 || panel.rows.length>0 || panel.hasGuests || panel.notes.length>0;Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                    // The meeting's own link, without https://, wrapping rather than cut off.
                     ColumnLayout {
-                        required property var modelData
+                        visible: panel.meetingUrl.length > 0
                         Layout.fillWidth:true;spacing:0
                         RowLayout {
                             Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                            Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112}
-                            Text {font.family:Theme.fontFamily;text:modelData.value;textFormat:Text.PlainText;color:Theme.text;font.pointSize:Theme.fontPoints(15.5);elide:Text.ElideRight;Layout.fillWidth:true}
+                            Text {font.family:Theme.fontFamily;text:"Meeting URL";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
+                            Item {
+                                Layout.fillWidth:true; implicitHeight: meetingLink.implicitHeight + 2
+                                Text {
+                                    id: meetingLink; objectName: "reminderMeetingUrl"
+                                    width: Math.min(implicitWidth, parent.width)
+                                    text: panel.meetingUrl.replace(/^https:\/\//i, ""); textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
+                                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                                    HoverHandler { id: meetingHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: backend.openLink(panel.meetingUrl) }
+                                    FmToolTip { shown: meetingHover.hovered; text: "Open meeting" }
+                                }
+                                Rectangle { y: meetingLink.height + 1; width: meetingLink.width; height: 1; color: meetingHover.hovered ? Theme.text : Theme.inkAlpha(.25) }
+                            }
                         }
                         Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
                     }
-                }
-                // Who is coming: organiser, guests and you, with each answer.
-                ColumnLayout {
-                    objectName: "reminderGuests"; visible: panel.hasGuests
-                    Layout.fillWidth:true;spacing:0
-                    RowLayout {
-                        Layout.fillWidth:true;Layout.topMargin:8;Layout.bottomMargin:8;spacing:0
-                        Text {font.family:Theme.fontFamily;text:"Guests";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop;topPadding:4}
-                        AttendeeList { Layout.fillWidth: true; prefix: "reminderAttendee"; event: panel.event; avatarSize: 24; nameSize: 15; statusSize: 13.5; rowHeight: 34 }
+                    Repeater {
+                        model:panel.rows
+                        ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth:true;spacing:0
+                            RowLayout {
+                                Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
+                                Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112}
+                                Text {font.family:Theme.fontFamily;text:modelData.value;textFormat:Text.PlainText;color:Theme.text;font.pointSize:Theme.fontPoints(15.5);elide:Text.ElideRight;Layout.fillWidth:true}
+                            }
+                            Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                        }
                     }
-                    Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
-                }
-                // The full description, with its own line breaks, scrolling when long.
-                RowLayout {
-                    objectName: "reminderNotes"; visible: panel.notes.length > 0
-                    Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                    Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
-                    ScrollView {
-                        id: notesScroll
-                        ScrollBar.vertical: FmScrollBar {}
-                        Layout.fillWidth: true; Layout.preferredHeight: Math.min(notesText.implicitHeight, Math.max(360, panel.height * .36))
-                        clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                        // Selectable, with its links opening in the browser: meeting
-                        // details and dial-in numbers get copied from here.
-                        TextEdit {
-                            id: notesText; objectName: "reminderNotesText"; width: notesScroll.availableWidth
-                            readonly property string notes: panel.notes
-                            text: "<div style=\"line-height:165%\">" + Theme.linkedNotes(panel.notes, Theme.text) + "</div>"
-                            textFormat: TextEdit.RichText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
-                            color: Theme.inkAlpha(.82); selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
-                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
-                            onLinkActivated: function(link) { backend.openLink(link) }
-                            HoverHandler { cursorShape: notesText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                    // Who is coming: organiser, guests and you, with each answer.
+                    ColumnLayout {
+                        objectName: "reminderGuests"; visible: panel.hasGuests
+                        Layout.fillWidth:true;spacing:0
+                        RowLayout {
+                            Layout.fillWidth:true;Layout.topMargin:8;Layout.bottomMargin:8;spacing:0
+                            Text {font.family:Theme.fontFamily;text:"Guests";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop;topPadding:4}
+                            AttendeeList { Layout.fillWidth: true; prefix: "reminderAttendee"; event: panel.event; avatarSize: 24; nameSize: 15; statusSize: 13.5; rowHeight: 34 }
+                        }
+                        Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                    }
+                    // The full description, with its own line breaks, scrolling when long.
+                    RowLayout {
+                        objectName: "reminderNotes"; visible: panel.notes.length > 0
+                        Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
+                        Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
+                        ScrollView {
+                            id: notesScroll
+                            ScrollBar.vertical: FmScrollBar {}
+                            Layout.fillWidth: true; Layout.preferredHeight: Math.min(notesText.implicitHeight, Math.max(360, panel.height * .36))
+                            clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            // Selectable, with its links opening in the browser: meeting
+                            // details and dial-in numbers get copied from here.
+                            TextEdit {
+                                id: notesText; objectName: "reminderNotesText"; width: notesScroll.availableWidth
+                                readonly property string notes: panel.notes
+                                text: "<div style=\"line-height:165%\">" + Theme.linkedNotes(panel.notes, Theme.text) + "</div>"
+                                textFormat: TextEdit.RichText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
+                                color: Theme.inkAlpha(.82); selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
+                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                                onLinkActivated: function(link) { backend.openLink(link) }
+                                HoverHandler { cursorShape: notesText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                            }
                         }
                     }
                 }
             }
-            Flow {
-                id:reminderActions;Layout.fillWidth:true;Layout.topMargin:32;spacing:8
-                FmButton {
-                    id:primaryButton;objectName:"reminderPrimary";visible:panel.hasPrimary;text:"Join "+panel.provider;shortcutHint:"↵"
-                    prominent:true;foreground:panel.alerting ? "white" : Theme.canvas;implicitHeight:36;leftPadding:14;rightPadding:14;font.pointSize:Theme.fontPoints(13);font.weight:Font.Medium
-                    onClicked:panel.primary()
-                    background:Rectangle {radius:6;color:panel.alerting ? panel.alertColor : Theme.text}
-                }
-                FmButton {id:snoozeButton;objectName:"reminderSnooze";visible:panel.canSnooze;text:"Snooze "+(backend.preferences.reminder_snooze_minutes || 5)+" min";shortcutHint:"S";implicitHeight:36;outlined:true;leftPadding:14;rightPadding:14;font.weight:Font.Medium;onClicked:panel.snooze()}
-                Item {width:Math.max(0,reminderActions.width-(primaryButton.visible?primaryButton.width+8:0)-(snoozeButton.visible?snoozeButton.width+8:0)-dismissButton.width-8);height:36}
-                FmButton {id:dismissButton;objectName:"reminderDismiss";text:panel.viewing || panel.ended ? "Close" : "Dismiss";shortcutHint:"Esc";implicitHeight:36;outlined:true;leftPadding:14;rightPadding:14;font.weight:Font.Medium;onClicked:panel.dismiss()}
+        }
+        Rectangle { visible: viewport.contentHeight > viewport.height + 1; x: frame.columnX; y: viewport.y + viewport.height + frame.actionsGap / 2; width: frame.columnWidth; height: 1; color: Theme.line }
+        Flow {
+            id:reminderActions;objectName:"reminderActions";x:frame.columnX;width:frame.columnWidth;y:viewport.y+viewport.height+frame.actionsGap;spacing:8
+            FmButton {
+                id:primaryButton;objectName:"reminderPrimary";visible:panel.hasPrimary;text:"Join "+panel.provider;shortcutHint:"↵"
+                prominent:true;foreground:panel.alerting ? "white" : Theme.canvas;implicitHeight:36;leftPadding:14;rightPadding:14;font.pointSize:Theme.fontPoints(13);font.weight:Font.Medium
+                onClicked:panel.primary()
+                background:Rectangle {radius:6;color:panel.alerting ? panel.alertColor : Theme.text}
             }
+            FmButton {id:snoozeButton;objectName:"reminderSnooze";visible:panel.canSnooze;text:"Snooze "+(backend.preferences.reminder_snooze_minutes || 5)+" min";shortcutHint:"S";implicitHeight:36;outlined:true;leftPadding:14;rightPadding:14;font.weight:Font.Medium;onClicked:panel.snooze()}
+            Item {width:Math.max(0,reminderActions.width-(primaryButton.visible?primaryButton.width+8:0)-(snoozeButton.visible?snoozeButton.width+8:0)-dismissButton.width-8);height:36}
+            FmButton {id:dismissButton;objectName:"reminderDismiss";text:panel.viewing || panel.ended ? "Close" : "Dismiss";shortcutHint:"Esc";implicitHeight:36;outlined:true;leftPadding:14;rightPadding:14;font.weight:Font.Medium;onClicked:panel.dismiss()}
         }
     }
 }

@@ -200,6 +200,12 @@ fn exact_raw_routing_cid_parts_and_account_isolation_survive_restart() {
         assert_eq!(got[key][0]["email"], email);
     }
     assert_eq!(got["subject"], "Original subject");
+    // Reply routing keeps its angle brackets, so the draft can be sent.
+    assert_eq!(got["reply_to_message_id"], "<parent@example.test>");
+    assert_eq!(
+        got["references"],
+        json!(["<root@example.test>", "<parent@example.test>"])
+    );
     assert_eq!(got["signature_text"], "");
     assert!(got["body"]
         .as_str()

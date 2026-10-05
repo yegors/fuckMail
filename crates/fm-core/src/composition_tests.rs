@@ -646,3 +646,39 @@ fn composition_maximum_escaped_subject_capture_remains_replayable() {
         subject
     );
 }
+
+#[test]
+fn drafts_stored_with_bare_reply_ids_still_build() {
+    // Earlier versions mirrored Gmail drafts with Message-IDs lacking their
+    // angle brackets; sending such a draft must not fail.
+    let draft = json!({"from":"me@example.test","from_name":"Me","subject":"Re: Invoice","body":"All paid.",
+        "to_recipients":[{"email":"dave@example.test"}],"cc_recipients":[],"bcc_recipients":[],
+        "reply_to_message_id":"MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com",
+        "references":["root@example.test","<MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com>"]});
+    let (request, identity) = crate::composition::compose_request(
+        ACCOUNT,
+        &draft,
+        "<new@example.test>".into(),
+        1_791_241_000,
+    )
+    .unwrap();
+    assert_eq!(
+        request.reply_to_message_id.as_deref(),
+        Some("<MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com>")
+    );
+    assert_eq!(
+        request.references,
+        [
+            "<root@example.test>",
+            "<MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com>"
+        ]
+    );
+    let built = fm_mail::build_mail(&request, &identity, &[]).unwrap();
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&built.raw)
+        .unwrap();
+    assert_eq!(
+        parsed.in_reply_to().as_text(),
+        Some("MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com")
+    );
+}

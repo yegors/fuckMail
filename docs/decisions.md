@@ -2279,3 +2279,22 @@ The founder found that opening unread mail, which marks it read, and Done someti
 - **Open.** Calendar polling reloads two windows on every calendar pass even when nothing visible changed. A row hook mismatch (bulk deletes, text-index writes) marks every GUI area changed. `accounts` still recounts conversations and reads Gmail coverage twice per account, about 150 ms in all on the copy.
 
 Core89, Mail UI139. No schema, fixture or protocol change.
+
+## D193 — reminder actions stay on screen; the alarm stops a minute in (2026-10-05T12:00:00Z)
+
+The founder found that a reminder for a meeting with many guests pushed Join, Snooze and Dismiss off screen, and that an unattended reminder kept sounding until the meeting ended.
+
+- **Change.** The reminder and View screen scroll their details (title, link, guests, notes) and keep the actions in a row below them that never scrolls away; a line separates the two when the details overflow. Short content and its actions stay centred together as before. Sound stops 60 s after the start: the repeating alarm ends, a playing tone is stopped, and a reminder first shown later than that comes forward without a sound.
+- **Evidence.** NotificationBackendTest shows an 18-guest reminder in a 430×410 window: every action lies inside the window in all three themes at both text sizes, and the details scroll. The same test finds the alarm repeating at 59 s after the start and stopped at 61 s with no further chime. Both checks fail on the previous screen. CalendarControlsTest (View) passes unchanged.
+
+Calendar45. No schema, fixture or protocol change.
+
+## D194 — replies mirrored from Gmail keep bracketed Message-IDs (2026-10-05T23:30:00Z)
+
+The founder's reply "Hey Dave, all paid." failed with "the message identity contains characters mail cannot carry".
+
+- **Found.** The draft was a Gmail draft mirrored into an editable local draft. The mirror stores the inventory preview's routing, and the preview kept In-Reply-To and References as `mail_parser` returns them: without angle brackets. Replies composed here, and drafts adopted explicitly, store `<id>`. The composer accepts only `<id>`, so the send stopped before reaching Gmail. The Outlook Message-ID itself was valid.
+- **Change.** The preview stores reply routing in angle brackets. Building mail from a draft brackets any bare ID, which repairs drafts already stored that way; the mirror rewrites a draft only when Gmail's copy changes, so it would not have repaired them.
+- **Evidence.** A Core test sends a draft with bare IDs through `compose_request` and `build_mail`; the inventory test now requires a mirrored Gmail reply to carry `<parent@…>` and bracketed References. Both fail on the previous code.
+
+Core90. No schema, fixture or protocol change.

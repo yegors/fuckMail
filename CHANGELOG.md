@@ -5,6 +5,9 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 ## 2026-10-05
 
 - Opening unread mail shows it read at once, and Done, Delay, Read and Unread show the moment you choose them. They no longer wait behind background calendar refreshes, and Done pressed right after opening a message is no longer ignored.
+- A reply drafted in Gmail, or synced from it, now sends. Before, sending it failed with "the message identity contains characters mail cannot carry".
+- Reminders for meetings with long guest lists keep Join, Snooze and Dismiss on screen; the details scroll above them.
+- A reminder nobody answers stops sounding one minute after the meeting starts, instead of until it ends.
 - Account counts and mail lists stay fast while many conversations change at once; on a 280,000-message mailbox they took up to 2 s each.
 
 ## 2026-10-04

@@ -1,5 +1,11 @@
 # Core and storage
 
+## D194 — draft reply routing is bracketed (Core90)
+
+- A draft's `reply_to_message_id` and `references` hold Message-IDs in angle brackets, including drafts mirrored from Gmail. `compose_request` brackets any bare ID it finds, so drafts stored bare by earlier versions still send.
+
+Consumers: Gmail draft mirror and inventory preview, send, capture and draft upload; Core tests.
+
 ## D192 — changed conversations are re-read, not rebuilt (Core89)
 
 - Conversation states (counts, groups and list order for `accounts`, lists and search) re-read only the changed conversations while they number at most 512 or a quarter of the account, and rebuild from every message otherwise.
