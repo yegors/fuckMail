@@ -117,6 +117,8 @@ Popup {
     readonly property var protectedGuests: live ? (editEvent.protected_attendees || []) : []
     property real timelineInset: 0
     property bool timelineAtTop: false
+    // The shortcut bar along the window's foot, which the sheet stops above.
+    readonly property real hintBarInset: (backend.preferences || {}).key_hints !== false ? Theme.keyHintHeight : 0
     readonly property bool accountReady: backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync
         && backend.accountCapability(targetAccount, "calendar_write") && backend.googleSyncState(targetAccount).active === true))
     readonly property bool sourceReady: backend.calendarSources.some(function(s) { return s.account === editor.targetAccount && s.calendar_id === editor.targetCalendarId && s.writable && (!editor.live || !!editor.editEvent.event_id || s.can_create === true) })
@@ -147,11 +149,11 @@ Popup {
     }
     readonly property string clashText: clashes.length ? "Overlaps " + clashes.slice(0, 2).map(function(e) { return (e.title || "Untitled event") + " (" + e.time_display + ")" }).join(", ")
         + (clashes.length > 2 ? " +" + (clashes.length - 2) : "") : ""
-    width: Math.min(440, parent.width); height: Math.max(200, parent.height - 56 - timelineInset); padding: 0
+    width: Math.min(440, parent.width); height: Math.max(200, parent.height - Theme.headerHeight - timelineInset - hintBarInset); padding: 0
     // The panel slides in by position; the overlay never scrolls, so focusing
     // the title while it moves cannot shift the rest of the window.
     property real slideOffset: 0
-    x: parent.width - width + slideOffset; y: 56 + (timelineAtTop ? timelineInset : 0); modal: false; dim: false; focus: true
+    x: parent.width - width + slideOffset; y: Theme.headerHeight + (timelineAtTop ? timelineInset : 0); modal: false; dim: false; focus: true
     closePolicy: saving ? Popup.NoAutoClose : Popup.CloseOnEscape
     background: Rectangle { color: Theme.surface; layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.45); shadowBlur: .8; shadowHorizontalOffset: -12 } Rectangle { width: 1; height: parent.height; color: Theme.controlBorder } }
     enter: Transition {
@@ -362,10 +364,10 @@ Popup {
         spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 14; Layout.preferredHeight: 56
-            Text { text: editor.occurrence ? editor.scopeLabel() : editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium }
+            Text { text: editor.occurrence ? editor.scopeLabel() : editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: editor.occurrence ? "Cancel" : "Delete"; implicitHeight: 28; font.pointSize: Theme.fontPoints(12); enabled: !editor.saving && !occurrenceRead.busy && editor.occurrenceReady && editor.accountReady && editor.sourceReady; tip: editor.occurrence ? "Cancel: " + editor.scopeLabel() : "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
-            FmButton { objectName: "eventAbandonButton"; visible: editor.canAbandon; text: "Abandon"; implicitHeight: 28; font.pointSize: Theme.fontPoints(12); enabled: !editor.saving; tip: "Abandon the recorded change and retain these form fields"; onClicked: abandonConfirmation.open() }
+            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: editor.occurrence ? "Cancel" : "Delete"; implicitHeight: 28; font.pointSize: Theme.fontPoints(11.5); enabled: !editor.saving && !occurrenceRead.busy && editor.occurrenceReady && editor.accountReady && editor.sourceReady; tip: editor.occurrence ? "Cancel: " + editor.scopeLabel() : "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
+            FmButton { objectName: "eventAbandonButton"; visible: editor.canAbandon; text: "Abandon"; implicitHeight: 28; font.pointSize: Theme.fontPoints(11.5); enabled: !editor.saving; tip: "Abandon the recorded change and retain these form fields"; onClicked: abandonConfirmation.open() }
             FmButton { iconName: "close"; iconSize: 12; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; foreground: hovered ? Theme.text : Theme.inkAlpha(.6); enabled: !editor.saving; tip: "Close — Esc"; onClicked: editor.close() }
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -381,43 +383,43 @@ Popup {
                     id: titleField; objectName: "eventTitle"; Layout.fillWidth: true; implicitHeight: 65
                     leftPadding: 20; rightPadding: 20; topPadding: 18; bottomPadding: 14
                     color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Title"
-                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium; font.letterSpacing: 0
                     background: Rectangle { color: "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
                 }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Calendar"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                    Text { text: "Calendar"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                     FmComboBox {
                         id: targetCalendar; objectName: "eventTargetCalendar"; Layout.fillWidth: true; implicitHeight: 30; fill: Theme.canvas; visible: !editor.editEvent.event_id
                         model: editor.writableSources.map(function(s) { return s.account_name + " / " + s.name })
                         displayText: currentIndex < 0 ? "Choose a writable calendar" : currentText
                         onActivated: { let source = editor.writableSources[currentIndex]; if (source) { editor.targetAccount = source.account; editor.targetCalendarId = source.calendar_id } }
                     }
-                    Text { visible: !!editor.editEvent.event_id; text: (editor.editEvent.account_name || "") + " / " + (editor.editEvent.calendar_name || editor.editEvent.calendar_id || ""); color: Theme.text; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                    Text { visible: !!editor.editEvent.event_id; text: (editor.editEvent.account_name || "") + " / " + (editor.editEvent.calendar_name || editor.editEvent.calendar_id || ""); color: Theme.text; font.pointSize: Theme.fontPoints(11.5); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "All day"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
-                    FmSwitch { id: allDay; objectName: "eventAllDay"; Accessible.name: "All day"; onToggled: if (endDate.text < startDate.text) endDate.text = startDate.text }
+                    Text { text: "All day"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
+                    FmSwitch { id: allDay; objectName: "eventAllDay"; pill: true; Accessible.name: "All day"; onToggled: if (endDate.text < startDate.text) endDate.text = startDate.text }
                     Text {
                         readonly property int days: Math.round((new Date(endDate.text + "T12:00:00") - new Date(startDate.text + "T12:00:00")) / 86400000) + 1
                         text: allDay.checked ? (days > 1 ? days + " days" : "Whole day") : ""
-                        color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true
+                        color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(11.5); Layout.fillWidth: true
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Starts"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                    Text { text: "Starts"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                     FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: startDate; objectName: "eventStartDate"; Layout.preferredWidth: 138; Accessible.name: "Event start date"; onTextEdited: if (validDate && (endDate.text < text || (editor.sameDayEnd && !allDay.checked))) endDate.text = text }
                     FmTextField { id: startTime; objectName: "eventStartTime"; visible: !allDay.checked; Layout.preferredWidth: 80; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 8; rightPadding: 8; placeholderText: "HH:mm"; Accessible.name: "Event start time" }
-                    Text { text: editor.weekday(startDate.text); color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.leftMargin: -6; Layout.fillWidth: true; elide: Text.ElideRight }
+                    Text { text: editor.weekday(startDate.text); color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Layout.leftMargin: -6; Layout.fillWidth: true; elide: Text.ElideRight }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Ends"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                    Text { text: "Ends"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                     FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: endDate; objectName: "eventEndDate"; visible: !editor.showSameDay; Layout.preferredWidth: 138; Accessible.name: "Event end date"; onTextEdited: editor.sameDayEnd = false }
                     FmButton {
                         objectName: "eventEndSameDay"; visible: editor.showSameDay; text: "Same day"; Layout.preferredWidth: 138; implicitHeight: 30; leftPadding: 9; rightPadding: 9
@@ -428,16 +430,16 @@ Popup {
                     Text {
                         readonly property string duration: editor.durationText()
                         text: allDay.checked ? editor.weekday(endDate.text) : duration; Layout.leftMargin: -6; Layout.fillWidth: true; elide: Text.ElideRight
-                        color: duration === "Ends before it starts" && !allDay.checked ? Theme.error : Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                        color: duration === "Ends before it starts" && !allDay.checked ? Theme.error : Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
                     }
                 }
-                FmTextField { id: zoneField; objectName: "eventTimeZone"; visible: !allDay.checked; Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; implicitHeight: 27; padding: 4; font.pointSize: Theme.fontPoints(11); color: Theme.subtle; placeholderText: "Time zone"; background: null; Accessible.name: "Event time zone" }
+                FmTextField { id: zoneField; objectName: "eventTimeZone"; visible: !allDay.checked; Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; implicitHeight: 27; padding: 4; font.pointSize: Theme.fontPoints(10.5); color: Theme.subtle; placeholderText: "Time zone"; background: null; Accessible.name: "Event time zone" }
                 RowLayout {
                     objectName: "eventClash"
                     visible: editor.clashText.length > 0
                     Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 8
                     FmIcon { name: "warning"; size: 12; color: Theme.amber }
-                    Text { objectName: "eventClashText"; Layout.fillWidth: true; text: editor.clashText; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.amber; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                    Text { objectName: "eventClashText"; Layout.fillWidth: true; text: editor.clashText; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.amber; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 ColumnLayout {
@@ -446,7 +448,7 @@ Popup {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 10; Layout.bottomMargin: 10; spacing: 8
                     RowLayout {
                         visible: !editor.following; Layout.fillWidth: true; spacing: 12
-                        Text { text: "Repeat"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                        Text { text: "Repeat"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                         FmComboBox {
                             id: repeatFrequency; objectName: "eventRepeat"; Layout.fillWidth: true; implicitHeight: 30; fill: Theme.canvas
                             model: (editor.editEvent.event_id ? ["Keep current rule"] : []).concat(["Does not repeat", "Every day", "Every weekday", "Weekly on " + editor.weekDayNames[new Date(startDate.text + "T12:00:00").getDay()], "Monthly on day " + Number(startDate.text.slice(8,10)), "Custom…"])
@@ -476,15 +478,15 @@ Popup {
                         }
                         RowLayout {
                             Layout.fillWidth: true; spacing: 8
-                            Text { text: "Every"; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
+                            Text { text: "Every"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
                             FmTextField { id: repeatInterval; objectName: "eventRepeatInterval"; text: "1"; Layout.preferredWidth: 48; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; validator: IntValidator { bottom: 1; top: 99 } onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Repeat interval in weeks" }
-                            Text { text: "weeks"; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
+                            Text { text: "weeks"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
                             Item { Layout.fillWidth: true }
                         }
                     }
                     RowLayout {
                         visible: !editor.following && editor.repeatRuleIndex > 0; Layout.fillWidth: true; Layout.leftMargin: 76; spacing: 8
-                        Text { text: "Ends"; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
+                        Text { text: "Ends"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
                         FmComboBox { id: repeatEnd; objectName: "eventRepeatEnd"; model: ["Never", "On date", "After count"]; Layout.preferredWidth: 112; implicitHeight: 30; onActivated: { editor.recurrenceTouched = true; if (currentIndex !== 2) repeatCount.text = "" } }
                         FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: repeatUntil; objectName: "eventRepeatUntil"; visible: repeatEnd.currentIndex === 1; Layout.fillWidth: true; onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Repeat end date" }
                         FmTextField { id: repeatCount; objectName: "eventRepeatCount"; visible: repeatEnd.currentIndex === 2; placeholderText: "Count"; Layout.fillWidth: true; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Number of occurrences" }
@@ -493,31 +495,31 @@ Popup {
                     Text {
                         visible: !editor.following && editor.repeatRuleIndex === 5; Layout.fillWidth: true; Layout.leftMargin: 76
                         text: "Every " + (Number(repeatInterval.text) > 1 ? repeatInterval.text + " weeks" : "week") + " on " + editor.dayOrder.filter(function(d) { return editor.repeatDays.indexOf(d) >= 0 }).map(function(d) { return editor.weekDayNames[d] }).join(", ") + (repeatEnd.currentIndex === 1 ? ", until " + repeatUntil.text : "") + "."
-                        color: Theme.subtle; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap
+                        color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap
                     }
-                    Text { objectName: "eventRetainedRecurrence"; visible: editor.following || (!!editor.editEvent.event_id && !editor.recurrenceTouched); text: (editor.following ? "Retained repeat rule: " : "") + (editor.editEvent.recurrence || []).join(" · "); textFormat: Text.PlainText; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                    Text { objectName: "eventRetainedRecurrence"; visible: editor.following || (!!editor.editEvent.event_id && !editor.recurrenceTouched); text: (editor.following ? "Retained repeat rule: " : "") + (editor.editEvent.recurrence || []).join(" · "); textFormat: Text.PlainText; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true }
                 }
                 Rectangle { visible: repeatSection.visible; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Where"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
-                    TextField { id: locationField; objectName: "eventLocation"; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Add a location"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
+                    Text { text: "Where"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
+                    TextField { id: locationField; objectName: "eventLocation"; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Add a location"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Call"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                    Text { text: "Call"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: 2
                         FmButton { objectName: "eventAddMeet"; visible: editor.live && !editor.conferencePresent; text: "Add Google Meet"; iconName: "plus"; leftPadding: 0; enabled: editor.formReady; onClicked: editor.conferenceChange = "google_meet" }
-                        TextField { id: conferenceField; objectName: "eventConference"; visible: !editor.live || editor.conferencePresent; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? (editor.conferenceChange === "google_meet" ? "Google Meet · link added when saved" : editor.editEvent.conference_status === "failure" ? "Google Meet could not be created" : "Google Meet · preparing link…") : "Paste a meeting link"; font.pointSize: Theme.fontPoints(13); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
+                        TextField { id: conferenceField; objectName: "eventConference"; visible: !editor.live || editor.conferencePresent; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? (editor.conferenceChange === "google_meet" ? "Google Meet · link added when saved" : editor.editEvent.conference_status === "failure" ? "Google Meet could not be created" : "Google Meet · preparing link…") : "Paste a meeting link"; font.pointSize: Theme.fontPoints(12); background: null; leftPadding: 0; ContextMenu.menu: null; TextMenuHandler {} }
                     }
                     FmButton { objectName: "eventRemoveMeet"; visible: editor.live && editor.conferencePresent; iconName: "close"; tip: "Remove meeting"; implicitWidth: 26; implicitHeight: 26; leftPadding: 5; rightPadding: 5; enabled: editor.formReady; onClicked: { editor.conferenceChange = editor.editEvent.has_conference || !!editor.editEvent.conference_url ? "none" : "keep"; conferenceField.text = "" } }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Guests"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; topPadding: 13 }
+                    Text { text: "Guests"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; topPadding: 13 }
                     ColumnLayout {
                         Layout.fillWidth: true; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 4
                         Flow {
@@ -525,16 +527,16 @@ Popup {
                             Repeater { model: editor.guestAddresses
                                 Rectangle {
                                     required property string modelData; required property int index
-                                    width: Math.min(240, guestName.implicitWidth + 30); height: 24; radius: 12; color: "transparent"; border.color: Theme.controlBorder
-                                    Text { id: guestName; x: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: parent.modelData; color: Theme.text; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                                    width: Math.min(240, guestName.implicitWidth + 30); height: 24; radius: 5; color: "transparent"; border.color: Theme.controlBorder
+                                    Text { id: guestName; x: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: parent.modelData; color: Theme.text; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                                     FmButton { objectName: "eventRemoveGuest-" + parent.index; anchors.right: parent.right; width: 22; height: 24; visible: editor.guestsEditable; iconName: "close"; iconSize: 9; leftPadding: 4; rightPadding: 4; tip: "Remove " + parent.modelData; onClicked: { if (!editor.guestsEditable || editor.saving || editor.unknownOutcome) return; let index = parent.index; editor.guestAddresses = editor.guestAddresses.filter(function(a, i) { return i !== index }) } }
                                 }
                             }
                         }
-                        Text { objectName: "eventProtectedGuests"; visible: editor.protectedGuests.length > 0; text: editor.protectedGuests.map(function(a) { return a.email + (a.self ? " (you)" : " (organizer)") }).join(", ") + " · retained"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
-                        Text { visible: editor.live && !editor.guestsEditable; text: (editor.editEvent.attendees || []).map(function(a) { return a.email || "Address unavailable" }).join(", "); color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
-                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: !editor.guestsEditable; placeholderText: editor.guestsEditable ? "Add email addresses" : "Guest changes unavailable"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); background: null; leftPadding: 0; onAccepted: editor.commitGuests(); onActiveFocusChanged: if (!activeFocus && text.trim().length) editor.commitGuests(); ContextMenu.menu: null; TextMenuHandler {} }
-                        Text { objectName: "eventGuestEditExplanation"; visible: editor.live && !editor.guestsEditable; text: editor.guestEditExplanation(); color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                        Text { objectName: "eventProtectedGuests"; visible: editor.protectedGuests.length > 0; text: editor.protectedGuests.map(function(a) { return a.email + (a.self ? " (you)" : " (organizer)") }).join(", ") + " · retained"; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
+                        Text { visible: editor.live && !editor.guestsEditable; text: (editor.editEvent.attendees || []).map(function(a) { return a.email || "Address unavailable" }).join(", "); color: Theme.muted; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
+                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: !editor.guestsEditable; placeholderText: editor.guestsEditable ? "Add email addresses" : "Guest changes unavailable"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); background: null; leftPadding: 0; onAccepted: editor.commitGuests(); onActiveFocusChanged: if (!activeFocus && text.trim().length) editor.commitGuests(); ContextMenu.menu: null; TextMenuHandler {} }
+                        Text { objectName: "eventGuestEditExplanation"; visible: editor.live && !editor.guestsEditable; text: editor.guestEditExplanation(); color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true }
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -543,7 +545,7 @@ Popup {
                 RowLayout {
                     objectName: "eventGoingList"; visible: goingList.rows.length > 1
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 12
-                    Text { text: "Going?"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; lineHeightMode: Text.FixedHeight; lineHeight: 30 }
+                    Text { text: "Going?"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; lineHeightMode: Text.FixedHeight; lineHeight: 30 }
                     AttendeeList {
                         id: goingList; Layout.fillWidth: true; prefix: "editorAttendee"
                         event: Object.assign({}, editor.editEvent, {account: editor.targetAccount})
@@ -553,13 +555,13 @@ Popup {
                 Rectangle { visible: goingList.rows.length > 1; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 12
-                    Text { text: "Notes"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
+                    Text { text: "Notes"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
                     TextArea {
                         ContextMenu.menu: null
                         TextMenuHandler {}
                         id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.alignment: Qt.AlignTop; Layout.preferredHeight: Math.max(editor.notesHeight, implicitHeight)
                         color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Agenda, dial-in — anything guests should see"; wrapMode: TextEdit.Wrap; selectByMouse: true
-                        textFormat: TextEdit.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); leftPadding: 0; rightPadding: 0; topPadding: 1; bottomPadding: 0; background: null
+                        textFormat: TextEdit.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); leftPadding: 0; rightPadding: 0; topPadding: 1; bottomPadding: 0; background: null
                         Accessible.name: "Event notes"
                         Shape {
                             anchors.right: parent.right; anchors.bottom: parent.bottom; width: 10; height: 10
@@ -578,7 +580,7 @@ Popup {
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Remind"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
+                    Text { text: "Remind"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
                     FmComboBox { id: reminderField; objectName: "eventReminder"; model: editor.reminderChoices; textRole: "text"; fill: Theme.canvas; Layout.preferredWidth: Math.max(140, reminderMetrics.advanceWidth(displayText) + 44); implicitHeight: 30; Accessible.name: "Event reminder" }
                     FontMetrics { id: reminderMetrics; font: reminderField.font }
                     Item { Layout.fillWidth: true }
@@ -586,31 +588,31 @@ Popup {
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
-                    Text { text: "Show as"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64 }
-                    FmSegmented { id: availabilityField; objectName: "eventAvailability"; model: ["Busy", "Free"]; optionNames: ["eventAvailabilityBusy", "eventAvailabilityFree"]; fill: Theme.canvas; Accessible.name: "Calendar availability" }
+                    Text { text: "Show as"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 64 }
+                    FmSegmented { id: availabilityField; objectName: "eventAvailability"; model: ["Busy", "Free"]; optionNames: ["eventAvailabilityBusy", "eventAvailabilityFree"]; Accessible.name: "Calendar availability" }
                     Item { Layout.fillWidth: true }
                 }
             }
         }
-        Text { visible: editor.feedback.length > 0; text: editor.feedback; color: Theme.accent; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.margins: 12; textFormat: Text.PlainText }
+        Text { visible: editor.feedback.length > 0; text: editor.feedback; color: Theme.accent; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.margins: 12; textFormat: Text.PlainText }
         RowLayout {
             visible: editor.occurrence && !editor.unknownOutcome; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
-            Text { text: editor.occurrenceReady ? editor.scopeLabel() : "This recurring scope needs a fresh check."; color: Theme.muted; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            FmButton { objectName: "eventRefreshOccurrence"; text: occurrenceRead.busy ? "Checking…" : "Refresh version"; outlined: true; font.pointSize: Theme.fontPoints(11); enabled: !editor.saving && !occurrenceRead.busy && editor.accountReady && editor.sourceReady; onClicked: occurrenceRead.read() }
+            Text { text: editor.occurrenceReady ? editor.scopeLabel() : "This recurring scope needs a fresh check."; color: Theme.muted; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            FmButton { objectName: "eventRefreshOccurrence"; text: occurrenceRead.busy ? "Checking…" : "Refresh version"; outlined: true; font.pointSize: Theme.fontPoints(10.5); enabled: !editor.saving && !occurrenceRead.busy && editor.accountReady && editor.sourceReady; onClicked: occurrenceRead.read() }
         }
         RowLayout {
             visible: !editor.occurrence && editor.staleRevision && !editor.unknownOutcome && !!editor.latestEvent.etag; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
-            Text { text: "Current: " + (editor.latestEvent.title || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
-            FmButton { objectName: "eventUseCurrentVersion"; text: "Use current version"; outlined: true; font.pointSize: Theme.fontPoints(11); tip: "Keep your fields and update the event version"; onClicked: { let event = Object.assign({}, editor.editEvent); event.etag = editor.latestEvent.etag; editor.editEvent = event; editor.staleRevision = false; editor.requestId = ""; editor.feedback = "Current version loaded. Review your fields, then save." } }
+            Text { text: "Current: " + (editor.latestEvent.title || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
+            FmButton { objectName: "eventUseCurrentVersion"; text: "Use current version"; outlined: true; font.pointSize: Theme.fontPoints(10.5); tip: "Keep your fields and update the event version"; onClicked: { let event = Object.assign({}, editor.editEvent); event.etag = editor.latestEvent.etag; editor.editEvent = event; editor.staleRevision = false; editor.requestId = ""; editor.feedback = "Current version loaded. Review your fields, then save." } }
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         RowLayout {
             Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; spacing: 6
-            FmButton { objectName: "eventSaveButton"; text: editor.saving ? "Saving…" : editor.unknownOutcome ? !editor.live ? "Retry original" : editor.recoveryAction() === "resume" ? "Resume" : editor.recoveryAction() === "reconcile" ? "Check outcome" : "Check status" : editor.editEvent.event_id ? "Save changes" : "Add event"; prominent: true; implicitHeight: 32; leftPadding: 16; rightPadding: 16; font.pointSize: Theme.fontPoints(12.5); shortcutHint: Qt.platform.os === "osx" ? "⌘↵" : "Ctrl+↵"; enabled: !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); tip: editor.live ? "Save to Google Calendar — Ctrl+Enter" : "Save locally — Ctrl+Enter"; onClicked: editor.save() }
-            FmButton { objectName: "eventCancelButton"; text: editor.live && editor.saving ? "Cancel request" : editor.unknownOutcome ? "Close" : "Discard"; outlined: true; implicitHeight: 32; leftPadding: 14; rightPadding: 14; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium; enabled: !editor.saving || editor.live; tip: editor.saving ? "Cancel this request and retain your fields" : editor.unknownOutcome ? "The operation remains in calendar activity" : "Discard unsaved event fields"; onClicked: { if (editor.live && editor.saving) backend.cancelGoogleOperation(editor.submittedRequest.account, editor.submittedRequest.request_id); else editor.close() } }
+            FmButton { objectName: "eventSaveButton"; text: editor.saving ? "Saving…" : editor.unknownOutcome ? !editor.live ? "Retry original" : editor.recoveryAction() === "resume" ? "Resume" : editor.recoveryAction() === "reconcile" ? "Check outcome" : "Check status" : editor.editEvent.event_id ? "Save changes" : "Add event"; prominent: true; implicitHeight: 32; leftPadding: 16; rightPadding: 16; font.pointSize: Theme.fontPoints(12); shortcutHint: Qt.platform.os === "osx" ? "⌘↵" : "Ctrl+↵"; enabled: !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); tip: editor.live ? "Save to Google Calendar — Ctrl+Enter" : "Save locally — Ctrl+Enter"; onClicked: editor.save() }
+            FmButton { objectName: "eventCancelButton"; text: editor.live && editor.saving ? "Cancel request" : editor.unknownOutcome ? "Close" : "Discard"; outlined: true; implicitHeight: 32; leftPadding: 14; rightPadding: 14; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !editor.saving || editor.live; tip: editor.saving ? "Cancel this request and retain your fields" : editor.unknownOutcome ? "The operation remains in calendar activity" : "Discard unsaved event fields"; onClicked: { if (editor.live && editor.saving) backend.cancelGoogleOperation(editor.submittedRequest.account, editor.submittedRequest.request_id); else editor.close() } }
             Item { Layout.fillWidth: true }
         }
-        Text { objectName: "eventNotificationExplanation"; text: editor.live ? "Google may notify guests when you save or delete. Notification delivery is not confirmed here." : "Saved on this machine · no invitations sent"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 12 }
+        Text { objectName: "eventNotificationExplanation"; text: editor.live ? "Google may notify guests when you save or delete. Notification delivery is not confirmed here." : "Saved on this machine · no invitations sent"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 12 }
     }
     FmConfirmDialog {
         id: deleteConfirmation; objectName: "eventDeleteConfirmation"

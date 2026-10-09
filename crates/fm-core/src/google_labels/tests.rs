@@ -1,5 +1,6 @@
 use super::*;
 use crate::live_profile::ConnectionState;
+use std::collections::BTreeMap;
 
 fn labels(items: &[(&str, &str, &str)]) -> PreparedGoogleLabels {
     let rows: Vec<_> = items
@@ -543,6 +544,9 @@ fn linking_after_import_projects_saved_labels_without_inbox_or_remote_writes() {
         .unwrap();
     drop(store);
     let recovered = Store::open_live(directory.path()).unwrap();
+    // Opening schedules the repair; the engine's label worker applies it.
+    assert!(recovered.google_category_projection_step(&account).unwrap());
+    assert!(!recovered.google_category_projection_step(&account).unwrap());
     let repaired = recovered.conversation(&account, &cid).unwrap();
     assert_eq!(repaired["categories"][0]["id"], "imported");
     assert_eq!(repaired["messages"][0]["unread"], true);
@@ -556,6 +560,10 @@ fn linking_after_import_projects_saved_labels_without_inbox_or_remote_writes() {
     );
     drop(recovered);
     let reopened = Store::open_live(directory.path()).unwrap();
+    assert!(
+        !reopened.google_category_projection_step(&account).unwrap(),
+        "repair is scheduled once"
+    );
     assert_eq!(
         reopened.conversation(&account, &cid).unwrap(),
         repaired,
@@ -609,6 +617,305 @@ fn saved_manual_category_choice_wins_during_projection_repair() {
         .unwrap();
     drop(store);
     let recovered = Store::open_live(directory.path()).unwrap();
+    while recovered.google_category_projection_step(&account).unwrap() {}
     assert_eq!(recovered.conversation(&account, &cid).unwrap(), saved);
     assert!(!recovered.db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category' AND category_id='mine'",params![account,mid],|r|r.get::<_,bool>(0)).unwrap());
+}
+
+/// Publishes Gmail messages `from..to`, three to a conversation. Message `i`
+/// carries label `A` when `i % 3 == 0` and `B` when `i % 5 == 0`, unless
+/// `unlabelled`.
+fn labelled_mail(store: &Store, account: &str, from: usize, to: usize, unlabelled: bool) {
+    let tx = store.db.unchecked_transaction().unwrap();
+    for index in from..to {
+        let mut labels = vec!["INBOX".to_owned()];
+        if index % 3 == 0 && !unlabelled {
+            labels.push("A".into());
+        }
+        if index % 5 == 0 && !unlabelled {
+            labels.push("B".into());
+        }
+        let staged = crate::google_store::StagedMessage {
+            remote_id: format!("remote-{index:05}"),
+            remote_thread_id: format!("thread-{:05}", index / 3),
+            history_id: "100".into(),
+            labels,
+            sender_name: "Human".into(),
+            sender_email: "human@example.test".into(),
+            recipient: "reader@example.test".into(),
+            subject: format!("Message {index}"),
+            body: "Body".into(),
+            sent_at: "2026-09-14T10:00:00Z".into(),
+            attachments: vec![],
+        };
+        crate::google_store::publish_message(&tx, account, &staged, "source").unwrap();
+    }
+    tx.commit().unwrap();
+}
+/// Pending projections as `(key, cursor)`.
+fn projection_cursors(store: &Store) -> BTreeMap<String, i64> {
+    store
+        .db
+        .prepare(
+            "SELECT key,value FROM meta WHERE key LIKE 'google_category_projection'||char(10)||'%'",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap()
+}
+/// Rows of `google_message_state` the parts between two cursor snapshots
+/// read: a missing cursor before is a projection just begun, a missing one
+/// after a finished projection.
+fn rows_read(store: &Store, before: &BTreeMap<String, i64>, after: &BTreeMap<String, i64>) -> i64 {
+    let keys: BTreeSet<_> = before.keys().chain(after.keys()).collect();
+    keys.into_iter()
+        .map(|key| {
+            let start = before.get(key).copied().unwrap_or(0);
+            let end = after.get(key).copied().unwrap_or(i64::MAX);
+            store
+                .db
+                .query_row(
+                    "SELECT count(*) FROM google_message_state WHERE rowid>?1 AND rowid<=?2",
+                    params![start, end],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap()
+        })
+        .sum()
+}
+fn memberships(store: &Store, account: &str) -> BTreeSet<(String, String)> {
+    store
+        .db
+        .prepare("SELECT message_id,category_id FROM message_categories WHERE account=?1")
+        .unwrap()
+        .query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap()
+}
+/// What the memberships of every linked category must be: exactly the
+/// messages carrying its label.
+fn labelled_memberships(store: &Store, account: &str) -> BTreeSet<(String, String)> {
+    store
+        .db
+        .prepare("SELECT s.message_id,g.category_id FROM google_message_state s JOIN google_category_labels g ON g.account=s.account WHERE s.account=?1 AND EXISTS(SELECT 1 FROM json_each(s.provider_labels_json) j WHERE j.value=g.provider_label_id)")
+        .unwrap()
+        .query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap()
+}
+fn conversation_revisions(store: &Store, account: &str) -> BTreeMap<String, i64> {
+    store
+        .db
+        .prepare("SELECT id,revision FROM conversations WHERE account=?1")
+        .unwrap()
+        .query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap()
+}
+fn linked_count(store: &Store, account: &str) -> i64 {
+    store
+        .db
+        .query_row(
+            "SELECT count(*) FROM google_category_labels WHERE account=?1",
+            [account],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn merging_new_labels_links_one_per_call_and_projects_in_bounded_parts() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut store, account) = setup(directory.path());
+    publish(
+        &store,
+        &account,
+        &labels(&[("A", "Alpha", "user"), ("B", "Beta", "user")]),
+    );
+    labelled_mail(&store, &account, 0, 1_101, false);
+    // Two more conversations without either label.
+    labelled_mail(&store, &account, 1_101, 1_107, true);
+    let revisions = conversation_revisions(&store, &account);
+    let plan = store
+        .db
+        .prepare(&format!("EXPLAIN QUERY PLAN {PROJECTION_CHANGES}"))
+        .unwrap()
+        .query_map(params![account, "c", 0, 10, "A"], |r| r.get::<_, String>(3))
+        .unwrap()
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("SEARCH s USING INTEGER PRIMARY KEY (rowid>? AND rowid<?)")),
+        "a part reads only its rowid range: {plan:?}"
+    );
+
+    let first = store.google_labels_merge(&account, "sync").unwrap();
+    assert_eq!(first["more"], true);
+    assert_eq!(first["pulled"], 1);
+    assert_eq!(linked_count(&store, &account), 1, "one label per call");
+    let mut cursors = projection_cursors(&store);
+    assert_eq!(
+        rows_read(&store, &BTreeMap::new(), &cursors),
+        PROJECTION_ROWS
+    );
+    let mut calls = 1;
+    let mut pulled = 1;
+    let last = loop {
+        let linked = linked_count(&store, &account);
+        let before = memberships(&store, &account);
+        let part = store.google_labels_merge(&account, "sync").unwrap();
+        calls += 1;
+        pulled += part["pulled"].as_u64().unwrap();
+        let after = projection_cursors(&store);
+        assert!(rows_read(&store, &cursors, &after) <= PROJECTION_ROWS);
+        assert!(
+            before
+                .symmetric_difference(&memberships(&store, &account))
+                .count()
+                <= PROJECTION_ROWS as usize
+        );
+        assert!(linked_count(&store, &account) <= linked + 1);
+        cursors = after;
+        if part["more"] != true {
+            break part;
+        }
+    };
+    let parts = (1_107 + PROJECTION_ROWS - 1) / PROJECTION_ROWS;
+    assert!(
+        calls > 2 * parts,
+        "{calls} calls for {parts} parts per label"
+    );
+    assert_eq!(pulled, 2);
+    assert_eq!(last["pending"], json!([]));
+    assert_eq!(last["skipped"], 0);
+    assert!(cursors.is_empty());
+    assert_eq!(linked_count(&store, &account), 2);
+    let expected = labelled_memberships(&store, &account);
+    assert_eq!(expected.len(), 367 + 221);
+    assert_eq!(memberships(&store, &account), expected);
+    let revised = conversation_revisions(&store, &account);
+    let unchanged: Vec<_> = revised
+        .iter()
+        .filter(|(id, revision)| **revision == revisions[*id])
+        .map(|(id, _)| id.clone())
+        .collect();
+    let unlabelled: Vec<_> = revisions
+        .keys()
+        .filter(|id| {
+            !expected.iter().any(|(message, _)| {
+                store
+                    .db
+                    .query_row(
+                        "SELECT conversation_id=?2 FROM messages WHERE account=?1 AND id=?3",
+                        params![account, id, message],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .unwrap()
+            })
+        })
+        .cloned()
+        .collect();
+    assert_eq!(unlabelled.len(), 2);
+    assert_eq!(
+        unchanged, unlabelled,
+        "only conversations whose labels changed are revised"
+    );
+    // The import a new account was waiting for is complete.
+    assert!(store
+        .google_labels_initial_import(&account)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        store.google_labels_merge(&account, "sync").unwrap()["more"],
+        false
+    );
+    assert_eq!(memberships(&store, &account), expected);
+}
+
+#[test]
+fn a_projection_left_unfinished_by_a_closed_store_finishes_after_reopening() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut store, account) = setup(directory.path());
+    publish(
+        &store,
+        &account,
+        &labels(&[("A", "Alpha", "user"), ("B", "Beta", "user")]),
+    );
+    labelled_mail(&store, &account, 0, 700, false);
+    for _ in 0..2 {
+        assert_eq!(
+            store.google_labels_merge(&account, "sync").unwrap()["more"],
+            true
+        );
+    }
+    let cursors = projection_cursors(&store);
+    assert_eq!(cursors.len(), 1);
+    assert_eq!(
+        rows_read(&store, &BTreeMap::new(), &cursors),
+        2 * PROJECTION_ROWS
+    );
+    let partial = memberships(&store, &account);
+    assert!(!partial.is_empty());
+    drop(store);
+
+    let mut reopened = Store::open_live(directory.path()).unwrap();
+    assert_eq!(
+        projection_cursors(&reopened),
+        cursors,
+        "opening reads no mail"
+    );
+    assert_eq!(memberships(&reopened, &account), partial);
+    let mut steps = 0;
+    while reopened.google_category_projection_step(&account).unwrap() {
+        steps += 1;
+    }
+    assert_eq!(steps, 1);
+    assert!(projection_cursors(&reopened).is_empty());
+    let expected = labelled_memberships(&reopened, &account);
+    assert_eq!(expected.len(), 234, "only label A is linked so far");
+    assert_eq!(memberships(&reopened, &account), expected);
+    while reopened.google_labels_merge(&account, "sync").unwrap()["more"] == true {}
+    assert_eq!(linked_count(&reopened, &account), 2);
+    assert_eq!(
+        memberships(&reopened, &account),
+        labelled_memberships(&reopened, &account)
+    );
+}
+
+#[test]
+fn relinking_or_removing_a_category_mid_projection_settles_on_its_current_label() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut store, account) = setup(directory.path());
+    publish(
+        &store,
+        &account,
+        &labels(&[("A", "Alpha", "user"), ("B", "Beta", "user")]),
+    );
+    labelled_mail(&store, &account, 0, 700, false);
+    store
+        .google_category_bind(&account, &create("bind", 1, "mine", "A"))
+        .unwrap();
+    assert!(store.google_category_projection_step(&account).unwrap());
+    // Relinking starts over, so rows already projected for A are corrected.
+    store.google_category_bind(&account,&json!({"request_id":"remap","expected_catalog_revision":1,"category_id":"mine","provider_label_id":"B","expected_provider_label_id":"A"})).unwrap();
+    while store.google_category_projection_step(&account).unwrap() {}
+    let expected = labelled_memberships(&store, &account);
+    assert_eq!(expected.len(), 140);
+    assert_eq!(memberships(&store, &account), expected);
+
+    let mut other = create("other", 1, "other", "A");
+    other["create_name"] = json!("Other category");
+    store.google_category_bind(&account, &other).unwrap();
+    assert_eq!(projection_cursors(&store).len(), 1);
+    store.label_edit(&account,"label_remove",&json!({"id":"other","expected_name":"Other category","expected_provider_label_id":"A","request_id":"remove-other"})).unwrap();
+    assert!(store.google_category_projection_step(&account).unwrap());
+    assert!(projection_cursors(&store).is_empty());
+    assert!(!store.google_category_projection_step(&account).unwrap());
+    assert_eq!(memberships(&store, &account), expected);
 }

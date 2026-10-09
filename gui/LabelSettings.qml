@@ -32,7 +32,7 @@ ColumnLayout {
         Layout.preferredWidth:56; Layout.minimumWidth:56; Layout.maximumWidth:56; implicitHeight:30
         Row { anchors.centerIn:parent; spacing:5
             FmIcon { name:"summary"; size:10; color:Theme.ai; anchors.verticalCenter:parent.verticalCenter }
-            Text { text:heading.text; color:Theme.ai; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+            Text { text:heading.text; color:Theme.ai; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(10.5); font.letterSpacing:0.66 }
         }
         HoverHandler { id:headingHover }
         FmToolTip { shown:headingHover.hovered; text:heading.tip }
@@ -106,14 +106,14 @@ ColumnLayout {
     RowLayout {
         visible: panel.showHeading
         Layout.fillWidth:true; Layout.topMargin:28; spacing:16
-        Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5);Layout.fillWidth:true}
+        Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11);Layout.fillWidth:true}
         FmComboBox {visible:panel.showAccountPicker;objectName:"labelsAccount";Layout.preferredWidth:160;model:backend.accounts;textRole:"name";currentIndex:backend.accounts.findIndex(a=>a.id===panel.account);onActivated:panel.account=backend.accounts[currentIndex].id;Accessible.name:"Labels account"}
     }
-    Text {visible:panel.showHeading;Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Labels for "+panel.accountName+" only. Descriptions help the local model sort mail.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
+    Text {visible:panel.showHeading;Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Labels for "+panel.accountName+" only. Descriptions help the local model sort mail.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12.5)}
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     RowLayout { Layout.fillWidth:true; Layout.minimumHeight:30; spacing:12
-        Text { text:"LABEL"; Layout.preferredWidth:150; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
-        Text { text:"DESCRIPTION"; Layout.fillWidth:true; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+        Text { text:"LABEL"; Layout.preferredWidth:150; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(10.5); font.letterSpacing:0.66 }
+        Text { text:"DESCRIPTION"; Layout.fillWidth:true; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(10.5); font.letterSpacing:0.66 }
         ModelHeading { text:"READ"; tip:"When the local model applies this label, the message is marked read on arrival" }
         ModelHeading { objectName:"labelSpamHeading"; text:"SPAM"; tip:"When the local model applies this label, the message goes to Spam" }
         Item { Layout.preferredWidth:28 }
@@ -128,14 +128,14 @@ ColumnLayout {
                 Layout.fillWidth:true;Layout.minimumHeight:44;spacing:12
                 RowLayout {
                     Layout.preferredWidth:150;Layout.minimumWidth:150;Layout.maximumWidth:150;spacing:8
-                    Text{text:modelData.name;Layout.maximumWidth:150-countText.implicitWidth-8;elide:Text.ElideRight;color:Theme.text;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
-                    Text{id:countText;text:modelData.conversation_count;color:Theme.inkAlpha(0.4);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5)}
+                    Text{text:modelData.name;Layout.maximumWidth:150-countText.implicitWidth-8;elide:Text.ElideRight;color:Theme.text;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12.5)}
+                    Text{id:countText;text:modelData.conversation_count;color:Theme.inkAlpha(0.4);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11)}
                     Item{Layout.fillWidth:true}
                 }
                 TextField {
                     objectName:"labelDescription_"+modelData.id;Layout.fillWidth:true;implicitHeight:30;padding:0;maximumLength:512
                     text:panel.edits[panel.key(modelData.id)]===undefined ? modelData.description||"" : panel.edits[panel.key(modelData.id)]
-                    placeholderText:"What belongs here — optional, read by the model";color:Theme.inkAlpha(0.75);placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13);selectByMouse:true
+                    placeholderText:"What belongs here — optional, read by the model";color:Theme.inkAlpha(0.75);placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12);selectByMouse:true
                     background:Rectangle{color:"transparent";Rectangle{anchors.bottom:parent.bottom;width:parent.width;height:1;color:parent.parent.activeFocus?Theme.focusBorder:"transparent"}}
                     onTextEdited:panel.edit(modelData.id,text)
                     onEditingFinished:panel.describe(modelData)
@@ -174,18 +174,18 @@ ColumnLayout {
             id:newLabel;objectName:"newLabelName";Layout.preferredWidth:150;implicitHeight:30;padding:0;maximumLength:256
             text:panel.newNames[panel.account]||""
             onTextEdited:{const names=Object.assign({},panel.newNames);names[panel.account]=text;panel.newNames=names}
-            placeholderText:"New label";color:Theme.text;placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)
+            placeholderText:"New label";color:Theme.text;placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12.5)
             selectByMouse:true;enabled:backend.connected&&!panel.busy;onAccepted:panel.add()
             background:Rectangle{color:"transparent"}
             Accessible.name:"New label name"
         }
-        Text {text:"Enter adds it to "+panel.accountName;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.35);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12)}
+        Text {text:"Enter adds it to "+panel.accountName;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.35);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5)}
     }
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     RowLayout {
         Layout.fillWidth:true;Layout.topMargin:14;spacing:8
-        FmButton {objectName:"syncAccountLabels";text:"Sync with Google";outlined:true;implicitHeight:30;font.pointSize:Theme.fontPoints(12.5);enabled:backend.connected&&!panel.busy&&backend.accountCapability(panel.account,"mail_write");onClicked:panel.send("google_labels_sync",{})}
-        Text {text:panel.status||"Google keeps the names; descriptions stay on this machine.";Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12)}
+        FmButton {objectName:"syncAccountLabels";text:"Sync with Google";outlined:true;implicitHeight:30;font.pointSize:Theme.fontPoints(12);enabled:backend.connected&&!panel.busy&&backend.accountCapability(panel.account,"mail_write");onClicked:panel.send("google_labels_sync",{})}
+        Text {text:panel.status||"Google keeps the names; descriptions stay on this machine.";Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5)}
         FmButton {objectName:"retryLabelChange";text:"Retry";visible:!!panel.pendingRetry;enabled:!panel.busy&&backend.connected;onClicked:panel.send(panel.pendingRetry.method,panel.pendingRetry.params,panel.pendingRetry.account)}
         FmButton {text:"Stop";visible:!!panel.syncJobs[panel.account];enabled:backend.connected;onClicked:panel.send("google_labels_sync_cancel",{job_id:panel.syncJobs[panel.account]})}
     }

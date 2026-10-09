@@ -35,7 +35,7 @@ T.ToolButton {
     leftPadding: 11
     rightPadding: 11
     font.family: Theme.fontFamily
-    font.pointSize: Theme.fontPoints(13)
+    font.pointSize: Theme.fontPoints(12)
     font.weight: selected || prominent ? Font.Medium : Font.Normal
     hoverEnabled: true
     contentItem: Item {
@@ -93,7 +93,7 @@ T.ToolButton {
                     width: parent.hintWidth; height: Math.max(label.implicitHeight, control.iconSize)
                     sourceComponent: Item {
                         readonly property real textWidth: hintText.implicitWidth
-                        Text { id: hintText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                        Text { id: hintText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                     }
                 }
             }

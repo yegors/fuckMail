@@ -315,16 +315,15 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     QObject::disconnect(frame);
     if (!frames.isEmpty()) { qCritical() << frames.mid(0, 12); require(false, "sending keeps the thread and the reply on screen"); }
     require(latest->isVisible() && item("messageBody_latest")->isVisible(), "the message replied to stays open");
-    // Hiding earlier messages stays hidden while the thread refreshes, even
-    // after one of them was opened.
-    QMetaObject::invokeMethod(mail, "scrollToMember", Q_ARG(QVariant, QString("first")));
-    await([&] { return mail->property("expanded").toBool() && item("messageMember_first")->isVisible(); }, "an earlier message opens");
-    settle(800); click("earlierMessagesButton");
-    await([&] { return !mail->property("expanded").toBool(); }, "Hide folds the thread");
-    for (int i = 0; i < 3; ++i) { syncTick(); thread["revision"] = thread["revision"].toInteger() + 1; statusBump({"reader"}); settle(400); }
-    require(!mail->property("expanded").toBool() && !item("messageMember_first")->isVisible(), "a folded thread stays folded through refreshes");
-    // Messages folded away are never built, or hidden.
+    // Every message stays listed; one opened and closed again stays closed
+    // while the thread refreshes.
     const auto shown = [&](const QString &name) { auto found = item(name); return found && found->isVisible(); };
+    QMetaObject::invokeMethod(mail, "scrollToMember", Q_ARG(QVariant, QString("first")));
+    await([&] { return shown("messageBody_first"); }, "an earlier message opens");
+    settle(800); click("messageHeading_first");
+    await([&] { return !shown("messageBody_first"); }, "its header closes it");
+    for (int i = 0; i < 3; ++i) { syncTick(); thread["revision"] = thread["revision"].toInteger() + 1; statusBump({"reader"}); settle(400); }
+    require(shown("messageMember_first") && !shown("messageBody_first"), "a closed message stays closed through refreshes");
     // A thread answered earlier gets a new reply. Its cached copy lacks the
     // reply; the current copy arrives a moment later. Only the new reply opens.
     const auto message = [&](const QString &id, const QString &at, bool unread, bool sent) {
@@ -343,9 +342,8 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     backend.openConversation("answered-thread");
     await([&] { auto m = item("messageMember_follow-up"); return m && m->isVisible() && item("messageBody_follow-up"); }, "the new reply shows");
     settle(400);
-    require(!shown("messageMember_asked") && !shown("messageMember_answered") && !mail->property("expanded").toBool(),
-        "earlier messages, the user's own reply included, fold away");
-    require(mail->property("foldedCount").toInt() == 2, "they wait under 2 earlier messages");
+    require(shown("messageMember_asked") && shown("messageMember_answered") && !shown("messageBody_asked") && !shown("messageBody_answered"),
+        "earlier messages, the user's own reply included, are listed closed");
     // Two unanswered replies both open; what came before stays folded.
     QJsonObject pair{{"id", "two-new"}, {"account", "fixture-account"}, {"subject", "Two new"}, {"revision", 1},
         {"messages", QJsonArray{message("old", "2026-09-20T09:00:00Z", false, false), message("new-1", "2026-09-28T07:00:00Z", true, false), message("new-2", "2026-09-28T07:30:00Z", true, false)}},
@@ -356,7 +354,7 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     backend.openConversation("two-new");
     await([&] { auto a = item("messageBody_new-1"), b = item("messageBody_new-2"); return a && b && a->isVisible() && b->isVisible(); }, "both unread replies open");
     settle(400);
-    require(!shown("messageMember_old"), "the read message before them folds away");
+    require(shown("messageMember_old") && !shown("messageBody_old"), "the read message before them is listed closed");
     // A reply in a Delayed thread marks it Done once Gmail accepts the reply.
     auto held = message("held", "2026-09-27T09:00:00Z", false, false); held["starred"] = true;
     others["delayed"] = QJsonObject{{"id", "delayed"}, {"account", "fixture-account"}, {"subject", "Delayed thread"}, {"revision", 1},

@@ -243,6 +243,37 @@ pub async fn infer(
     let content = response_content(&result, &model.name)?;
     parse(content, labels)
 }
+/// One request summarizing a whole conversation with the built-in thread
+/// prompts. `thread` is the prepared `{subject, messages, omitted}`. Returns
+/// `{summary}`; `measure` is filled as by [`infer`].
+pub async fn infer_thread(
+    settings: &Settings,
+    thread: &Value,
+    cancel: &CancellationToken,
+    measure: &std::sync::Mutex<Value>,
+) -> Result<Value> {
+    let model = settings.model.as_ref().ok_or_else(|| {
+        failure(
+            "assistance_unavailable",
+            "Choose a model in Settings → Local LLM",
+        )
+    })?;
+    if !settings.provider.is_ollama() {
+        let body = ollama::thread_openai_request(&model.name, thread);
+        let content =
+            crate::openai_local::complete(settings, &model.name, body, cancel, measure).await?;
+        return parse_thread(&content);
+    }
+    let body = ollama::thread_ollama_request(&model.name, thread);
+    let result = request(&settings.endpoint, "chat", Some(body), cancel).await?;
+    *measure.lock().unwrap() = measurement(&result);
+    parse_thread(response_content(&result, &model.name)?)
+}
+/// Parses the model's conversation summary reply into `{summary}`.
+pub(crate) fn parse_thread(content: &str) -> Result<Value> {
+    ollama::parse_thread_reply(content)
+        .map_err(|message| failure("invalid_assistance_result", &message))
+}
 /// Parses the model's JSON reply into the stored analysis. A label outside
 /// `labels` makes the reply invalid.
 pub(crate) fn parse(content: &str, labels: &Value) -> Result<Value> {

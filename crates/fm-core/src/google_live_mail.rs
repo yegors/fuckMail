@@ -193,7 +193,8 @@ pub struct GoogleMailCoverage {
     /// in the current generation.
     pub unavailable: u64,
     /// Of those, messages whose source will not download: over the size
-    /// bound, or a reply Gmail sent malformed.
+    /// bound, a reply Gmail sent malformed, or a source that something on
+    /// this machine, such as antivirus, removed as it was written.
     pub undownloadable: u64,
     /// Stored messages without an issue that the current generation has not
     /// seen yet. After Gmail history expires, the listing checks each again
@@ -880,7 +881,7 @@ impl Store {
         let pending: bool = self.db.query_row("SELECT EXISTS(SELECT 1 FROM google_live_pages WHERE account=?1 AND generation=?2 AND complete=0)",params![account,generation],|r|r.get(0))?;
         // Read from the small gaps index; the planner would otherwise scan
         // every coverage row of the account.
-        let undownloadable: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_gaps WHERE account=?1 AND issue IS NOT NULL AND deleted=0 AND issue IN ('item_too_large','malformed_response') AND source_state='unavailable'")?.query_row([account],|r|r.get(0))?;
+        let undownloadable: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_gaps WHERE account=?1 AND issue IS NOT NULL AND deleted=0 AND issue IN ('item_too_large','malformed_response','source_blocked') AND source_state='unavailable'")?.query_row([account],|r|r.get(0))?;
         // Messages with an issue are retried only once the listing ends, so
         // they are not part of its check. Both counts read small indexes.
         let unseen: u64 = self.db.prepare_cached("SELECT count(*) FROM google_mail_coverage INDEXED BY google_mail_reconcile WHERE account=?1 AND deleted=0 AND observed_generation<?2")?.query_row(params![account, generation], |r| r.get(0))?;

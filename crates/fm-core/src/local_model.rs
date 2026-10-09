@@ -1,9 +1,11 @@
 //! Core-owned model settings, one email's model input and its saved results.
+mod thread;
 use crate::{err, fields, string, Result, Store};
 use fm_assist::ollama::{self, Settings};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+pub use thread::PreparedThread;
 
 /// One received email, captured for the model.
 ///
@@ -636,13 +638,16 @@ impl Store {
         }
         Ok(Some(text.into()))
     }
-    /// Returns `{items, failures}` for a conversation's received messages:
-    /// each saved result marked `stale` when its inputs changed (and, for
-    /// summaries, `format_outdated`), plus queue failures so the reader can
-    /// offer Try again.
+    /// Returns `{items, failures}` for a conversation: the saved results of
+    /// its received messages and its conversation summary (`task` `thread`),
+    /// each marked `stale` when its inputs changed (and, for summaries,
+    /// `format_outdated`), plus queue failures so the reader can offer Try
+    /// again.
     pub fn local_model_results(&self, account: &str, conversation: &str) -> Result<Value> {
         self.require_active_account(account)?;
-        let mut stmt=self.db.prepare("SELECT r.task,r.target,r.snapshot_json,r.result_json FROM local_model_results r JOIN messages m ON m.account=r.account AND m.id=r.target AND NOT m.sent WHERE r.account=?1 AND r.conversation_id=?2 LIMIT 401")?;
+        // A conversation summary targets the conversation itself; every other
+        // result needs its message, still received.
+        let mut stmt=self.db.prepare("SELECT r.task,r.target,r.snapshot_json,r.result_json FROM local_model_results r LEFT JOIN messages m ON m.account=r.account AND m.id=r.target WHERE r.account=?1 AND r.conversation_id=?2 AND (CASE WHEN r.task='thread' THEN r.target=r.conversation_id ELSE m.id IS NOT NULL AND NOT m.sent END) LIMIT 401")?;
         let rows = stmt
             .query_map(params![account, conversation], |r| {
                 Ok((
@@ -656,6 +661,11 @@ impl Store {
         let mut items = Vec::new();
         for (task, target, snapshot, result) in rows {
             let mut result: Value = serde_json::from_str(&result)?;
+            if task == thread::TASK {
+                self.local_model_thread_result(account, conversation, &snapshot, &mut result);
+                items.push(result);
+                continue;
+            }
             result["stale"] = (!self
                 .local_model_snapshot(account, conversation, &task, &target)
                 .is_ok_and(|current| same_stored(&snapshot, &current)))
@@ -685,7 +695,7 @@ mod tests {
     const A: &str = "windscribe";
     const C: &str = "windscribe-thread-001";
     const M: &str = "windscribe-message-001-000";
-    fn configured_store() -> (tempfile::TempDir, Store) {
+    pub(super) fn configured_store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::open_synthetic(dir.path()).unwrap();
         let settings = Settings {

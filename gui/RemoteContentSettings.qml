@@ -52,33 +52,34 @@ ColumnLayout {
         Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
         ColumnLayout {
             Layout.fillWidth: true; spacing: 3
-            Text { text: row.title; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) } }
+            Text { text: row.title; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } }
             Text {
                 objectName: row.detailName
                 Layout.fillWidth: true; wrapMode: Text.Wrap; text: row.detail
-                color: Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
-                lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.45)
+                color: Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+                lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.45)
             }
         }
         Item { id: controlSlot; implicitWidth: childrenRect.width; implicitHeight: childrenRect.height }
     }
-    component Label2: Text { Layout.preferredWidth: 100; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } }
+    component Label2: Text { Layout.preferredWidth: 100; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
 
     Text {
         text: "Image loading"
-        color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15); weight: Font.Medium }
+        color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14); weight: Font.Medium }
     }
     Text {
         Layout.topMargin: 6; Layout.fillWidth: true; Layout.maximumWidth: 640; wrapMode: Text.Wrap
         text: "HTML mail shows images only when you choose Load images — always over HTTPS, without cookies or referrers."
-        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
-        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5)
+        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.5)
     }
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 10; implicitHeight: 1; color: Theme.line }
     Row2 {
         title: "Sender pictures"
         detail: "Brand icons for automated senders and public profile photos for people, from Google and Gravatar. Initials otherwise."
         FmSwitch {
+            pill: true
             objectName: "senderPicturesEnabled"
             checked: (backend.preferences || {}).sender_pictures !== false
             enabled: backend.connected
@@ -91,6 +92,7 @@ ColumnLayout {
         title: "Load through a proxy"
         detail: "Image sites see the proxy, not you. If it’s down, images wait — nothing goes direct."
         FmSwitch {
+            pill: true
             id: proxySwitch; objectName: "remoteProxyEnabled"
             checked: panel.on
             enabled: !!panel.service && backend.connected
@@ -162,7 +164,7 @@ ColumnLayout {
                     : test.ok === true && saved ? "#7FC4A4"
                     : hostField.text.trim().length && !panel.hostValid ? Theme.amber
                     : Theme.inkAlpha(.45)
-                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
             }
             FmButton {
                 objectName: "remoteProxyTest"; text: panel.proxy.testing ? "Testing…" : "Test"; outlined: true; implicitHeight: 32

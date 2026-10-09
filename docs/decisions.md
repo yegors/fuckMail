@@ -2327,3 +2327,51 @@ The founder asked that clicking back into the app sync straight away instead of 
 - **Evidence.** CalendarSearchTest raises Qt's application-state signals: staying active sends nothing; leaving and returning sends one refresh for the owned account and none for an unowned one. A second activation within 10 s sends none, an account waiting on keychain access is skipped, and an activation after 10 s sends another. The first check fails without the signal hookup.
 
 Mail UI142. No schema, fixture or protocol change.
+
+## D198 — the Terminal design (2026-10-09T08:30:00Z)
+
+The founder supplied the designer's "fuckMail Terminal" export and its handoff notes, and asked for it to be built. The export is preserved as [fuckMail Terminal (offline).html](<research/assets/2026-10-09/fuckMail Terminal (offline).html>); [the research note](research/flight-progress-v2.md#october-9-terminal-export--d198) lists what was adopted.
+
+- **Tokens.** Graphite takes the export's palette. Every font size is 94% of its old design size (never under 10.5px), weight 600 becomes 500, and no text has negative letter-spacing. Radii are 5px for controls, 8px for floating layers, 10px for dialogs and 4px for key chips and the TLDR tag. Popovers share one deeper shadow. Switches are 12px squares; the old slider stays only where a row needs it (all-day, remote content). Segmented controls have no track. Icons are drawn with square caps and mitred joins. Geist Mono (Regular and Medium, from the same upstream commit as Geist, under the same OFL licence) is bundled and is the fixed-pitch face for sources, code, search operators and key chips.
+- **Shell.** The top bar is 48px: the Mail/Calendar switch, lowercase account tabs (letter tile, status dot, count), Sync, search with a ⌘K chip, and Settings. A new 24px bar along the bottom shows the current view's keys from the shortcut registry. Settings → General → Shortcut bar (`key_hints`, default on) hides it. The account hover card is a grid of inbox, mail and model rows, with "~9m left" style estimates.
+- **Mail list.** Inbox, sent and drafts are lowercase tabs, with Spam and Trash behind ▾ and "N to review · N delayed" at the right. The label rail is plain `#label` toggles. Section headers are 32px uppercase rows. Rows use a 24 / sender / subject and preview / `#label` / time grid with a hairline between rows (none above a group's first) and no zebra shading. Times read "22 min ago", "3 hrs ago", "Yday 14:02", "Thu 13:22" (this week, weeks starting Monday) and "21 Sep". "45 sec ago" became "just now", because the clock publishes once a minute.
+- **Reader.** The subject is 16px. Participants show as coloured 20px avatars. Every message in a thread is listed in date order; the "N earlier messages" fold is gone. A visit opens the messages since your last reply, counted from the first one still to review, or the latest alone when nothing is waiting. Each message has one 40px header row whatever its state: a caret in the gutter, a click anywhere toggles it, the preview shows when closed and the address when open, and the actions sit before the time. Hairlines replace alternating backgrounds. The cc line is indented 28px. While a reply still shows as sent from here, Gmail's copy arriving in the thread waits behind it, so the reply never shows twice. The message summary is a TLDR box: tag, `#label`, then the text. The model and time move to its tooltip, and the tag opens sources, details and Cancel.
+- **Calendar.** 16px side padding and a 40px header row, with a 15px title and checkbox-style toggles.
+- **Loader.** The wordmark is followed by a blinking amber block cursor.
+- **Kept against the export.** The export's 1px account-colour line along the top stays out, as the founder asked under D144. The reader keeps the thread's label after the subject as a quiet `#label` that opens the label chooser. The export drops it, which would have left label changes only in the More menu. The per-message flag is not built (the founder skipped it).
+- **Evidence.** 36 of the 38 GUI tests in a release `build/check` tree pass, and MailSelectionTest has also passed whole. The two failures fail the same way on the previous commit: gui-mail-gpu's first-page length check, and MailSelectionTest's frame count while a row folds (4 frames where 5 are expected), which depends on window focus on this host. Tests changed for the new layout: row separators and 24px avatars, 32px section headers, 40px message headers with the time last and the caret in the gutter, a header click that closes an open message, every message listed, closed earlier messages that stay closed through refreshes, the scope stats object, the 384px account card, the 30px Settings button, Graphite's new canvas and gold, and 12/13px button text. Preferences validate and persist `key_hints` (Core test). No screenshot of the running app on a real mailbox was taken.
+
+Mail UI143, Core91. No schema, fixture or protocol change.
+
+## D199 — a summary of the whole thread, on request (2026-10-09T08:30:00Z)
+
+The Terminal export adds a thread summary button. Its text was stitched together from list snippets. The founder chose to build a real one with the local model. This reverses D111's removal of the thread summary card. The queue still works one email at a time, and nothing summarizes a thread unless asked.
+
+- **Request.** `assist_start {task:"thread", conversation_id}`, with no `message_id`. It shares admission, the single inference seat, polling and cancel with message jobs. The model gets the subject and up to the newest 40 messages, oldest first, with your own as "You". Text shares the 24,000-character budget, newest first, and each message keeps at least 400 characters. Built-in prompts ask for one paragraph of at most 70 words that ends with who owes the next reply. The schema is summary-only, and replies are checked as one bounded paragraph.
+- **Result.** One row per conversation in `local_model_results` (`task:"thread"`, `target:` the conversation), returned by `assist_results` with `partial` and a `stale` flag. `stale` turns true when any member, the subject or the account lifecycle changes. A failure writes nothing: no failure row, labels, sender kinds or per-message results.
+- **GUI.** For a thread of two or more messages, a 32px AI button follows Reply, Forward and Delay. The first click writes the summary; later clicks show or hide it, and a summary the thread has moved past is rewritten when shown again. The result uses the TLDR box with a close ×. While busy, the box shows "Reading N messages…" and "Summarizing the thread…" with elapsed seconds; the engine reports no percentage, so none is shown. "Classify thread" now classifies the thread's latest received message; it used to send an empty target and always fail.
+- **CLI.** `fm --account ID assist thread CONVERSATION [--json]`.
+- **Evidence.**
+  - fm-assist tests cover the request shape, reply validation and the text budget.
+  - fm-core tests cover member order with your own replies, shortening and leaving out older mail, save and staleness, a change between prepare and finish, settings checks, and queue progress left alone.
+  - An fm-engine test runs validation, a failed job, cancel during a hanging request, and a whole job through the fake OpenAI-compatible server.
+  - fm-cli tests cover the arguments.
+  - LocalModelTest finds a thread job named by conversation with no message and read back as the thread's result. MailSelectionTest clicks the reader button and finds the whole-conversation request.
+  - Summary quality on real mail was not measured.
+
+Local assistance32, CLI63, Mail UI143. No schema change; `local_model_results` rows with `task='thread'` are new.
+
+## D200 — sync no longer waits on mail antivirus removed, or on linking labels (2026-10-09T08:30:00Z)
+
+The founder's Windscribe account showed "syncing 4 items" forever and could not fetch labels.
+
+- **Found.** Four messages were recorded `source_blocked`: their written source was removed on disk (Defender quarantine). Sync progress counted only `item_too_large` and `malformed_response` as undownloadable, so the four stayed "to go" for good. Separately, `google_labels_merge` linked every new label in one store call. Each link ran a full-account projection (three CTE scans), which held the single store worker for 23.5 s, so the GUI's requests queued up and were refused with `queue_full`.
+- **Change.** Progress counts `source_blocked` as undownloadable. It still blocks offline completeness, and it is fetched again only after the next full listing. Label projection is durable and runs in parts of at most 5,000 message-state rows, one transaction each, with a cursor in `meta` (`google_category_projection\n<account>\n<category>`). Only memberships that change are written. Each merge call links at most one label or applies one part, and returns `more`; label sync and the first import repeat it, yielding between calls. Binding a label applies the first part and wakes the account's sync, whose label worker finishes the rest. Opening the store only schedules repairs.
+- **Evidence.**
+  - The blocked-message test now requires `undownloadable == 1`; it was 0 before the fix.
+  - A 1,107-message core test links one label per call and checks each call reads at most one part and ends with exactly the labelled memberships; it fails on the previous code. Reopen and relink tests cover unfinished projections.
+  - An engine test holds the store between merge calls and finds another request answered with one label linked; it fails on the previous code.
+  - The fm-core, fm-engine and fm-cli suites, fmt and clippy pass.
+  - Not measured on the founder's store: an estimated 25 ms per warm part, about 57 parts per label.
+
+Core92, Gmail44. No schema, fixture or protocol change.

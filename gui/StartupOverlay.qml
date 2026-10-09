@@ -57,9 +57,9 @@ Rectangle {
                     required property int index
                     text: modelData
                     color: Theme.text
-                    font { family: Theme.fontFamily; pixelSize: 64; weight: Font.Medium; letterSpacing: -1.92 }
+                    font { family: Theme.fontFamily; pixelSize: 60; weight: Font.Medium; letterSpacing: 0 }
                     opacity: 0
-                    transform: [Translate { id: offset; x: (2.17 - index * .62) * 64 }, Scale { id: zoom; origin.x: 0; origin.y: letter.height / 2; xScale: 4; yScale: 4 }]
+                    transform: [Translate { id: offset; x: (2.17 - index * .62) * 60 }, Scale { id: zoom; origin.x: 0; origin.y: letter.height / 2; xScale: 4; yScale: 4 }]
                     SequentialAnimation {
                         running: loader.presented && !loader.dismissed
                         PauseAnimation { duration: index * 110 }
@@ -71,13 +71,35 @@ Rectangle {
                     }
                 }
             }
+            // A block cursor after the wordmark, blinking in amber.
+            Item {
+                width: 60 * (.12 + .56); height: wordHeight.height
+                Text { id: wordHeight; visible: false; text: "f"; font { family: Theme.fontFamily; pixelSize: 60; weight: Font.Medium } }
+                Rectangle {
+                    id: cursor
+                    objectName: "startupCursor"
+                    x: 60 * .12; width: 60 * .56; height: 60 * .92; y: (parent.height + 60) / 2 - height
+                    color: Theme.amber; opacity: 0
+                    SequentialAnimation {
+                        running: loader.presented && !loader.dismissed
+                        PauseAnimation { duration: 450 }
+                        SequentialAnimation {
+                            loops: Animation.Infinite
+                            PropertyAction { target: cursor; property: "opacity"; value: 1 }
+                            PauseAnimation { duration: 250 }
+                            PropertyAction { target: cursor; property: "opacity"; value: .25 }
+                            PauseAnimation { duration: 250 }
+                        }
+                    }
+                }
+            }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: loader.versionText
             visible: text.length > 0
-            color: Theme.subtle
-            font { family: Theme.fontFamily; pixelSize: 12; letterSpacing: .46 }
+            color: Theme.inkAlpha(.4)
+            font { family: Theme.fontFamily; pixelSize: 11; letterSpacing: .44 }
         }
         Column {
             objectName: "startupFailure"
@@ -92,7 +114,7 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 color: Theme.error
-                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
+                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
             }
             Text {
                 width: parent.width
@@ -101,7 +123,7 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WrapAnywhere
                 color: Theme.subtle
-                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) }
+                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) }
             }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter

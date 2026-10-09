@@ -1,5 +1,39 @@
 # Mail UI, reader and human composer
 
+## D198 — the Terminal design (Mail UI143)
+
+Replaces these earlier rules: the reader subject size (21px), the To review/Delayed headers with count chips (Mail UI130), list shading, the thread fold ("N earlier messages") with its opening rule and folded-thread rule, odd-message tones and hover washes, the 44px message header, and the neutral participant discs.
+
+- **Fonts.** Geist for the interface; the bundled Geist Mono is `fixedFontFamily()` (sources, code, search operators, key chips).
+- **Shell.** A 48px top bar, then a 24px shortcut bar (`keyHints`) above the bottom edge. The shortcut bar shows the view's keys from `ShortcutRegistry` and is hidden when `key_hints` is false.
+- **List header.** Lowercase `inbox` (amber count), `sent`, `drafts` (dim count) and the ▾ Spam/Trash menu. On the right, `scopeStat` (`count` and `label` properties, e.g. "6 to review") and `scopeStatHeld` ("6 delayed") give way first when the pane narrows. Below them is a 30px rail of `#label` toggles (`railLabel_<id>`, `railDay_<key>`) and the people/automated toggles.
+- **Section headers.** Every header is a 32px row: an 11px uppercase title (full ink for To review and Delayed), its count (`mailGroupCount_<key>`, amber for To review), and a hairline to the chevron.
+- **Rows.** The grid is 24px avatar (7px from the top), sender column (24% of the row, at least 150px; name 13px, `+N`, a 10px kind glyph, address 11px), subject over preview, `#label` (11px, lowercase) and a 76px time column. Columns are 16px apart, with 16px side padding. The subject line carries "remote", "(N)" for the thread and the paperclip count. `rowSeparator_<id>` is a 1px ink-7% line inset 16px, transparent on a group's first row. There is no shading. Sent and Drafts rows keep the arrow or pencil, "To …" and the preview, plus `mailSendState_<id>` while a send is in progress.
+- **Times.** Rows, messages and contact cards use one format. Under a minute is "just now", then "N min ago" and "N hr(s) ago" within 24 hours, then "Yday HH:mm" for yesterday, the weekday and time earlier this week (weeks start on Monday), and "d MMM" (with the year when it differs) before that. The full date stays in the tooltip.
+- **Reader heading.** The subject is 16px on a 1.25 line, with the thread's label after it as a dim lowercase `#label` (`categoryAssignmentButton`) that opens the label chooser. The participants are 20px avatars coloured by name, 3px apart, with no overlap or ring. Heading rows are 12px apart.
+- **Thread.** Every message is listed in date order. A visit opens the messages since your last reply, counted from the first still to review, or the latest alone when none are; the rest start closed. Messages arriving later open as before (several at once all open; the previous latest keeps its state). `messageRule_<id>` draws a hairline above every message but the first.
+- **Message header.** One 40px row, open or closed (`messageHeading_<id>`): a click anywhere on it outside its controls toggles the message, and Space does too when focused.
+  - `toggleMessage_<id>` is a caret in the 24px gutter, turned when open.
+  - Then the 18px avatar, name and kind.
+  - The middle shows the preview when closed and the selectable address (its own width only) when open.
+  - When open, the actions (HTML/TEXT, summarize, more) come next, and the time (`messageShortDate_<id>`, 11px) always ends the row.
+  - Hover is ink at 2.5%.
+  - The cc line is indented 28px.
+- **Your sent reply.** While a reply still shows as sent from here, a sent message that arrived during the visit stays hidden until that reply retires, so the reply is never shown twice.
+- **Summary box.** It has no border, an AI 7% fill, 8px corners and 12/16 padding. The TLDR tag (`summaryActions`) leads the first line and opens sources, details and Cancel. Then come the conversation's `#label` in AI 70% and the text at 12.5px with a 1.6 line. Wrapped lines return to the left edge. The tooltip reads "Summary · model · time". A fresh summary turns green with a check (`summaryDone`). Busy shows the stage and elapsed seconds over a 2px bar.
+
+Consumers: `MailView.qml`, `Main.qml`, `KeyHints.qml`, `SummaryCard.qml`, `MessageAssistance.qml`, `AccountHoverCard.qml`; MailSelectionTest, ReplyStabilityTest, LocalModelTest.
+
+## D199 — whole-thread summary in the reader (Mail UI143)
+
+- For a thread of at least two messages with summaries on, `summarizeConversation` (32×32, AI glyph, line2 border; AI 45% border and 12% fill while shown or busy) follows Delay/Done after a separator.
+- The first click sends `assist_start {task:"thread", conversation_id}`. Later clicks show or hide the result for the session, and a stale result is rewritten when shown again.
+- `threadSummary` sits under the actions in the summary box style, titled "Thread summary", with a close ×. While busy it reads "Reading N messages…" and then "Summarizing the thread…". Its error shows only while it is open.
+- `MailAssistance.start("thread")` tracks the job as the conversation's thread work; message summaries and classification are not shown as busy for it.
+- "Classify thread" classifies the latest received message.
+
+Consumers: `MailView.qml`, `MailAssistance.qml`; MailSelectionTest, LocalModelTest. See [Local assistance32](local-ai.md#d199--whole-thread-summary-on-request-local-assistance32).
+
 ## D197 — coming back to the app syncs at once (Mail UI142)
 
 - When the application becomes active again after losing focus (not its first activation at launch), `google_sync_refresh` is sent quietly for every account whose sync this window owns. Accounts not owned, waiting on keychain access, or mid start/refresh/pause are skipped. At most one wake per 10 s, counted from the last wake that sent a refresh.

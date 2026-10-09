@@ -350,7 +350,7 @@ void GuiSettingsSelfTest::step() {
         ++m_stage; break;
     case 35:
         if (!saved() || m_backend.preferences()["text_size"] != "default" || m_backend.preferences()["theme"] != "graphite") return;
-        if (m_window->color() != QColor("#0E0F11") || item("settingsPage_General")->property("font").value<QFont>().pointSizeF() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
+        if (m_window->color() != QColor("#0B0B0B") || item("settingsPage_General")->property("font").value<QFont>().pointSizeF() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
         if (!click("theme_terminal") || !click("startup_calendar")) return;
         ++m_stage; break;
     case 36:

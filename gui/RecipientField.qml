@@ -79,7 +79,7 @@ Item {
         }
     }
     Rectangle { y: Theme.snapY(parent, parent.height-1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
-    Text { x: 0; y: 7; width: 44; height: 24; verticalAlignment: Text.AlignVCenter; text: field.label; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); color: Theme.inkAlpha(.45) }
+    Text { x: 0; y: 7; width: 44; height: 24; verticalAlignment: Text.AlignVCenter; text: field.label; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); color: Theme.inkAlpha(.45) }
     Flow {
         id: chips
         x: 54; y: 7; width: Math.max(0, parent.width-54-(field.showLinks ? links.width+12 : 0)); spacing: 4
@@ -88,8 +88,8 @@ Item {
             Rectangle {
                 required property var modelData
                 required property int index
-                height: 24; width: Math.min(recipientName.implicitWidth+31,chips.width); radius: 12; color: "transparent"; border.color: Theme.controlBorder
-                Text { id: recipientName; anchors.left: parent.left; anchors.leftMargin: 9; anchors.right: removeRecipient.left; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter; text: modelData.name || modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; textFormat: Text.PlainText }
+                height: 24; width: Math.min(recipientName.implicitWidth+31,chips.width); radius: 5; color: "transparent"; border.color: Theme.controlBorder
+                Text { id: recipientName; anchors.left: parent.left; anchors.leftMargin: 9; anchors.right: removeRecipient.left; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter; text: modelData.name || modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
                 FmButton { id: removeRecipient; anchors.right: parent.right; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter; implicitWidth: 16; implicitHeight: 18; leftPadding: 2; rightPadding: 2; iconName: "close"; iconSize: 9; tip: "Remove "+modelData.email; enabled: !backend.draftLocked; onClicked: backend.removeDraftRecipient(field.fieldName,index) }
             }
         }
@@ -100,7 +100,7 @@ Item {
             objectName: "draftRecipient_"+field.fieldName
             property bool blocksWorkspaceShortcuts: true
             width: Math.min(160,chips.width); height: 24; padding: 0; leftPadding: 0; rightPadding: 0; background: Item {}
-            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); placeholderTextColor: Theme.subtle
+            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); placeholderTextColor: Theme.subtle
             placeholderText: field.recipients.length ? "" : "Name or address"
             // Locked, it keeps the keyboard and refuses edits instead of dropping focus.
             readOnly: backend.draftLocked; selectByMouse: true
@@ -155,14 +155,14 @@ Item {
                         spacing: 10
                         Rectangle {
                             width: 28; height: 28; radius: 14; color: Theme.inkAlpha(.06)
-                            Text { anchors.centerIn: parent; text: candidate.modelData.raw ? "@" : (candidate.modelData.name || candidate.modelData.email).trim().split(/\s+/).slice(0, 2).map(word => word.slice(0, 1)).join("").toUpperCase(); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                            Text { anchors.centerIn: parent; text: candidate.modelData.raw ? "@" : (candidate.modelData.name || candidate.modelData.email).trim().split(/\s+/).slice(0, 2).map(word => word.slice(0, 1)).join("").toUpperCase(); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                         }
                         Column {
                             id: candidateText; Layout.fillWidth: true; spacing: 2
-                            Text { width: parent.width; text: candidate.modelData.raw ? "Use “" + candidate.modelData.email + "”" : candidate.modelData.name || candidate.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; textFormat: Text.PlainText }
-                            Text { width: parent.width; text: candidate.modelData.raw ? "Enter this address" : candidate.modelData.email; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); elide: Text.ElideRight; textFormat: Text.PlainText }
+                            Text { width: parent.width; text: candidate.modelData.raw ? "Use “" + candidate.modelData.email + "”" : candidate.modelData.name || candidate.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                            Text { width: parent.width; text: candidate.modelData.raw ? "Enter this address" : candidate.modelData.email; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                         }
-                        Text { visible: !candidate.modelData.raw && candidate.modelData.account !== backend.account; Layout.maximumWidth: 95; text: candidate.modelData.account_name || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10); elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { visible: !candidate.modelData.raw && candidate.modelData.account !== backend.account; Layout.maximumWidth: 95; text: candidate.modelData.account_name || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                     }
                 }
             }
@@ -171,7 +171,7 @@ Item {
     Row {
         id: links
         visible: field.showLinks; anchors.right: parent.right; y: 7; spacing: 10
-        FmButton { objectName: "draftShowCc"; text: "Cc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(12); onClicked: field.ccRequested() }
-        FmButton { objectName: "draftShowBcc"; text: "Bcc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(12); onClicked: field.bccRequested() }
+        FmButton { objectName: "draftShowCc"; text: "Cc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(11.5); onClicked: field.ccRequested() }
+        FmButton { objectName: "draftShowBcc"; text: "Bcc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(11.5); onClicked: field.bccRequested() }
     }
 }

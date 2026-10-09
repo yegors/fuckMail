@@ -13,6 +13,8 @@ ColumnLayout {
     readonly property var classification: controller.resultFor("classification", message.id)
     readonly property bool canClassify: controller.classificationEnabled && !message.sent
     property bool showKindControl: true
+    // The conversation's first label, shown in the summary after its tag.
+    property string label: ""
     function correctSender() { correction.open() }
     // The header's summarize icon shows only with no summary, none running and no failure.
     readonly property bool canSummarize: controller.summariesEnabled && !controller.busy && backend.connected
@@ -34,7 +36,7 @@ ColumnLayout {
             id: kind; objectName: "correctSender_" + panel.message.id
             visible: panel.canClassify && panel.showKindControl
             text: ({people: "Human", automated: "Automated", unknown: "Unknown sender kind"})[panel.message.kind] || "Unknown sender kind"
-            iconName: "down"; iconSize: 10; font.pointSize: Theme.fontPoints(11)
+            iconName: "down"; iconSize: 10; font.pointSize: Theme.fontPoints(10.5)
             tip: "Correct sender kind or classify this message"; onClicked: correction.open()
         }
 
@@ -44,11 +46,11 @@ ColumnLayout {
         visible: panel.controller.errorFor("classification", panel.message.id).length > 0 && (!panel.controller.summariesEnabled || panel.controller.errorFor("classification", panel.message.id) !== panel.controller.errorFor("summary", panel.message.id))
         text: panel.controller.errorFor("classification", panel.message.id)
         Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.error
-        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
     }
     SummaryCard {
         id: summaryCard; objectName: "messageSummary_" + panel.message.id
-        Layout.fillWidth: true; title: "Summary"
+        Layout.fillWidth: true; title: "Summary"; label: panel.label
         messageId: panel.message.id
         modelName: panel.modelName
         result: panel.summary; members: [panel.message]
@@ -61,7 +63,7 @@ ColumnLayout {
     }
     Popup {
         id: correction; y: kind.height; width: Math.min(panel.width, 230); padding: 6
-        background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
+        background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ColumnLayout {
             spacing: 2
             FmButton {
@@ -84,7 +86,7 @@ ColumnLayout {
             Text {
                 visible: !!panel.classification && panel.classification.stale; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
                 text: "Out-of-date classification."
-                color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
+                color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5)
             }
         }
     }

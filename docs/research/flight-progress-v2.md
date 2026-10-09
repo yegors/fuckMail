@@ -202,3 +202,27 @@ The page template is a JSON string in its `__bundler/template` script; scripts a
 
 The designer's later note, with no new export: the reader's subject (Inbox and Sent) drops from 28px to 21px, with slightly looser line spacing so long subjects still wrap cleanly. The export above has 28px, weight 500, letter-spacing −0.02em and line-height 1.15. The app keeps the weight and letter-spacing and takes 1.25 as the looser line.
 
+
+## October 9 Terminal export — D198
+
+The founder supplied the designer's "fuckMail Terminal" offline export (`fuckMail Terminal.dc.html` with `support.js`) and a handoff note listing every change since the October 2 export. It is preserved unchanged:
+
+| Repository reference | Bytes | SHA-256 |
+| --- | ---: | --- |
+| [fuckMail Terminal (offline).html](<assets/2026-10-09/fuckMail Terminal (offline).html>) | 1007644 | `cee9f03c95a38ecc461cd7fd3205ff27958697a1956205027f62ae2f759b15d6` |
+
+As before, the page template is a JSON string in `__bundler/template`, with scripts and fonts (Geist, Geist Mono woff2) base64-encoded in `__bundler/manifest`. Adopted, in native QML:
+
+- **Tokens.** The Graphite palette (`bg0 #080808` … `bg6 #1D1D1D`, lines `#1E1E1E/#292929/#3A3A3A`, ink `#DAD8D2`, accent `#D9A55B`, warn `#CFA24A`, red `#D96A5C`), sizes at 0.94 (floor 10.5px), weight 500 for 600, no negative tracking. Radii 5/8/10/4. One popover shadow (55% black, 18px drop). Square 12px switches, track-less segmented controls, square-capped icons.
+- **Shell.** A 48px top bar with the view switch, lowercase account tabs with a status dot, Sync, a 300px search with ⌘K and Settings. A 24px shortcut bar sits along the bottom. The account hover card is the inbox / mail / model grid.
+- **Mail.** Compact list head and `#label` rail, 32px uppercase section headers, the five-column row grid with hairlines in place of zebra rows, and relative times ("22 min ago", "Yday 14:02", "Thu 13:22", "21 Sep").
+- **Reader.** A 16px subject and coloured 20px participants. Every message is listed under one 40px header row with a gutter caret, and messages open from your last reply. The summary is a TLDR box, and there is a thread summary button.
+- **Calendar and loader.** 16px padding, a 40px header row with a 15px title and checkbox toggles, and a blinking amber cursor after the wordmark.
+
+Differences from the export, and why:
+
+- **Times.** "45 sec ago" reads "just now", because the app's clock publishes once a minute.
+- **Account-colour line.** The export's 1px line along the top stays out; the founder asked for the strip removed earlier.
+- **Reader label.** The reader keeps the label after the subject as a quiet `#label`; the export drops it, which leaves label changes only in the More menu.
+- **Thread summary text.** The export's thread summary is stitched from list snippets. The app asks the local model (D199). Its busy box shows the stage and elapsed seconds, with no percentage and no "Checking facts" stage, since the engine reports neither.
+- **Not built.** The per-message flag was skipped by the founder. Geist Mono is bundled from the Geist repository (see `gui/fonts/README.md`), not from the export's woff2.

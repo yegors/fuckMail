@@ -108,8 +108,8 @@ Popup {
 
     component SectionLabel: Text {
         Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 6
-        color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
-        font.letterSpacing: Theme.fontSize(11) * .05; font.capitalization: Font.AllUppercase
+        color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5)
+        font.letterSpacing: Theme.fontSize(10.5) * .05; font.capitalization: Font.AllUppercase
     }
     component Rule: Rectangle { Layout.fillWidth: true; implicitHeight: Theme.ruleWidth; color: Theme.line }
     component SearchRow: Rectangle {
@@ -130,7 +130,7 @@ Popup {
         signal clicked()
         property string tip: "Remove"
         property real idleOpacity: .35
-        implicitWidth: 20; implicitHeight: 20; radius: 4
+        implicitWidth: 20; implicitHeight: 20; radius: 5
         color: removeArea.containsMouse ? Theme.bg6 : "transparent"
         Accessible.role: Accessible.Button; Accessible.name: tip; Accessible.onPressAction: clicked()
         FmIcon { anchors.centerIn: parent; name: "close"; size: 9; color: removeArea.containsMouse ? Theme.text : Theme.inkAlpha(removeButton.idleOpacity) }
@@ -141,14 +141,14 @@ Popup {
         property alias text: operatorLabel.text
         property real minimumWidth: 0
         implicitWidth: Math.max(minimumWidth, operatorLabel.implicitWidth + 12); implicitHeight: operatorLabel.implicitHeight + 2
-        radius: 3; color: Theme.bg4
-        Text { id: operatorLabel; x: 6; anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
+        radius: 5; color: Theme.bg4
+        Text { id: operatorLabel; x: 6; anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText }
     }
 
     background: Rectangle {
         color: Theme.surface; border.color: Theme.controlBorder; radius: 8
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
-        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 1; shadowVerticalOffset: 24 }
+        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
     }
     contentItem: ScrollView {
         ScrollBar.vertical: FmScrollBar {}
@@ -178,17 +178,17 @@ Popup {
                             objectName: "mailSearchChip_" + index
                             implicitHeight: 24; implicitWidth: Math.min(readingFlow.width, chipLayout.implicitWidth + 12)
                             width: implicitWidth; height: implicitHeight
-                            radius: 4; color: "transparent"; border.color: Theme.controlBorder
+                            radius: 5; color: "transparent"; border.color: Theme.controlBorder
                             Accessible.role: Accessible.StaticText; Accessible.name: modelData.key + " " + modelData.value
                             RowLayout {
                                 id: chipLayout
                                 anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; spacing: 6
-                                Text { text: readChip.modelData.key; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                                Text { text: readChip.modelData.value; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); textFormat: Text.PlainText }
+                                Text { text: readChip.modelData.key; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText }
+                                Text { text: readChip.modelData.value; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); textFormat: Text.PlainText }
                                 RemoveButton {
                                     objectName: "removeMailSearchChip_" + readChip.index
                                     enabled: popup.reading !== null
-                                    implicitWidth: 16; implicitHeight: 16; radius: 3; idleOpacity: .45
+                                    implicitWidth: 16; implicitHeight: 16; radius: 5; idleOpacity: .45
                                     tip: "Remove " + readChip.modelData.key.toLowerCase() + " " + readChip.modelData.value
                                     onClicked: if (popup.reading) popup.edit(popup.textWithout(readChip.modelData))
                                 }
@@ -201,7 +201,7 @@ Popup {
                     visible: popup.readingError.length > 0
                     Layout.fillWidth: true; wrapMode: Text.Wrap
                     text: popup.readingError; color: Theme.warn
-                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText
                 }
                 Item { visible: popup.chips.length === 0 && popup.readingError.length === 0; Layout.fillWidth: true }
                 Text {
@@ -209,7 +209,7 @@ Popup {
                     visible: popup.readingError.length === 0
                     Layout.alignment: Qt.AlignRight | Qt.AlignTop; Layout.topMargin: popup.chips.length ? 4 : 0
                     text: popup.countText; color: Theme.inkAlpha(.45)
-                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}
                 }
             }
             ColumnLayout {
@@ -226,7 +226,7 @@ Popup {
                         accessibleName: "Complete " + modelData.op
                         onClicked: popup.edit(popup.query.slice(0, popup.query.length - popup.lastToken.length) + modelData.op)
                         OperatorChip { text: completion.modelData.op }
-                        Text { text: completion.modelData.description; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight }
+                        Text { text: completion.modelData.description; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight }
                     }
                 }
             }
@@ -250,11 +250,11 @@ Popup {
                             Text {
                                 anchors.centerIn: parent
                                 text: (person.name || person.modelData.email).split(/\s+/).filter(w => w.length).slice(0, 2).map(w => w[0]).join("").toUpperCase()
-                                color: Theme.inkAlpha(.8); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(9); font.weight: Font.Medium
+                                color: Theme.inkAlpha(.8); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium
                             }
                         }
-                        Text { text: person.name || person.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.maximumWidth: popup.availableWidth * .5; elide: Text.ElideRight; textFormat: Text.PlainText }
-                        Text { visible: person.name.length > 0; text: person.modelData.email; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { text: person.name || person.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.maximumWidth: popup.availableWidth * .5; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { visible: person.name.length > 0; text: person.modelData.email; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                         Item { visible: person.name.length === 0; Layout.fillWidth: true }
                     }
                 }
@@ -274,7 +274,7 @@ Popup {
                         accessibleName: "Search " + modelData
                         onClicked: popup.commit(modelData)
                         FmIcon { name: "clock"; size: 12; color: Theme.inkAlpha(.4) }
-                        Text { text: recent.modelData; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { text: recent.modelData; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                         RemoveButton { objectName: "removeMailRecentSearch_" + recent.index; tip: "Remove from recent"; onClicked: backend.removeRecentSearch(recent.modelData) }
                     }
                 }
@@ -294,15 +294,15 @@ Popup {
                         accessibleName: modelData.op + " " + modelData.description
                         onClicked: popup.edit((popup.query.trim() ? popup.query.trim() + " " : "") + modelData.op)
                         OperatorChip { text: operatorRow.modelData.op; minimumWidth: 64 }
-                        Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; Layout.fillWidth: true }
-                        Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
+                        Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true }
+                        Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
                     }
                 }
                 Text {
                     objectName: "mailSearchAddressHint"
                     Layout.fillWidth: true; Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 4; Layout.bottomMargin: 6
                     text: popup.draftScope ? "An address on its own finds drafts to it." : "An address on its own finds mail from or to it."
-                    color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText
+                    color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; textFormat: Text.PlainText
                 }
             }
             // Also search the account on the server; its results join the list.
@@ -339,12 +339,12 @@ Popup {
                     }
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: 1
-                        Text { text: "Search remote mailbox"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                        Text { text: "Search remote mailbox"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                         Text {
                             objectName: "mailSearchRemoteNote"
                             visible: remoteRow.note.length > 0; text: remoteRow.note; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
                             color: !remoteRow.search.busy && !remoteRow.search.error && remoteRow.search.count > 0 ? Theme.text : Theme.inkAlpha(.45)
-                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
                         }
                     }
                     FmSwitch {

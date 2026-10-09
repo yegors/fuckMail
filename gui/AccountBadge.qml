@@ -22,7 +22,7 @@ Item {
             anchors.centerIn: parent
             text: badge.accountName.trim().charAt(0).toUpperCase()
             color: badge.selected ? badge.hue : Theme.withAlpha(badge.hue, .75)
-            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(badge.diameter <= 14 ? 8 : 10); font.weight: Font.DemiBold
+            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(badge.diameter <= 14 ? 10.5 : 10.5); font.weight: Font.Medium
         }
     }
     HoverHandler { id: hover; enabled: badge.tipEnabled }

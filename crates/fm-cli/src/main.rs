@@ -1033,6 +1033,12 @@ enum Assist {
         #[arg(long)]
         message_id: String,
     },
+    /// Summarize a whole conversation, your own replies included, in one
+    /// short paragraph, replacing its saved summary.
+    Thread {
+        /// Conversation id.
+        conversation_id: String,
+    },
     /// Show the local model's saved results for a conversation.
     Results {
         /// Conversation id.
@@ -2058,6 +2064,11 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Google {
                 command: Google::SyncStatus
             }
+    ) || matches!(
+        args.command,
+        Command::Assist {
+            command: Assist::Thread { .. }
+        }
     ) {
         account(args)?;
     }
@@ -2776,6 +2787,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         json!({"conversation_id":conversation_id,"message_id":message_id}),
                     )
                 }
+                Assist::Thread { conversation_id } => (
+                    "assist_start",
+                    json!({"task":"thread","conversation_id":conversation_id}),
+                ),
                 Assist::Results { conversation_id } => {
                     ("assist_results", json!({"conversation_id":conversation_id}))
                 }
@@ -2807,8 +2822,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 tokio::signal::ctrl_c().await?;
                 json!({"version":1,"ok":true,"result":{"status":"stopped"}})
             } else if method == "assist_start" {
-                // `test` and `analyze` start a job: poll it every 250 ms until it
-                // leaves queued/running, and cancel it on Ctrl-C.
+                // `test`, `analyze` and `thread` start a job: poll it every 250 ms
+                // until it leaves queued/running, and cancel it on Ctrl-C.
                 self::result(result.clone())?;
                 let job = result["result"]["job_id"].clone();
                 loop {
@@ -2835,6 +2850,24 @@ async fn run(args: &Args) -> Result<(), Failure> {
                             .into(),
                         recovery: RecoveryProofs::default(),
                     });
+                }
+                // Without --json, a conversation summary prints as its text.
+                let saved = &result["result"]["items"][0]["items"][0];
+                if let (Assist::Thread { .. }, false, Some(summary)) =
+                    (command, args.json, saved["output"]["summary"].as_str())
+                {
+                    let mut out = io::stdout().lock();
+                    let written = writeln!(out, "{summary}").and_then(|()| {
+                        if saved["partial"] == true {
+                            writeln!(out, "(Partial: older messages were shortened or left out.)")
+                        } else {
+                            Ok(())
+                        }
+                    });
+                    return match written {
+                        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+                        other => other.map_err(Failure::from),
+                    };
                 }
                 result
             } else {
@@ -4280,6 +4313,35 @@ mod tests {
                     "path":expected.to_str().unwrap()})
             );
             assert!(!file.exists());
+        }
+    }
+    #[test]
+    fn assist_thread_takes_one_conversation_and_no_message() {
+        let args = Args::try_parse_from([
+            "fm",
+            "--account",
+            "windscribe",
+            "--json",
+            "assist",
+            "thread",
+            "windscribe-thread-000",
+        ])
+        .unwrap();
+        assert!(matches!(
+            &args.command,
+            Command::Assist {
+                command: Assist::Thread { conversation_id }
+            } if conversation_id == "windscribe-thread-000"
+        ));
+        for tail in [
+            vec!["assist", "thread"],
+            vec!["assist", "thread", "c1", "--message-id", "m1"],
+            vec!["assist", "thread", "c1", "c2"],
+        ] {
+            assert!(
+                Args::try_parse_from(std::iter::once("fm").chain(tail.clone())).is_err(),
+                "{tail:?}"
+            );
         }
     }
 }

@@ -38,7 +38,7 @@ ColumnLayout {
             id: group
             required property var modelData
             Layout.fillWidth:true; Layout.topMargin:28; spacing:0
-            Text { text:group.modelData.name; color:Theme.inkAlpha(.45); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5); Layout.bottomMargin:6 }
+            Text { text:group.modelData.name; color:Theme.inkAlpha(.45); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); Layout.bottomMargin:6 }
             Rectangle { Layout.fillWidth:true; implicitHeight:1; color:Theme.line }
             Repeater {
                 model:group.modelData.rows
@@ -64,14 +64,14 @@ ColumnLayout {
                     background: Rectangle { x:-8; width:parent.width+16; color:row.recording || (row.hovered && !row.modelData.fixed) ? Theme.surface : "transparent"; Rectangle { x:8; anchors.bottom:parent.bottom; width:parent.width-16;height:1;color:Theme.line } }
                     contentItem: RowLayout {
                         spacing:12
-                        Text { text:row.modelData.label; color:row.modelData.fixed ? Theme.inkAlpha(.45) : Theme.text; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13.5); Layout.fillWidth:true; wrapMode:Text.Wrap }
-                        Text { visible:!row.modelData.fixed && row.key !== row.modelData.key; text:"edited"; color:Theme.accent; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11) }
+                        Text { text:row.modelData.label; color:row.modelData.fixed ? Theme.inkAlpha(.45) : Theme.text; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12.5); Layout.fillWidth:true; wrapMode:Text.Wrap }
+                        Text { visible:!row.modelData.fixed && row.key !== row.modelData.key; text:"edited"; color:Theme.accent; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(10.5) }
                         FmButton { visible:row.recording; text:"Default"; focusPolicy:Qt.NoFocus;implicitHeight:26; onClicked:panel.save(row.modelData,group.modelData.scope,row.modelData.key) }
                         FmButton { visible:row.recording; text:"None";focusPolicy:Qt.NoFocus;implicitHeight:26; onClicked:panel.save(row.modelData,group.modelData.scope,"") }
                         Rectangle {
                             implicitWidth:Math.max(24,keyLabel.implicitWidth+14); implicitHeight:24; radius:4
                             color:"transparent"; border.width:row.recording ? 0 : 1; border.color:Theme.line2
-                            Text { id:keyLabel; anchors.centerIn:parent; text:row.recording ? "Press keys" : row.key ? panel.keyText(row.key) : "None"; color:row.recording ? Theme.inkAlpha(.6) : row.modelData.fixed ? Theme.inkAlpha(.4) : row.key ? Theme.inkAlpha(.85) : Theme.inkAlpha(.35); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12); font.features:{"tnum":1} }
+                            Text { id:keyLabel; anchors.centerIn:parent; text:row.recording ? "Press keys" : row.key ? panel.keyText(row.key) : "None"; color:row.recording ? Theme.inkAlpha(.6) : row.modelData.fixed ? Theme.inkAlpha(.4) : row.key ? Theme.inkAlpha(.85) : Theme.inkAlpha(.35); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5); font.features:{"tnum":1} }
                             Shape { anchors.fill:parent;visible:row.recording
                                 SequentialAnimation on opacity { running:row.recording;loops:Animation.Infinite; NumberAnimation {to:.3;duration:500} NumberAnimation {to:1;duration:500} }
                                 ShapePath {strokeColor:Theme.text;strokeWidth:1;strokeStyle:ShapePath.DashLine;dashPattern:[2,2];fillColor:"transparent"; PathSvg {path:"M .5 .5 H "+(keyLabel.parent.width-.5)+" V 23.5 H .5 Z"} }
@@ -87,11 +87,11 @@ ColumnLayout {
         Text {
             objectName: "shortcutHint"; Layout.fillWidth: true; wrapMode: Text.Wrap
             text: panel.hint || (panel.recording ? "Press a key or combination, like Ctrl+R · Esc to cancel" : "Click a row to change it. Dimmed ones are fixed.")
-            color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+            color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
         }
         FmButton {
             objectName: "resetShortcuts"; text: "Reset all"; implicitHeight: 20; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-            font.pointSize: Theme.fontPoints(12); foreground: hovered ? Theme.text : Theme.accent; background: Item {}
+            font.pointSize: Theme.fontPoints(11.5); foreground: hovered ? Theme.text : Theme.accent; background: Item {}
             onClicked: { panel.recording = ""; panel.hint = ""; backend.setPreferences({shortcuts: {}}) }
         }
     }

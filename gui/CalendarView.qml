@@ -21,7 +21,7 @@ Item {
     // Not answered: a 1px dashed outline.
     component DashedOutline: Shape {
         id: outline
-        property color color; property real radius: 3
+        property color color; property real radius: 5
         preferredRendererType: Shape.CurveRenderer
         ShapePath {
             strokeColor: outline.color; strokeWidth: 1; fillColor: "transparent"; strokeStyle: ShapePath.DashLine; dashPattern: [3, 3]
@@ -353,7 +353,7 @@ Item {
         property bool labelled: false
         property real maximumWidth: 0
         objectName: "calendarAllDay-" + (modelData.event_id || modelData.id)
-        width: labelled ? Math.min(chipText.implicitWidth + 22, maximumWidth) : maximumWidth; height: 22; radius: 3
+        width: labelled ? Math.min(chipText.implicitWidth + 22, maximumWidth) : maximumWidth; height: 22; radius: 5
         color: chipMouse.containsMouse ? Theme.hover : Theme.selected
         activeFocusOnTab: visible && backend.calendarReady
         Keys.onReturnPressed: calendar.showEvent(modelData, chip)
@@ -363,20 +363,22 @@ Item {
         Accessible.onPressAction: calendar.showEvent(modelData, chip)
         Rectangle { width: 3; height: parent.height; color: parent.color }
         Rectangle { width: 2; height: parent.height; color: calendar.sourceRule(chip.modelData) }
-        Text { id: chipText; x: chip.labelled ? 12 : 10; width: parent.width - x - (chip.labelled ? 10 : 8); height: parent.height; text: (chip.labelled ? "All day · " : "") + chip.modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
+        Text { id: chipText; x: chip.labelled ? 12 : 10; width: parent.width - x - (chip.labelled ? 10 : 8); height: parent.height; text: (chip.labelled ? "All day · " : "") + chip.modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
         MouseArea { id: chipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(chip.modelData, chip) }
         FmToolTip { shown: chipMouse.containsMouse && !chip.labelled; text: "All day · " + chip.modelData.title }
     }
 
     ColumnLayout {
         id: calendarColumn
-        anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 0
+        anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 0
+        // A 40px header row, like Mail's, so switching views keeps the edges still.
         RowLayout {
-            Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: 16; spacing: 12
+            objectName: "calendarHeaderRow"
+            Layout.fillWidth: true; Layout.preferredHeight: 40; Layout.bottomMargin: 8; spacing: 12
             Item {
                 Layout.fillWidth: true; implicitHeight: calendarTitle.implicitHeight
-                Text { id: calendarTitle; objectName: "calendarTitle"; anchors.verticalCenter: parent.verticalCenter; text: backend.calendarView === "week" ? "Week " + calendar.weekNumber() : backend.calendarView === "agenda" ? "Agenda" : backend.calendarView === "day" ? calendar.dayTitle() : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(22); font.weight: Font.Medium; font.letterSpacing: -0.44 }
-                Text { objectName: "calendarSubtitle"; x: calendarTitle.width + 12; width: Math.max(0, parent.width - x); anchors.baseline: calendarTitle.baseline; text: calendar.subtitle(); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); visible: text.length > 0 && calendar.width > 1050; elide: Text.ElideRight; textFormat: Text.PlainText }
+                Text { id: calendarTitle; objectName: "calendarTitle"; anchors.verticalCenter: parent.verticalCenter; text: backend.calendarView === "week" ? "Week " + calendar.weekNumber() : backend.calendarView === "agenda" ? "Agenda" : backend.calendarView === "day" ? calendar.dayTitle() : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium; font.letterSpacing: 0}
+                Text { objectName: "calendarSubtitle"; x: calendarTitle.width + 12; width: Math.max(0, parent.width - x); anchors.baseline: calendarTitle.baseline; text: calendar.subtitle(); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); visible: text.length > 0 && calendar.width > 1050; elide: Text.ElideRight; textFormat: Text.PlainText }
             }
             Item {
                 implicitWidth: combinedRow.width + 8; implicitHeight: 30
@@ -384,11 +386,11 @@ Item {
                     id: combinedRow; x: 4; anchors.verticalCenter: parent.verticalCenter; spacing: 9
                     FmSwitch {
                         objectName: "calendarCombinedToggle"; checked: calendar.combinedAccounts
-                        implicitWidth: 28; implicitHeight: 16; anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenter: parent.verticalCenter
                         onClicked: calendar.setCombined(checked)
                         Accessible.name: "All calendars"
                     }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "All calendars"; color: calendar.combinedAccounts || combinedHover.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "All calendars"; color: calendar.combinedAccounts || combinedHover.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                 }
                 HoverHandler { id: combinedHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: calendar.setCombined(!calendar.combinedAccounts) }
@@ -400,11 +402,11 @@ Item {
                     id: declinedRow; x: 4; anchors.verticalCenter: parent.verticalCenter; spacing: 9
                     FmSwitch {
                         objectName: "calendarDeclinedToggle"; checked: calendar.showDeclined
-                        implicitWidth: 28; implicitHeight: 16; anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenter: parent.verticalCenter
                         onClicked: calendar.setShowDeclined(checked)
                         Accessible.name: "Show declined"
                     }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Show declined"; color: calendar.showDeclined || declinedHover.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Show declined"; color: calendar.showDeclined || declinedHover.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                 }
                 HoverHandler { id: declinedHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: calendar.setShowDeclined(!calendar.showDeclined) }
@@ -420,11 +422,11 @@ Item {
                 id: navigation; implicitWidth: navigationRow.width + 2; implicitHeight: 30; radius: 5; color: "transparent"; border.color: Theme.controlBorder
                 Row {
                     id: navigationRow; x: 1; y: 1; height: 28
-                    FmButton { objectName: "calendarPrevious"; iconName: "previous"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Previous — Left"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(-1) }
+                    FmButton { objectName: "calendarPrevious"; iconName: "previous"; iconSize: 12; width: 30; height: 28; radius: 5; foreground: Theme.inkAlpha(.7); tip: "Previous — Left"; background: Rectangle { radius: 5; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(-1) }
                     Rectangle { width: Theme.ruleWidth; height: 28; color: Theme.controlBorder }
                     FmButton {
                         id: dateButton; objectName: "calendarDatePickerButton"; height: 28; leftPadding: 12; rightPadding: 12
-                        width: Math.max(112, implicitWidth); font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Normal
+                        width: Math.max(112, implicitWidth); font.pointSize: Theme.fontPoints(12); font.weight: Font.Normal
                         iconName: "down"; iconSize: 10; iconSpacing: 8; iconTrailing: true; iconColor: Theme.inkAlpha(.4)
                         foreground: backend.calendarDate === backend.todayDate ? Theme.text : Theme.inkAlpha(.85)
                         text: backend.calendarView === "week" ? Qt.formatDate(calendar.dateAt(0), calendar.dateAt(0).getMonth() === calendar.dateAt(6).getMonth() ? "d" : "d MMM") + " – " + Qt.formatDate(calendar.dateAt(6), "d MMM") : backend.calendarView === "month" ? Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMM yyyy") : backend.calendarDate === backend.todayDate ? "Today" : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "ddd d MMM")
@@ -433,12 +435,12 @@ Item {
                         onClicked: { datePicker.month = new Date(backend.calendarDate + "T12:00:00"); datePicker.opened ? datePicker.close() : datePicker.open() }
                     }
                     Rectangle { width: Theme.ruleWidth; height: 28; color: Theme.controlBorder }
-                    FmButton { objectName: "calendarNext"; iconName: "next"; iconSize: 12; width: 30; height: 28; radius: 4; foreground: Theme.inkAlpha(.7); tip: "Next — Right"; background: Rectangle { radius: 4; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(1) }
+                    FmButton { objectName: "calendarNext"; iconName: "next"; iconSize: 12; width: 30; height: 28; radius: 5; foreground: Theme.inkAlpha(.7); tip: "Next — Right"; background: Rectangle { radius: 5; color: parent.hovered ? Theme.surface : "transparent"; border.width: parent.visualFocus ? 1 : 0; border.color: Theme.focusBorder } onClicked: backend.moveCalendar(1) }
                 }
             }
             FmButton { id: moreButton; objectName: "calendarMoreButton"; iconName: "more"; implicitWidth: 28; implicitHeight: 28; tip: "Calendar options and coverage"; onClicked: moreMenu.open() }
         }
-        Text { visible: !backend.calendarReady && (!calendar.calendarLoading || calendar.slowLoad); text: backend.calendarCoverage; Layout.fillWidth: true; Layout.bottomMargin: 8; font.pointSize: Theme.fontPoints(11); color: Theme.subtle; wrapMode: Text.Wrap }
+        Text { visible: !backend.calendarReady && (!calendar.calendarLoading || calendar.slowLoad); text: backend.calendarCoverage; Layout.fillWidth: true; Layout.bottomMargin: 8; font.pointSize: Theme.fontPoints(10.5); color: Theme.subtle; wrapMode: Text.Wrap }
         // Header band. A Week column shows its date, mail count and all-day
         // chips; Day view shows only its chips, resting on the rule, since the
         // title already names the day.
@@ -470,8 +472,8 @@ Item {
                     Item {
                         visible: !dayHeader.single
                         x: 10; width: parent.width - 16; height: 26
-                        Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: dayHeader.today ? Theme.accent : dayHeader.iso < backend.todayDate ? Theme.inkAlpha(.5) : calendar.weekend(calendar.dateAt(dayHeader.index)) ? Theme.inkAlpha(.6) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
-                        Text { x: dayNumber.width + 8; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                        Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: dayHeader.today ? Theme.accent : dayHeader.iso < backend.todayDate ? Theme.inkAlpha(.5) : calendar.weekend(calendar.dateAt(dayHeader.index)) ? Theme.inkAlpha(.6) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium; font.letterSpacing: 0}
+                        Text { x: dayNumber.width + 8; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                         CalendarMailCount {
                             objectName: "calendarMailCount-" + dayHeader.iso
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
@@ -490,15 +492,15 @@ Item {
                             Rectangle {
                                 required property var modelData; objectName: "calendarAllDayPreview-" + dayHeader.index
                                 width: dayHeader.single ? Math.min(previewText.implicitWidth + 22, parent.width) : parent.width; height: 22
-                                radius: 3; color: Theme.accentAlpha(0.125); border.color: Theme.accent
-                                Text { id: previewText; x: 10; width: parent.width - 18; height: parent.height; text: (dayHeader.single ? "All day · " : "") + parent.modelData.title; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                radius: 5; color: Theme.accentAlpha(0.125); border.color: Theme.accent
+                                Text { id: previewText; x: 10; width: parent.width - 18; height: parent.height; text: (dayHeader.single ? "All day · " : "") + parent.modelData.title; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
                         }
                         FmButton {
                             objectName: "calendarAllDayMore-" + dayHeader.index
                             visible: dayHeader.allDay.length > dayHeader.chips.length
                             text: "+ " + (dayHeader.allDay.length - dayHeader.chips.length) + " all day"
-                            implicitHeight: 22; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(11)
+                            implicitHeight: 22; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(10.5)
                             onClicked: { allDayOverflow.eventRows = dayHeader.allDay; allDayOverflow.open() }
                         }
                     }
@@ -556,7 +558,7 @@ Item {
                             && !editor.opened && calendar.slotFree(slot.index, slot.t)
                         x: (slot.index || 0) * grid.dayWidth + 4; width: Math.max(0, grid.dayWidth - 10)
                         height: calendar.ghostHeight; y: Math.min((slot.t || 0) * calendar.hourHeight, 24 * calendar.hourHeight - height)
-                        Rectangle { anchors.fill: parent; radius: 4; color: Theme.inkAlpha(.035) }
+                        Rectangle { anchors.fill: parent; radius: 5; color: Theme.inkAlpha(.035) }
                         Shape {
                             anchors.fill: parent
                             ShapePath {
@@ -568,7 +570,7 @@ Item {
                         Row {
                             x: 9; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter; spacing: 5; clip: true
                             FmIcon { name: "plus"; size: 9; color: Theme.inkAlpha(.55); anchors.verticalCenter: parent.verticalCenter }
-                            Text { text: calendar.hourText(slotGhost.slot.t || 0) + " – " + calendar.hourText((slotGhost.slot.t || 0) + .5); color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: calendar.hourText(slotGhost.slot.t || 0) + " – " + calendar.hourText((slotGhost.slot.t || 0) + .5); color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
                         }
                     }
                     Rectangle {
@@ -578,12 +580,12 @@ Item {
                         visible: calendar.rangeDrag.index !== undefined
                         x: (calendar.rangeDrag.index || 0) * grid.dayWidth + 4; y: low * calendar.hourHeight
                         width: grid.dayWidth - 10; height: Math.max(calendar.hourHeight / 2, (high - low) * calendar.hourHeight)
-                        color: Theme.accentAlpha(.1); radius: 3
+                        color: Theme.accentAlpha(.1); radius: 5
                         // Dashes exist only while a range is being dragged.
                         Repeater { model: parent.visible ? Math.max(0, Math.ceil(parent.width / 8)) : 0; Rectangle { required property int index; x: Theme.snapX(parent, index * 8); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(4, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
                         Repeater { model: parent.visible ? Math.max(0, Math.ceil(parent.width / 8)) : 0; Rectangle { required property int index; x: Theme.snapX(parent, index * 8); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(4, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
                         Rectangle { width: 2; height: parent.height; color: Theme.accent }
-                        Text { anchors.fill: parent; anchors.margins: 4; text: calendar.hourText(parent.low) + " – " + calendar.hourText(parent.high); color: Theme.accent; font.pointSize: Theme.fontPoints(11); elide: Text.ElideRight }
+                        Text { anchors.fill: parent; anchors.margins: 4; text: calendar.hourText(parent.low) + " – " + calendar.hourText(parent.high); color: Theme.accent; font.pointSize: Theme.fontPoints(10.5); elide: Text.ElideRight }
                     }
                     // A count model keeps event boxes when navigation shows the same number of events.
                     Repeater { model: calendar.timeGrid ? calendar.visibleEvents.length : 0
@@ -613,9 +615,9 @@ Item {
                             Rectangle { width: 2; height: parent.height; color: eventBox.declined ? Theme.inkAlpha(.18) : eventBox.maybe ? Theme.accountTint(eventBox.modelData.account, .6) : eventBox.unanswered ? Theme.accountTint(eventBox.modelData.account, .45) : calendar.sourceRule(eventBox.modelData) }
                             Row {
                                 anchors.top: parent.top; anchors.topMargin: 3; anchors.left: parent.left; anchors.leftMargin: calendar.dayCount === 1 ? 14 : 9; anchors.right: parent.right; anchors.rightMargin: accountBadge.visible ? 22 : 7; spacing: calendar.dayCount === 1 ? 14 : 6
-                                Text { id: eventTime; visible: eventBox.width >= 64 || calendar.dayCount === 1; y: eventTitle.baselineOffset - baselineOffset; text: eventBox.modelData.time_display + (calendar.dayCount === 1 ? " – " + eventBox.modelData.end_display : ""); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(calendar.dayCount === 1 ? 11.5 : 10.5); font.features: {"tnum": 1} }
-                                Text { id: eventTitle; text: eventBox.modelData.title; textFormat: Text.PlainText; color: eventBox.declined ? Theme.inkAlpha(.35) : eventBox.unanswered ? Theme.inkAlpha(.7) : eventBox.maybe ? Theme.inkAlpha(.85) : Theme.text; font.strikeout: eventBox.declined; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(calendar.dayCount === 1 ? 13 : 12); font.weight: Font.Medium; width: Math.min(implicitWidth, Math.max(0, parent.width - (eventTime.visible ? eventTime.width + parent.spacing : 0))); elide: Text.ElideRight }
-                                Text { visible: calendar.dayCount === 1 && text.length > 0; y: eventTitle.baselineOffset - baselineOffset; text: calendar.eventSub(eventBox.modelData); width: Math.max(0, parent.width - eventTime.width - eventTitle.width - 2 * parent.spacing); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                                Text { id: eventTime; visible: eventBox.width >= 64 || calendar.dayCount === 1; y: eventTitle.baselineOffset - baselineOffset; text: eventBox.modelData.time_display + (calendar.dayCount === 1 ? " – " + eventBox.modelData.end_display : ""); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(calendar.dayCount === 1 ? 11 : 10.5); font.features: {"tnum": 1} }
+                                Text { id: eventTitle; text: eventBox.modelData.title; textFormat: Text.PlainText; color: eventBox.declined ? Theme.inkAlpha(.35) : eventBox.unanswered ? Theme.inkAlpha(.7) : eventBox.maybe ? Theme.inkAlpha(.85) : Theme.text; font.strikeout: eventBox.declined; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(calendar.dayCount === 1 ? 12 : 11.5); font.weight: Font.Medium; width: Math.min(implicitWidth, Math.max(0, parent.width - (eventTime.visible ? eventTime.width + parent.spacing : 0))); elide: Text.ElideRight }
+                                Text { visible: calendar.dayCount === 1 && text.length > 0; y: eventTitle.baselineOffset - baselineOffset; text: calendar.eventSub(eventBox.modelData); width: Math.max(0, parent.width - eventTime.width - eventTitle.width - 2 * parent.spacing); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
                             MouseArea { id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { eventBox.forceActiveFocus(); calendar.showEvent(eventBox.modelData, eventBox) } }
                             FmToolTip { shown: eventMouse.containsMouse; text: eventBox.modelData.title + " · " + eventBox.modelData.start_display + (Theme.responseLabel(eventBox.modelData) ? " · " + Theme.responseLabel(eventBox.modelData) : "") + "\n" + eventBox.modelData.account_name + " / " + eventBox.modelData.calendar_name }
@@ -637,11 +639,11 @@ Item {
                             required property var modelData
                             objectName: "calendarEditorPreview-" + modelData.day_index
                             x: modelData.day_index * grid.dayWidth + 3; y: modelData.start_hour * calendar.hourHeight; width: grid.dayWidth - 7
-                            height: Math.max(20, modelData.duration_hours * calendar.hourHeight); color: Theme.accentAlpha(.125); radius: 3
+                            height: Math.max(20, modelData.duration_hours * calendar.hourHeight); color: Theme.accentAlpha(.125); radius: 5
                             Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
                             Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
                             Rectangle { width: 2; height: parent.height; color: Theme.accent }
-                            Text { anchors.fill: parent; anchors.margins: 7; text: editor.preview.title; color: Theme.accent; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                            Text { anchors.fill: parent; anchors.margins: 7; text: editor.preview.title; color: Theme.accent; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                         }
                     }
                 }
@@ -664,7 +666,7 @@ Item {
                         x: 10; height: 26; verticalAlignment: Text.AlignVCenter
                         text: Qt.formatDate(calendar.dateAt(parent.index), "ddd")
                         color: calendar.weekend(calendar.dateAt(parent.index)) ? Theme.inkAlpha(.3) : Theme.inkAlpha(.5)
-                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
                     }
                     Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
                 }
@@ -730,8 +732,8 @@ Item {
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.openDay(monthCell.index) }
                         FmToolTip { shown: monthHover.hovered && !monthDate.hovered; text: shown ? "Open " + Qt.formatDate(monthCell.day.date, "dddd d MMMM") : "" }
                         Column { x: 8; y: 6; width: parent.width - 16; spacing: 3
-                            Item { width: parent.width; height: Math.round(Theme.fontSize(20) * 1.2) + 2
-                                FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(20) * 1.2); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.02 * Theme.fontSize(20); foreground: monthCell.isToday ? Theme.accent : !monthCell.inMonth ? Theme.inkAlpha(.3) : monthCell.past ? Theme.inkAlpha(.5) : monthCell.weekendDay ? Theme.inkAlpha(.6) : Theme.text; background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                            Item { width: parent.width; height: Math.round(Theme.fontSize(19) * 1.2) + 2
+                                FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(19) * 1.2); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium; font.letterSpacing: 0; foreground: monthCell.isToday ? Theme.accent : !monthCell.inMonth ? Theme.inkAlpha(.3) : monthCell.past ? Theme.inkAlpha(.5) : monthCell.weekendDay ? Theme.inkAlpha(.6) : Theme.text; background: Item {} onClicked: calendar.openDay(monthCell.index) }
                             // Only past and current days with counts create a badge.
                             Loader {
                                 active: !!calendar.mailDays[monthCell.day.iso] && monthCell.day.iso <= backend.todayDate
@@ -748,7 +750,7 @@ Item {
                             // At most three rows fit. A count model keeps rows while the grid lays out and on navigation.
                             Repeater { model: Math.min(3, monthCell.rows.length)
                                 Rectangle {
-                                    id: monthEvent; required property int index; readonly property var modelData: monthCell.rows[monthCell.first + index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11.5) * 1.3); color: "transparent"
+                                    id: monthEvent; required property int index; readonly property var modelData: monthCell.rows[monthCell.first + index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11) * 1.3); color: "transparent"
                                     readonly property var rsvp: Theme.rsvpOf(modelData)
                                     readonly property real doneOpacity: rsvp === "no" ? .4 : monthCell.eventDone(modelData) ? .5 : 1
                                     ChipEdge {
@@ -774,8 +776,8 @@ Item {
                                         background: Item {}
                                         contentItem: Row {
                                             spacing: 4
-                                            Text { id: monthEventTime; visible: !monthEvent.modelData.all_day; text: monthEvent.modelData.time_display || ""; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
-                                            Text { text: monthEvent.modelData.title || ""; width: Math.max(0, monthEvent.width - 8 - (monthEventTime.visible ? monthEventTime.width + 4 : 0)); color: !monthCell.inMonth ? Theme.inkAlpha(.45) : Theme.text; font.strikeout: monthEvent.rsvp === "no"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { id: monthEventTime; visible: !monthEvent.modelData.all_day; text: monthEvent.modelData.time_display || ""; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: monthEvent.modelData.title || ""; width: Math.max(0, monthEvent.width - 8 - (monthEventTime.visible ? monthEventTime.width + 4 : 0)); color: !monthCell.inMonth ? Theme.inkAlpha(.45) : Theme.text; font.strikeout: monthEvent.rsvp === "no"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); elide: Text.ElideRight; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                         onClicked: calendar.showEvent(monthEvent.modelData, monthEvent)
                                     }
@@ -783,7 +785,7 @@ Item {
                             }
                             Loader {
                                 active: monthCell.rows.length > monthCell.shown; visible: active
-                                sourceComponent: FmButton { text: "+ " + (monthCell.rows.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(11) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11); background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                                sourceComponent: FmButton { text: "+ " + (monthCell.rows.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(10.5) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(10.5); background: Item {} onClicked: calendar.openDay(monthCell.index) }
                             }
                         }
                     }
@@ -796,14 +798,14 @@ Item {
                 required property var modelData; objectName: (modelData.recurring_selector || modelData.occurrence_selector) ? "calendarAgendaOccurrence-" + modelData.id : "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
                 background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: RowLayout { spacing: 18
-                    Text { text: modelData.start_display; color: Theme.subtle; font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 200 }
+                    Text { text: modelData.start_display; color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5); Layout.preferredWidth: 200 }
                     Column { Layout.fillWidth: true; spacing: 4
-                        Text { text: modelData.title; color: Theme.text; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
-                        Text { text: modelData.account_name + " / " + modelData.calendar_name + (modelData.location ? " · " + modelData.location : ""); color: Theme.subtle; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText }
+                        Text { text: modelData.title; color: Theme.text; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
+                        Text { text: modelData.account_name + " / " + modelData.calendar_name + (modelData.location ? " · " + modelData.location : ""); color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); textFormat: Text.PlainText }
                     }
                 }
             }
-            Text { anchors.centerIn: parent; visible: agenda.count === 0; text: backend.calendarReady ? "Nothing scheduled in this range." : backend.calendarCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(13) }
+            Text { anchors.centerIn: parent; visible: agenda.count === 0; text: backend.calendarReady ? "Nothing scheduled in this range." : backend.calendarCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
         }
     }
     // Day sidebar: the day's mail in a row as tall as the header band, then
@@ -830,14 +832,14 @@ Item {
                 Row {
                     spacing: 6
                     FmIcon { name: "arrowDown"; size: 11; color: Theme.inkAlpha(.5); anchors.verticalCenter: parent.verticalCenter }
-                    Text { id: receivedCount; objectName: "calendarDayMailReceived"; text: daySidebar.hasMail ? daySidebar.mail.received : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(18); font.weight: Font.Medium; font.letterSpacing: -0.18; font.features: {"tnum": 1} }
-                    Text { y: receivedCount.baselineOffset - baselineOffset; text: "received"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                    Text { id: receivedCount; objectName: "calendarDayMailReceived"; text: daySidebar.hasMail ? daySidebar.mail.received : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(17); font.weight: Font.Medium; font.letterSpacing: 0; font.features: {"tnum": 1} }
+                    Text { y: receivedCount.baselineOffset - baselineOffset; text: "received"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 }
                 Row {
                     spacing: 6
                     FmIcon { name: "arrowUp"; size: 11; color: Theme.inkAlpha(.5); anchors.verticalCenter: parent.verticalCenter }
-                    Text { id: sentCount; objectName: "calendarDayMailSent"; text: daySidebar.hasMail ? daySidebar.mail.sent : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(18); font.weight: Font.Medium; font.letterSpacing: -0.18; font.features: {"tnum": 1} }
-                    Text { y: sentCount.baselineOffset - baselineOffset; text: "sent"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                    Text { id: sentCount; objectName: "calendarDayMailSent"; text: daySidebar.hasMail ? daySidebar.mail.sent : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(17); font.weight: Font.Medium; font.letterSpacing: 0; font.features: {"tnum": 1} }
+                    Text { y: sentCount.baselineOffset - baselineOffset; text: "sent"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 }
             }
             FmIcon { visible: daySidebar.hasMail; x: parent.width - width; y: (parent.height - 10 - height) / 2; name: "next"; size: 12; color: dayMailMouse.containsMouse ? Theme.text : Theme.inkAlpha(.35) }
@@ -859,15 +861,15 @@ Item {
                 onClicked: calendar.showEvent(modelData, this)
                 background: Rectangle { color: dayAgendaRow.hovered ? Theme.surface : "transparent"; border.width: dayAgendaRow.visualFocus ? 1 : 0; border.color: Theme.focusBorder; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: Item {
-                    Text { width: 92; text: dayAgendaRow.modelData.all_day ? "All day" : dayAgendaRow.modelData.time_display + " – " + dayAgendaRow.modelData.end_display; color: calendar.eventNow(dayAgendaRow.modelData) ? Theme.accent : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.4); elide: Text.ElideRight }
+                    Text { width: 92; text: dayAgendaRow.modelData.all_day ? "All day" : dayAgendaRow.modelData.time_display + " – " + dayAgendaRow.modelData.end_display; color: calendar.eventNow(dayAgendaRow.modelData) ? Theme.accent : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.4); elide: Text.ElideRight }
                     Column {
                         id: dayAgendaText; x: 106; width: parent.width - x; spacing: 2
-                        Text { width: parent.width; text: dayAgendaRow.modelData.title; textFormat: Text.PlainText; color: dayAgendaRow.past || Theme.eventDeclined(dayAgendaRow.modelData) ? Theme.inkAlpha(.45) : Theme.eventOpen(dayAgendaRow.modelData) ? Theme.inkAlpha(.7) : Theme.text; font.strikeout: Theme.eventDeclined(dayAgendaRow.modelData); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: Font.Medium; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.4); elide: Text.ElideRight }
-                        Text { width: parent.width; visible: text.length > 0; text: calendar.agendaSub(dayAgendaRow.modelData); textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.4); elide: Text.ElideRight }
+                        Text { width: parent.width; text: dayAgendaRow.modelData.title; textFormat: Text.PlainText; color: dayAgendaRow.past || Theme.eventDeclined(dayAgendaRow.modelData) ? Theme.inkAlpha(.45) : Theme.eventOpen(dayAgendaRow.modelData) ? Theme.inkAlpha(.7) : Theme.text; font.strikeout: Theme.eventDeclined(dayAgendaRow.modelData); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.4); elide: Text.ElideRight }
+                        Text { width: parent.width; visible: text.length > 0; text: calendar.agendaSub(dayAgendaRow.modelData); textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(11.5) * 1.4); elide: Text.ElideRight }
                     }
                 }
             }
-            Text { visible: dayAgenda.count === 0; y: 12; text: "Nothing scheduled."; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+            Text { visible: dayAgenda.count === 0; y: 12; text: "Nothing scheduled."; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
         }
     }
     Popup {
@@ -887,16 +889,16 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 FmButton { iconName: "previous"; implicitWidth: 26; implicitHeight: 26; onClicked: datePicker.month = new Date(datePicker.month.getFullYear() - (backend.calendarView === "month" ? 1 : 0), datePicker.month.getMonth() - (backend.calendarView === "month" ? 0 : 1), 1) }
-                Text { text: Qt.formatDate(datePicker.month, backend.calendarView === "month" ? "yyyy" : "MMMM yyyy"); color: Theme.text; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
+                Text { text: Qt.formatDate(datePicker.month, backend.calendarView === "month" ? "yyyy" : "MMMM yyyy"); color: Theme.text; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
                 FmButton { iconName: "next"; implicitWidth: 26; implicitHeight: 26; onClicked: datePicker.month = new Date(datePicker.month.getFullYear() + (backend.calendarView === "month" ? 1 : 0), datePicker.month.getMonth() + (backend.calendarView === "month" ? 0 : 1), 1) }
             }
             GridLayout {
                 visible: backend.calendarView !== "month"; Layout.fillWidth: true; columns: 7; rowSpacing: 2; columnSpacing: 0
-                Repeater { model: 7; Text { required property int index; text: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(index + datePicker.weekStart) % 7]; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter } }
+                Repeater { model: 7; Text { required property int index; text: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(index + datePicker.weekStart) % 7]; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter } }
                 Repeater { model: datePicker.visible ? datePicker.days : 0
                     FmButton {
                         required property int index; property date day: datePicker.dateFor(index); property string iso: Qt.formatDate(day, "yyyy-MM-dd")
-                        text: day.getDate(); Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: 30; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(12)
+                        text: day.getDate(); Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: 30; leftPadding: 0; rightPadding: 0; font.pointSize: Theme.fontPoints(11.5)
                         selected: backend.calendarView === "week" ? iso >= backend.calendarFrom && iso <= calendar.isoAt(6) : iso === backend.calendarDate
                         foreground: selected ? Theme.canvas : iso === backend.todayDate ? Theme.accent : day.getMonth() === datePicker.month.getMonth() ? Theme.text : Theme.inkAlpha(.5)
                         background: Rectangle { radius: backend.calendarView === "week" ? 0 : 5; color: parent.selected ? Theme.text : parent.hovered || (backend.calendarView === "week" && Math.floor(parent.index / 7) === Math.floor(datePicker.hoveredCell / 7)) ? Theme.hover : "transparent" }
@@ -911,24 +913,24 @@ Item {
                     FmButton { required property int index; text: Qt.formatDate(new Date(datePicker.month.getFullYear(), index, 1), "MMM"); Layout.fillWidth: true; implicitHeight: 34; selected: index === new Date(backend.calendarDate + "T12:00:00").getMonth() && datePicker.month.getFullYear() === new Date(backend.calendarDate + "T12:00:00").getFullYear(); onClicked: datePicker.select(new Date(datePicker.month.getFullYear(), index, 1, 12)) }
                 }
             }
-            Text { visible: backend.calendarView === "week"; text: "Pick any day — the whole week opens"; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); Layout.alignment: Qt.AlignHCenter }
+            Text { visible: backend.calendarView === "week"; text: "Pick any day — the whole week opens"; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); Layout.alignment: Qt.AlignHCenter }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             RowLayout { Layout.fillWidth: true
-                FmButton { text: "Today"; foreground: Theme.accent; implicitHeight: 24; font.pointSize: Theme.fontPoints(12); onClicked: { backend.showCalendarToday(); datePicker.close() } }
-                Text { text: backend.preferences.calendar_display_time_zone || "Time zone unavailable"; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
+                FmButton { text: "Today"; foreground: Theme.accent; implicitHeight: 24; font.pointSize: Theme.fontPoints(11.5); onClicked: { backend.showCalendarToday(); datePicker.close() } }
+                Text { text: backend.preferences.calendar_display_time_zone || "Time zone unavailable"; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
             }
         }
     }
     Popup {
         id: moreMenu; parent: moreButton; x: parent.width - width; y: 34; width: 255; padding: 8; focus: true
-        background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
+        background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ColumnLayout {
             property bool blocksWorkspaceShortcuts: true
             spacing: 4
             FmButton { objectName: "calendarAgendaButton"; text: "Agenda"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.setCalendarView("agenda"); moreMenu.close() } }
             FmButton { objectName: "calendarActivityButton"; text: backend.syntheticProfile ? "Local calendar activity" : "Calendar activity"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { moreMenu.close(); operationHistory.open() } }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            Text { text: "Combined · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.calendarCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { text: "Combined · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.calendarCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(10.5); wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }
     EventDetails { id: details; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }

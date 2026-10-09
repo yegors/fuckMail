@@ -451,6 +451,27 @@ fn a_source_blocked_on_disk_is_recorded_and_the_page_still_completes() {
     let blocked:(String,String)=store.db.query_row("SELECT source_state,issue FROM google_mail_coverage WHERE account=?1 AND remote_id='blocked'",[&account],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
     assert_eq!(blocked, ("unavailable".into(), "source_blocked".into()));
     assert!(store.google_live_pending(&page, 10).unwrap().is_empty());
+    // The blocked message is settled: it will not download, so progress does
+    // not wait for it, yet it still keeps the account short of offline.
+    let coverage = store.google_live_coverage(&account).unwrap();
+    assert_eq!(coverage.undownloadable, 1);
+    assert_eq!(
+        (
+            coverage.observed,
+            coverage.retained_sources,
+            coverage.unavailable
+        ),
+        (2, 1, 1)
+    );
+    assert_eq!(coverage.unchecked, 0);
+    assert!(!coverage.offline_complete);
+    let gaps = store.google_live_gaps(&account, None, 10).unwrap();
+    assert_eq!(
+        gaps.iter()
+            .map(|g| (g.remote_id.as_str(), g.issue.as_str(), g.source_retained))
+            .collect::<Vec<_>>(),
+        [("blocked", "source_blocked", false)]
+    );
 }
 
 #[test]

@@ -77,7 +77,7 @@ ColumnLayout {
                 discColor: modelData.own ? Theme.accountTint(list.event.account, .22) : Theme.oklch(.36, .06, hue)
                 initialsColor: modelData.own ? Theme.accountColor(list.event.account) : Theme.oklch(.9, .05, hue)
                 initials: modelData.own ? String(modelData.name).charAt(0).toUpperCase() : Theme.initialsOf(modelData.name)
-                fontPoints: Theme.fontPoints(list.avatarSize >= 24 ? 9.5 : 8.5)
+                fontPoints: Theme.fontPoints(list.avatarSize >= 24 ? 10.5 : 10.5)
             }
             Text {
                 text: modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight
@@ -89,7 +89,7 @@ ColumnLayout {
                 id: role
                 visible: modelData.role.length > 0
                 text: modelData.role; color: Theme.inkAlpha(.4); textFormat: Text.PlainText
-                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
             }
             Item { Layout.fillWidth: true }
             Text {

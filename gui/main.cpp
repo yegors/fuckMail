@@ -59,6 +59,8 @@ int main(int argc, char **argv) {
     app.setWindowIcon(QIcon(":/qt/qml/FuckMail/app-icon/app-icon.png"));
     for (const auto &weight : {"Regular", "Medium", "SemiBold"})
         QFontDatabase::addApplicationFont(QString(":/qt/qml/FuckMail/fonts/Geist-%1.ttf").arg(weight));
+    for (const auto &weight : {"Regular", "Medium"})
+        QFontDatabase::addApplicationFont(QString(":/qt/qml/FuckMail/fonts/GeistMono-%1.ttf").arg(weight));
     app.setFont(QFont("Geist", 10));
     QQuickStyle::setStyle("Basic");
     QCommandLineParser parser;

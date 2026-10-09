@@ -28,7 +28,7 @@ Item {
                 textFormat: Text.PlainText
                 color: Theme.text
                 font.family: Theme.fontFamily
-                font.pointSize: Theme.fontPoints(11)
+                font.pointSize: Theme.fontPoints(10.5)
                 wrapMode: Text.Wrap
             }
             background: Rectangle { color: Theme.surface; radius: 5; border.color: Theme.controlBorder }

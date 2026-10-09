@@ -1,5 +1,21 @@
 # Core and storage
 
+## D200 — blocked messages settle; label linking in parts (Core92)
+
+- Sync progress counts `source_blocked` messages as undownloadable, beside `item_too_large` and `malformed_response`.
+- `google_labels_merge` links at most one new label, or applies one pending projection part, per call and returns `more`; a call that links nothing returns `more:false` with the complete `skipped`, `pending` and `missing`. `pulled` and `renamed` count that call only. Category projection is durable and bounded; see the D050 paragraph below.
+- `google_category_bind` and `google_label_create_finish` apply only the first part before returning. Their receipts are unchanged.
+- No schema change.
+
+Consumers: engine label sync, first import and label worker; `google_category_bind` (GUI and CLI); Gmail44.
+
+## D198 — the shortcut bar preference (Core91)
+
+- `key_hints` (boolean, default true): whether the GUI shows the shortcut bar along the bottom of the window. Any other value is `invalid_request`.
+- No schema change.
+
+Consumers: Mail UI143, CLI63.
+
 ## D194 — draft reply routing is bracketed (Core90)
 
 - A draft's `reply_to_message_id` and `references` hold Message-IDs in angle brackets, including drafts mirrored from Gmail. `compose_request` brackets any bare ID it finds, so drafts stored bare by earlier versions still send.
@@ -22,7 +38,7 @@ Consumers: mail sync and mail changes in the engine; Core tests.
 ## D187 — a message antivirus blocks (Core87)
 
 - A downloaded Gmail source whose blob cannot be verified once written is recorded for that message alone: coverage `source_state='unavailable'`, issue `source_blocked`, no message row. Other messages on the page publish and the page completes. Any other staging failure still fails the part.
-- Like other issues, a `source_blocked` row stays unsettled, so a later reconciliation pass downloads it again.
+- Like other issues, a `source_blocked` row is not retried within its generation: it stays unavailable (blocking offline completeness), and the reconciliation pass after the next generation downloads it again. Progress counts it as undownloadable (Core92).
 
 Consumers: Gmail, Quality. Schema, fixtures and protocol unchanged.
 
@@ -75,7 +91,7 @@ Consumers: Mail UI111, CLI59 `mail source`, Quality87; schema 40, live0/demo3 an
 
 - A blob may be as large as the largest Gmail source ([`MAX_RAW_MIME`](../../crates/fm-google/src/gmail_api.rs), 160 MiB). This replaces the 64 MiB blob bound; exact size/hash checks and path protections are unchanged.
 - A received message may list up to 500 attachments (Gmail's limit). Inline `cid:` images are still part of the body.
-- `google.sync.undownloadable_messages` counts undeleted messages whose source Gmail never delivered (`item_too_large` or `malformed_response` with no retained source). They are settled for progress and still block offline completeness.
+- `google.sync.undownloadable_messages` counts undeleted messages with no retained source that will not download: `item_too_large`, `malformed_response`, or `source_blocked` (the written source was removed or altered on this machine, as by antivirus; Core92). They are settled for progress and still block offline completeness.
 - Migration 039 keeps only a Gmail draft source's link to its linked local draft as a foreign key, so a source can be written before the draft that mirrors it.
 - Migration 040 is data-only. It marks undeleted `item_too_large` and `attachment_limit` coverage rows unseen (`observed_generation=0`), so the next reconciliation pass fetches or re-prepares them.
 
@@ -360,7 +376,7 @@ Schema33 is the first post-reset migration. It adds the partial index `google_ma
 
 ## D097 — first label import and watcher cursor (Core54, schema32)
 
-Binding a new account inserts `labels_initial_import:<account>` into `meta` in the binding transaction; reconnecting an existing account does not. `google_labels_initial_import` runs the name merge with request `initial-import` while that key exists; any completed merge deletes it, as does missing mail editing permission. When the import adds labels it sets the watcher's requeue bound to that account's first message. `local_model_arrivals` stores its cursor and consumes the requeue bound in `meta`. Retention pruning and account removal lower the requeue bound to the highest remaining message row in their transactions. No table or index changes. Consumers: GUI and CLI through the shared engine; Gmail27, Local assistance20, Quality69 unchanged.
+Binding a new account inserts `labels_initial_import:<account>` into `meta` in the binding transaction; reconnecting an existing account does not. `google_labels_initial_import` runs one bounded name-merge call with request `initial-import` while that key exists and returns its result, including `more`; the engine repeats while `more` is true. A merge call that returns `more:false` deletes the key, as does missing mail editing permission (Core92). When the import adds labels it sets the watcher's requeue bound to that account's first message. `local_model_arrivals` stores its cursor and consumes the requeue bound in `meta`. Retention pruning and account removal lower the requeue bound to the highest remaining message row in their transactions. No table or index changes. Consumers: GUI and CLI through the shared engine; Gmail27, Local assistance20, Quality69 unchanged.
 
 ## D096 — audit corrections (Core53, schema32)
 
@@ -471,7 +487,7 @@ D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages
 
 D054 records account-scoped last successful Gmail history completion in existing local metadata only after the final page and all its parts are applied; expose it in accounts/status without changing schema 21 or legacy receipts.
 
-D050 repairs existing Google category projections transactionally on first live reopen and on label binding, preserving manual/assist precedence, original sources, flags and receipts. Only changed conversation revisions and derived category membership advance. Account count projections add cached `folder_conversation_counts`; conversation queries return `folder_conversation_count` for the selected folder before search/category filters, excluding Trash appropriately. This avoids a competing GUI count query. Adds durable `mail_date_grouping` (`grouped`/`plain`, default `grouped`) shared by GUI and CLI. Schema 20 and fixtures 0/3/protocol 1 are unchanged.
+Google category projections run in bounded parts (Core92, replacing D050's single-transaction repair). Linking a label (bind, merge, accepted creation) records a durable projection in `meta` (`google_category_projection\n<account>\n<category>` → last projected `google_message_state` rowid) and applies its first part. `google_category_projection_step` applies each further part of at most 5,000 rows in its own transaction until none is pending. The one-time repair on first live reopen only schedules projections; the account's label worker, label sync or a merge call applies them, including any a closed store left unfinished. Membership may be partly applied while a projection is pending and matches the labels exactly once it finishes. Relinking restarts a category's projection; unlinking it or removing the account drops it. Manual/assist precedence, original sources, flags and receipts are preserved. Only changed conversation revisions and derived category membership advance. Account count projections add cached `folder_conversation_counts`; conversation queries return `folder_conversation_count` for the selected folder before search/category filters, excluding Trash appropriately. This avoids a competing GUI count query. Adds durable `mail_date_grouping` (`grouped`/`plain`, default `grouped`) shared by GUI and CLI. Schema 20 and fixtures 0/3/protocol 1 are unchanged.
 
 D039 adds read-only calendar_search through the existing permitted combined projection. It creates no index, schema, receipt or provider work. The explicit 1–42-day range and selected-calendar semantics remain unchanged. Query text is at most 512 UTF-8 bytes and 32 whitespace-separated case-insensitive AND substring terms over permitted title, organizer, attendees, location and description. Busy-only rows are excluded; split-day rows deduplicate by account/calendar/occurrence identity. Return at most 100 results with has_more plus inherited range, revision and coverage. Existing projection limits remain explicit. Consumers: Core 27/Calendar 20/Mail UI 25/CLI 20/Quality 23; schema 20, Platform 14/Gmail 12/Search 5, fixtures 0/3 and protocol 1 unchanged.
 

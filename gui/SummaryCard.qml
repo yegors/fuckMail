@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Shapes
 import QtQuick.Layouts
 
-// A message's local summary: absent until requested (the header's summarize
-// action starts it), a neutral progress box while running, the summary in AI
-// colours, or a red failure box with Try again. A fresh summary arrives green
-// with "Done" and settles to the AI colours.
+// A local summary box, for one message or a whole thread: absent until
+// requested, then a progress line while the model works, the summary, or a
+// red failure line with Try again. The summary reads as one paragraph led by
+// a TLDR tag and the conversation's #label; the model and time sit in the
+// box's tooltip, and the tag opens sources, details and Cancel. A fresh
+// summary arrives green with a check and settles to the AI colours.
 Rectangle {
     id: card
     property string messageId: ""
@@ -14,9 +15,15 @@ Rectangle {
     property var result: null
     property var members: []
     property string title: "Summary"
+    // The conversation's first label, shown after the tag.
+    property string label: ""
+    // Progress lines while busy, one after another as time passes.
+    property var stages: ["Reading the message…", "Writing the summary…"]
     property bool busy: false
     property bool canSummarize: false
     property bool showSources: true
+    // A thread summary can be put away with ×.
+    property bool closable: false
     property string error: ""
     property bool details: false
     property double startedAt: Date.now()
@@ -27,9 +34,11 @@ Rectangle {
     readonly property bool popupOpen: actions.opened || sourcePopup.opened
     readonly property string resultIdentity: result ? [result.conversation_id || "", result.target || "", result.created_at || ""].join("/") : ""
     readonly property string captionModel: result ? (result.model || {}).name || modelName : modelName
-    readonly property string generatedAt: result && result.created_at ? Qt.formatDateTime(new Date(result.created_at), "MMMM d yyyy HH:mm") : ""
+    readonly property string generatedAt: result && result.created_at ? Qt.formatDateTime(new Date(result.created_at), "d MMM yyyy HH:mm") : ""
     readonly property bool failed: !busy && error.length > 0
     readonly property bool showing: busy || failed || summaryText.length > 0
+    readonly property string stageText: stages.length ? stages[Math.min(stages.length - 1, Math.floor(elapsedSeconds / 3))] : ""
+    readonly property color doneGreen: Qt.rgba(111/255, 191/255, 138/255, 1)
     // "Done" follows only a summary this card saw being written, never navigation.
     property bool done: false
     property string startIdentity: ""
@@ -39,8 +48,10 @@ Rectangle {
     readonly property string failureText: /tim(e|ed) ?out|respond|stopped/i.test(error) || !failureReason.length
         ? "Couldn’t summarize — " + (modelName || "the local model") + " stopped responding."
         : "Couldn’t summarize — " + failureReason.charAt(0).toLowerCase() + failureReason.slice(1)
+    function escaped(value) { return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     signal regenerate()
     signal cancelRequested()
+    signal closeRequested()
     signal openSource(string messageId)
     onResultIdentityChanged: {
         details = false
@@ -59,100 +70,95 @@ Rectangle {
     visible: showing
     implicitHeight: showing ? (failed ? failure.implicitHeight + 24 : content.implicitHeight + 24) : 0
     radius: 8
-    color: busy ? Theme.inkAlpha(.03) : failed ? Theme.withAlpha(Theme.red, .07) : done ? Qt.rgba(111/255, 191/255, 138/255, .08) : Theme.withAlpha(Theme.ai, .07)
-    border.width: busy ? 0 : 1
-    border.color: failed ? Theme.withAlpha(Theme.red, .35) : done ? Qt.rgba(111/255, 191/255, 138/255, .55) : Theme.withAlpha(Theme.ai, .16)
+    color: failed ? Theme.withAlpha(Theme.red, .07) : done ? Qt.rgba(111/255, 191/255, 138/255, .08) : Theme.withAlpha(Theme.ai, .07)
     Behavior on color { enabled: card.fading; ColorAnimation { duration: 600; easing.type: Easing.InOutQuad } }
-    Behavior on border.color { enabled: card.fading; ColorAnimation { duration: 600; easing.type: Easing.InOutQuad } }
-    Shape {
-        anchors.fill: parent; visible: card.busy
-        ShapePath {
-            strokeColor: Theme.inkAlpha(.18); strokeWidth: 1
-            strokeStyle: ShapePath.DashLine; dashPattern: [3,3]; fillColor: "transparent"
-            PathSvg { path: "M 8 .5 H " + (card.width-8) + " Q " + (card.width-.5) + " .5 " + (card.width-.5) + " 8 V " + (card.height-8) + " Q " + (card.width-.5) + " " + (card.height-.5) + " " + (card.width-8) + " " + (card.height-.5) + " H 8 Q .5 " + (card.height-.5) + " .5 " + (card.height-8) + " V 8 Q .5 .5 8 .5 Z" }
-        }
-    }
+    HoverHandler { id: cardHover }
+    FmToolTip { shown: cardHover.hovered && !card.busy && !card.failed && !actions.opened; text: [card.title, card.captionModel, card.generatedAt].filter(Boolean).join(" · ") }
     RowLayout {
-        id: failure; x: 14; y: 12; width: Math.max(0, parent.width-28); spacing: 12; visible: card.failed
-        Shape {
-            implicitWidth: 13; implicitHeight: 13; Layout.alignment: Qt.AlignVCenter
-            ShapePath {
-                strokeColor: Theme.red; strokeWidth: 1.3; fillColor: "transparent"; capStyle: ShapePath.RoundCap
-                PathAngleArc { centerX: 6.5; centerY: 6.5; radiusX: 5; radiusY: 5; startAngle: 0; sweepAngle: 360 }
-            }
-            ShapePath {
-                strokeColor: Theme.red; strokeWidth: 1.3; fillColor: "transparent"; capStyle: ShapePath.RoundCap
-                PathSvg { path: "M 6.5 4 V 7 M 6.5 9.2 V 9.3" }
-            }
-        }
-        Text { objectName: "summaryError"; text: card.failureText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
+        id: failure; x: 16; y: 12; width: Math.max(0, parent.width-32); spacing: 12; visible: card.failed
+        Text { objectName: "summaryError"; text: card.failureText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
         AbstractButton {
             objectName: "summaryRetry"; enabled: card.canSummarize; Layout.alignment: Qt.AlignVCenter
             implicitWidth: retryText.implicitWidth; implicitHeight: retryText.implicitHeight + 2
             Accessible.name: "Try again"; onClicked: card.regenerate()
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             contentItem: Item {}
-            Text { id: retryText; text: "Try again"; color: Theme.red; opacity: parent.enabled ? 1 : .5; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+            Text { id: retryText; text: "Try again"; color: Theme.red; opacity: parent.enabled ? 1 : .5; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Rectangle { y: retryText.implicitHeight + 1; width: retryText.implicitWidth; height: 1; color: Theme.withAlpha(Theme.red, .4) }
         }
+        CloseMark { visible: card.closable }
+    }
+    component CloseMark: AbstractButton {
+        objectName: "summaryClose"
+        Layout.alignment: Qt.AlignTop
+        implicitWidth: 16; implicitHeight: 16
+        Accessible.name: "Close summary"; onClicked: card.closeRequested()
+        HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
+        contentItem: Item {}
+        FmIcon { anchors.centerIn: parent; name: "close"; size: 10; color: closeHover.hovered ? Theme.text : Theme.withAlpha(Theme.ai, .7) }
     }
     ColumnLayout {
-        id: content; x: 14; y: 12; width: Math.max(0, parent.width-28); spacing: card.busy ? 7 : 6; visible: !card.failed
+        id: content; x: 16; y: 12; width: Math.max(0, parent.width-32); spacing: 8; visible: !card.failed
         RowLayout {
-            visible: card.busy; Layout.fillWidth: true; spacing: 12
-            Text { text: card.elapsedSeconds < 3 ? "Reading the message…" : "Writing the summary…"; color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); Layout.fillWidth: true }
-            Text { text: card.elapsedSeconds + " s"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1} }
+            Layout.fillWidth: true; spacing: 12
+            // The tag leads the first line; the text wraps back under it.
+            Item {
+                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                implicitHeight: card.busy ? Math.max(17, busyLine.implicitHeight) : summaryBody.implicitHeight
+                readonly property real firstLine: Theme.fontSize(12.5) * Theme.naturalLeading * 1.6
+                AbstractButton {
+                    id: tag; objectName: "summaryActions"
+                    y: card.busy ? (parent.implicitHeight - height) / 2 : Math.max(0, (parent.firstLine - height) / 2)
+                    implicitWidth: tagText.implicitWidth + 12; implicitHeight: 17
+                    Accessible.name: card.busy ? "Summary progress and cancel" : "Summary sources and details"
+                    onClicked: actions.open()
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    background: Rectangle { radius: 4; color: card.busy ? Theme.inkAlpha(.1) : Theme.withAlpha(card.done ? card.doneGreen : Theme.ai, tag.hovered ? .26 : .16) }
+                    contentItem: Item {}
+                    Text {
+                        id: tagText; anchors.centerIn: parent; text: "TLDR"
+                        color: card.busy ? Theme.inkAlpha(.6) : card.done ? card.doneGreen : Theme.ai
+                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium; font.letterSpacing: Theme.fontSize(10.5) * .08
+                    }
+                }
+                RowLayout {
+                    id: busyLine; visible: card.busy
+                    x: tag.width + 10; width: Math.max(0, parent.width - x); anchors.verticalCenter: tag.verticalCenter; spacing: 12
+                    Text { text: card.stageText; color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); Layout.fillWidth: true; elide: Text.ElideRight }
+                    Text { text: card.elapsedSeconds + " s"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1} }
+                }
+                TextEdit {
+                    id: summaryBody; objectName: "summaryBody"
+                    visible: card.summaryText.length > 0 && !card.busy
+                    width: parent.width
+                    readonly property string labelMarkup: card.label.length ? "<span style=\"color:" + Theme.withAlpha(Theme.ai, .7) + "\">#" + card.escaped(card.label.toLowerCase()) + "</span>&nbsp;&nbsp;" : ""
+                    text: "<p style=\"white-space:pre-wrap;line-height:" + Theme.leadingPercent(1.6) + "%;margin:0;text-indent:" + (tag.width + 10) + "px\">" + labelMarkup + card.escaped(card.summaryText).replace(/\n/g, "<br>") + "</p>"
+                    textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true
+                    color: Theme.ai; selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                    Accessible.name: card.title
+                    ContextMenu.menu: null
+                    TextMenuHandler {}
+                    HoverHandler { cursorShape: Qt.IBeamCursor }
+                }
+            }
+            FmIcon { objectName: "summaryDone"; visible: card.done && !card.busy; Layout.alignment: Qt.AlignTop; Layout.topMargin: 5; name: "check"; size: 11; color: card.doneGreen }
+            CloseMark { visible: card.closable && !card.busy; Layout.topMargin: 3 }
         }
         Rectangle {
             objectName: "summaryProgress"; visible: card.busy; Layout.fillWidth: true; implicitHeight: 2; radius: 1
             color: Theme.inkAlpha(.1); clip: true
             Rectangle {
-                width: parent.width*.3; height: 2; radius: 1; color: Theme.inkAlpha(.55)
+                width: parent.width*.3; height: 2; radius: 1; color: Theme.withAlpha(Theme.ai, .7)
                 SequentialAnimation on x { running: card.busy && card.visible; loops: Animation.Infinite
                     NumberAnimation { from: -card.width*.3; to: card.width; duration: 1400; easing.type: Easing.InOutSine }
                 }
             }
         }
-        TextEdit {
-            id: summaryBody; objectName: "summaryBody"
-            visible: card.summaryText.length > 0 && !card.busy
-            Layout.fillWidth: true; text: Theme.proseMarkup(card.summaryText,1.55)
-            textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true
-            color: Theme.ai; selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
-            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
-            Accessible.name: card.title
-            ContextMenu.menu: null
-            TextMenuHandler {}
-            HoverHandler { cursorShape: Qt.IBeamCursor }
-        }
         Text {
             objectName: "summaryCoverage"; visible: !card.busy && !!card.result && (card.result.stale || card.result.partial)
-            Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.muted; font.pointSize: Theme.fontPoints(11)
+            Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.withAlpha(Theme.ai, .6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
             text: [card.result && card.result.stale ? "Out of date · Resummarize to update" : "", card.result && card.result.partial ? "Partial · Some conversation text was omitted" : ""].filter(Boolean).join(" · ")
-        }
-        RowLayout {
-            Layout.fillWidth: true; spacing: 6
-            FmIcon {
-                name: "summary"; size: 10; color: card.busy ? Theme.inkAlpha(.4) : Theme.withAlpha(Theme.ai,.6)
-                RotationAnimator on rotation { running: card.busy && card.visible; from: 0; to: 360; duration: 2400; loops: Animation.Infinite }
-                onVisibleChanged: if (!card.busy) rotation = 0
-            }
-            AbstractButton {
-                objectName: "summaryActions"; Accessible.name: card.busy ? "Summary progress and cancel" : "Summary actions"; onClicked: actions.open()
-                Layout.fillWidth: true; implicitHeight: contentItem.implicitHeight
-                contentItem: Text {
-                    objectName: "summaryModelName"; elide: Text.ElideRight
-                    text: card.busy ? "Summarizing · " + card.modelName + " · on this machine · keep reading" : [card.captionModel, card.generatedAt].filter(Boolean).join(" · ")
-                    color: card.busy ? Theme.inkAlpha(.4) : Theme.withAlpha(Theme.ai,.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1}; textFormat: Text.PlainText
-                    HoverHandler { id: captionHover }
-                    FmToolTip { shown: captionHover.hovered && parent.truncated; text: parent.text }
-                }
-            }
-            Row {
-                objectName: "summaryDone"; visible: card.done && !card.busy; spacing: 4
-                FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "check"; size: 10; color: Qt.rgba(111/255, 191/255, 138/255, 1) }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Done"; color: Qt.rgba(111/255, 191/255, 138/255, 1); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
-            }
         }
     }
     onDetailsChanged: { if (details) sourcePopup.open(); else sourcePopup.close() }
@@ -162,7 +168,7 @@ Rectangle {
         width: Math.min(card.width, 320); padding: 12
         onClosed: card.details = false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
+        background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ScrollView {
             ScrollBar.vertical: FmScrollBar {}
             id: sourcesScroll
@@ -174,7 +180,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true; wrapMode: Text.Wrap
                     text: card.result && card.result.created_at ? "Generated " + new Date(card.result.created_at).toLocaleString() : "Generated on this machine"
-                    color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
+                    color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5)
                 }
                 Repeater {
                     model: card.showSources && card.details ? card.sources : []
@@ -184,7 +190,7 @@ Rectangle {
                         objectName: "summarySource_" + modelData
                         text: (member.sender_name || member.sender_email || "Source message") + (member.sent_at ? " · " + Qt.formatDateTime(new Date(member.sent_at), "d MMM, HH:mm") : "")
                         Layout.fillWidth: true; textAlignment: Text.AlignLeft; leftPadding: 0
-                        font.pointSize: Theme.fontPoints(11); foreground: Theme.ai
+                        font.pointSize: Theme.fontPoints(10.5); foreground: Theme.ai
                         tip: "Open this source message"; onClicked: { const owner = card; const source = modelData; owner.openSource(source); owner.details = false }
                     }
                 }
@@ -196,7 +202,7 @@ Rectangle {
         x: Math.max(0, card.width - width); y: 38
         width: Math.min(card.width, 220); padding: 6
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
+        background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ColumnLayout {
             spacing: 2
             FmButton {

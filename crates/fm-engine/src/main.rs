@@ -716,6 +716,12 @@ async fn session_inner(
             || (request.method == "account_update"
                 && (request.params.get("sync").is_some()
                     || request.params.get("mail_retention").is_some()));
+        // Linking a label applies only the first part of its projection; the
+        // account's label worker applies the rest.
+        let linked = request
+            .account
+            .clone()
+            .filter(|_| request.method == "google_category_bind");
         let id = request.id.clone();
         let Ok(permit) = foreground_slots.clone().try_acquire_owned() else {
             session_write(
@@ -762,6 +768,11 @@ async fn session_inner(
         if cadence_changed && reply["ok"] == true {
             if let Some(provider) = &services.google {
                 provider.sync.cadence_changed().await;
+            }
+        }
+        if let Some(account) = linked.filter(|_| reply["ok"] == true) {
+            if let Some(provider) = &services.google {
+                provider.sync.category_linked(&account).await;
             }
         }
         let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {

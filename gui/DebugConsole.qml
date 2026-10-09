@@ -26,8 +26,8 @@ Popup {
     readonly property int newCount: followTail || !diagnostics ? 0 : Math.max(0, diagnostics.appended - newMark)
     readonly property bool paused: !!diagnostics && diagnostics.paused
     readonly property bool blocksWorkspaceShortcuts: true
-    readonly property font monoFont: Qt.font({family: diagnostics ? diagnostics.monoFamily : "monospace", pixelSize: Math.round(Theme.fontSize(12))})
-    readonly property font smallFont: Qt.font({family: monoFont.family, pixelSize: Math.round(Theme.fontSize(11))})
+    readonly property font monoFont: Qt.font({family: diagnostics ? diagnostics.monoFamily : "monospace", pixelSize: Math.round(Theme.fontSize(11.5))})
+    readonly property font smallFont: Qt.font({family: monoFont.family, pixelSize: Math.round(Theme.fontSize(10.5))})
     readonly property real line: Math.round(Theme.fontSize(19))
     readonly property real lineGap: (line - monoMetrics.height) / 2
     readonly property var levelNames: diagnostics ? diagnostics.levels : []
@@ -148,7 +148,7 @@ Popup {
         const level7 = plain.slice(14, 21), word = level7.replace(/ +$/, "")
         const badge = !typed && level <= 2
         const messageColor = typed ? String(Theme.amber) : level <= 3 ? String(Theme.error) : level <= 5 ? String(Theme.text) : level === 6 ? solid(Theme.inkAlpha(.78)) : solid(Theme.inkAlpha(.45))
-        const levelHtml = badge ? '<span style="background-color:' + Theme.error + ';color:' + Theme.canvas + ';font-weight:600">' + escapeHtml(word) + '</span>'
+        const levelHtml = badge ? '<span style="background-color:' + Theme.error + ';color:' + Theme.canvas + ';font-weight:500">' + escapeHtml(word) + '</span>'
             : '<span style="color:' + levelColorText(level) + (level <= 4 ? ';font-weight:500' : '') + '">' + escapeHtml(word) + '</span>'
         const messageEnd = messageColumn + message.length
         const html = span(solid(Theme.inkAlpha(.3)), plain.slice(0, 14)) + levelHtml + escapeHtml(level7.slice(word.length) + plain.slice(21, 23))
@@ -299,7 +299,7 @@ Popup {
         property bool compact: false
         property string tip: ""
         signal clicked()
-        implicitWidth: label.implicitWidth + (compact ? 10 : 16); implicitHeight: compact ? panel.line : 24; radius: 3
+        implicitWidth: label.implicitWidth + (compact ? 10 : 16); implicitHeight: compact ? panel.line : 24; radius: 5
         color: selected || (area.containsMouse && !compact) ? Theme.bg4 : "transparent"
         Accessible.role: Accessible.Button; Accessible.name: label.text; Accessible.description: tip; Accessible.onPressAction: clicked()
         Mono { id: label; anchors.centerIn: parent; color: area.containsMouse ? chip.hoverColor : chip.textColor }
@@ -340,7 +340,7 @@ Popup {
                     id: tailToggle
                     objectName: "debugTailToggle"
                     readonly property color tint: panel.followTail ? panel.green : Theme.inkAlpha(.5)
-                    width: tailRow.implicitWidth + 16; height: 24; radius: 3
+                    width: tailRow.implicitWidth + 16; height: 24; radius: 5
                     color: tailArea.containsMouse ? Theme.bg4 : "transparent"
                     Row {
                         id: tailRow
@@ -376,7 +376,7 @@ Popup {
                 Item { width: 13; height: 24; Rectangle { anchors.centerIn: parent; width: 1; height: 16; color: Theme.line2 } }
                 Rectangle {
                     objectName: "debugClose"
-                    width: 27; height: 24; radius: 3; color: closeArea.containsMouse ? Theme.bg4 : "transparent"
+                    width: 27; height: 24; radius: 5; color: closeArea.containsMouse ? Theme.bg4 : "transparent"
                     FmIcon { anchors.centerIn: parent; name: "close"; size: 11; color: closeArea.containsMouse ? Theme.text : Theme.inkAlpha(.65) }
                     MouseArea { id: closeArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: panel.close() }
                     FmToolTip { shown: closeArea.containsMouse; text: "Close — ~ or Esc" }
@@ -423,7 +423,7 @@ Popup {
             }
             Item { Layout.fillWidth: true }
             Rectangle {
-                Layout.preferredWidth: 220; Layout.minimumWidth: 140; implicitHeight: 24; radius: 3
+                Layout.preferredWidth: 220; Layout.minimumWidth: 140; implicitHeight: 24; radius: 5
                 color: "transparent"; border.color: grepField.activeFocus ? Theme.line3 : Theme.line2
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 6
@@ -563,7 +563,7 @@ Popup {
                                 id: copyButton
                                 objectName: "debugCopyJson_" + row.sequence
                                 anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 6; anchors.rightMargin: 8
-                                width: copyLabel.implicitWidth + 12; height: copyLabel.implicitHeight + 2; radius: 3
+                                width: copyLabel.implicitWidth + 12; height: copyLabel.implicitHeight + 2; radius: 5
                                 color: copyArea.containsMouse ? Theme.bg4 : "transparent"
                                 Status {
                                     id: copyLabel; anchors.centerIn: parent
@@ -609,7 +609,7 @@ Popup {
                 objectName: "debugTail"
                 visible: panel.tab === "logs" && panel.newCount > 0
                 anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.rightMargin: 20; anchors.bottomMargin: 12
-                width: newLabel.implicitWidth + 20; height: 24; radius: 3
+                width: newLabel.implicitWidth + 20; height: 24; radius: 5
                 // Lifts under the pointer like the app's buttons.
                 readonly property real lift: newLinesArea.containsMouse ? 1.3 : 1
                 color: Theme.brighten(Theme.bg4, lift); border.color: Theme.line2

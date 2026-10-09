@@ -85,6 +85,11 @@ impl Harness {
         Self::with_scope("https://www.googleapis.com/auth/gmail.modify")
     }
     fn with_scope(scope: &'static str) -> Self {
+        Self::with_writer_hook(scope, Box::new(|_| {}))
+    }
+    /// A harness whose store writer calls `before` with each call's origin
+    /// just before running it.
+    fn with_writer_hook(scope: &'static str, mut before: Box<dyn FnMut(&str) + Send>) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         let (sender, mut receiver) = mpsc::channel(8);
@@ -102,6 +107,7 @@ impl Harness {
             ready.send(account).unwrap();
             while let Some(work) = receiver.blocking_recv() {
                 if let crate::Work::Provider(call) = work {
+                    before(call.origin);
                     call.run(&mut store);
                 } else {
                     panic!("unexpected writer work");
@@ -448,5 +454,76 @@ async fn read_only_account_refreshes_labels_without_importing_them() {
         pending.is_none(),
         "the manual path remains after a read-only first sync"
     );
+    h.close();
+}
+
+#[tokio::test]
+async fn name_sync_links_one_label_per_store_call_so_other_requests_are_answered_between() {
+    let (paused, wait_paused) = std::sync::mpsc::channel::<()>();
+    let (release, wait_release) = std::sync::mpsc::channel::<()>();
+    let merges = Arc::new(AtomicUsize::new(0));
+    let counted = merges.clone();
+    let h = Harness::with_writer_hook(
+        "https://www.googleapis.com/auth/gmail.modify",
+        Box::new(move |origin| {
+            // The merge is the one store call of the sync that returns a JSON value.
+            if origin.contains(
+                "core_call<serde_json::value::Value, fm_engine::google_sync::labels::sync_names",
+            ) && counted.fetch_add(1, Ordering::SeqCst) == 0
+            {
+                paused.send(()).unwrap();
+                wait_release.recv().unwrap();
+            }
+        }),
+    );
+    *h.http.body.lock().unwrap() = json!({"labels":[{"id":"A","name":"Alpha","type":"user"},{"id":"B","name":"Beta","type":"user"},{"id":"INBOX","name":"Inbox","type":"system"}]});
+    let context = h.ctx.clone();
+    let sync =
+        tokio::spawn(async move { sync_names(&context, json!({"request_id":"two-labels"})).await });
+    tokio::task::spawn_blocking(move || wait_paused.recv_timeout(Duration::from_secs(10)))
+        .await
+        .unwrap()
+        .unwrap();
+    // Queued while the first merge call waits to run, so it is answered
+    // before the sync can queue its next call.
+    let account = h.ctx.account.as_str().to_owned();
+    let core = h.ctx.core.clone();
+    let probe = tokio::spawn(async move {
+        core.call(move |s| {
+            let catalog = s.label_catalog(&account)?;
+            Ok(catalog["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|row| row["provider_label_id"].is_string())
+                .count())
+        })
+        .await
+    });
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    release.send(()).unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(10), probe)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        1,
+        "the first store call links one label"
+    );
+    let result = tokio::time::timeout(Duration::from_secs(10), sync)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result["pulled"], 2);
+    assert!(merges.load(Ordering::SeqCst) >= 3);
+    let categories = h.categories().await;
+    assert_eq!(categories.len(), 2);
+    assert!(categories
+        .iter()
+        .all(|row| row["provider_label_id"].is_string()));
     h.close();
 }

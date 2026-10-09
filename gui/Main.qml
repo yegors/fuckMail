@@ -1,6 +1,6 @@
 // Root window, loaded by main.cpp from the FuckMail QML module: the top bar
-// (account tabs, search, Mail/Calendar switch), the Mail / Calendar / Settings
-// stack, global shortcuts and app-wide overlays. State comes from the `backend` context object.
+// (Mail/Calendar switch, account tabs, search), the shortcut bar, the Mail /
+// Calendar / Settings stack, global shortcuts and app-wide overlays. State comes from the `backend` context object.
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
@@ -46,7 +46,7 @@ ApplicationWindow {
     palette.mid: Theme.scrollPalette
     palette.dark: Theme.scrollPalette
     font.family: Theme.fontFamily
-    font.pointSize: Theme.fontPoints(14)
+    font.pointSize: Theme.fontPoints(13)
     Binding { target: Theme; property: "themeId"; value: backend.preferences.theme || "graphite" }
     Binding { target: Theme; property: "textSize"; value: backend.preferences.text_size || "default" }
     Binding { target: Theme; property: "devicePixelRatio"; value: window.Screen.devicePixelRatio }
@@ -121,10 +121,10 @@ ApplicationWindow {
         const right = origin.x + searchBox.width
         if (workspace === "calendar") {
             calendarSearchPopup.x = Math.max(16, right - calendarSearchPopup.width)
-            calendarSearchPopup.y = origin.y + searchBox.height + 8
+            calendarSearchPopup.y = origin.y + searchBox.height + 6
         } else {
             searchPopup.x = Math.max(16, right - searchPopup.width) - origin.x
-            searchPopup.y = searchBox.height + 8
+            searchPopup.y = searchBox.height + 6
             searchPopup.maxHeight = Math.max(160, Overlay.overlay.height - origin.y - searchBox.height - 20)
         }
     }
@@ -215,149 +215,151 @@ ApplicationWindow {
             calendarView.showEvent(event, calendarView)
         }
     }
+    // One 48px row on a single centre line: the Mail / Calendar switch, the
+    // mailbox tabs, then Sync, search and Settings at the right.
     header: Rectangle {
         height: Theme.headerHeight
         color: Theme.canvas
         Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
         RowLayout {
-            anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 24
-            RowLayout {
-                spacing: 14
-                Rectangle {
-                    implicitWidth: viewTabs.implicitWidth + 4; implicitHeight: 32
-                    radius: 6; color: Theme.surface
-                    Row {
-                        id: viewTabs; anchors.centerIn: parent; spacing: 2
-                        FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · v"; onClicked: window.navigate("mail") }
-                        FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · v"; onClicked: window.navigate("calendar") }
-                    }
-                }
-                Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
-                Flickable {
-                    id: accountTabs
-                    function revealSelected() {
-                        for (let i = 0; i < accountRepeater.count; ++i) {
-                            const tab = accountRepeater.itemAt(i)
-                            if (!tab || !tab.selected) continue
-                            const left = tab.x, right = left + tab.width
-                            if (left < contentX) contentX = left
-                            else if (right > contentX + width) contentX = Math.max(0, right - width)
-                            contentX = Math.min(contentX, Math.max(0, contentWidth - width))
-                            return
+            anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 12
+            // The view switch: the open view is inverted, page colour on ink.
+            Rectangle {
+                implicitWidth: viewTabs.implicitWidth + 4; implicitHeight: 30
+                radius: 7; color: Theme.surface
+                Row {
+                    id: viewTabs; anchors.centerIn: parent; spacing: 2
+                    Repeater {
+                        model: [{view: "mail", icon: "mail", tip: "Mail"}, {view: "calendar", icon: "calendar", tip: "Calendar"}]
+                        FmButton {
+                            id: viewTab
+                            required property var modelData
+                            objectName: modelData.view + "WorkspaceButton"
+                            readonly property bool open: !window.settingsOpen && window.workspace === modelData.view
+                            height: 26; implicitHeight: 26; radius: 5; leftPadding: 10; rightPadding: 12; topPadding: 0; bottomPadding: 0
+                            text: modelData.view; iconName: modelData.icon; iconSize: 13; iconSpacing: 7
+                            font.pointSize: Theme.fontPoints(12); font.weight: Font.Normal
+                            prominent: open; hoverBrightness: 1
+                            foreground: open ? Theme.canvas : hovered ? Theme.text : Theme.inkAlpha(.5)
+                            tip: modelData.tip + " — " + ShortcutRegistry.label(ShortcutRegistry.sequence("view", backend.preferences)).toLowerCase()
+                            background: Rectangle { radius: 5; color: viewTab.open ? Theme.text : "transparent"; border.width: viewTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                            onClicked: window.navigate(modelData.view)
                         }
                     }
-                    onWidthChanged: Qt.callLater(revealSelected)
-                    onContentWidthChanged: Qt.callLater(revealSelected)
-                    Connections {
-                        target: backend
-                        function onAccountChanged() { Qt.callLater(accountTabs.revealSelected) }
-                        function onAccountsChanged() { Qt.callLater(accountTabs.revealSelected) }
+                }
+            }
+            Rectangle { implicitWidth: 1; implicitHeight: 20; Layout.leftMargin: 4; Layout.rightMargin: 4; color: Theme.line2 }
+            Flickable {
+                id: accountTabs
+                function revealSelected() {
+                    for (let i = 0; i < accountRepeater.count; ++i) {
+                        const tab = accountRepeater.itemAt(i)
+                        if (!tab || !tab.selected) continue
+                        const left = tab.x, right = left + tab.width
+                        if (left < contentX) contentX = left
+                        else if (right > contentX + width) contentX = Math.max(0, right - width)
+                        contentX = Math.min(contentX, Math.max(0, contentWidth - width))
+                        return
                     }
-                    Layout.preferredWidth: Math.min(accountsRow.width, Math.max(140, window.width - 820))
-                    Layout.minimumWidth: 140; Layout.preferredHeight: 32
-                    contentWidth: accountsRow.width; contentHeight: height; clip: true
-                    boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
-                    Row {
-                        id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 6
-                        Repeater {
-                            id: accountRepeater
-                            model: backend.accountModel
-                            delegate: FmButton {
-                                required property var rowData
-                                readonly property var modelData: rowData
-                                id: accountTab
-                                objectName: "accountTab_" + modelData.id
-                                readonly property var pipeline: accountProgress.view(modelData.id)
-                                readonly property color hue: Qt.color(Theme.accountColor(modelData.id))
-                                property int reviewCount: (modelData.inbox_review_count ?? modelData.unread_conversation_count) || 0
-                                readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
-                                readonly property real naturalWidth: 16 + 18 + 7 + accountName.implicitWidth
-                                    + (badgeText.length ? accountCount.implicitWidth + 7 : 0)
-                                // Hover brightens the text only.
-                                readonly property color ink: selected || hovered ? Theme.text : Theme.inkAlpha(.5)
-                                Accessible.description: pipeline.status
-                                text: modelData.name
-                                height: 32; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
-                                leftPadding: 8; rightPadding: 8; topPadding: 0; bottomPadding: 2
-                                selected: backend.account === modelData.id
-                                Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                onHoveredChanged: {
-                                    if (hovered) { const point = mapToItem(Overlay.overlay, 0, height + 8); accountTip.show(modelData, point.x, point.y) }
-                                    else if (accountTip.account === modelData.id) accountTip.close()
-                                }
-                                onClicked: { accountTip.close(); backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
-                                // No pill: a 2px underline marks the selected account in
-                                // its colour, and becomes a progress bar while the
-                                // account syncs (amber downloading, silver-blue while
-                                // the local model works).
-                                background: Item {
+                }
+                onWidthChanged: Qt.callLater(revealSelected)
+                onContentWidthChanged: Qt.callLater(revealSelected)
+                Connections {
+                    target: backend
+                    function onAccountChanged() { Qt.callLater(accountTabs.revealSelected) }
+                    function onAccountsChanged() { Qt.callLater(accountTabs.revealSelected) }
+                }
+                Layout.preferredWidth: Math.min(accountsRow.width, Math.max(140, window.width - 760))
+                Layout.minimumWidth: 140; Layout.preferredHeight: 30
+                contentWidth: accountsRow.width; contentHeight: height; clip: true
+                boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
+                Row {
+                    id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                    Repeater {
+                        id: accountRepeater
+                        model: backend.accountModel
+                        // A mailbox: its letter tile, lowercase name and count to
+                        // review. A dot on the tile's corner says what it is doing:
+                        // amber pulsing while mail downloads, the model colour
+                        // pulsing while the local model works, red when disconnected.
+                        delegate: FmButton {
+                            required property var rowData
+                            readonly property var modelData: rowData
+                            id: accountTab
+                            objectName: "accountTab_" + modelData.id
+                            readonly property var pipeline: accountProgress.view(modelData.id)
+                            readonly property color hue: Qt.color(Theme.accountColor(modelData.id))
+                            property int reviewCount: (modelData.inbox_review_count ?? modelData.unread_conversation_count) || 0
+                            readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
+                            readonly property real naturalWidth: 6 + 18 + 8 + accountName.implicitWidth
+                                + (badgeText.length ? accountCount.implicitWidth + 8 : 0) + 10
+                            readonly property color ink: selected || hovered ? Theme.text : Theme.inkAlpha(.5)
+                            Accessible.description: pipeline.status
+                            text: modelData.name
+                            height: 30; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 760))
+                            leftPadding: 6; rightPadding: 10; topPadding: 0; bottomPadding: 0; radius: 6
+                            selected: backend.account === modelData.id
+                            Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
+                            onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
+                            onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
+                            onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
+                            onHoveredChanged: {
+                                if (hovered) { const point = mapToItem(Overlay.overlay, 0, height + 8); accountTip.show(modelData, point.x, point.y) }
+                                else if (accountTip.account === modelData.id) accountTip.close()
+                            }
+                            onClicked: { accountTip.close(); backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
+                            background: Rectangle {
+                                radius: 6
+                                color: accountTab.selected ? Theme.bg4 : accountTab.hovered ? Theme.inkAlpha(.05) : "transparent"
+                                border.width: accountTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder
+                            }
+                            contentItem: Row {
+                                spacing: 8
+                                Item {
+                                    objectName: "accountTabBadge_" + accountTab.modelData.id
+                                    anchors.verticalCenter: parent.verticalCenter; width: 18; height: 18
                                     Rectangle {
-                                        border.width: accountTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder
-                                        anchors.fill: parent; radius: 4; color: "transparent"
+                                        objectName: "accountBadgeLetter"
+                                        anchors.fill: parent; radius: 5
+                                        color: Theme.withAlpha(accountTab.hue, accountTab.selected ? .24 : .1)
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: accountTab.modelData.name.trim().charAt(0).toUpperCase()
+                                            color: accountTab.selected ? accountTab.hue : Theme.withAlpha(accountTab.hue, .6)
+                                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium
+                                        }
                                     }
+                                    // A 6px dot in a 2px ring of the bar colour, on the tile's
+                                    // top-right corner. It pulses at 12.5 frames a second rather
+                                    // than every frame (syncing can last for days) and rests
+                                    // while the app is in the back.
                                     Rectangle {
-                                        objectName: "accountTabTrack_" + accountTab.modelData.id
-                                        x: 8; width: parent.width - 16; y: parent.height - 2; height: 2; radius: 1; clip: true
-                                        color: !accountTab.pipeline.busy ? "transparent" : accountTab.selected ? Theme.withAlpha(accountTab.hue, .35) : Theme.inkAlpha(.1)
-                                        Rectangle {
-                                            id: underline
-                                            objectName: "accountTabUnderline_" + accountTab.modelData.id
-                                            // A gentle 1.6 s pulse. Syncing can last for days, so it
-                                            // steps at 12.5 frames a second rather than repainting the
-                                            // window every frame, and rests while the app is in the back.
-                                            property real phase: 0
-                                            height: 2; radius: 1
-                                            width: parent.width * (accountTab.pipeline.busy ? Math.max(.04, Math.min(1, accountTab.pipeline.progress || 0)) : 1)
-                                            color: accountTab.pipeline.busy ? accountTab.pipeline.progressColor : accountTab.selected ? accountTab.hue : "transparent"
-                                            opacity: accountTab.pipeline.busy ? .65 + .35 * Math.cos(phase * 2 * Math.PI) : 1
-                                            Behavior on width { NumberAnimation { duration: 500; easing.type: Easing.Linear } }
-                                            Behavior on color { ColorAnimation { duration: 200 } }
-                                            Timer {
-                                                interval: 80; repeat: true
-                                                running: accountTab.pipeline.busy === true && Qt.application.state === Qt.ApplicationActive
-                                                onTriggered: underline.phase = (underline.phase + 0.05) % 1
-                                            }
+                                        id: statusDot
+                                        objectName: "accountStatusDot_" + accountTab.modelData.id
+                                        readonly property bool failed: accountTab.pipeline.err === true
+                                        readonly property bool busy: !failed && accountTab.pipeline.busy === true
+                                        property real phase: 0
+                                        visible: failed || busy
+                                        x: parent.width - width + 4; y: -4; width: 10; height: 10; radius: 5
+                                        color: failed ? Theme.error : accountTab.pipeline.progressColor
+                                        border.width: 2; border.color: Theme.canvas
+                                        opacity: busy ? .65 + .35 * Math.cos(phase * 2 * Math.PI) : 1
+                                        Timer {
+                                            interval: 80; repeat: true
+                                            running: statusDot.busy && Qt.application.state === Qt.ApplicationActive
+                                            onTriggered: statusDot.phase = (statusDot.phase + 0.05) % 1
                                         }
                                     }
                                 }
-                                contentItem: Row {
-                                    id: accountContent
-                                    spacing: 7
-                                    Item {
-                                        objectName: "accountTabBadge_" + accountTab.modelData.id
-                                        anchors.verticalCenter: parent.verticalCenter; width: 18; height: 18
-                                        Rectangle {
-                                            objectName: "accountBadgeLetter"
-                                            anchors.fill: parent; radius: 4
-                                            color: Theme.withAlpha(accountTab.hue, accountTab.selected ? .24 : .1)
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: accountTab.modelData.name.trim().charAt(0).toUpperCase()
-                                                color: accountTab.selected ? accountTab.hue : Theme.withAlpha(accountTab.hue, .6)
-                                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10); font.weight: Font.DemiBold
-                                            }
-                                        }
-                                        // Disconnected: a 6px red dot in a 2px ring of the bar colour.
-                                        Rectangle {
-                                            objectName: "accountBadgeError"
-                                            visible: accountTab.pipeline.err === true
-                                            x: parent.width - 6; y: -4; width: 10; height: 10; radius: 5; color: Theme.error
-                                            border.width: 2; border.color: Theme.canvas
-                                        }
-                                    }
-                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 18 - 7 - (accountTab.badgeText.length ? accountCount.implicitWidth + 7 : 0)); elide: Text.ElideRight; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } Behavior on color { ColorAnimation { duration: 150 } } }
-                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
-                                }
+                                Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text.toLowerCase(); width: Math.max(0, accountTab.availableWidth - 18 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+                                Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} } }
                             }
                         }
                     }
                 }
             }
             RowLayout {
-                Layout.fillWidth: true; spacing: 12
+                Layout.fillWidth: true; spacing: 8
                 Item { Layout.fillWidth: true; Layout.minimumWidth: 0 }
                 FmButton {
                     id: syncButton
@@ -389,9 +391,11 @@ ApplicationWindow {
                     // Icon plus time only; the tooltip carries the full state.
                     text: blocked || (syncState.active && !calendarGranted && progress.mail === "paused") ? "Retry"
                         : syncing ? "Syncing" : mailGranted && syncedAgo.length ? syncedAgo.replace(" ago", "") : "Sync"
-                    iconName: "refresh"; iconSize: 13
-                    height: 32; radius: 6; leftPadding: 10; rightPadding: 10; font.pointSize: Theme.fontPoints(12)
-                    foreground: hovered && enabled ? Theme.text : Theme.inkAlpha(.55)
+                    iconName: "refresh"; iconSize: 11
+                    height: 30; implicitHeight: 30; radius: 6; leftPadding: 10; rightPadding: 10; topPadding: 0; bottomPadding: 0
+                    font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}; hoverBrightness: 1
+                    foreground: hovered && enabled ? Theme.text : Theme.inkAlpha(.5)
+                    background: Rectangle { radius: 6; color: syncButton.hovered && syncButton.enabled ? Theme.inkAlpha(.05) : "transparent"; border.width: syncButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
                     enabled: backend.connected && !backend.syntheticProfile && !syncState.changing
                         && (mailGranted || calendarGranted) && !accountRow.read_only
                     Accessible.name: syncing ? "Syncing" : mailGranted && syncedAgo.length ? "Synced " + syncedAgo : text
@@ -404,13 +408,14 @@ ApplicationWindow {
                 }
                 Rectangle {
                     id: searchBox; objectName: "searchBox"
-                    Layout.preferredWidth: 320; Layout.minimumWidth: 128; Layout.maximumWidth: 320
-                    Layout.fillWidth: true; implicitHeight: 32
+                    Layout.preferredWidth: 300; Layout.minimumWidth: 140; Layout.maximumWidth: 300
+                    Layout.fillWidth: true; implicitHeight: 30
                     color: Theme.surface; radius: 6
-                    border.color: window.searchPopupOpen || search.activeFocus ? Theme.focusBorder : Theme.line
+                    border.color: window.searchPopupOpen || search.activeFocus ? Theme.line3 : Theme.line
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
                     RowLayout {
-                        anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 10
-                        FmIcon { name: "search"; size: 14; color: Theme.subtle }
+                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8
+                        FmIcon { name: "search"; size: 12; color: Theme.inkAlpha(.5) }
                         TextField {
                             ContextMenu.menu: null
                             TextMenuHandler {}
@@ -418,7 +423,7 @@ ApplicationWindow {
                             Layout.fillWidth: true; padding: 0
                             placeholderText: window.workspace === "calendar" ? "Search events" : "Search " + (backend.currentAccount.name || "mail") + (backend.folder === "sent" ? " sent" : backend.folder === "drafts" ? " drafts" : "")
                             color: Theme.text; placeholderTextColor: Theme.faint
-                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); selectByMouse: true
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); selectByMouse: true
                             text: window.workspace === "calendar" ? backend.calendarSearchQuery : backend.query
                             onTextEdited: {
                                 window.settingsOpen = false
@@ -438,30 +443,41 @@ ApplicationWindow {
                             background: Item { }
                             Accessible.name: window.workspace === "calendar" ? "Search saved calendar events" : "Search current mailbox"
                         }
-                        FmButton { visible: search.text.length > 0; iconName: "close"; iconSize: 12; implicitWidth: 12; implicitHeight: 20; leftPadding: 0; rightPadding: 0; tip: "Clear search"; onClicked: { if (window.workspace === "calendar") backend.calendarSearchQuery = ""; else backend.query = "" } }
+                        FmButton {
+                            objectName: "clearSearch"
+                            visible: search.text.length > 0; text: "clear"; implicitHeight: 20; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                            font.pointSize: Theme.fontPoints(12); hoverBrightness: 1
+                            foreground: hovered ? Theme.text : Theme.inkAlpha(.5); background: Item {}
+                            tip: "Clear search"
+                            onClicked: { if (window.workspace === "calendar") backend.calendarSearchQuery = ""; else backend.query = "" }
+                        }
                         Rectangle {
-                            implicitWidth: shortcutLabel.implicitWidth + 10; implicitHeight: 19; radius: 3; color: "transparent"; border.color: Theme.line
-                            Text { id: shortcutLabel; anchors.centerIn: parent; text: window.commandKey + "K"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); color: Theme.faint }
+                            implicitWidth: shortcutLabel.implicitWidth + 10; implicitHeight: 18; radius: 4; color: Theme.inkAlpha(.07)
+                            Text { id: shortcutLabel; anchors.centerIn: parent; text: window.commandKey + "K"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); color: Theme.inkAlpha(.5) }
                         }
                     }
                 }
-                // Sits in the same tray as the Mail / Calendar switch.
-                Rectangle {
-                    implicitWidth: settingsButton.width + 4; implicitHeight: 32
-                    radius: 6; color: Theme.surface
-                    FmButton {
-                        id: settingsButton
-                        objectName: "settingsButton"
-                        anchors.centerIn: parent
-                        width: 32; height: 28; leftPadding: 0; rightPadding: 0; iconName: "settings"; iconSize: 14; radius: 4
-                        prominent: window.settingsOpen
-                        foreground: prominent ? Theme.canvas : Theme.muted
-                        tip: "Settings — ,"; Accessible.name: "Settings"
-                        onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings")
-                    }
+                FmButton {
+                    id: settingsButton
+                    objectName: "settingsButton"
+                    width: 30; height: 30; implicitWidth: 30; implicitHeight: 30; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                    iconName: "settings"; iconSize: 14; radius: 6; hoverBrightness: 1
+                    prominent: window.settingsOpen
+                    foreground: prominent ? Theme.canvas : hovered ? Theme.text : Theme.inkAlpha(.5)
+                    background: Rectangle { radius: 6; color: settingsButton.prominent ? Theme.text : settingsButton.hovered ? Theme.inkAlpha(.05) : "transparent"; border.width: settingsButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                    tip: "Settings — " + ShortcutRegistry.label(ShortcutRegistry.sequence("settings", backend.preferences)).toLowerCase(); Accessible.name: "Settings"
+                    onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings")
                 }
             }
         }
+    }
+    // The shortcut bar along the bottom: the current view's keys at the
+    // left, the ones that work everywhere at the right. Settings → General
+    // hides it.
+    footer: KeyHints {
+        objectName: "keyHints"
+        visible: (backend.preferences || {}).key_hints !== false
+        view: window.settingsOpen ? "settings" : window.workspace
     }
     ColumnLayout {
         id: workspaceLayer

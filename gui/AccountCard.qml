@@ -86,7 +86,7 @@ Rectangle {
             objectName: meter.countName
             text: meter.stage.count || ""
             Layout.preferredWidth: 136; Layout.maximumWidth: 136; elide: Text.ElideRight
-            color: Theme.inkAlpha(.85); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5); features: {"tnum": 1} }
+            color: Theme.inkAlpha(.85); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} }
             HoverHandler { id: countHover }
             FmToolTip { shown: countHover.hovered && !!meter.stage.countTitle; text: meter.stage.countTitle || "" }
         }
@@ -119,7 +119,7 @@ Rectangle {
             // Its full width; the bar takes what is left and gives way first.
             Layout.preferredWidth: implicitWidth; Layout.minimumWidth: 0; elide: Text.ElideRight
             color: meter.stage.live ? Theme.inkAlpha(.78) : Theme.inkAlpha(.5)
-            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} }
+            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); features: {"tnum": 1} }
         }
     }
     component StageLabel: RowLayout {
@@ -135,7 +135,7 @@ Rectangle {
             opacity: 1
             SequentialAnimation on opacity { running: stageLabel.live; loops: Animation.Infinite; NumberAnimation { to: .35; duration: 700 } NumberAnimation { to: 1; duration: 700 } }
         }
-        Text { text: stageLabel.text; color: stageLabel.textColor; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } Layout.fillWidth: true; elide: Text.ElideRight }
+        Text { text: stageLabel.text; color: stageLabel.textColor; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } Layout.fillWidth: true; elide: Text.ElideRight }
     }
     component StageRow: Rectangle {
         id: stageRow
@@ -169,7 +169,7 @@ Rectangle {
         property string text: "Edit"
         property bool lit: false
         spacing: 4
-        Text { text: parent.text; color: parent.lit ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } anchors.verticalCenter: parent.verticalCenter }
+        Text { text: parent.text; color: parent.lit ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } anchors.verticalCenter: parent.verticalCenter }
         FmIcon { name: "next"; size: 10; color: parent.lit ? Theme.text : Theme.inkAlpha(.75); anchors.verticalCenter: parent.verticalCenter }
     }
 
@@ -192,7 +192,7 @@ Rectangle {
                 contentItem: Text {
                     text: card.modelData.name.trim().split(/\s+/).map(n => n.slice(0, 1)).slice(0, 2).join("").toUpperCase()
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                    color: card.hue; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); weight: Font.Medium }
+                    color: card.hue; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium }
                 }
                 Accessible.name: "Account colour"
                 FmToolTip { shown: avatar.hovered; text: "Account colour" }
@@ -202,20 +202,20 @@ Rectangle {
                 Text {
                     objectName: "accountName_" + card.accountId
                     text: card.modelData.name; textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight
-                    color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15); weight: Font.Medium }
+                    color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14); weight: Font.Medium }
                 }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 6
                     FmIcon { name: "google"; size: 12; color: Theme.inkAlpha(.5); visible: !backend.syntheticProfile }
-                    Text { text: card.modelData.email; color: Theme.inkAlpha(.5); font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; textFormat: Text.PlainText }
+                    Text { text: card.modelData.email; color: Theme.inkAlpha(.5); font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; textFormat: Text.PlainText }
                     // Local Retention, changed through Edit…; mail past it is still in Google.
                     Rectangle {
                         id: retentionBadge
                         objectName: "accountRetention_" + card.accountId
                         readonly property string period: ({"1_month": "1 month", "3_months": "3 months", "90_days": "90 days", "1_year": "1 year", "2_years": "2 years", "5_years": "5 years"})[card.modelData.mail_retention || "all"] || ""
-                        implicitWidth: retentionText.implicitWidth + 12; implicitHeight: 16; radius: 3
+                        implicitWidth: retentionText.implicitWidth + 12; implicitHeight: 16; radius: 5
                         color: "transparent"; border.width: Theme.ruleWidth; border.color: Theme.controlBorder
-                        Text { id: retentionText; anchors.centerIn: parent; text: retentionBadge.period ? "Keeps " + retentionBadge.period : "Keeps everything"; color: Theme.inkAlpha(.6); font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText }
+                        Text { id: retentionText; anchors.centerIn: parent; text: retentionBadge.period ? "Keeps " + retentionBadge.period : "Keeps everything"; color: Theme.inkAlpha(.6); font.pointSize: Theme.fontPoints(10.5); textFormat: Text.PlainText }
                         HoverHandler { id: retentionHover }
                         FmToolTip { shown: retentionHover.hovered; text: retentionBadge.period ? "Mail older than " + retentionBadge.period + " is removed from this machine · still in Google" : "All mail is kept on this machine" }
                     }
@@ -239,7 +239,7 @@ Rectangle {
                 Text {
                     id: statusText
                     text: statusLine.phase === "archived" ? "Archived" : statusLine.phase === "local" ? "Local copy" : card.pipeline.status || ""
-                    color: statusLine.tone; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5); features: {"tnum": 1} }
+                    color: statusLine.tone; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} }
                     TapHandler { enabled: statusLine.phase === "err"; onTapped: card.host.reconnect(card.modelData) }
                     HoverHandler { enabled: statusLine.phase === "err"; cursorShape: Qt.PointingHandCursor }
                 }
@@ -283,7 +283,7 @@ Rectangle {
             Text {
                 objectName: "accountLabels_" + card.accountId
                 text: card.labelNames.length ? card.labelNames.slice(0, 4).join(", ") + (card.labelNames.length > 4 ? " +" + (card.labelNames.length - 4) : "") : "No labels yet"
-                Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+                Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
             }
             EditCue { lit: labelsRow.actionHovered }
         }
@@ -299,7 +299,7 @@ Rectangle {
                 objectName: "accountSignature_" + card.accountId
                 text: signatureRow.signature.length ? signatureRow.signature.split("\n").map(line => line.trim()).filter(line => line.length).join(" · ") : "None"
                 Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
-                color: signatureRow.signature.length ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+                color: signatureRow.signature.length ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
             }
             EditCue { text: signatureRow.signature.length ? "Edit" : "Add"; lit: signatureRow.actionHovered }
         }
@@ -319,7 +319,7 @@ Rectangle {
                     hoverEnabled: true
                     anchors.verticalCenter: parent.verticalCenter
                     onClicked: card.host.selectPage("Local LLM")
-                    contentItem: Text { text: "Set up"; verticalAlignment: Text.AlignVCenter; color: setUp.hovered ? Theme.text : Theme.ai; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+                    contentItem: Text { text: "Set up"; verticalAlignment: Text.AlignVCenter; color: setUp.hovered ? Theme.text : Theme.ai; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
                     background: null
                 }
                 AbstractButton {
@@ -343,7 +343,7 @@ Rectangle {
                     }
                     contentItem: Row {
                         spacing: 5
-                        Text { text: "Catch up"; color: Theme.ai; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: "Catch up"; color: Theme.ai; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } anchors.verticalCenter: parent.verticalCenter }
                         FmIcon { name: "chevronDown"; size: 9; color: Theme.withAlpha(Theme.ai, .7); anchors.verticalCenter: parent.verticalCenter }
                     }
                     HoverHandler { id: catchUpHover }
@@ -354,7 +354,7 @@ Rectangle {
                         y: catchUp.height + 6; x: catchUp.width - width; width: 280; padding: 5
                         readonly property var stats: card.analysis ? card.analysis.stats[card.accountId] || {} : {}
                         readonly property real perMessage: Number((card.progress.analysis[card.accountId] || {}).seconds_per_message || 0)
-                        Label { width: parent.width; leftPadding: 10; rightPadding: 10; topPadding: 6; bottomPadding: 6; text: "Summarize & label older mail from…"; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(12) }
+                        Label { width: parent.width; leftPadding: 10; rightPadding: 10; topPadding: 6; bottomPadding: 6; text: "Summarize & label older mail from…"; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11.5) }
                         Repeater {
                             model: [{key: "week", label: "Last week"}, {key: "month", label: "Last month"}, {key: "year", label: "Last year"}, {key: "all", label: "All"}]
                             MenuItem {
@@ -370,19 +370,19 @@ Rectangle {
                                 }
                                 contentItem: RowLayout {
                                     spacing: 12
-                                    Text { text: rangeOption.modelData.key === "all" ? "All " + (card.progress ? card.progress.fmtN(modelRow.ai.unprocessed) : "") + " unprocessed" : rangeOption.modelData.label; color: rangeOption.enabled ? Theme.text : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true }
+                                    Text { text: rangeOption.modelData.key === "all" ? "All " + (card.progress ? card.progress.fmtN(modelRow.ai.unprocessed) : "") + " unprocessed" : rangeOption.modelData.label; color: rangeOption.enabled ? Theme.text : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true }
                                     Text {
                                         text: rangeOption.count === undefined ? "…" : !rangeOption.count ? "—"
                                             : card.progress.fmtN(rangeOption.count) + (catchUpMenu.perMessage > 0 ? " · " + card.progress.shortEta(rangeOption.count * catchUpMenu.perMessage) : "")
-                                        color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
+                                        color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}
                                     }
                                 }
-                                background: Rectangle { color: rangeOption.highlighted ? Theme.hover : "transparent"; radius: 4 }
+                                background: Rectangle { color: rangeOption.highlighted ? Theme.hover : "transparent"; radius: 5 }
                             }
                         }
                         MenuSeparator { contentItem: Rectangle { implicitHeight: 1; color: Theme.line } }
-                        Label { width: parent.width; padding: 10; text: "Runs in the background · already processed mail is skipped"; wrapMode: Text.Wrap; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(12) }
-                        background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
+                        Label { width: parent.width; padding: 10; text: "Runs in the background · already processed mail is skipped"; wrapMode: Text.Wrap; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11.5) }
+                        background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 8 }
                     }
                 }
                 Repeater {
@@ -398,7 +398,7 @@ Rectangle {
                         enabled: backend.connected && !(card.policy && card.policy.saving)
                         onClicked: modelRow.ai.modelReady ? card.policy.change(card.accountId, {[modelData.key]: !on}) : card.host.selectPage("Local LLM")
                         background: Rectangle { radius: height / 2; color: chip.on ? Theme.withAlpha(Theme.ai, .12) : "transparent"; border.color: chip.hovered ? Theme.ai : chip.on ? Theme.withAlpha(Theme.ai, .5) : Theme.line2 }
-                        contentItem: Text { text: chip.modelData.label; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; color: chip.on ? Theme.ai : Theme.inkAlpha(.4); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+                        contentItem: Text { text: chip.modelData.label; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; color: chip.on ? Theme.ai : Theme.inkAlpha(.4); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
                         Accessible.role: Accessible.CheckBox; Accessible.checked: on; Accessible.name: modelData.title
                         FmToolTip { shown: chip.hovered; text: chip.modelData.title + (chip.on ? " · on" : " · off") }
                     }
@@ -421,14 +421,14 @@ Rectangle {
         Text {
             visible: text.length > 0; Layout.fillWidth: true; Layout.margins: 18; Layout.topMargin: 10; Layout.bottomMargin: 10
             text: (card.analysis ? card.analysis.errors[card.accountId] || "" : "") || (card.policy && card.policy.status.length && card.policy.statusAccount === card.accountId ? card.policy.status : "")
-            color: Theme.error; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText
+            color: Theme.error; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; textFormat: Text.PlainText
         }
         // A removed account keeps a read-only archive until it is deleted or restored.
         ColumnLayout {
             visible: !backend.syntheticProfile && (card.archived || (card.removal.status || "").length > 0); Layout.fillWidth: true; Layout.margins: 18; spacing: 8
-            Text { visible: card.archived; text: "Your saved mail, drafts and history remain available in a read-only archive."; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(12.5) }
-            Text { visible: card.cleanup.state !== undefined; text: "Local credential cleanup: " + (card.cleanup.state || "") + (card.cleanup.code ? " · " + card.cleanup.code : ""); color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
-            Text { visible: (card.removal.status || "").length > 0; text: card.removal.status || ""; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
+            Text { visible: card.archived; text: "Your saved mail, drafts and history remain available in a read-only archive."; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(12) }
+            Text { visible: card.cleanup.state !== undefined; text: "Local credential cleanup: " + (card.cleanup.state || "") + (card.cleanup.code ? " · " + card.cleanup.code : ""); color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
+            Text { visible: (card.removal.status || "").length > 0; text: card.removal.status || ""; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
             Flow {
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "openAccountArchive_" + card.accountId; text: "Open archive"; visible: card.archived; outlined: true; onClicked: card.host.openArchive(card.accountId) }

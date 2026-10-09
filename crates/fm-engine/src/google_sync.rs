@@ -744,6 +744,19 @@ impl Runtime {
                 .send_modify(|generation| *generation = generation.wrapping_add(1));
         }
     }
+    /// Wakes the account's running sync job after a category was linked to a
+    /// Gmail label, so its label worker applies the rest of the link's
+    /// projection without waiting for the next catalog refresh.
+    pub(crate) async fn category_linked(&self, account: &str) {
+        let state = self.state.lock().await;
+        if let Some(job) = state.jobs.get(account) {
+            if !job.cancel.is_cancelled() {
+                job.context
+                    .refresh
+                    .send_modify(|generation| *generation = generation.wrapping_add(1));
+            }
+        }
+    }
     /// Creates the runtime with [`GMAIL_PREPARATION_SLOTS`] Gmail and two
     /// Calendar preparation slots shared by all accounts. `cancel` is the
     /// engine's shutdown token.

@@ -87,6 +87,7 @@ public:
     else if(targets[params["job_id"].toString()].toMap()["sample"].toBool())
      result={{"status","completed"},{"items",QVariantList{QVariantMap{{"task","message"},{"sample",true},{"output",QVariantMap{{"summary","The Frankfurt racks move on Thursday."},{"sender_kind","human"}}},
       {"metrics",QVariantMap{{"first_token_ms",420},{"total_ms",1830},{"tokens_per_second",41.5},{"output_tokens",62}}}}}}};
+    else if(targets[params["job_id"].toString()].toMap()["task"]=="thread"){const auto conversation=targets[params["job_id"].toString()].toMap()["conversation_id"].toString();auto item=summary(conversation);item["task"]="thread";completedItems["thread:"+conversation]=item;result={{"status","completed"}};}
     else {const auto target=targets[params["job_id"].toString()].toMap()["message_id"].toString();if(!target.isEmpty())completedItems[target]=summary(target);result={{"status","completed"}};}
     if(delayPoll){polls.push_back([this,ticket,method,result,ok]{emit assistanceReply(ticket,method,result,ok);});return;}
    }
@@ -296,12 +297,21 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  bool cachedPaint=false;const auto paintConnection=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{cachedPaint=true;},Qt::QueuedConnection);window->requestUpdate();await([&]{return cachedPaint;});QObject::disconnect(paintConnection);
  const auto cachedHeight=cached->height();require(!cached->property("heightAnimating").toBool(),"cached summary does not start a height animation");require(cached->property("summaryText").toString()==backend.summaryText && !cached->property("motionReady").toBool(),"cached result is immediately visible without animation");
  settle();require(qAbs(cachedHeight-cached->height())<0.5,"saved summary has no delayed height growth");
+ // A thread summary asks for the whole conversation, not one message, and comes back as its own result.
+ settle();backend.delayPoll=true;invokeStart("thread","");await([&]{return !backend.polls.empty();});
+ {QVariant working,messageWorking;QMetaObject::invokeMethod(controller,"workingOn",Q_RETURN_ARG(QVariant,working),Q_ARG(QVariant,QString("thread")),Q_ARG(QVariant,QString("conversation")));QMetaObject::invokeMethod(controller,"workingOn",Q_RETURN_ARG(QVariant,messageWorking),Q_ARG(QVariant,QString("summary")),Q_ARG(QVariant,QString("conversation")));
+  require(working.toBool() && !messageWorking.toBool(),"a thread job is the thread's work alone");}
+ {const auto params=backend.targets["job-"+QString::number(backend.inferences)].toMap();require(params["task"]=="thread" && params["conversation_id"]=="conversation" && !params.contains("message_id"),"a thread summary names the conversation and no message");}
+ backend.flush(backend.polls);backend.delayPoll=false;await([&]{return !controller->property("busy").toBool();});settle();
+ {QVariant thread;QMetaObject::invokeMethod(controller,"resultFor",Q_RETURN_ARG(QVariant,thread),Q_ARG(QVariant,QString("thread")),Q_ARG(QVariant,QString("conversation")));
+  require(thread.toMap().value("output").toMap().value("summary")==backend.summaryText,"the thread summary is read back as the thread's result");}
+ backend.completedItems.remove("thread:conversation");
  // Geometry at narrow reader widths and every supported appearance, using production QML.
  const auto screenshots=qEnvironmentVariable("FM_ASSIST_SCREENSHOTS");if(!screenshots.isEmpty())QDir().mkpath(screenshots);
  for(const auto theme:{"graphite","paper","terminal"})for(const auto size:{"small","default","large"}){
   window->setWidth(480);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,QString(size)));QCoreApplication::processEvents();
   auto body=find(card,"summaryBody");require(body && body->width()<=card->width()-28 && body->width()>300,"summary fits narrow card");
-  require(card->height()>70 && card->height()<300,"compact summary card");
+  require(card->height()>40 && card->height()<300,"compact summary card");
   if(!screenshots.isEmpty() && QString(size)=="default"){window->setWidth(720);QCoreApplication::processEvents();QThread::msleep(30);QCoreApplication::processEvents();require(window->grabWindow().save(screenshots+"/summary-"+theme+".png"),"capture actual native frame");}
  }
  backend.summaryText=QString(600,'W');emit backend.conversationChanged();await([&]{return card->property("summaryText").toString().size()==600;});QCoreApplication::processEvents();require(find(card,"summaryBody")->width()<=card->width()-28 && card->height()>70,"long summary wraps within the padded full-width column");

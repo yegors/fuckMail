@@ -48,6 +48,7 @@ class MailSelectionTest {
         QList<Held> writes;
         QStringList methods;
         QJsonObject lastQuery;
+        QList<QJsonObject> assistStarts;
         QHash<QString,QJsonObject> attachments;
         QList<QJsonObject> remoteSearches;
         QVariantList rows;
@@ -131,6 +132,7 @@ class MailSelectionTest {
             backend.m_querySummary = {{"filtered_conversation_count",3},{"filtered_group_counts",QVariantMap{{"review",3}}}};
             engine.customRequest = [this](auto *peer, const auto &request) {
                 const auto method = request["method"].toString(); methods.append(method);
+                if (method == "assist_start") assistStarts.append(request["params"].toObject());
                 const auto draftId = request["params"].toObject()["draft_id"].toString(request["params"].toObject()["conversation_id"].toString());
                 if (method == "draft_discard" && drafts.contains(draftId)) {
                     auto draft = drafts[draftId]; draft["discarded"] = true; draft["body"] = "";
@@ -147,6 +149,8 @@ class MailSelectionTest {
                         result = listReply(lastQuery);
                     }
                     else if (method == "assist_results") result={{"items",QJsonArray{QJsonObject{{"task","summary"},{"target","a-original"},{"stale",false},{"partial",false},{"source_ids",QJsonArray{"a-original"}},{"schema",2},{"output",QJsonObject{{"summary","You granted Example Mail access to your account data. Review access if you did not authorize it."},{"source_ids",QJsonArray{"a-original"}}}},{"model",QJsonObject{{"name","gemma4:e4b"}}}}}}};
+                    else if (method == "assist_start") result={{"job_id","thread-job"},{"status","queued"}};
+                    else if (method == "assist_job") result={{"job_id","thread-job"},{"status","running"}};
                     else if (method == "assist_settings_get") result={{"revision",0},{"settings",QJsonObject{{"accounts",QJsonObject{}},{"model",QJsonObject{{"name","example.registry/team/a-very-long-qualified-model-name:large"},{"digest","synthetic"}}}}}};
                     else if (method == "message_source" && texts.contains(request["params"].toObject()["id"].toString().chopped(QString("-original").size()))) {
                         const auto params = request["params"].toObject();
@@ -565,10 +569,12 @@ class MailSelectionTest {
         settle();
         require(ids()==QStringList{"r3","h1","r1","r2","d1"} && unsplit(),("the last kept row stays above Delayed: "+ids().join(',')).toUtf8().constData());
         require(count("review")==1 && shownCount("mailGroup_review")==1 && shownCount("mailSectionEmpty_review")==0,"the last kept row shows To review 1, not 'All reviewed'");
-        // Every other row in a group is shaded, starting again in each group.
+        // A hairline divides rows, none above a group's first; no row is shaded.
         {
+            const auto rule=[&](const QString &id){ auto *item=find(window->contentItem(),"rowSeparator_"+id); require(item,"row separator exists"); return item->property("color").value<QColor>().alphaF(); };
             const auto shade=[&](const QString &id){ auto *item=find(window->contentItem(),"rowHighlight_"+id); require(item,"row highlight exists"); return item->property("color").value<QColor>().alphaF(); };
-            require(shade("r1")==0 && qAbs(shade("r2")-.028)<.005 && shade("d1")==0 && shade("h1")==0,"Done shades its second row; Delayed's first row is plain");
+            require(rule("r1")==0 && qAbs(rule("r2")-.07)<.005 && qAbs(rule("d1")-.07)<.005 && rule("h1")==0 && rule("r3")==0,"Done's later rows have a rule; each group's first row has none");
+            require(shade("r2")==0,"rows carry no alternating shade");
         }
         // Drafts in the corner follow Settings' Show/Hide.
         {
@@ -840,7 +846,7 @@ class MailSelectionTest {
         require(senderColumn->mapToScene(QPointF(senderColumn->width(),0)).x() < sourcePreview->mapToScene(QPointF()).x(),"sender column precedes subject/preview without overlap");
         {
             auto *avatar=shown(window->contentItem(),"mailAvatar_a");
-            require(avatar && qFuzzyCompare(avatar->width(),28.) && qAbs(senderColumn->mapToScene(QPointF()).x()-avatar->mapToScene(QPointF(avatar->width(),0)).x()-12)<.5,"a 28px sender avatar sits 12px before the sender column");
+            require(avatar && qFuzzyCompare(avatar->width(),24.) && qAbs(senderColumn->mapToScene(QPointF()).x()-avatar->mapToScene(QPointF(avatar->width(),0)).x()-16)<.5,"a 24px sender avatar sits 16px before the sender column");
             require(avatar->property("initials").toString()=="S" && !avatar->property("imageShown").toBool() && avatar->property("sourceLabel").toString()==QString::fromUtf8("No photo · initials"),"a synthetic profile shows initials and asks for no picture");
         }
         summaryRow["recipient"]="teammate@example.test";h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
@@ -848,7 +854,6 @@ class MailSelectionTest {
         await([&]{auto recipient=find(window->contentItem(),"mailRecipient_a"), item=find(window->contentItem(),"mailPreview_a");return recipient && recipient->isVisible() && recipient->property("text").toString()=="To teammate@example.test" && item && item->property("text").toString().startsWith("· ");},"Sent preview identifies its recipient");
         require(!find(window->contentItem(),"mailSenderColumn_a")->isVisible() && !find(window->contentItem(),"mailAvatar_a")->isVisible(),"Sent retains the prototype subject/recipient arrangement");
         h.backend.m_folder="inbox";emit h.backend.queryChanged();
-        require(!find(window->contentItem(),"threadSummary") && !find(window->contentItem(),"summarizeConversation"),"no redundant thread summary surface");
         summaryRow.remove("summary");h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         await([&]{auto item=find(window->contentItem(),"mailPreview_a");return item && item->property("text").toString().contains("Original body preview");},"missing summary falls back to source text");
         require(!find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"source preview has no assistance icon");
@@ -971,7 +976,7 @@ class MailSelectionTest {
         auto lastMessage=firstMessage; lastMessage["id"]="last"; lastMessage["sent_at"]="2026-09-16T11:24:00Z"; lastMessage["text"]="Final release notes are ready. Ships Tuesday morning; the changelog follows an hour later.\n\nOn Tuesday, Alex <alex@example.test> wrote:\n> Earlier reply\n>> Oldest reply"; lastMessage["starred"]=true;
         auto metadata=toSelf; metadata.append(QVariantMap{{"label","Cc"},{"people",QVariantList{QVariantMap{{"name","Team"},{"email","team@example.test"}}}}}); lastMessage["metadata"]=metadata;
         h.backend.m_conversation={{"id","a"},{"subject","Router firmware 1.8 — release notes"},{"categories",QVariantList{QVariantMap{{"id","apps"},{"name","Apps"}}}},{"messages",QVariantList{firstMessage,selfMessage,lastMessage}}};
-        emit h.backend.conversationChanged(); mail->setProperty("expanded",true);
+        emit h.backend.conversationChanged();
         QMetaObject::invokeMethod(mail,"toggleMember",Q_ARG(QVariant,QString("first")),Q_ARG(QVariant,0));
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("first")));
         layout.restart();while(layout.elapsed()<160)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
@@ -989,10 +994,11 @@ class MailSelectionTest {
                 auto date=find(window->contentItem(),QString("messageShortDate_")+id);
                 auto chevron=find(window->contentItem(),QString("toggleMessage_")+id);
                 require(header && menu && date && chevron,"single-line header controls exist");
-                require(qAbs(header->height()-44)<1,"expanded header remains exactly 44 pixels");
-                require(qAbs(menu->height()-26)<1 && qAbs(chevron->height()-26)<1,"borderless header controls remain 26 pixels");
-                require(date->mapToScene({date->width(),0}).x()<menu->mapToScene({0,0}).x() && menu->mapToScene({menu->width(),0}).x()<chevron->mapToScene({0,0}).x(),"time, menu, chevron order matches design");
-                require(qAbs(chevron->mapToItem(header,{chevron->width(),0}).x()-header->width())<1,"chevron ends at reader right edge");
+                require(qAbs(header->height()-40)<1,"the header row is exactly 40 pixels");
+                require(qAbs(menu->height()-26)<1,"borderless header controls remain 26 pixels");
+                require(menu->mapToScene({menu->width(),0}).x()<date->mapToScene({0,0}).x(),"actions come before the time");
+                require(qAbs(date->mapToItem(header,{date->width(),0}).x()-header->width())<1,"the time ends at the reader's right edge");
+                require(chevron->mapToItem(header,{chevron->width(),0}).x()<=.5,"the caret sits in the left gutter");
             }
         };
         verifyDateMenu();
@@ -1105,12 +1111,9 @@ class MailSelectionTest {
         move(heading->mapToScene({heading->width()/2,heading->height()/2}));
         layout.restart();while(layout.elapsed()<260)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         require(!popup(),"empty expanded header area is not a contact target");
-        click(window,heading,Qt::LeftButton);
-        layout.restart();while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
-        require(find(window->contentItem(),"messageBody_first") && find(window->contentItem(),"messageBody_first")->isVisible(),"clicking an open header leaves it open, so its text can be selected");
         require(find(window->contentItem(),"messageSenderAddress_first") && find(window->contentItem(),"messageSenderAddress_first")->property("selectByMouse").toBool(),"an open header's address is selectable");
-        click(window,find(window->contentItem(),"toggleMessage_first"),Qt::LeftButton);
-        await([&]{auto body=find(window->contentItem(),"messageBody_first");return !body || !body->isVisible();},"the chevron collapses an earlier message");
+        click(window,heading,Qt::LeftButton);
+        await([&]{auto body=find(window->contentItem(),"messageBody_first");return !body || !body->isVisible();},"a click on an open header closes it");
         require(!heading->property("visualFocus").toBool(),"a mouse click leaves no focus outline");
         heading->forceActiveFocus();
         QKeyEvent expandDown(QEvent::KeyPress,Qt::Key_Space,Qt::NoModifier), expandUp(QEvent::KeyRelease,Qt::Key_Space,Qt::NoModifier);
@@ -1128,10 +1131,21 @@ class MailSelectionTest {
         QMetaObject::invokeMethod(popup(),"close"); move({5,5});
         click(window,find(window->contentItem(),"toggleMessage_self"),Qt::LeftButton);
         await([&]{auto body=find(window->contentItem(),"messageBody_self");return !body || !body->isVisible();},"expanded sent message collapses through its visible control");
-        click(window,find(window->contentItem(),"earlierMessagesButton"),Qt::LeftButton);
-        await([&]{auto header=find(window->contentItem(),"messageHeading_first");return !header || !header->isVisible();},"earlier-message group hides again");
-        click(window,find(window->contentItem(),"earlierMessagesButton"),Qt::LeftButton);
-        await([&]{auto header=find(window->contentItem(),"messageHeading_first");return header && header->isVisible();},"earlier-message group reopens");
+        for (const auto &id: {"first","self","last"}) require(find(window->contentItem(),QString("messageHeading_")+id)->isVisible(),"every message in the thread is listed");
+        {
+            // A thread of several messages offers a summary of the whole thread.
+            auto *summarize=find(window->contentItem(),"summarizeConversation");
+            await([&]{return summarize && summarize->isVisible() && summarize->isEnabled();},"the thread summary button shows for a multi-message thread");
+            QMetaObject::invokeMethod(summarize,"clicked");
+            await([&]{return !h.assistStarts.isEmpty();},"the thread summary starts");
+            const auto params=h.assistStarts.last();
+            require(params["task"]=="thread" && params["conversation_id"]=="a" && !params.contains("message_id"),"it asks for the whole conversation, not one message");
+            auto *box=find(window->contentItem(),"threadSummary");
+            await([&]{return box && box->isVisible();},"the thread summary box shows while it works");
+            QMetaObject::invokeMethod(box,"cancelRequested");
+            await([&]{return h.methods.contains("assist_cancel");},"closing the work cancels the job");
+            QMetaObject::invokeMethod(mail,"showThreadSummary",Q_ARG(QVariant,false));
+        }
         const auto readerCapture=qEnvironmentVariable("FM_READER_CAPTURE");
         if(!readerCapture.isEmpty()){layout.restart();while(layout.elapsed()<160)QCoreApplication::processEvents(QEventLoop::AllEvents,10);require(window->grabWindow().save(readerCapture),"prototype reader frame");}
         for(const auto &theme: {"paper","terminal","graphite"}) {
@@ -1187,7 +1201,6 @@ class MailSelectionTest {
             const auto key=mail->property("expansionKey").toString();
             mail->setProperty("expandedMembers",QVariantMap{{key+"above",true},{key+"photo",false}});
             h.backend.m_conversation={{"id","a"},{"subject","Attachment preview"},{"revision",3},{"messages",QVariantList{above,photo}}}; emit h.backend.conversationChanged();
-            mail->setProperty("expanded",true);
             auto *reader=find(window->contentItem(),"reader"); require(reader,"reader"); reader->setProperty("contentY",0);
             layout.restart();while(layout.elapsed()<250)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
             // Opened under the long message, its cards lay out below the reader.
@@ -1366,7 +1379,7 @@ class MailSelectionTest {
                 const auto menuShown=[&]{auto item=find(window->contentItem(),"spamScopeButton");return item&&item->isVisible();};
                 const auto settle=[&]{QElapsedTimer t;t.start();while(t.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);};
                 click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); await(menuShown,"the menu opens");
-                click(window,find(window->contentItem(),"scopeStatCount"),Qt::LeftButton); settle();
+                click(window,find(window->contentItem(),"scopeStat"),Qt::LeftButton); settle();
                 require(!menuShown(),"a press outside closes the Spam and Trash menu");
                 click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); await(menuShown,"the menu opens again");
                 click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton); settle();
@@ -1391,7 +1404,7 @@ class MailSelectionTest {
                 require(h.methods.count("google_spam_list")==lists && h.backend.conversations().size()==1,"a sync refresh neither reloads nor clears Spam");
             }
             require(!find(window->contentItem(),"moreMailFolders"),"the folder menu is gone");
-            await([&]{return find(window->contentItem(),"scopeStatLabel")->property("text")=="in spam" && find(window->contentItem(),"scopeStatCount")->property("text").toString()=="1";},"the header counts Spam from Gmail");
+            await([&]{return find(window->contentItem(),"scopeStat")->property("label")=="in spam" && find(window->contentItem(),"scopeStat")->property("count").toInt()==1;},"the header counts Spam from Gmail");
             await([&]{return find(window->contentItem(),"binStrip")->isVisible();},"the strip offers to empty Spam");
             {QElapsedTimer settle;settle.start();while(settle.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);}
             h.backend.openConversation("remote:t9");
@@ -1698,10 +1711,10 @@ public:
         await([&]{return !h.backend.m_loading && shownRows(h.backend)==8+10;},"older months fold");
         settle();
         auto *list=find(window->contentItem(),"conversationList"); require(list,"month list");
-        // To review's header: a 40px row with a count chip, and it scrolls
+        // To review's header: a 32px row with its count, and it scrolls
         // away with its rows; nothing is pinned over the list.
         auto *review=find(window->contentItem(),"mailGroup_review"), *chip=find(window->contentItem(),"mailGroupCount_review");
-        require(review && chip && review->height()==40 && chip->isVisible() && chip->width()>=22 && chip->height()==20,"To review's header is 40px with a count chip");
+        require(review && chip && review->height()==32 && chip->isVisible() && !chip->property("text").toString().isEmpty(),"To review's header is 32px with its count");
         require(!find(window->contentItem(),"mailStickyGroup"),"no header is pinned over the list");
         if (qEnvironmentVariableIsSet("FM_MONTH_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_MONTH_CAPTURE")+"/months.png");
         const auto headerTop=review->mapToScene({0,0}).y();
@@ -1827,7 +1840,7 @@ public:
         for (int n=0; n<40; ++n) paragraphs<<QString("Paragraph %1. Please review the attached engagement letter before we meet.").arg(n);
         paragraphs<<"Our valuation of the shares is attached.";
         for (int n=40; n<60; ++n) paragraphs<<QString("Paragraph %1. Regards, and thank you for your time.").arg(n);
-        h.rows={QVariantMap{{"id","match"},{"subject","Valuation - Engagement letter & RFI for the quarter"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
+        h.rows={QVariantMap{{"id","match"},{"subject","Valuation - Engagement letter & RFI for the quarter and the data room"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T10:00:00Z"},
             {"message_ids",QVariantList{"match-original"}},{"matching_message_ids",QVariantList{"match-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},{"group","held"},{"kind","people"},{"unread",false},{"starred",true}}};
         h.texts["match"]=paragraphs.join("\n\n");
         QTemporaryDir copy; copyModule(copy);
@@ -1852,11 +1865,11 @@ public:
         const auto titleLine=heading->property("titleLine").toReal();
         const auto phrases=[&](const QVariantList &list){ h.backend.m_searchTerms={{"text","valuation"},{"phrases",list}}; emit h.backend.searchTermsChanged(); settle(250); };
         const auto any=[](const QString &text){ return QVariant(QVariantMap{{"field","any"},{"text",text}}); };
-        // The subject's box is its lines; Show match's row starts 16 px below
+        // The subject's box is its lines; Show match's row starts 12 px below
         // it, or without that row the reader starts right under it.
         const auto headingFits=[&](int lines, const char *step){
             const auto below=(meta->isVisible() ? meta : reader)->mapToScene({0,0}).y()-(heading->mapToScene({0,0}).y()+heading->height());
-            if (std::abs(subjectLine->height()-lines*titleLine)>0.5 || std::abs(subject->property("contentHeight").toReal()-lines*titleLine)>1 || std::abs(below-(meta->isVisible() ? 16 : 0))>0.5) {
+            if (std::abs(subjectLine->height()-lines*titleLine)>0.5 || std::abs(subject->property("contentHeight").toReal()-lines*titleLine)>1 || std::abs(below-(meta->isVisible() ? 12 : 0))>0.5) {
                 qWarning()<<step<<"subject box"<<subjectLine->height()<<"text"<<subject->property("contentHeight").toReal()<<"for"<<lines<<"lines of"<<titleLine<<"; next row"<<below<<"below";
                 require(false,"the subject's box is its own lines");
             }
@@ -1866,8 +1879,8 @@ public:
         phrases({}); headingFits(1,"plain");
         phrases({any("valuation")}); headingFits(1,"tinted later");
         // A subject long enough to wrap keeps both lines, tinted or not.
-        window->setWidth(820); settle(250);
-        const int wrapped=int(std::round(subject->property("contentHeight").toReal()/titleLine));
+        int wrapped=1;
+        for (int width=820; width>=560 && wrapped<2; width-=60) { window->setWidth(width); settle(250); wrapped=int(std::round(subject->property("contentHeight").toReal()/titleLine)); }
         require(wrapped>=2,"the subject wraps in a narrow reader");
         headingFits(wrapped,"wrapped");
         phrases({}); headingFits(wrapped,"wrapped plain"); phrases({any("valuation")}); headingFits(wrapped,"wrapped tinted");

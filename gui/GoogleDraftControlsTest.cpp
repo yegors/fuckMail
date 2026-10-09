@@ -164,7 +164,7 @@ ApplicationWindow { width: 900; height: 1000; visible: true
             backend.m_draft["to_recipients"] = QVariantList{QVariantMap{{"email", "reader@example.test"}}}; emit backend.draftChanged();
             localEdit("Please see the attached plan");
             await([&] { return hint() == missing; }, "a mentioned attachment that is not added is pointed out");
-            require(named(root, "composerHint")->property("color").value<QColor>() == QColor("#C9A36B"), "the hint is Graphite's gold");
+            require(named(root, "composerHint")->property("color").value<QColor>() == QColor("#D9A55B"), "the hint is Graphite's gold");
             localEdit("Nothing else to send");
             await([&] { return hint() != missing; }, "the hint goes with the mention");
             backend.editFormattedDraft("See below\n> the attachment you sent", "<p>See below</p><p>&gt; the attachment you sent</p>"); backend.m_draftTimer.stop();

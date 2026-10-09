@@ -1,5 +1,17 @@
 # Local mail analysis
 
+## D199 — whole-thread summary on request (Local assistance32)
+
+Reverses D111's removal of the thread summary. The queue is unchanged: it never summarizes a thread.
+
+- **Request.** `assist_start {task:"thread", conversation_id}` (account-scoped, no `message_id`). It needs the account's `summaries` on, a chosen model and at least two messages. Errors are `invalid_request`, `not_found`, `assistance_disabled`, `assistance_unavailable` or `account_required`; a conversation changed between prepare and finish is `assistance_stale`. It shares admission (`assistance_busy`), the one inference seat, `assist_job` polling and `assist_cancel` with message jobs. A completed job's item is `{task:"thread", target:<conversation>, items:[…], prompt_sha256}`.
+- **Input.** `{subject, messages:[{from, to, date, text, shortened}], omitted}`, oldest first, covering every member (sent ones as `from: "You <address>"`), at most the newest 40. Text shares the 24,000-character budget: the newest messages keep theirs first, and each keeps at least 400 characters.
+- **Prompts.** Built in, not editable: [system](../../crates/fm-assist/src/thread-system-prompt.txt) and [user](../../crates/fm-assist/src/thread-user-prompt.txt). The reply is exactly `{summary}` (strict schema `thread_summary`, at most 900 characters), with the same transport options as message requests. The summary must be one paragraph: no list lines and no control characters, at most 120 words.
+- **Result.** One `local_model_results` row per conversation (`task='thread'`, `target`=conversation id), overwritten on each run: `{output:{summary, source_ids}, source_ids, partial, provider, model, prompt_sha256, schema:1, created_at, stale, format_outdated}`. It is returned by `assist_results` beside message items. `stale` turns true when a member is added or removed or changes (id, source hash, sent flag, date, body hash), or when the subject or account lifecycle changes. Saving it advances the conversation's revision.
+- **Failures.** A failed or canceled thread job writes nothing: no `local_model_failures` row, labels, sender kinds, auto-read, spam, per-message results or speed average.
+
+Consumers: engine `analyse_thread`, Core `local_model_prepare_thread`, `fm assist thread`; Mail UI143.
+
 ## D178 — queue date rules use the date index (Local assistance31)
 
 - The New and Catch up rules, and the queued total, test `sent_at` against text bounds one second wider than the exact millisecond rules, as well as the rules themselves. Results are unchanged; the `messages_order` index limits the rows read.
@@ -199,7 +211,7 @@ Ollama endpoints must be HTTP loopback with explicit ports. Bypass proxies; reje
 
 ## Reader and conversation list
 
-Only per-message Summary cards appear in the reader. Remove the top thread card and Summarize thread control. Keep message regeneration, cancellation, source details and sender correction. Hide old summary text that violates the new prose format until explicit regeneration; retain original stored bytes.
+Per-message Summary cards appear in the reader; the whole-thread summary returns only on request (replaced by Local assistance32). Keep message regeneration, cancellation, source details and sender correction. Hide old summary text that violates the new prose format until explicit regeneration; retain original stored bytes.
 
 For each conversation row, use the current summary of the same message that supplies its source preview. Show the existing assistance icon beside summary text. Without a current complete summary, show the ordinary source snippet. A stale, partial or different-message summary cannot silently replace the preview. Preserve source bodies, MIME and the search index. Model summaries do not mark mail reviewed. New source/deletion identity, model or prompt changes invalidate the relevant preview; changing unrelated messages must not retarget it.
 

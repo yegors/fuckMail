@@ -100,7 +100,7 @@ Popup {
                     background:Rectangle { radius:32; color:"#b00e0f11";border.color:"#60e9eaec" }
                     onClicked:viewer.togglePlayback()
                 }
-                Text { anchors.centerIn:parent; width:parent.width-32; text:viewer.error || (viewer.ticket ? "Loading…" : ""); color:"#e9eaec"; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter; font.pointSize:Theme.fontPoints(13) }
+                Text { anchors.centerIn:parent; width:parent.width-32; text:viewer.error || (viewer.ticket ? "Loading…" : ""); color:"#e9eaec"; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter; font.pointSize:Theme.fontPoints(12) }
                 Rectangle {
                     visible:viewer.video; anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:44
                     color:"#d00e0f11"; opacity:!viewer.playing || mediaHover.hovered || controlsHover.hovered ? 1 : 0
@@ -115,15 +115,15 @@ Popup {
                             background:Rectangle { x:seek.leftPadding;y:seek.topPadding+seek.availableHeight/2-2;width:seek.availableWidth;height:3;color:"#3a3d44";radius:2;Rectangle {width:seek.visualPosition*parent.width;height:parent.height;radius:2;color:Theme.accent} }
                             handle:Rectangle {x:seek.leftPadding+seek.visualPosition*(seek.availableWidth-width);y:seek.topPadding+seek.availableHeight/2-4;width:8;height:8;radius:4;color:Theme.accent}
                         }
-                        Text {text:viewer.player ? viewer.clock(viewer.player.position)+" / "+viewer.clock(viewer.player.duration) : viewer.clock(0)+" / "+viewer.clock(0);color:"#b8b9bd";font.pointSize:Theme.fontPoints(11.5);font.features:{"tnum":1}}
+                        Text {text:viewer.player ? viewer.clock(viewer.player.position)+" / "+viewer.clock(viewer.player.duration) : viewer.clock(0)+" / "+viewer.clock(0);color:"#b8b9bd";font.pointSize:Theme.fontPoints(11);font.features:{"tnum":1}}
                         FmButton {iconName:viewer.audio && viewer.audio.muted ? "mute" : "volume";foreground:"#e9eaec";implicitWidth:28;tip:"Mute · M";onClicked:if (viewer.audio) viewer.audio.muted=!viewer.audio.muted}
                     }
                 }
             }
             RowLayout {
                 Layout.fillWidth:true;spacing:16
-                Text {Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight;text:[viewer.attachment.name,viewer.preview.width ? viewer.preview.width+" × "+viewer.preview.height : "",viewer.size(viewer.attachment.size || 0)].filter(Boolean).join(" · ");color:"#a5a6a9";font.pointSize:Theme.fontPoints(12.5);textFormat:Text.PlainText}
-                Text {text:(viewer.index+1)+" of "+viewer.items.length;color:"#737479";font.pointSize:Theme.fontPoints(12)}
+                Text {Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight;text:[viewer.attachment.name,viewer.preview.width ? viewer.preview.width+" × "+viewer.preview.height : "",viewer.size(viewer.attachment.size || 0)].filter(Boolean).join(" · ");color:"#a5a6a9";font.pointSize:Theme.fontPoints(12);textFormat:Text.PlainText}
+                Text {text:(viewer.index+1)+" of "+viewer.items.length;color:"#737479";font.pointSize:Theme.fontPoints(11.5)}
                 FmButton {text:"Download";foreground:"#c9a36b";onClicked:backend.downloadAttachment(viewer.account,viewer.attachment.id,viewer.attachment.name)}
             }
         }

@@ -45,7 +45,7 @@ Popup {
     background: Rectangle {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
-        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 0.8; shadowVerticalOffset: 12 }
+        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
         // An invisible 12px strip above the card counts as the card, so the
         // gap under the name never closes it on the way in.
         Item { objectName: "senderCardBridge"; y: -12; width: parent.width; height: 12; HoverHandler { onHoveredChanged: hovered ? card.stayOpen() : card.scheduleClose() } }
@@ -160,12 +160,12 @@ Popup {
                     discColor: mine ? Theme.accentAlpha(0.18) : Theme.oklch(.36, .06, hue)
                     initialsColor: mine ? Theme.accent : Theme.oklch(.9, .05, hue)
                     initials: Theme.initialsOf(mine && backend.currentAccount.name ? backend.currentAccount.name : card.displayName || card.email)
-                    fontPoints: Theme.fontPoints(12.5); fontWeight: Font.Medium
+                    fontPoints: Theme.fontPoints(12); fontWeight: Font.Medium
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2
-                    CardText { id: nameField; objectName: "senderCardName"; text: card.displayName; color: Theme.text; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium }
-                    CardText { id: emailField; objectName: "senderCardEmail"; text: card.email; color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); wrapMode: TextEdit.WrapAnywhere }
+                    CardText { id: nameField; objectName: "senderCardName"; text: card.displayName; color: Theme.text; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium }
+                    CardText { id: emailField; objectName: "senderCardEmail"; text: card.email; color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: TextEdit.WrapAnywhere }
                 }
                 FmButton {
                     id: starButton; objectName: "senderCardStar"
@@ -175,14 +175,14 @@ Popup {
                     iconName: card.starred ? "contactStarFilled" : "contactStar"; iconSize: 14
                     iconColor: card.starred ? Theme.amber : Theme.inkAlpha(.4)
                     tip: card.starred ? "Starred — click to remove" : "Star this contact"
-                    background: Rectangle { radius: 4; color: starButton.hovered ? Theme.bg4 : "transparent" }
+                    background: Rectangle { radius: 5; color: starButton.hovered ? Theme.bg4 : "transparent" }
                     onClicked: card.toggleStar()
                 }
             }
             CardText {
                 id: statusField
                 objectName: "senderCardStatus"
-                font.pointSize: Theme.fontPoints(12)
+                font.pointSize: Theme.fontPoints(11.5)
                 color: card.current && card.cardData.error ? Theme.error : Theme.muted
                 text: !card.current || card.cardData.loading ? "Loading conversations…" : card.cardData.error || (card.total + (card.total === 1 ? " conversation" : " conversations") + " · " + (backend.currentAccount.name || card.account))
             }
@@ -195,11 +195,11 @@ Popup {
                         required property var modelData
                         objectName: "senderCardRow_" + modelData.id
                         Layout.fillWidth: true; implicitHeight: Math.max(30, row.implicitHeight + 12); leftPadding: 0; rightPadding: 0
-                        background: Rectangle { color: parent.hovered ? Theme.selected : "transparent"; radius: 3 }
+                        background: Rectangle { color: parent.hovered ? Theme.selected : "transparent"; radius: 5 }
                         contentItem: RowLayout {
                             id: row; spacing: 10
-                            Text { text: Theme.oneLine(modelData.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pointSize: Theme.fontPoints(12.5); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
-                            Text { text: card.formatAge(modelData.latest_at); color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
+                            Text { text: Theme.oneLine(modelData.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pointSize: Theme.fontPoints(12); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
+                            Text { text: card.formatAge(modelData.latest_at); color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
                         }
                         onClicked: card.openConversation(modelData.id)
                     }
@@ -207,13 +207,13 @@ Popup {
                 FmButton {
                     objectName: "senderCardFilter"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; leftPadding: 0; rightPadding: 0
                     text: (card.total > 3 ? "All " + card.total + " with " : "Filter to ") + card.displayName.split(" ")[0] + " →"
-                    font.pointSize: Theme.fontPoints(12); foreground: Theme.accent
+                    font.pointSize: Theme.fontPoints(11.5); foreground: Theme.accent
                     onHoveredChanged: if (hovered) backend.prefetchSearch("all", card.email)
                     onClicked: card.filterSender()
                 }
             }
             FmButton {
-                objectName: "senderCardWrite"; text: "Write"; outlined: true; implicitHeight: 28; font.pointSize: Theme.fontPoints(12)
+                objectName: "senderCardWrite"; text: "Write"; outlined: true; implicitHeight: 28; font.pointSize: Theme.fontPoints(11.5)
                 enabled: backend.connected && !backend.draftBusy && !backend.accountArchived && !backend.unsavedAccountBuffer
                 onClicked: card.writeMessage()
             }

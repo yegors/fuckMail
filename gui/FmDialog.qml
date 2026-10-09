@@ -8,7 +8,7 @@ import QtQuick.Effects
 Dialog {
     id: dialog
     property bool destructive: false
-    property real cornerRadius: 8
+    property real cornerRadius: 10
     property string titleObjectName: ""
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -25,7 +25,7 @@ Dialog {
         + (footer && footer.visible ? footer.implicitHeight + spacing : 0)
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     font.family: Theme.fontFamily
-    font.pointSize: Theme.fontPoints(13)
+    font.pointSize: Theme.fontPoints(12)
     palette.windowText: Theme.text
     palette.text: Theme.text
     palette.buttonText: Theme.text
@@ -39,9 +39,9 @@ Dialog {
         textFormat: Text.PlainText
         color: Theme.text
         font.family: Theme.fontFamily
-        font.pointSize: Theme.fontPoints(16)
+        font.pointSize: Theme.fontPoints(15)
         font.weight: Font.Medium
-        font.letterSpacing: -0.16
+        font.letterSpacing: 0
         lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.3); topPadding: 22 + Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     background: Rectangle {
@@ -64,7 +64,7 @@ Dialog {
             readonly property bool affirmative: DialogButtonBox.buttonRole === DialogButtonBox.AcceptRole || DialogButtonBox.buttonRole === DialogButtonBox.DestructiveRole || DialogButtonBox.buttonRole === DialogButtonBox.YesRole
             implicitHeight: 32
             leftPadding: 14; rightPadding: 14
-            font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
+            font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
             prominent: affirmative
             shortcutHint: affirmative ? "↵" : ""
             outlined: !affirmative

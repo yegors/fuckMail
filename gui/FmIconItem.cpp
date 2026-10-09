@@ -293,7 +293,8 @@ QImage FmIconItem::render(const QString &name, const QColor &color, const QSize 
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.scale(scale.width(), scale.height());
-    if (stroked) painter.strokePath(sketch.path, QPen(color, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    // Square ends and mitred corners, as the design's line icons draw.
+    if (stroked) painter.strokePath(sketch.path, QPen(color, 1.5, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
     else painter.fillPath(sketch.path, color);
     return image;
 }

@@ -87,6 +87,20 @@ pub async fn infer(
     measure: &std::sync::Mutex<Value>,
 ) -> Result<Value> {
     let body = openai_request(settings, model, email, labels);
+    parse(
+        &complete(settings, model, body, cancel, measure).await?,
+        labels,
+    )
+}
+/// Sends one prepared `/v1/chat/completions` body and returns the reply
+/// text, checked as [`infer`] checks it. `measure` gets token usage only.
+pub(crate) async fn complete(
+    settings: &Settings,
+    model: &str,
+    body: Value,
+    cancel: &CancellationToken,
+    measure: &std::sync::Mutex<Value>,
+) -> Result<String> {
     let result = request_local(
         endpoint_base(&settings.endpoint)?,
         "/v1/chat/completions",
@@ -103,7 +117,7 @@ pub async fn infer(
         "generation_ms": null,
         "raw": result["choices"][0]["message"]["content"],
     });
-    parse(response_content(&result, model)?, labels)
+    response_content(&result, model).map(str::to_owned)
 }
 /// Returns the text of the single choice, refusing a reply from another
 /// model, a tool or function call, or anything but a complete `stop`.
@@ -160,7 +174,7 @@ fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use fm_assist::ollama::Model;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -171,7 +185,9 @@ mod tests {
     fn response() -> Value {
         json!({"model":"local-model","usage":{"completion_tokens":42},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":output().to_string(),"tool_calls":null}}]})
     }
-    async fn server(
+    /// A loopback HTTP server that answers each request in turn with one of
+    /// `replies` and returns the request lines and JSON bodies it received.
+    pub(crate) async fn server(
         replies: Vec<(u16, String)>,
     ) -> (String, tokio::task::JoinHandle<Vec<(String, Value)>>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

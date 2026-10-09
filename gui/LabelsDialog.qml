@@ -28,16 +28,16 @@ FmDialog {
                 Layout.fillWidth: true; spacing: 16
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 3
-                    Text { objectName: "labelsDialogTitle"; text: "Labels · " + (dialog.row.name || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(18); weight: Font.Medium; letterSpacing: -0.18 } }
-                    Text { text: dialog.row.email || ""; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } }
+                    Text { objectName: "labelsDialogTitle"; text: "Labels · " + (dialog.row.name || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(17); weight: Font.Medium; letterSpacing: 0} }
+                    Text { text: dialog.row.email || ""; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
                 }
                 FmButton { objectName: "closeLabelsDialog"; iconName: "close"; iconSize: 12; tip: "Close — Esc"; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; Layout.alignment: Qt.AlignTop; Layout.rightMargin: -6; onClicked: dialog.close() }
             }
             Text {
                 Layout.fillWidth: true; Layout.maximumWidth: 600; Layout.topMargin: 16
                 text: "Labels for " + (dialog.row.name || "this account") + " only. Descriptions help the local model sort mail."
-                wrapMode: Text.Wrap; color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
-                lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5)
+                wrapMode: Text.Wrap; color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+                lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.5)
             }
             LabelSettings {
                 Layout.fillWidth: true; Layout.maximumWidth: 640; Layout.topMargin: 14

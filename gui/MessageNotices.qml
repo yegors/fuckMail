@@ -117,7 +117,7 @@ ColumnLayout {
         property string tip: ""
         signal clicked()
         readonly property real iconSpace: iconName.length > 0 ? 18 : 0
-        implicitWidth: Math.ceil(label.implicitWidth) + iconSpace + 16; implicitHeight: 26; radius: 4
+        implicitWidth: Math.ceil(label.implicitWidth) + iconSpace + 16; implicitHeight: 26; radius: 5
         Layout.minimumWidth: implicitWidth; Layout.maximumWidth: implicitWidth
         color: area.containsMouse ? Theme.bg4 : "transparent"
         Accessible.role: Accessible.Button; Accessible.name: label.text; Accessible.description: tip; Accessible.onPressAction: clicked()
@@ -125,14 +125,14 @@ ColumnLayout {
         Text {
             id: label; x: 8 + button.iconSpace; anchors.verticalCenter: parent.verticalCenter
             width: Math.max(0, button.width - 16 - button.iconSpace); elide: Text.ElideRight; textFormat: Text.PlainText
-            color: area.containsMouse ? Theme.text : Theme.inkAlpha(.85); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+            color: area.containsMouse ? Theme.text : Theme.inkAlpha(.85); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
         }
         MouseArea { id: area; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: button.clicked() }
         FmToolTip { shown: area.containsMouse && button.tip.length > 0; text: button.tip }
     }
     component NoticeText: Text {
         Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0; elide: Text.ElideRight; textFormat: Text.PlainText
-        color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+        color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
     }
 
     Rule {}
@@ -154,14 +154,14 @@ ColumnLayout {
                 Text {
                     id: whenText
                     text: inviteRow.when; textFormat: Text.PlainText; color: Theme.text
-                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
                 }
                 Text {
                     objectName: "inviteWas_" + (notices.message.id || "")
                     visible: inviteRow.was.length > 0
                     width: Math.max(0, Math.min(implicitWidth, whenRow.width - whenText.width - 8))
                     text: inviteRow.was; textFormat: Text.PlainText; elide: Text.ElideRight; font.strikeout: true
-                    color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}
+                    color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
                 }
             }
             HoverHandler { id: whenHover; enabled: !!notices.inviteEvent; cursorShape: Qt.PointingHandCursor }
@@ -174,7 +174,7 @@ ColumnLayout {
             text: notices.invite && notices.invite.method === "CANCEL" ? "Cancelled" : notices.answerError.length ? "Not sent"
                 : !notices.invited ? "" : notices.answer === "no" ? "Declined" : notices.answer === "maybe" ? "Maybe" : notices.answer === "yes" ? "Going" : ""
             color: notices.answerError.length ? Theme.error : Theme.inkAlpha(.45); textFormat: Text.PlainText
-            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
             HoverHandler { id: stateHover; enabled: notices.answerError.length > 0 }
             FmToolTip { shown: stateHover.hovered; text: notices.answerError }
         }
@@ -182,7 +182,7 @@ ColumnLayout {
             id: answerBox
             objectName: "inviteAnswers_" + (notices.message.id || "")
             visible: notices.answerable
-            implicitWidth: answers.implicitWidth + 6; implicitHeight: answers.implicitHeight + 6; radius: 6
+            implicitWidth: answers.implicitWidth + 6; implicitHeight: answers.implicitHeight + 6; radius: 5
             color: "transparent"; border.width: 1; border.color: Theme.line2
             readonly property bool ready: !!notices.inviteEvent && notices.inviteEvent.can_rsvp === true && !notices.answerRequest.length && !notices.declining
             opacity: ready ? 1 : .5
@@ -200,9 +200,9 @@ ColumnLayout {
                         text: modelData.label
                         tip: modelData.tip
                         selected: chosen; implicitHeight: 22; leftPadding: 10; rightPadding: 10; topPadding: 0; bottomPadding: 0
-                        font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+                        font.pointSize: Theme.fontPoints(11.5); font.weight: Font.Medium
                         foreground: chosen ? (modelData.value === "yes" ? Theme.bg : Theme.text) : hovered ? Theme.text : Theme.inkAlpha(.6)
-                        background: Rectangle { radius: 4; color: parent.chosen ? (parent.modelData.value === "yes" ? Theme.text : Theme.bg6) : "transparent" }
+                        background: Rectangle { radius: 5; color: parent.chosen ? (parent.modelData.value === "yes" ? Theme.text : Theme.bg6) : "transparent" }
                         enabled: answerBox.ready
                         onClicked: notices.respond(modelData.value)
                     }
@@ -269,7 +269,7 @@ ColumnLayout {
             Text {
                 anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText
                 text: imageRow.count(imageRow.total) + " loaded"
-                color: "#7FC4A4"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                color: "#7FC4A4"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
         }
         NoticeButton {

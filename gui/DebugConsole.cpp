@@ -205,6 +205,7 @@ int DebugConsole::levelOf(const QString &name) {
 }
 QString DebugConsole::monoFamily() const {
     static const QString family = [] {
+        if (QFontDatabase::hasFamily("Geist Mono")) return QString("Geist Mono");
 #ifndef Q_OS_MACOS
         for (const auto name : {"Cascadia Mono", "JetBrains Mono", "SF Mono", "Consolas", "DejaVu Sans Mono", "Ubuntu Mono", "Liberation Mono"})
             if (QFontDatabase::hasFamily(name)) return QString(name);

@@ -39,8 +39,8 @@ FmDialog {
             Layout.fillWidth: true; spacing: 16
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 3
-                Text { text: "Signature · " + (dialog.row.name || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(18); weight: Font.Medium; letterSpacing: -0.18 } }
-                Text { text: "Added to new messages and replies from " + (dialog.row.email || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } }
+                Text { text: "Signature · " + (dialog.row.name || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(17); weight: Font.Medium; letterSpacing: 0} }
+                Text { text: "Added to new messages and replies from " + (dialog.row.email || ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
             }
             FmButton { objectName: "closeSignatureDialog"; iconName: "close"; iconSize: 12; tip: "Close — Esc"; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; Layout.alignment: Qt.AlignTop; Layout.rightMargin: -6; onClicked: dialog.close() }
         }
@@ -54,17 +54,17 @@ FmDialog {
                 objectName: "signature_" + dialog.account
                 placeholderText: "No signature"; placeholderTextColor: Theme.faint
                 padding: 12; leftPadding: 14; rightPadding: 14
-                color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) }
+                color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) }
                 textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true
                 enabled: !dialog.saving
-                background: Rectangle { color: Theme.canvas; radius: 6; border.color: editor.activeFocus ? Theme.focusBorder : Theme.line2 }
+                background: Rectangle { color: Theme.canvas; radius: 5; border.color: editor.activeFocus ? Theme.focusBorder : Theme.line2 }
                 Accessible.name: "Signature for " + (dialog.row.email || "")
             }
         }
-        Text { objectName: "signatureError"; visible: dialog.error.length > 0; text: dialog.error; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.error; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+        Text { objectName: "signatureError"; visible: dialog.error.length > 0; text: dialog.error; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.error; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
         RowLayout {
             Layout.fillWidth: true; spacing: 8
-            Text { text: "Leave empty for none. Existing drafts keep theirs."; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+            Text { text: "Leave empty for none. Existing drafts keep theirs."; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
             FmButton { text: "Cancel"; outlined: true; implicitHeight: 32; onClicked: dialog.close() }
             FmButton { objectName: "saveSignature_" + dialog.account; text: dialog.saving ? "Saving…" : "Save"; prominent: true; implicitHeight: 32; enabled: dialog.dirty && !dialog.saving; opacity: enabled ? 1 : .35; onClicked: dialog.save() }
         }

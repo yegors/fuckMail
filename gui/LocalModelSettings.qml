@@ -182,11 +182,11 @@ ColumnLayout {
             } else if (kind==="discover") { panel.models=result.models || []; panel.discovered=true; panel.status=(panel.provider === "ollama" ? "Ollama "+(result.version || "") : "Local server")+" · "+panel.models.length+(panel.models.length === 1 ? " model" : " models") }
         }
     }
-    component Caption: Text { color: Theme.inkAlpha(0.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
+    component Caption: Text { color: Theme.inkAlpha(0.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
     component Body: Text {
         Layout.fillWidth: true; Layout.maximumWidth: 640; wrapMode: Text.Wrap; textFormat: Text.PlainText
-        color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
-        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5)
+        color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.5)
     }
     // A prompt part with Restore default on the left and Cancel / Save on the right.
     component PromptBox: ColumnLayout {
@@ -210,8 +210,8 @@ ColumnLayout {
             text: panel.textOf(panel.draft, box.index)
             onTextChanged: if (activeFocus) panel.editMessage(box.index, text)
             wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; selectByMouse: true; color: Theme.inkAlpha(0.85)
-            font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12.5); padding: 12; leftPadding: 14; rightPadding: 14
-            background: Rectangle { color: Theme.bg2; radius: 6; border.color: parent.activeFocus ? Theme.focusBorder : Theme.line2 }
+            font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); padding: 12; leftPadding: 14; rightPadding: 14
+            background: Rectangle { color: Theme.bg2; radius: 5; border.color: parent.activeFocus ? Theme.focusBorder : Theme.line2 }
             Accessible.name: box.title
         }
         RowLayout {
@@ -222,7 +222,7 @@ ColumnLayout {
                 enabled: !box.isDefault && panel.textOf(panel.defaults, box.index).length > 0
                 hoverEnabled: true
                 onClicked: panel.restoreBox(box.index)
-                contentItem: Text { text: "Restore default"; color: !restore.enabled ? Theme.inkAlpha(.3) : restore.hovered ? Theme.text : Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+                contentItem: Text { text: "Restore default"; color: !restore.enabled ? Theme.inkAlpha(.3) : restore.hovered ? Theme.text : Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
                 background: null
                 FmToolTip { shown: restore.hovered && restore.enabled; text: "Load the built-in text — you can still cancel" }
             }
@@ -230,7 +230,7 @@ ColumnLayout {
             // Reserved so the buttons do not move when it appears.
             Text {
                 text: "Unsaved changes"; opacity: box.dirty ? 1 : 0
-                color: Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+                color: Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) }
             }
             FmButton { objectName: "cancelPrompt" + box.index; text: "Cancel"; outlined: true; implicitHeight: 30; enabled: box.dirty && !panel.saving; opacity: enabled ? 1 : .45; onClicked: panel.cancelBox(box.index) }
             FmButton {
@@ -247,10 +247,10 @@ ColumnLayout {
         property string meaning: ""
         spacing: 14
         Rectangle {
-            implicitWidth: chipText.implicitWidth + 12; implicitHeight: chipText.implicitHeight + 2; radius: 3; color: Theme.withAlpha(Theme.ai, .1)
-            Text { id: chipText; anchors.centerIn: parent; text: variable.name; color: Theme.ai; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12) }
+            implicitWidth: chipText.implicitWidth + 12; implicitHeight: chipText.implicitHeight + 2; radius: 5; color: Theme.withAlpha(Theme.ai, .1)
+            Text { id: chipText; anchors.centerIn: parent; text: variable.name; color: Theme.ai; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5) }
         }
-        Text { text: variable.meaning; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } Layout.fillWidth: true; elide: Text.ElideRight }
+        Text { text: variable.meaning; color: Theme.inkAlpha(.6); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } Layout.fillWidth: true; elide: Text.ElideRight }
     }
 
     Caption { text: "Provider"; Layout.topMargin: 20 }
@@ -267,7 +267,7 @@ ColumnLayout {
             implicitWidth:8; implicitHeight:8; radius:4; color: panel.discovering ? Theme.ai : panel.models.length ? Theme.withAlpha(Qt.color("#7FC4A4"), 1) : panel.discovered ? Theme.error : Theme.subtle
             SequentialAnimation on opacity { running: panel.discovering; loops: Animation.Infinite; NumberAnimation { to: .35; duration: 500 } NumberAnimation { to: 1; duration: 500 } }
         }
-        Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13) }
+        Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12) }
     }
     Caption { text: "Model"; Layout.topMargin: 22 }
     RowLayout {
@@ -279,7 +279,7 @@ ColumnLayout {
             onActivated: function(index) { const m=panel.choices[index]; if(m) panel.chooseModel(index===0 ? null : {name:m.name,digest:m.digest}); currentIndex=Qt.binding(function(){return panel.indexFor()}) }
             Accessible.name:"Mail model"
         }
-        Text { text: panel.modelNote; visible: text.length > 0; color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+        Text { text: panel.modelNote; visible: text.length > 0; color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
         Item { Layout.fillWidth: true }
         FmButton {
             id: testButton
@@ -293,7 +293,7 @@ ColumnLayout {
             onClicked: panel.runTest()
         }
     }
-    Text { objectName:"modelUnavailable"; Layout.topMargin: 8; visible:panel.discovered && !panel.discovering && !!panel.draft.model && !panel.selectedAvailable; text:"The server no longer lists these model weights. Choose an available model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12) }
+    Text { objectName:"modelUnavailable"; Layout.topMargin: 8; visible:panel.discovered && !panel.discovering && !!panel.draft.model && !panel.selectedAvailable; text:"The server no longer lists these model weights. Choose an available model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5) }
     // Sample test result: Running, Passed, Failed (not valid JSON) or Error.
     Rectangle {
         id: testPanel
@@ -315,7 +315,7 @@ ColumnLayout {
         }
         Layout.fillWidth: true; Layout.topMargin: 12
         implicitHeight: testContent.implicitHeight
-        radius: 6; clip: true
+        radius: 5; clip: true
         color: Theme.withAlpha(Qt.color(look[2]), .05); border.color: Theme.withAlpha(Qt.color(look[2]), .4)
         ColumnLayout {
             id: testContent
@@ -326,9 +326,9 @@ ColumnLayout {
                     implicitWidth: 8; implicitHeight: 8; radius: 4; color: testPanel.look[2]
                     SequentialAnimation on opacity { running: testPanel.t.state === "run"; loops: Animation.Infinite; NumberAnimation { to: .35; duration: 500 } NumberAnimation { to: 1; duration: 500 } }
                 }
-                Text { objectName: "localModelTestTitle"; text: testPanel.look[0]; color: testPanel.look[1]; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium } }
+                Text { objectName: "localModelTestTitle"; text: testPanel.look[0]; color: testPanel.look[1]; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); weight: Font.Medium } }
                 Text {
-                    Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+                    Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
                     text: testPanel.t.state === "run" ? testPanel.t.model + " · sample email"
                         : testPanel.t.state === "ok" ? "Valid JSON · summary, label and sender returned"
                         : testPanel.t.state === "fail" ? "Response was not valid JSON — check the system prompt’s return shape"
@@ -340,7 +340,7 @@ ColumnLayout {
                         required property var modelData
                         textFormat: Text.StyledText
                         text: "<font color='" + Theme.inkAlpha(.4) + "'>" + modelData.k + "</font> " + modelData.v
-                        color: Theme.inkAlpha(.85); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} }
+                        color: Theme.inkAlpha(.85); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); features: {"tnum": 1} }
                         HoverHandler { id: statHover }
                         FmToolTip { shown: statHover.hovered && parent.modelData.tip.length > 0; text: parent.modelData.tip }
                     }
@@ -353,7 +353,7 @@ ColumnLayout {
                 visible: testPanel.t.state !== "run" && testPanel.t.state !== "err" && (testPanel.t.out || "").length > 0
                 Layout.fillWidth: true; Layout.margins: 14; Layout.topMargin: 10; Layout.bottomMargin: 12
                 text: testPanel.t.out || ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
-                color: Theme.inkAlpha(.8); font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12)
+                color: Theme.inkAlpha(.8); font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5)
             }
         }
     }
@@ -376,18 +376,18 @@ ColumnLayout {
         Layout.fillWidth: true; Layout.topMargin: 10; wrapMode: Text.Wrap
         text: "User message is missing " + panel.missingVariables.join(" and ") + " — the model won’t see "
             + (panel.missingVariables.length > 1 ? "the mail or your labels" : panel.missingVariables[0] === "{{messages}}" ? "the mail" : "your labels") + "."
-        color: Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+        color: Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
     }
     Text {
         objectName: "promptSize"
         Layout.fillWidth: true; Layout.topMargin: 10
         text: panel.promptText.length.toLocaleString(Qt.locale(), "f", 0) + " characters · about " + Math.round(panel.promptText.length / 4).toLocaleString(Qt.locale(), "f", 0) + " tokens before your mail is added"
-        color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+        color: Theme.inkAlpha(.45); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) }
     }
     RowLayout {
         visible: panel.conflict; Layout.topMargin: 10; spacing: 8
-        Text { text: "These settings changed elsewhere."; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } }
+        Text { text: "These settings changed elsewhere."; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
         FmButton { objectName:"reloadModelSettings"; text:"Reload saved settings"; outlined: true; onClicked:panel.reloadSaved() }
     }
-    Text { visible:panel.models.some(m=>!m.eligible); Layout.topMargin: 10; Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11) }
+    Text { visible:panel.models.some(m=>!m.eligible); Layout.topMargin: 10; Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(10.5) }
 }

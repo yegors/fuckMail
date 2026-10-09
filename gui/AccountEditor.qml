@@ -11,8 +11,8 @@ FmDialog {
     spacing:22;cornerRadius:10
     header:Column {
         topPadding:22;leftPadding:22;rightPadding:22;spacing:3
-        Text {text:editor.title;color:Theme.text;font.pointSize:Theme.fontPoints(16);font.weight:Font.Medium}
-        Text {text:editor.account.email || "";color:Theme.muted;font.pointSize:Theme.fontPoints(12.5)}
+        Text {text:editor.title;color:Theme.text;font.pointSize:Theme.fontPoints(15);font.weight:Font.Medium}
+        Text {text:editor.account.email || "";color:Theme.muted;font.pointSize:Theme.fontPoints(12)}
     }
     property var account: ({})
     property bool saving:false
@@ -56,15 +56,15 @@ FmDialog {
         property bool blocksWorkspaceShortcuts:true
         ColumnLayout {
             id:fields;width:editor.availableWidth;spacing:7
-            Text {text:"Display name";color:Theme.muted;font.pointSize:Theme.fontPoints(11.5)}
-            FmTextField {id:displayName;objectName:"editAccountName";Layout.fillWidth:true;implicitHeight:34;padding:7;font.pointSize:Theme.fontPoints(13.5);maximumLength:80;enabled:!editor.saving;Accessible.name:"Display name"
+            Text {text:"Display name";color:Theme.muted;font.pointSize:Theme.fontPoints(11)}
+            FmTextField {id:displayName;objectName:"editAccountName";Layout.fillWidth:true;implicitHeight:34;padding:7;font.pointSize:Theme.fontPoints(12.5);maximumLength:80;enabled:!editor.saving;Accessible.name:"Display name"
                 background:Rectangle {radius:6;color:Theme.canvas;border.color:displayName.activeFocus ? Theme.line3 : Theme.line2}
             }
-            Text {text:"Local retention";color:Theme.muted;font.pointSize:Theme.fontPoints(11.5);Layout.topMargin:15}
+            Text {text:"Local retention";color:Theme.muted;font.pointSize:Theme.fontPoints(11);Layout.topMargin:15}
             FmSegmented {id:retention;objectName:"editAccountRetention";compact:true;model:editor.labels;enabled:!editor.saving;Accessible.name:"Local retention"}
-            Text {text:"How much mail to keep on this machine. Older mail stays in Google and can be downloaded again by extending this period.";color:Theme.inkAlpha(0.45);font.pointSize:Theme.fontPoints(12);Layout.fillWidth:true;wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)}
-            Text {visible:editor.shortening;text:"Mail older than "+editor.labels[retention.currentIndex]+" will be removed from this machine on save. Nothing is deleted from Google.";color:Theme.accent;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pointSize:Theme.fontPoints(12.5);lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.45); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)}
-            Text {text:"Sync";color:Theme.muted;font.pointSize:Theme.fontPoints(11.5);Layout.topMargin:15}
+            Text {text:"How much mail to keep on this machine. Older mail stays in Google and can be downloaded again by extending this period.";color:Theme.inkAlpha(0.45);font.pointSize:Theme.fontPoints(11.5);Layout.fillWidth:true;wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)}
+            Text {visible:editor.shortening;text:"Mail older than "+editor.labels[retention.currentIndex]+" will be removed from this machine on save. Nothing is deleted from Google.";color:Theme.accent;Layout.fillWidth:true;wrapMode:Text.Wrap;font.pointSize:Theme.fontPoints(12);lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.45); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)}
+            Text {text:"Sync";color:Theme.muted;font.pointSize:Theme.fontPoints(11);Layout.topMargin:15}
             RowLayout {Layout.fillWidth:true;spacing:12
                 FmCheckBox {id:mailEnabled;objectName:"editAccountMail";text:"Mail";Layout.fillWidth:true;topPadding:4;bottomPadding:4;implicitHeight:28;background:null;enabled:!editor.saving && (calendarEnabled.checked || !checked)}
                 FmSegmented {id:mailMode;objectName:"editAccountMailMode";compact:true;model:["Read","Read & write"];enabled:mailEnabled.checked && !editor.saving}
@@ -73,7 +73,7 @@ FmDialog {
                 FmCheckBox {id:calendarEnabled;objectName:"editAccountCalendar";text:"Calendar";Layout.fillWidth:true;topPadding:4;bottomPadding:4;implicitHeight:28;background:null;enabled:!editor.saving && (mailEnabled.checked || !checked)}
                 FmSegmented {id:calendarMode;objectName:"editAccountCalendarMode";compact:true;model:["Read","Read & write"];enabled:calendarEnabled.checked && !editor.saving}
             }
-            Text {visible:!!editor.error;text:editor.error;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.error;font.pointSize:Theme.fontPoints(12)}
+            Text {visible:!!editor.error;text:editor.error;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.error;font.pointSize:Theme.fontPoints(11.5)}
         }
     }
     footer:Item {

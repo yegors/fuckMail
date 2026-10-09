@@ -156,7 +156,7 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: body.shown ? view.implicitHeight : 0
         opacity: body.shown ? 1 : 0
-        color: view.paper; radius: 6
+        color: view.paper; radius: 5
         FmHtmlView {
             id: view
             objectName: "messageBody_" + (body.message.id || "")

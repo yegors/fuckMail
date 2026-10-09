@@ -83,14 +83,14 @@ Item {
             spacing: 12; property bool blocksWorkspaceShortcuts: true
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: Theme.oneLine(source.message.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.secondary; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
+                Text { text: Theme.oneLine(source.message.subject); maximumLineCount: 1; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.secondary; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
                 FmButton { text: "Copy"; outlined: true; implicitHeight: 28; enabled: !!source.raw; onClicked: backend.copyText(source.raw) }
             }
-            Text { visible: !!source.error || !!source.result.raw_truncated; text: source.error || "This source preview is shortened. The full message remains stored locally."; color: source.error ? Theme.error : Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: !!source.error || !!source.result.raw_truncated; text: source.error || "This source preview is shortened. The full message remains stored locally."; color: source.error ? Theme.error : Theme.muted; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; Layout.fillWidth: true }
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 4 } ContextMenu.menu: null; TextMenuHandler {} }
+                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 5 } ContextMenu.menu: null; TextMenuHandler {} }
             }
         }
     }

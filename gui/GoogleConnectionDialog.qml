@@ -85,11 +85,11 @@ FmDialog {
         id: connectionContents; width: googleSignIn.availableWidth; spacing: 14
         RowLayout {
             Layout.fillWidth: true; spacing: 12
-            Rectangle { implicitWidth: 34; implicitHeight: 34; radius: 17; color: "transparent"; border.color: Theme.line2; Text { anchors.centerIn: parent; text: "G"; color: Theme.secondary; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(16); font.weight: Font.Medium } }
+            Rectangle { implicitWidth: 34; implicitHeight: 34; radius: 17; color: "transparent"; border.color: Theme.line2; Text { anchors.centerIn: parent; text: "G"; color: Theme.secondary; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium } }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 2
-                Text { text: googleSignIn.restoreRevision > 0 ? "Restore Google account" : googleSignIn.reconnectAccount.length ? "Reconnect "+((backend.accounts.find(row=>row.id===googleSignIn.reconnectAccount) || {}).name || "Google") : "Connect Google"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(16); font.weight: Font.Medium; font.letterSpacing: -0.16 }
-                Text { text: ["Step 1 of 3 · Your address", "Step 2 of 3 · Sign in with Google", "Step 3 of 3 · Ready to sync"][googleSignIn.step]; color: Theme.inkAlpha(0.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                Text { text: googleSignIn.restoreRevision > 0 ? "Restore Google account" : googleSignIn.reconnectAccount.length ? "Reconnect "+((backend.accounts.find(row=>row.id===googleSignIn.reconnectAccount) || {}).name || "Google") : "Connect Google"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium; font.letterSpacing: 0}
+                Text { text: ["Step 1 of 3 · Your address", "Step 2 of 3 · Sign in with Google", "Step 3 of 3 · Ready to sync"][googleSignIn.step]; color: Theme.inkAlpha(0.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             }
         }
         ColumnLayout {
@@ -97,7 +97,7 @@ FmDialog {
             Description { text: googleSignIn.restoreRevision > 0 ? "Sign in as the same Google account to use your saved mail and calendars again." : "Enter your Gmail or Workspace address. Sign-in finishes in your browser."; color: Theme.secondary }
             FmTextField {
                 id: googleEmail; objectName: "googleEmailAddress"; Layout.fillWidth: true; implicitHeight: 42; padding: 10; leftPadding: 12; rightPadding: 12
-                placeholderText: "you@gmail.com"; enabled: !backend.googleAuthBusy;readOnly:!!googleSignIn.reconnectAccount; font.pointSize: Theme.fontPoints(15)
+                placeholderText: "you@gmail.com"; enabled: !backend.googleAuthBusy;readOnly:!!googleSignIn.reconnectAccount; font.pointSize: Theme.fontPoints(14)
                 Accessible.name: "Gmail or Google Workspace email address"
                 inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase; maximumLength: 320
                 validator: RegularExpressionValidator { regularExpression: / *[^\s@<>,;]+@[^\s@<>,;]+ */ }
@@ -105,7 +105,7 @@ FmDialog {
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 0
-                Text { text: "Request access to"; color: Theme.inkAlpha(0.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Layout.bottomMargin: 4 }
+                Text { text: "Request access to"; color: Theme.inkAlpha(0.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); Layout.bottomMargin: 4 }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 12
                     FmCheckBox { id: connectMail; objectName: "connectMailAccess"; Layout.fillWidth: true; checked: true; text: "Mail"; description: connectMailMode.currentIndex === 0 ? "Read your mail" : "Read, send and label your mail" }
@@ -129,7 +129,7 @@ FmDialog {
             }
         }
         Rectangle {
-            visible: googleSignIn.step === 1; Layout.fillWidth: true; implicitHeight: browserStatus.implicitHeight + 28; radius: 6; color: Theme.canvas; border.color: Theme.line
+            visible: googleSignIn.step === 1; Layout.fillWidth: true; implicitHeight: browserStatus.implicitHeight + 28; radius: 5; color: Theme.canvas; border.color: Theme.line
             RowLayout {
                 id: browserStatus; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 14; spacing: 12
                 Rectangle { implicitWidth: 8; implicitHeight: 8; radius: 4; color: Theme.accent }
@@ -140,17 +140,17 @@ FmDialog {
                 }
             }
         }
-        FmButton { visible: googleSignIn.step === 1; text: "Browser didn’t open? Try again"; leftPadding: 0; font.pointSize: Theme.fontPoints(12.5); onClicked: backend.cancelGoogleAuth() }
+        FmButton { visible: googleSignIn.step === 1; text: "Browser didn’t open? Try again"; leftPadding: 0; font.pointSize: Theme.fontPoints(12); onClicked: backend.cancelGoogleAuth() }
         ColumnLayout {
             visible: googleSignIn.step === 2; Layout.fillWidth: true; spacing: 14
             Rectangle {
-                Layout.fillWidth: true; implicitHeight: connectedInfo.implicitHeight + 28; radius: 6; color: Theme.canvas; border.color: Theme.line
+                Layout.fillWidth: true; implicitHeight: connectedInfo.implicitHeight + 28; radius: 5; color: Theme.canvas; border.color: Theme.line
                 ColumnLayout { id: connectedInfo; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 14; spacing: 3; Description { text: googleSignIn.accountRow.email || googleEmail.text; color: Theme.text } Caption { text: googleSignIn.grantedAccess() } }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 Caption { text: "Display name — shown in the top bar" }
-                FmTextField { id: connectName; objectName: "connectedAccountName"; Layout.fillWidth: true; implicitHeight: 42; font.pointSize: Theme.fontPoints(15); maximumLength: 80; enabled: !googleSignIn.finishing; Accessible.name: "New account display name"; onAccepted: googleSignIn.finish() }
+                FmTextField { id: connectName; objectName: "connectedAccountName"; Layout.fillWidth: true; implicitHeight: 42; font.pointSize: Theme.fontPoints(14); maximumLength: 80; enabled: !googleSignIn.finishing; Accessible.name: "New account display name"; onAccepted: googleSignIn.finish() }
             }
             ColumnLayout {
                 visible: googleSignIn.modelConfigured && !googleSignIn.reconnectAccount.length && connectMail.checked
@@ -186,7 +186,7 @@ FmDialog {
             FmButton {
                 objectName: googleSignIn.step === 2 ? "finishGoogleConnection" : "beginGoogleSignIn"
                 text: googleSignIn.finishing ? "Saving…" : ["Continue with Google", "Waiting for Google…", googleSignIn.reconnectAccount ? "Resume syncing" : "Start syncing"][googleSignIn.step]
-                implicitHeight: 32; prominent: true; shortcutHint: "↵"; font.pointSize: Theme.fontPoints(12.5)
+                implicitHeight: 32; prominent: true; shortcutHint: "↵"; font.pointSize: Theme.fontPoints(12)
                 enabled: backend.connected && !googleSignIn.finishing && (googleSignIn.step === 2 ? !!googleSignIn.accountRow.id && !!connectName.text.trim().length : googleSignIn.step === 0 && !backend.googleAuthBusy && !!backend.googleAuthConfiguration.available && googleEmail.acceptableInput && (connectMail.checked || connectCalendar.checked))
                 onClicked: googleSignIn.step === 2 ? googleSignIn.finish() : googleSignIn.signIn()
             }
@@ -194,8 +194,8 @@ FmDialog {
         }
     }
     component Description: Text {
-        color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
+        color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
         Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); textFormat: Text.PlainText
     }
-    component Caption: Description { font.pointSize: Theme.fontPoints(12.5); color: Theme.inkAlpha(0.5) }
+    component Caption: Description { font.pointSize: Theme.fontPoints(12); color: Theme.inkAlpha(0.5) }
 }

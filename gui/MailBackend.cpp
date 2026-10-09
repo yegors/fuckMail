@@ -2627,8 +2627,11 @@ QVariantList MailBackend::receivedBody(const QString &html,const QString &plain)
     if (bytes <= maxFrame) m_bodyCache.insert(key, new QVariantList(rows), int(bytes + 256));
     return rows;
 }
+// The bundled Geist Mono first; elsewhere (tests that load no fonts) the
+// platform's fixed-pitch font.
 QString MailBackend::fixedFontFamily() const {
     const auto families = QFontDatabase::families();
+    if (families.contains("Geist Mono", Qt::CaseInsensitive)) return "Geist Mono";
     const auto system = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
     if (families.contains(system, Qt::CaseInsensitive)) return system;
     for (const auto candidate : {"Cascadia Mono", "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono", "Liberation Mono", "Courier New"})

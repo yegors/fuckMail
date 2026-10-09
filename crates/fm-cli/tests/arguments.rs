@@ -1231,3 +1231,31 @@ fn html_reader_commands_need_their_scope_before_storage() {
         assert!(!profile.exists());
     }
 }
+
+#[test]
+fn assist_thread_needs_an_account_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args([
+            "--profile",
+            profile.to_str().unwrap(),
+            "--json",
+            "assist",
+            "thread",
+            "windscribe-thread-000",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["error"]["code"], "invalid_request");
+    assert!(!profile.exists());
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args(["--profile", profile.to_str().unwrap(), "assist", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("thread"));
+    assert!(!profile.exists());
+}

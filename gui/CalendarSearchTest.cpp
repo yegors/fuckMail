@@ -438,7 +438,7 @@ class CalendarSearchTest {
             QVariant row = h.backend.m_allAccounts.value(0);
             require(QMetaObject::invokeMethod(tip, "show", Q_ARG(QVariant, row), Q_ARG(QVariant, 40.0), Q_ARG(QVariant, 60.0)), "hover card opens for a tab");
             await([&] { return tip->isVisible(); }, "hover card appears after a short hover");
-            require(tip->width() == 300 && !tip->acceptedMouseButtons(), "300 px card that takes no input");
+            require(tip->width() == 384 && !tip->acceptedMouseButtons(), "384 px card that takes no input");
             const auto captures = qEnvironmentVariable("FM_ACCOUNT_TIP_CAPTURE");
             if (!captures.isEmpty()) { QElapsedTimer paint; paint.start(); while (paint.elapsed() < 150) QCoreApplication::processEvents(); require(window->grabWindow().save(captures), "capture hover card"); }
             QMetaObject::invokeMethod(tip, "close"); require(!tip->isVisible(), "hover card closes with the pointer");
@@ -779,8 +779,8 @@ class CalendarSearchTest {
             auto *settingsButton = qobject_cast<QQuickItem *>(named(window, "settingsButton"));
             auto *box = qobject_cast<QQuickItem *>(named(window, "searchBox"));
             require(settingsButton, "the Settings button exists"); require(box, "the search box exists");
-            require(settingsButton->mapToScene({}).x() > box->mapToScene({}).x() + box->width() && settingsButton->width() == 32 && settingsButton->height() == 28,
-                "a 32 by 28 Settings button in its tray follows the search box");
+            require(settingsButton->mapToScene({}).x() > box->mapToScene({}).x() + box->width() && settingsButton->width() == 30 && settingsButton->height() == 30,
+                "a 30 by 30 Settings button follows the search box");
             require(!named(window, "accountEdge"), "no account-colour strip along the top");
         }
         // Calendar search's reading, dates and filter.

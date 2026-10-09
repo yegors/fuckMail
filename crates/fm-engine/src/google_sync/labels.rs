@@ -21,9 +21,18 @@ pub(crate) struct LabelsWorker {
     next_refresh_ms: u64,
 }
 impl LabelsWorker {
-    /// Refreshes the catalog when due, then tries the one-time link of an
-    /// account's existing Gmail labels. Otherwise idles until the next refresh.
+    /// Applies one part of a pending category projection, such as one a closed
+    /// engine left unfinished or a link made outside a label sync. Otherwise
+    /// refreshes the catalog when due, then tries the one-time link of an
+    /// account's existing Gmail labels, or idles until the next refresh.
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
+        let account = ctx.account.as_str().to_owned();
+        if ctx
+            .core_call(move |store| store.google_category_projection_step(&account))
+            .await?
+        {
+            return Ok(Step::Progress);
+        }
         if now_ms < self.next_refresh_ms {
             return Ok(Step::Idle(Duration::from_millis(
                 self.next_refresh_ms - now_ms,
@@ -38,14 +47,40 @@ impl LabelsWorker {
 /// A newly added account links its existing Gmail labels once, right after the
 /// first catalog refresh, so model labeling can use them without a manual sync.
 /// Nothing is created at Google. A failed attempt retries on the next refresh.
+/// Each store call does a bounded part, so other requests are served between.
 async fn initial_import(ctx: &SyncContext) {
-    let account = ctx.account.as_str().to_owned();
-    let imported = ctx
-        .core_call(move |store| store.google_labels_initial_import(&account))
-        .await;
-    if imported.is_ok_and(|result| result.is_some()) {
+    let mut imported = false;
+    loop {
+        let account = ctx.account.as_str().to_owned();
+        let Ok(Some(result)) = ctx
+            .core_call(move |store| store.google_labels_initial_import(&account))
+            .await
+        else {
+            break;
+        };
+        imported = true;
+        if result["more"] != true {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    if imported {
         ctx.refresh
             .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+}
+/// Applies every pending category projection of the account, one bounded
+/// part per store call, so other requests are served between parts.
+async fn finish_projections(ctx: &SyncContext) -> Result<()> {
+    loop {
+        let account = ctx.account.as_str().to_owned();
+        if !ctx
+            .core_call(move |store| store.google_category_projection_step(&account))
+            .await?
+        {
+            return Ok(());
+        }
+        tokio::task::yield_now().await;
     }
 }
 /// Reads the complete Gmail label list and publishes it as the account's
@@ -227,10 +262,23 @@ impl SyncJob {
 pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value> {
     let request = request_parameter(&params, "request_id")?.to_owned();
     refresh(ctx).await?;
-    let account = ctx.account.as_str().to_owned();
-    let plan = ctx
-        .core_call(move |store| store.google_labels_merge(&account, &request))
-        .await?;
+    // The merge links one label, or applies one part of linking, per call;
+    // its last call carries the complete plan.
+    let mut pulled = 0;
+    let mut renamed = 0;
+    let plan = loop {
+        let account = ctx.account.as_str().to_owned();
+        let request = request.clone();
+        let part = ctx
+            .core_call(move |store| store.google_labels_merge(&account, &request))
+            .await?;
+        pulled += part["pulled"].as_u64().unwrap_or(0);
+        renamed += part["renamed"].as_u64().unwrap_or(0);
+        if part["more"] != true {
+            break part;
+        }
+        tokio::task::yield_now().await;
+    };
     let mut created = 0;
     let mut unresolved = 0;
     for item in plan["pending"].as_array().unwrap() {
@@ -302,6 +350,9 @@ pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value
     if created > 0 {
         refresh(ctx).await?;
     }
+    // Labels just created in Gmail were linked with only their first part
+    // applied; membership is settled before it is queued for delivery.
+    finish_projections(ctx).await?;
     let mut queued = 0;
     loop {
         let account = ctx.account.as_str().to_owned();
@@ -316,8 +367,6 @@ pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value
     }
     ctx.refresh
         .send_modify(|revision| *revision = revision.wrapping_add(1));
-    let pulled = plan["pulled"].as_u64().unwrap_or(0);
-    let renamed = plan["renamed"].as_u64().unwrap_or(0);
     let skipped = plan["skipped"].as_u64().unwrap_or(0);
     let missing = plan["missing"].as_u64().unwrap_or(0);
     let message = if unresolved > 0 {

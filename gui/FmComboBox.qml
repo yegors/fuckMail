@@ -2,6 +2,7 @@
 // settings pages and the event forms.
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 
 ComboBox {
     id: control
@@ -15,7 +16,7 @@ ComboBox {
     leftPadding: 11
     rightPadding: 32
     font.family: Theme.fontFamily
-    font.pointSize: Theme.fontPoints(13)
+    font.pointSize: Theme.fontPoints(12)
     hoverEnabled: true
     contentItem: Text { text: control.displayText; color: control.enabled ? Theme.text : Theme.subtle; font: control.font; verticalAlignment: Text.AlignVCenter; elide: control.textElide }
     indicator: FmIcon { x: control.width - width - 10; y: (control.height - height)/2; name: "down"; size: 12 }
@@ -37,6 +38,10 @@ ComboBox {
         padding: 4
         implicitHeight: Math.min(280, contentItem.implicitHeight + 8)
         contentItem: ListView { clip: true; implicitHeight: contentHeight; model: control.popup.visible ? control.delegateModel : null; currentIndex: control.highlightedIndex; ScrollIndicator.vertical: ScrollIndicator { } }
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 5 }
+        background: Rectangle {
+            color: Theme.surface; border.color: Theme.controlBorder; radius: 8
+            layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
+            layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
+        }
     }
 }

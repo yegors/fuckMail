@@ -1,5 +1,13 @@
 # CLI and external agent interface
 
+## D199 — thread summary (CLI63)
+
+`fm --account ID assist thread CONVERSATION [--json]` summarizes the whole conversation with the local model (Local assistance32). Without `--account` it exits 2 before opening storage. It polls the job, Ctrl-C cancels it, and it prints the summary, adding "(Partial: older messages were shortened or left out.)" when that applies. `--json` prints the final `assist_job` reply; a failed job exits with its error code.
+
+## D198 — the shortcut bar preference (CLI63)
+
+`preferences show` includes `key_hints` (boolean, default true; Core91), and `preferences save` accepts it. Other commands are unchanged.
+
 ## D183 — forwards with files (CLI62)
 
 `draft create --mode forward` returns a draft that already selects the source message's attachments (Core86). `draft save --attachment` replaces that selection and `--clear-attachments` empties it. `google sent --conversation-id` also lists forwards from that conversation. Other commands are unchanged.

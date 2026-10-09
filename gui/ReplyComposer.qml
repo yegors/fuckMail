@@ -147,7 +147,7 @@ Item {
             Rectangle {
                 anchors.fill: parent; visible: fileDrop.containsDrag
                 color: Theme.surface; opacity: 0.96; border.width: 1; border.color: Theme.accent; radius: 8
-                Text { anchors.centerIn: parent; text: "Drop files to attach"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(16) }
+                Text { anchors.centerIn: parent; text: "Drop files to attach"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15) }
             }
         }
         ColumnLayout {
@@ -167,20 +167,20 @@ Item {
                     objectName: "composerTitleText"
                     Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
                     text: ({new: "Compose Email", reply: "Reply", reply_all: "Reply All", forward: "Forward"})[root.mode] || "Reply"
-                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium
-                    font.letterSpacing: -0.02 * Theme.fontSize(20); lineHeight: 1.1
+                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium
+                    font.letterSpacing: 0; lineHeight: 1.1
                 }
             }
             Text {
                 objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
                 Layout.fillWidth: true; Layout.bottomMargin: 12; wrapMode: Text.Wrap; textFormat: Text.PlainText
                 text: backend.unsavedAccountBuffer ? backend.draftStatus : "Saved account archive · selectable preview. Editing, sending and sync are off."
-                color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+                color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
             RowLayout {
                 visible: !root.readOnly
                 Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-                Text { text: "From"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                Text { text: "From"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                 Button {
                     id: fromButton; objectName: "draftFromAccount"
                     Layout.fillWidth: true; Layout.maximumWidth: contentItem.implicitWidth + 20
@@ -188,10 +188,10 @@ Item {
                     enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
                     Accessible.name: "From account, " + (backend.draft.from || "")
                     onClicked: fromMenu.open()
-                    background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.visualFocus ? Theme.accent : "transparent" }
+                    background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 5; border.color: fromButton.visualFocus ? Theme.accent : "transparent" }
                     contentItem: RowLayout {
                         spacing: 6
-                        Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                        Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                         FmIcon { name: "chevronDown"; size: 10; color: Theme.inkAlpha(.4); visible: backend.accounts.length > 1 }
                     }
                     Menu {
@@ -208,11 +208,11 @@ Item {
                                 text: (modelData.name || modelData.email || "") + (modelData.email ? " · " + modelData.email : "")
                                 checkable: true; checked: modelData.id === backend.account
                                 indicator: null
-                                background: Rectangle { color: fromOption.highlighted || fromOption.hovered ? Theme.hover : "transparent"; radius: 4 }
+                                background: Rectangle { color: fromOption.highlighted || fromOption.hovered ? Theme.hover : "transparent"; radius: 5 }
                                 contentItem: RowLayout {
                                     spacing: 8
                                     FmIcon { name: "check"; size: 14; color: Theme.text; opacity: fromOption.checked ? 1 : 0 }
-                                    Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                                    Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                                 }
                                 onTriggered: backend.changeDraftAccount(modelData.id)
                             }
@@ -227,7 +227,7 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 visible: (backend.draftTransfer.status || "").length > 0
-                Text { objectName: "draftTransferStatus"; Layout.fillWidth: true; text: backend.draftTransfer.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                Text { objectName: "draftTransferStatus"; Layout.fillWidth: true; text: backend.draftTransfer.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 Flow {
                     Layout.fillWidth: true; spacing: 8
                     FmButton { objectName: "retryDraftTransfer"; text: "Check account change"; visible: backend.draftTransfer.retry; enabled: !backend.draftTransfer.busy; onClicked: backend.retryDraftTransfer() }
@@ -240,8 +240,8 @@ Item {
             RecipientField { id: bccField; Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 || (backend.recipientInputs.bcc_recipients||"").length>0) }
             RowLayout {
                 Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-                Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
-                TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; background: Item {} readOnly: root.readOnly || backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
+                Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; background: Item {} readOnly: root.readOnly || backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
             }
             Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
             ScrollView {
@@ -274,7 +274,7 @@ Item {
                     color: Theme.text
                     selectionColor: Theme.selection
                     selectedTextColor: Theme.selectedText
-                    font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15) }
+                    font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) }
                     background: null
                     padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 16; bottomPadding: 8
                     Accessible.name: root.draftTitle+" body"
@@ -369,8 +369,8 @@ Item {
                         RowLayout {
                             anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8
                             FmIcon { name: "attachment"; size: 14; color: Theme.secondary }
-                            Text { id: chipName; Layout.fillWidth: true; text: attachmentChip.modelData.name; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
-                            Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                            Text { id: chipName; Layout.fillWidth: true; text: attachmentChip.modelData.name; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                            Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                             FmButton {
                                 objectName: "exportDraftAttachment_" + attachmentChip.modelData.id
                                 visible: root.readOnly; text: "Open"; implicitHeight: 24; leftPadding: 2; rightPadding: 2
@@ -412,14 +412,14 @@ Item {
             RowLayout {
                 visible: !root.readOnly && (backend.attachmentImport.status || "").length > 0
                 Layout.fillWidth: true; Layout.bottomMargin: 8; spacing: 8
-                Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || backend.attachmentImport.can_resume || false; text: backend.attachmentImport.retry ? "Retry attachment" : "Continue"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
                 FmButton { objectName: "skipQueuedAttachments"; visible: (backend.attachmentImport.queued || 0) > 0; text: "Skip remaining"; onClicked: backend.skipQueuedDraftAttachments() }
             }
             ColumnLayout {
                 visible: backend.googleSend.visible || false
                 Layout.fillWidth: true; Layout.bottomMargin: visible ? 8 : 0; spacing: 6
-                Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 Flow {
                     Layout.fillWidth: true; spacing: 6
                     FmButton { objectName: "resumeSyncToSend"; text: "Resume sync"; outlined: true; visible: backend.googleSend.can_resume_sync || false; onClicked: backend.startGoogleSync(backend.account, {}) }
@@ -433,7 +433,7 @@ Item {
             ColumnLayout {
                 visible: backend.draftDiscard.visible || false
                 Layout.fillWidth: true; Layout.bottomMargin: visible ? 8 : 0; spacing: 6
-                Text { Layout.fillWidth: true; text: backend.draftDiscard.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                Text { Layout.fillWidth: true; text: backend.draftDiscard.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 RowLayout {
                     spacing: 6
                     FmButton { objectName: "checkDraftDiscard"; text: "Check discard"; visible: backend.draftDiscard.can_check || false; onClicked: backend.checkDraftDiscard() }
@@ -449,7 +449,7 @@ Item {
             ColumnLayout {
                 visible: backend.draftConflict
                 Layout.fillWidth: true; Layout.bottomMargin: 8; spacing: 8
-                Text { Layout.fillWidth: true; text: "Another window saved a newer version of this draft. Your text, formatting and attachments are still here. Choose which version to keep."; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                Text { Layout.fillWidth: true; text: "Another window saved a newer version of this draft. Your text, formatting and attachments are still here. Choose which version to keep."; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 RowLayout {
                     FmButton { objectName: "saveMyDraftVersion"; text: "Save my version…"; outlined: true; enabled: !backend.draftBusy; onClicked: conflictDialog.open() }
                     FmButton { text: "Reload saved draft…"; enabled: !backend.draftBusy; onClicked: reloadDialog.open() }
@@ -462,7 +462,7 @@ Item {
                 textFormat: Text.PlainText
                 wrapMode: Text.WordWrap
                 color: Theme.muted
-                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) }
+                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(10.5) }
             }
             Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
             RowLayout {
@@ -474,12 +474,12 @@ Item {
                     text: backend.syntheticProfile ? "Capture locally" : backend.googleSend.busy ? "Sending…" : "Send"
                     prominent: true
                     implicitHeight: 32; leftPadding: 16; rightPadding: 16
-                    font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
+                    font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
                     enabled: backend.syntheticProfile ? !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0) : backend.googleSend.can_send || false
                     tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Send through Gmail"
                     onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
                 }
-                FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12.5); tip: "Attach files — or drop them anywhere on the message"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: root.chooseLocalAttachment() }
+                FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12); tip: "Attach files — or drop them anywhere on the message"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: root.chooseLocalAttachment() }
                 Text {
                     objectName: "composerHint"
                     Layout.fillWidth: true
@@ -488,7 +488,7 @@ Item {
                     horizontalAlignment: Text.AlignRight
                     color: root.hint.tone
                     elide: Text.ElideRight; textFormat: Text.PlainText
-                    font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+                    font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) }
                     HoverHandler { id: hintHover }
                     FmToolTip { shown: hintHover.hovered && parent.truncated; text: parent.text }
                 }
@@ -498,7 +498,7 @@ Item {
                     visible: !root.readOnly
                     text: "Discard"; iconName: "bin"; iconSize: 13
                     implicitHeight: 32; leftPadding: 12; rightPadding: 12; Layout.leftMargin: 10
-                    font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
+                    font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
                     foreground: !enabled ? Theme.subtle : hovered ? Theme.error : Theme.inkAlpha(.8)
                     tip: "Discard this message"
                     enabled: !backend.draftLocked && !backend.draftBusy && !backend.attachmentImport.pending
@@ -516,13 +516,13 @@ Item {
         spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 28; spacing: 12
-            Text { text: "Recent with " + root.recentName; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
+            Text { text: "Recent with " + root.recentName; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
             Rectangle { Layout.fillWidth: true; implicitHeight: Theme.ruleWidth; color: Theme.line }
             FmButton {
                 objectName: "recentWithAll"
                 text: "All mail with " + root.recentName + " (" + (backend.recentWith.total || 0) + ")"
                 implicitHeight: 20; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
-                font.pointSize: Theme.fontPoints(11.5); foreground: hovered ? Theme.text : Theme.inkAlpha(.7); background: Item {}
+                font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.inkAlpha(.7); background: Item {}
                 onClicked: root.allMailWith(backend.recentWith.email || "")
             }
         }
@@ -547,9 +547,9 @@ Item {
                     Text {
                         Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.StyledText
                         text: "<font color=\"" + Theme.inkAlpha(.85) + "\">" + (Theme.oneLine(recentRow.modelData.subject) || "(No subject)").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font><font color=\"" + Theme.inkAlpha(.45) + "\"> · " + String(recentRow.modelData.snippet || "").replace(/\s+/g, " ").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font>"
-                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                     }
-                    Text { text: root.dayLabel(recentRow.modelData.latest_at); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1} }
+                    Text { text: root.dayLabel(recentRow.modelData.latest_at); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum": 1} }
                 }
             }
         }

@@ -186,15 +186,15 @@ Item {
                         property bool on: true
                         Timer { interval: 600; repeat: true; running: panel.visible && panel.alerting; onTriggered: statusDot.on = !statusDot.on; onRunningChanged: statusDot.on = true }
                     }
-                    Text { objectName: "reminderKicker"; text: panel.kicker; color: panel.alertColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.letterSpacing:.96; font.weight: Font.Normal }
+                    Text { objectName: "reminderKicker"; text: panel.kicker; color: panel.alertColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.letterSpacing:.96; font.weight: Font.Normal }
                     Item { Layout.fillWidth: true }
-                    Text {font.family:Theme.fontFamily; text: (panel.event.account_name || "") + " / " + (panel.event.calendar_name || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth:true; horizontalAlignment:Text.AlignRight; textFormat: Text.PlainText }
+                    Text {font.family:Theme.fontFamily; text: (panel.event.account_name || "") + " / " + (panel.event.calendar_name || ""); color: Theme.muted; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth:true; horizontalAlignment:Text.AlignRight; textFormat: Text.PlainText }
                     FmButton { objectName: "reminderMute"; iconName: panel.muted ? "mute" : "volume"; tip: panel.muted ? "Sound off · M" : "Sound on · M";implicitWidth:28;implicitHeight:28;leftPadding:7;rightPadding:7;outlined:true; onClicked: panel.muted = !panel.muted }
                 }
-                Text {font.family:Theme.fontFamily; objectName: "reminderRelative"; Layout.topMargin: 36; text: panel.ended ? "This event is over" : panel.secondsLeft <= 0 ? "Started " + panel.clock(panel.secondsLeft) + " ago" : "Starts in"; color: Theme.muted; font.pointSize: Theme.fontPoints(13) }
-                Text { Layout.topMargin:4;objectName: "reminderCountdown"; text: panel.countdown; color: panel.ended ? Theme.inkAlpha(.4) : panel.alerting ? panel.alertColor : Theme.text; font.family: Theme.fontFamily; readonly property real size: Math.min(panel.countdownSize, body.width / 4); font.pixelSize: size; font.weight: Font.Medium; font.letterSpacing: -0.045 * size;lineHeightMode:Text.FixedHeight;lineHeight:size; font.features: { "tnum": 1 } }
-                Text { Layout.topMargin: 32; Layout.fillWidth: true; text: panel.event.title || "Event"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(36); font.weight: Font.Medium; font.letterSpacing: -0.02 * Theme.fontSize(36); lineHeightMode:Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(36) * 1.15) }
-                Text {font.family:Theme.fontFamily; Layout.topMargin: 10; Layout.fillWidth: true; text: backend.calendarReminderWhen(panel.event); textFormat: Text.PlainText; color: Theme.muted; font.pointSize: Theme.fontPoints(16); wrapMode: Text.Wrap }
+                Text {font.family:Theme.fontFamily; objectName: "reminderRelative"; Layout.topMargin: 36; text: panel.ended ? "This event is over" : panel.secondsLeft <= 0 ? "Started " + panel.clock(panel.secondsLeft) + " ago" : "Starts in"; color: Theme.muted; font.pointSize: Theme.fontPoints(12) }
+                Text { Layout.topMargin:4;objectName: "reminderCountdown"; text: panel.countdown; color: panel.ended ? Theme.inkAlpha(.4) : panel.alerting ? panel.alertColor : Theme.text; font.family: Theme.fontFamily; readonly property real size: Math.min(panel.countdownSize, body.width / 4); font.pixelSize: size; font.weight: Font.Medium; font.letterSpacing: 0;lineHeightMode:Text.FixedHeight;lineHeight:size; font.features: { "tnum": 1 } }
+                Text { Layout.topMargin: 32; Layout.fillWidth: true; text: panel.event.title || "Event"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(34); font.weight: Font.Medium; font.letterSpacing: 0; lineHeightMode:Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(34) * 1.15) }
+                Text {font.family:Theme.fontFamily; Layout.topMargin: 10; Layout.fillWidth: true; text: backend.calendarReminderWhen(panel.event); textFormat: Text.PlainText; color: Theme.muted; font.pointSize: Theme.fontPoints(15); wrapMode: Text.Wrap }
                 ColumnLayout {
                     Layout.fillWidth:true;Layout.topMargin:28;spacing:0
                     Rectangle {visible:panel.meetingUrl.length>0 || panel.rows.length>0 || panel.hasGuests || panel.notes.length>0;Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
@@ -204,14 +204,14 @@ Item {
                         Layout.fillWidth:true;spacing:0
                         RowLayout {
                             Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                            Text {font.family:Theme.fontFamily;text:"Meeting URL";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
+                            Text {font.family:Theme.fontFamily;text:"Meeting URL";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(13);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
                             Item {
                                 Layout.fillWidth:true; implicitHeight: meetingLink.implicitHeight + 2
                                 Text {
                                     id: meetingLink; objectName: "reminderMeetingUrl"
                                     width: Math.min(implicitWidth, parent.width)
                                     text: panel.meetingUrl.replace(/^https:\/\//i, ""); textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
-                                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14.5)
                                     HoverHandler { id: meetingHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: backend.openLink(panel.meetingUrl) }
                                     FmToolTip { shown: meetingHover.hovered; text: "Open meeting" }
@@ -228,8 +228,8 @@ Item {
                             Layout.fillWidth:true;spacing:0
                             RowLayout {
                                 Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                                Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112}
-                                Text {font.family:Theme.fontFamily;text:modelData.value;textFormat:Text.PlainText;color:Theme.text;font.pointSize:Theme.fontPoints(15.5);elide:Text.ElideRight;Layout.fillWidth:true}
+                                Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(13);Layout.preferredWidth:112}
+                                Text {font.family:Theme.fontFamily;text:modelData.value;textFormat:Text.PlainText;color:Theme.text;font.pointSize:Theme.fontPoints(14.5);elide:Text.ElideRight;Layout.fillWidth:true}
                             }
                             Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
                         }
@@ -240,7 +240,7 @@ Item {
                         Layout.fillWidth:true;spacing:0
                         RowLayout {
                             Layout.fillWidth:true;Layout.topMargin:8;Layout.bottomMargin:8;spacing:0
-                            Text {font.family:Theme.fontFamily;text:"Guests";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop;topPadding:4}
+                            Text {font.family:Theme.fontFamily;text:"Guests";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(13);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop;topPadding:4}
                             AttendeeList { Layout.fillWidth: true; prefix: "reminderAttendee"; event: panel.event; avatarSize: 24; nameSize: 15; statusSize: 13.5; rowHeight: 34 }
                         }
                         Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
@@ -249,7 +249,7 @@ Item {
                     RowLayout {
                         objectName: "reminderNotes"; visible: panel.notes.length > 0
                         Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                        Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
+                        Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(13);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
                         ScrollView {
                             id: notesScroll
                             ScrollBar.vertical: FmScrollBar {}
@@ -263,7 +263,7 @@ Item {
                                 text: "<div style=\"line-height:165%\">" + Theme.linkedNotes(panel.notes, Theme.text) + "</div>"
                                 textFormat: TextEdit.RichText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
                                 color: Theme.inkAlpha(.82); selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
-                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14.5)
                                 onLinkActivated: function(link) { backend.openLink(link) }
                                 HoverHandler { cursorShape: notesText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                             }
@@ -277,7 +277,7 @@ Item {
             id:reminderActions;objectName:"reminderActions";x:frame.columnX;width:frame.columnWidth;y:viewport.y+viewport.height+frame.actionsGap;spacing:8
             FmButton {
                 id:primaryButton;objectName:"reminderPrimary";visible:panel.hasPrimary;text:"Join "+panel.provider;shortcutHint:"↵"
-                prominent:true;foreground:panel.alerting ? "white" : Theme.canvas;implicitHeight:36;leftPadding:14;rightPadding:14;font.pointSize:Theme.fontPoints(13);font.weight:Font.Medium
+                prominent:true;foreground:panel.alerting ? "white" : Theme.canvas;implicitHeight:36;leftPadding:14;rightPadding:14;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium
                 onClicked:panel.primary()
                 background:Rectangle {radius:6;color:panel.alerting ? panel.alertColor : Theme.text}
             }

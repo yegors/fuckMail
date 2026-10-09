@@ -10,11 +10,10 @@ Control {
     property int currentIndex: 0
     property bool compact: false
     property bool hoverHighlight: !compact
-    property color fill: compact ? Theme.canvas : Theme.surface
     signal activated(int index)
-    padding: 2
-    implicitWidth: segments.implicitWidth + 4
-    implicitHeight: segments.implicitHeight + 4
+    padding: 0
+    implicitWidth: segments.implicitWidth
+    implicitHeight: segments.implicitHeight
     focusPolicy: Qt.StrongFocus
     function selectIndex(index) {
         const next = Math.max(0, Math.min(model.length - 1, index))
@@ -30,7 +29,8 @@ Control {
         else return
         event.accepted = true
     }
-    background: Rectangle { radius: 6; color: control.fill; border.color: control.activeFocus ? Theme.line3 : "transparent" }
+    // Segments sit on nothing; only keyboard focus draws an outline.
+    background: Rectangle { radius: 5; color: "transparent"; border.color: control.activeFocus ? Theme.line3 : "transparent" }
     contentItem: Row {
         id: segments
         spacing: 2
@@ -43,11 +43,11 @@ Control {
                 objectName: control.optionNames[index] || ""
                 height: Math.max(control.compact ? 22 : 28, contentItem.implicitHeight + (control.compact ? 6 : 10)); text: String(modelData); implicitWidth: contentItem.implicitWidth + (control.compact ? 20 : 24)
                 leftPadding:control.compact ? 10 : 12;rightPadding:leftPadding
-                font.pointSize: Theme.fontPoints(control.compact ? 12 : 12.5)
+                font.pointSize: Theme.fontPoints(control.compact ? 11.5 : 12)
                 selected: control.currentIndex === index
                 focusPolicy: Qt.NoFocus
                 onClicked: { control.forceActiveFocus(); control.selectIndex(index) }
-                background: Rectangle { radius: 4; color: segment.selected ? Theme.brighten(Theme.hover, segment.lift) : control.hoverHighlight && segment.hovered ? Theme.selected : "transparent" }
+                background: Rectangle { radius: 5; color: segment.selected ? Theme.brighten(Theme.hover, segment.lift) : control.hoverHighlight && segment.hovered ? Theme.selected : "transparent" }
             }
         }
     }

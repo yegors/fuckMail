@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 
 // The hover card for a link in a message: its domain, warnings, the full URL
 // with the domain emphasised so lookalikes stand out, how often this account
@@ -50,27 +51,31 @@ Popup {
     function scheduleHide() { openTimer.stop(); pendingLink = null; lingerTimer.restart() }
     Timer { id: lingerTimer; interval: 200; onTriggered: if (!cardHover.hovered) card.close() }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120; easing.type: Easing.OutCubic } }
-    background: Rectangle { color: Theme.bg2; radius: 8; border.color: Theme.line2 }
+    background: Rectangle {
+        color: Theme.bg2; radius: 8; border.color: Theme.line2
+        layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
+        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
+    }
     contentItem: ColumnLayout {
         spacing: 8
         HoverHandler { id: cardHover; onHoveredChanged: if (!hovered) card.scheduleHide() }
         RowLayout {
             Layout.fillWidth: true; spacing: 8
             FmIcon { name: "globe"; size: 13; color: Theme.inkAlpha(.5) }
-            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: card.host; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: Font.Medium; textFormat: Text.PlainText }
+            Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: card.host; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium; textFormat: Text.PlainText }
             Rectangle {
                 objectName: "linkCardInsecure"; visible: card.insecure
-                implicitWidth: insecureText.implicitWidth + 12; implicitHeight: insecureText.implicitHeight + 2; radius: 3
+                implicitWidth: insecureText.implicitWidth + 12; implicitHeight: insecureText.implicitHeight + 2; radius: 5
                 color: "transparent"; border.color: Theme.withAlpha(Theme.warn, .4)
-                Text { id: insecureText; anchors.centerIn: parent; text: "Not secure"; color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                Text { id: insecureText; anchors.centerIn: parent; text: "Not secure"; color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                 HoverHandler { id: insecureHover }
                 FmToolTip { shown: insecureHover.hovered; text: "This link is not encrypted" }
             }
             Rectangle {
                 objectName: "linkCardBlocked"; visible: !!card.blockedBy
-                implicitWidth: blockedText.implicitWidth + 12; implicitHeight: blockedText.implicitHeight + 2; radius: 3
+                implicitWidth: blockedText.implicitWidth + 12; implicitHeight: blockedText.implicitHeight + 2; radius: 5
                 color: "transparent"; border.color: Theme.withAlpha(Theme.red, .4)
-                Text { id: blockedText; anchors.centerIn: parent; text: card.blockedBy && card.blockedBy !== card.host ? "Blocked by " + card.blockedBy : "Blocked"; color: Theme.red; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText }
+                Text { id: blockedText; anchors.centerIn: parent; text: card.blockedBy && card.blockedBy !== card.host ? "Blocked by " + card.blockedBy : "Blocked"; color: Theme.red; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); textFormat: Text.PlainText }
             }
         }
         Text {
@@ -78,7 +83,7 @@ Popup {
             Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; textFormat: Text.StyledText; lineHeight: 1.5
             text: "<font color=\"" + Theme.inkAlpha(.45) + "\">" + card.htmlText(card.parts.pre) + "</font>" + card.htmlText(card.parts.host)
                 + "<font color=\"" + Theme.inkAlpha(.45) + "\">" + card.htmlText(card.parts.rest) + "</font>"
-            color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5)
+            color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11)
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         RowLayout {
@@ -88,7 +93,7 @@ Popup {
                 readonly property int count: card.seen.messages || 0
                 text: !card.seen.complete ? "Still indexing this account" : count ? "Seen in " + count + (count === 1 ? " other email" : " other emails") : "First time seeing this domain"
                 color: card.seen.complete && !count ? Theme.warn : Theme.inkAlpha(.55)
-                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
             }
             LinkCardAction { objectName: "linkCardCopy"; text: card.copied ? "Copied" : "Copy link"; onClicked: { backend.copyText(card.url); card.copied = true } }
             LinkCardAction {
@@ -106,7 +111,7 @@ Popup {
         implicitWidth: actionText.implicitWidth; implicitHeight: actionText.implicitHeight
         hoverEnabled: true
         HoverHandler { cursorShape: Qt.PointingHandCursor }
-        contentItem: Text { id: actionText; text: action.text; color: action.hovered ? action.active : action.idle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+        contentItem: Text { id: actionText; text: action.text; color: action.hovered ? action.active : action.idle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
         background: null
     }
 }

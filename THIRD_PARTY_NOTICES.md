@@ -11,7 +11,7 @@ executables (`fuckMail.app/Contents/Resources/licenses` on macOS).
 | --- | --- | --- | --- | --- |
 | [litehtml](https://github.com/litehtml/litehtml) (vendored, locally modified) | Rendering received HTML mail | BSD-3-Clause | [gui/third_party/litehtml/LICENSE](gui/third_party/litehtml/LICENSE) | `LICENSE-litehtml.txt` |
 | Gumbo HTML parser (part of litehtml) | HTML parsing inside litehtml | Apache-2.0 | [gui/third_party/litehtml/src/gumbo/LICENSE](gui/third_party/litehtml/src/gumbo/LICENSE) | `LICENSE-gumbo.txt` |
-| [Geist](https://github.com/vercel/geist-font) fonts | UI typeface | SIL Open Font License 1.1 | [gui/fonts/LICENSE-Geist.txt](gui/fonts/LICENSE-Geist.txt) | `LICENSE-Geist.txt` |
+| [Geist and Geist Mono](https://github.com/vercel/geist-font) fonts | UI and fixed-pitch typefaces | SIL Open Font License 1.1 | [gui/fonts/LICENSE-Geist.txt](gui/fonts/LICENSE-Geist.txt) | `LICENSE-Geist.txt` |
 | [rrule](https://github.com/fmeringdal/rust-rrule) 0.14.0 (vendored, locally modified) | Calendar recurrence expansion | MIT (upstream is MIT OR Apache-2.0) | [crates/fm-calendar/vendor/rrule/LICENSE-MIT](crates/fm-calendar/vendor/rrule/LICENSE-MIT) | `THIRD-PARTY-RUST.txt` |
 
 Local modifications are described in [gui/third_party/litehtml/VENDORED.md](gui/third_party/litehtml/VENDORED.md)

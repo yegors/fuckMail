@@ -87,7 +87,7 @@ Item {
         id:modelUnsaved; parent:Overlay.overlay; anchors.centerIn:parent; modal:true; title:"Save local model changes?"
         contentItem: Label {
             text: "Keep your endpoint, model and prompt changes before leaving this section?"
-            color: Theme.inkAlpha(0.6); font.pointSize: Theme.fontPoints(13); wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
+            color: Theme.inkAlpha(0.6); font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
         }
         footer: RowLayout {
             spacing: 6
@@ -107,31 +107,31 @@ Item {
     }
     component Heading: Text {
         property real leading: 1.1
-        color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(22); weight: Font.Medium; letterSpacing: -0.44 }
+        color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(20.5); weight: Font.Medium; letterSpacing: 0}
         Layout.fillWidth: true; textFormat: Text.PlainText; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * leading)
         topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     component Description: Text {
-        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
-        Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5); textFormat: Text.PlainText
+        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+        Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.5); textFormat: Text.PlainText
         topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     component Caption: Text {
-        color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.4)
+        color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(11.5) * 1.4)
         topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     component Divider: Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
     component KeyCap: Rectangle {
         property string label: ""
-        implicitWidth: Math.max(22,keyText.implicitWidth + 12); implicitHeight: 22; color: "transparent"; border.color: Theme.controlBorder; radius: 4
-        Text { id: keyText; anchors.centerIn: parent; text: parent.label; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
+        implicitWidth: Math.max(22,keyText.implicitWidth + 12); implicitHeight: 22; color: "transparent"; border.color: Theme.controlBorder; radius: 5
+        Text { id: keyText; anchors.centerIn: parent; text: parent.label; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } }
     }
     component PreferenceLabel: ColumnLayout {
         property string label: ""
         property string detail: ""
         Layout.fillWidth: true; spacing: 3
-        Text { text: parent.label; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(14) * 1.4); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
-        Text { text: parent.detail; visible: text.length > 0; color: Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.45); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
+        Text { text: parent.label; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13) * 1.4); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
+        Text { text: parent.detail; visible: text.length > 0; color: Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } Layout.fillWidth: true; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.45); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
     }
     // Each page is built when it is first shown and kept afterwards.
     component SettingsPage: Loader {
@@ -154,7 +154,7 @@ Item {
         contentItem: Column {
             id: preview; spacing: 6
             Rectangle {
-                width: 68; height: 46; radius: 6; color: swatch.paletteData.bg
+                width: 68; height: 46; radius: 5; color: swatch.paletteData.bg
                 Item {
                     anchors.fill: parent; anchors.margins: 2
                     Item {
@@ -191,9 +191,9 @@ Item {
                         }
                     }
                 }
-                Rectangle { anchors.fill: parent; radius: 6; color: "transparent"; border.width: 2; border.color: swatch.checked ? Theme.text : swatch.visualFocus ? Theme.focusBorder : Theme.controlBorder }
+                Rectangle { anchors.fill: parent; radius: 5; color: "transparent"; border.width: 2; border.color: swatch.checked ? Theme.text : swatch.visualFocus ? Theme.focusBorder : Theme.controlBorder }
             }
-            Text { width: 68; horizontalAlignment: Text.AlignHCenter; text: swatch.paletteData.name; color: swatch.checked ? Theme.text : Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: swatch.checked ? Font.Medium : Font.Normal } lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(11.5) * 1.4); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
+            Text { width: 68; horizontalAlignment: Text.AlignHCenter; text: swatch.paletteData.name; color: swatch.checked ? Theme.text : Theme.inkAlpha(0.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11); weight: swatch.checked ? Font.Medium : Font.Normal } lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(11) * 1.4); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight) }
         }
         Accessible.name: paletteData.name + " theme"
         Accessible.role: Accessible.RadioButton
@@ -221,7 +221,7 @@ Item {
                 Item { Layout.fillHeight: true }
                 Text {
                     text: "Version " + Qt.application.version + " · everything here stays on this machine"; wrapMode: Text.Wrap
-                    color: Theme.faint; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } lineHeightMode: Text.FixedHeight; lineHeight: Theme.fontSize(11.5) * 1.5
+                    color: Theme.faint; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) } lineHeightMode: Text.FixedHeight; lineHeight: Theme.fontSize(11) * 1.5
                     topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); Layout.rightMargin: 10
                     Layout.fillWidth: true; Layout.leftMargin: 10
                     MouseArea { anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: settings.selectPage("Diagnostics") }
@@ -242,7 +242,7 @@ Item {
                 background: Rectangle { radius: 5; color: doneButton.hovered ? Theme.surface : Theme.canvas; border.color: doneButton.visualFocus ? Theme.focusBorder : Theme.controlBorder }
                 contentItem: Row {
                     id: doneContent; spacing: 8
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Done"; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium } }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Done"; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); weight: Font.Medium } }
                     KeyCap { anchors.verticalCenter: parent.verticalCenter; label: "Esc"; implicitHeight: 19; border.color: Theme.line }
                 }
             }
@@ -265,13 +265,13 @@ Item {
                         objectName: "settingsSubtitle"
                         text: settings.subtitles[settings.page] || ""
                         Layout.fillWidth: true; Layout.bottomMargin: 8; elide: Text.ElideRight; maximumLineCount: 1
-                        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
+                        color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
                     }
                     Text {
                         objectName: "settingsStatus"
                         visible: settings.localError.length > 0 || backend.preferencesStatus.indexOf("Not saved") === 0
                         text: settings.localError.length ? settings.localError : backend.preferencesStatus
-                        color: Theme.error; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } wrapMode: Text.Wrap; Layout.fillWidth: true
+                        color: Theme.error; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } wrapMode: Text.Wrap; Layout.fillWidth: true
                         Accessible.role: Accessible.AlertMessage
                     }
                     FmButton { visible: backend.preferencesPending && backend.preferencesStatus.indexOf("Not saved") === 0; text: "Retry display preferences"; outlined: true; onClicked: backend.setPreferences({}) }
@@ -293,6 +293,17 @@ Item {
                                     currentIndex: ["small","default","large"].indexOf(backend.preferences.text_size || "default")
                                     onActivated: function(index) { backend.setPreferences({text_size:["small","default","large"][index]}); currentIndex = Qt.binding(function() { return ["small","default","large"].indexOf(backend.preferences.text_size || "default") }) }
                                     Accessible.name: "Text size"
+                                }
+                            }
+                            Divider {}
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                                PreferenceLabel { label: "Shortcut bar"; detail: "The keys for the current view, along the bottom of the window." }
+                                FmSegmented {
+                                    objectName: "keyHintsPreference"; model: ["Show","Hide"]
+                                    currentIndex: backend.preferences.key_hints === false ? 1 : 0
+                                    onActivated: function(index) { backend.setPreferences({key_hints:index === 0}); currentIndex = Qt.binding(function() { return backend.preferences.key_hints === false ? 1 : 0 }) }
+                                    Accessible.name: "Shortcut bar"
                                 }
                             }
                             Divider {}
@@ -445,14 +456,14 @@ Item {
                                 RowLayout {
                                     spacing: 8
                                     FmComboBox { objectName: "timeline_start_hour"; implicitWidth: 92; implicitHeight: 30; model: settings.hourLabels.slice(0,24); currentIndex: Number(backend.preferences.timeline_start_hour); onActivated: { settings.saveHour("timeline_start_hour","timeline_end_hour",currentIndex,true); currentIndex = Qt.binding(function() { return Number(backend.preferences.timeline_start_hour) }) } }
-                                    Text { text: "to"; color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } }
+                                    Text { text: "to"; color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
                                     FmComboBox { objectName: "timeline_end_hour"; implicitWidth: 92; implicitHeight: 30; model: settings.hourLabels.slice(1); currentIndex: Number(backend.preferences.timeline_end_hour)-1; onActivated: { settings.saveHour("timeline_end_hour","timeline_start_hour",currentIndex+1,false); currentIndex = Qt.binding(function() { return Number(backend.preferences.timeline_end_hour)-1 }) } }
                                 }
                             }
                             Divider {}
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                                Text { text: "Week starts on"; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) } Layout.fillWidth: true }
+                                Text { text: "Week starts on"; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } Layout.fillWidth: true }
                                 FmSegmented { objectName: "weekStartPreference"; model: ["Monday","Sunday"]; currentIndex: backend.preferences.week_start === "sunday" ? 1 : 0; onActivated: function(index) { backend.setPreferences({week_start:index === 1 ? "sunday" : "monday"}); currentIndex = Qt.binding(function() { return backend.preferences.week_start === "sunday" ? 1 : 0 }) } Accessible.name: "Week starts on" }
                             }
                             Divider {}
@@ -468,8 +479,8 @@ Item {
                                         objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
                                         Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
                                         checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
-                                        indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.visualFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
-                                        contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } } }
+                                        indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 5; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.visualFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
+                                        contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } } }
                                         Accessible.name: modelData.name + " from " + modelData.account_name
                                     }
                                 }
@@ -489,7 +500,7 @@ Item {
                             spacing: 12
                             Repeater {
                                 model: Object.keys(backend.diagnostics)
-                                ColumnLayout { required property string modelData; Layout.fillWidth: true; spacing: 6; Caption { text: modelData.replace(/_/g," ") } TextEdit { text: typeof backend.diagnostics[modelData] === "object" ? JSON.stringify(backend.diagnostics[modelData],null,2) : String(backend.diagnostics[modelData]); readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } wrapMode: TextEdit.Wrap; Layout.fillWidth: true } }
+                                ColumnLayout { required property string modelData; Layout.fillWidth: true; spacing: 6; Caption { text: modelData.replace(/_/g," ") } TextEdit { text: typeof backend.diagnostics[modelData] === "object" ? JSON.stringify(backend.diagnostics[modelData],null,2) : String(backend.diagnostics[modelData]); readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5) } wrapMode: TextEdit.Wrap; Layout.fillWidth: true } }
                             }
                         }
                     }

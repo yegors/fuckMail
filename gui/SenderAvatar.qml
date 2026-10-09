@@ -22,8 +22,8 @@ Item {
     property color discColor: Theme.oklch(.36, .06, hue)
     property color initialsColor: Theme.oklch(.9, .05, hue)
     property string initials: Theme.initialsOf(name || email)
-    property real fontPoints: Theme.fontPoints(11)
-    property int fontWeight: Font.DemiBold
+    property real fontPoints: Theme.fontPoints(10.5)
+    property int fontWeight: Font.Medium
     property real letterSpacing: 0
     property bool tipEnabled: false
     readonly property var service: backend.htmlContent || null

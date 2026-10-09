@@ -81,8 +81,8 @@ Popup {
 
     component SectionLabel: Text {
         Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 6
-        color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
-        font.letterSpacing: Theme.fontSize(11) * .05; font.capitalization: Font.AllUppercase
+        color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5)
+        font.letterSpacing: Theme.fontSize(10.5) * .05; font.capitalization: Font.AllUppercase
     }
     component Rule: Rectangle { Layout.fillWidth: true; implicitHeight: Theme.ruleWidth; color: Theme.line }
     component SearchRow: Rectangle {
@@ -103,7 +103,7 @@ Popup {
         id: removeButton
         signal clicked()
         property string tip: "Remove"
-        implicitWidth: 20; implicitHeight: 20; radius: 4
+        implicitWidth: 20; implicitHeight: 20; radius: 5
         color: removeArea.containsMouse ? Theme.bg6 : "transparent"
         Accessible.role: Accessible.Button; Accessible.name: tip; Accessible.onPressAction: clicked()
         FmIcon { anchors.centerIn: parent; name: "close"; size: 9; color: removeArea.containsMouse ? Theme.text : Theme.inkAlpha(.35) }
@@ -114,14 +114,14 @@ Popup {
         property alias text: operatorLabel.text
         property real minimumWidth: 0
         implicitWidth: Math.max(minimumWidth, operatorLabel.implicitWidth + 12); implicitHeight: operatorLabel.implicitHeight + 2
-        radius: 3; color: Theme.bg4
-        Text { id: operatorLabel; x: 6; anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
+        radius: 5; color: Theme.bg4
+        Text { id: operatorLabel; x: 6; anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText }
     }
 
     background: Rectangle {
         color: Theme.surface; border.color: Theme.controlBorder; radius: 8
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
-        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 1; shadowVerticalOffset: 24 }
+        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
     }
     contentItem: ScrollView {
         ScrollBar.vertical: FmScrollBar {}
@@ -143,17 +143,17 @@ Popup {
                 Text {
                     Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.StyledText
                     text: "Go to <font color=\"" + Theme.text + "\">" + goLabel.text + "</font>"
-                    color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+                    color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                     Text { id: goLabel; visible: false; text: popup.goDate ? popup.goText(popup.goDate) : "" }
                 }
-                Text { text: "↵"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                Text { text: "↵"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
             }
             Text {
                 objectName: "calendarSearchDateHint"
                 visible: popup.dateValue.length > 0 && !popup.goDate.length
                 Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 10; wrapMode: Text.Wrap
                 text: "Use YYYY-MM-DD, MM-DD, today, tomorrow or +7"
-                color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
             // A partial operator.
             Repeater {
@@ -165,7 +165,7 @@ Popup {
                     accessibleName: "Complete " + modelData.op
                     onClicked: popup.edit(popup.query.slice(0, popup.query.length - popup.lastToken.length) + modelData.op)
                     OperatorChip { text: completion.modelData.op; minimumWidth: 64 }
-                    Text { text: completion.modelData.description; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight }
+                    Text { text: completion.modelData.description; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight }
                 }
             }
             // The next matching events.
@@ -175,14 +175,14 @@ Popup {
                 Text {
                     objectName: "calendarSearchCount"
                     text: !popup.rows.length ? "" : popup.settled.has_more ? "7+ events" : popup.rows.length + (popup.rows.length === 1 ? " event" : " events")
-                    color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
-                    font.letterSpacing: Theme.fontSize(11) * .05; font.capitalization: Font.AllUppercase
+                    color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5)
+                    font.letterSpacing: Theme.fontSize(10.5) * .05; font.capitalization: Font.AllUppercase
                 }
                 Item { Layout.fillWidth: true }
                 Text {
                     objectName: "calendarSearchEnterNote"
                     text: popup.onlyPeople ? "↵ shows this month with them" : "↵ keeps the filter on"
-                    color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+                    color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
                 }
             }
             Repeater {
@@ -203,17 +203,17 @@ Popup {
                             anchors.centerIn: parent
                             text: ((resultRow.modelData.account_name || resultRow.modelData.account || "?")[0] || "?").toUpperCase()
                             color: Theme.accountColor(resultRow.modelData.account)
-                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(8.5); font.weight: Font.DemiBold
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium
                         }
                     }
                     Text {
                         Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
                         text: resultRow.modelData.title || "Untitled event"
-                        color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+                        color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                     }
                     Text {
                         text: popup.whenText(resultRow.modelData); textFormat: Text.PlainText
-                        color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
+                        color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}
                     }
                 }
             }
@@ -222,14 +222,14 @@ Popup {
                 visible: popup.wordsTyped && popup.answered && !popup.rows.length && !popup.statusText.length
                 Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 12; bottomPadding: 12
                 text: "No events match"
-                color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
             Text {
                 objectName: "calendarSearchStatus"
                 visible: popup.typing && popup.statusText.length > 0
                 Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 10; wrapMode: Text.Wrap; textFormat: Text.PlainText
                 text: popup.statusText
-                color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
             // Empty query: recent searches, then the operators.
             ColumnLayout {
@@ -246,7 +246,7 @@ Popup {
                         accessibleName: "Search " + modelData
                         onClicked: popup.commit(modelData)
                         FmIcon { name: "clock"; size: 12; color: Theme.inkAlpha(.4) }
-                        Text { text: recent.modelData; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { text: recent.modelData; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                         RemoveButton { objectName: "removeCalendarRecentSearch_" + recent.index; tip: "Remove from recent"; onClicked: backend.removeCalendarRecentSearch(recent.modelData) }
                     }
                 }
@@ -266,8 +266,8 @@ Popup {
                         accessibleName: modelData.op + " " + modelData.description
                         onClicked: popup.edit((popup.query.trim() ? popup.query.trim() + " " : "") + modelData.op)
                         OperatorChip { text: operatorRow.modelData.op; minimumWidth: 64 }
-                        Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; Layout.fillWidth: true }
-                        Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
+                        Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true }
+                        Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
                     }
                 }
                 Item { implicitHeight: 2 }

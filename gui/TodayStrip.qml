@@ -190,7 +190,7 @@ Rectangle {
                         Keys.onReturnPressed: timeline.showEvent(modelData, eventBlock)
                         Keys.onSpacePressed: timeline.showEvent(modelData, eventBlock)
                         Rectangle {
-                            width: Math.max(6, eventBlock.modelData.fractionWidth * timeline.trackWidth); height: 22; radius: 3
+                            width: Math.max(6, eventBlock.modelData.fractionWidth * timeline.trackWidth); height: 22; radius: 5
                             Rectangle { width: 3; height: parent.height; color: parent.color; visible: parent.color.a > 0 }
                             color: eventBlock.modelData.current ? Theme.errorAlpha(eventMouse.containsMouse ? .3 : .2) : eventBlock.modelData.next ? Theme.accentAlpha(eventMouse.containsMouse ? .32 : .22) : eventBlock.modelData.past ? (eventMouse.containsMouse ? Theme.surface : "transparent") : eventBlock.unanswered || eventBlock.declined ? (eventMouse.containsMouse ? Theme.inkAlpha(.04) : "transparent") : eventMouse.containsMouse ? Theme.hover : Theme.selected
                             border.width: eventBlock.modelData.past || eventBlock.activeFocus ? 1 : 0; border.color: eventBlock.activeFocus ? Theme.accent : Theme.line
@@ -204,7 +204,7 @@ Rectangle {
                                 anchors.fill: parent; visible: eventBlock.unanswered && !eventBlock.activeFocus; preferredRendererType: Shape.CurveRenderer
                                 ShapePath {
                                     strokeColor: Theme.accountTint(eventBlock.modelData.account, .45); strokeWidth: 1; fillColor: "transparent"; strokeStyle: ShapePath.DashLine; dashPattern: [3, 3]
-                                    PathRectangle { x: .5; y: .5; width: Math.max(0, eventBlock.width - 1); height: 21; radius: 3 }
+                                    PathRectangle { x: .5; y: .5; width: Math.max(0, eventBlock.width - 1); height: 21; radius: 5 }
                                 }
                             }
                             Rectangle { width: 2; height: parent.height; color: eventBlock.modelData.busy_only ? Theme.subtle : eventBlock.eventColor }
@@ -215,7 +215,7 @@ Rectangle {
                             account: eventBlock.modelData.account || ""; accountName: eventBlock.modelData.account_name || ""
                             opacity: eventBlock.modelData.past ? .55 : 1
                         }
-                        Text { id: blockLabel; x: 26; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - x); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.strikeout: eventBlock.declined; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { id: blockLabel; x: 26; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - x); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.strikeout: eventBlock.declined; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
                         MouseArea {
                             id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: timeline.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                             onPressed: function(mouse) { timeline.beginDrag(mapToItem(timeline, mouse.x, mouse.y).x) }
@@ -242,7 +242,7 @@ Rectangle {
                     readonly property string relative: panel.dayOffset === 0 ? "Today" : panel.dayOffset === 1 ? "Tomorrow" : panel.dayOffset === -1 ? "Yesterday" : ""
                     readonly property string label: dayNumber.text + " " + weekday.text + (relative.length > 0 ? " · " + relative : "")
                     Accessible.role: Accessible.StaticText; Accessible.name: label
-                    Text { id: dayNumber; text: new Date(panel.snapshot.date + "T12:00:00").getDate(); color: panel.isToday ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.weight: Font.DemiBold; font.features: {"tnum": 1} }
+                    Text { id: dayNumber; text: new Date(panel.snapshot.date + "T12:00:00").getDate(); color: panel.isToday ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: Font.Medium; font.features: {"tnum": 1} }
                     Text { id: weekday; anchors.baseline: dayNumber.baseline; text: Qt.formatDate(new Date(panel.snapshot.date + "T12:00:00"), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .06 }
                     Text { visible: dayMarker.relative.length > 0; anchors.baseline: dayNumber.baseline; text: "·"; color: Theme.inkAlpha(.25); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                     Text { visible: dayMarker.relative.length > 0; anchors.baseline: dayNumber.baseline; text: dayMarker.relative; color: panel.isToday ? Theme.accent : Theme.text; opacity: .85; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
@@ -267,12 +267,12 @@ Rectangle {
                         objectName: panel.index === 1 ? "timelineToday" : ""
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                         text: "Back to today"; implicitHeight: 16; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                        font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.accent
+                        font.pointSize: Theme.fontPoints(10.5); foreground: hovered ? Theme.text : Theme.accent
                         background: Item {}
                         onClicked: backend.showTimelineToday()
                     }
                 }
-                Text { x: 30; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); width: panel.width - 48; elide: Text.ElideRight }
+                Text { x: 30; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); width: panel.width - 48; elide: Text.ElideRight }
             }
         }
     }

@@ -102,7 +102,7 @@ Rectangle {
                 Column {
                     anchors.centerIn:parent;visible:!tile.isImage && !tile.isVideo;spacing:0
                     FmIcon {name:"file";size:36;color:tile.fileTint;anchors.horizontalCenter:parent.horizontalCenter}
-                    Text {text:tile.extension;anchors.horizontalCenter:parent.horizontalCenter;color:tile.fileTint;font.pointSize:Theme.fontPoints(9.5);font.weight:Font.DemiBold;font.letterSpacing:.6}
+                    Text {text:tile.extension;anchors.horizontalCenter:parent.horizontalCenter;color:tile.fileTint;font.pointSize:Theme.fontPoints(10.5);font.weight:Font.Medium;font.letterSpacing:.6}
                 }
                 FmIcon {anchors.centerIn:parent;visible:tile.isImage && !tile.previewUrl;name:"image";size:22;color:Theme.inkAlpha(.22)}
                 Rectangle {anchors.centerIn:parent;visible:tile.isVideo;width:38;height:38;radius:19;color:Theme.canvasAlpha(.75);border.color:Theme.inkAlpha(.25);FmIcon {anchors.centerIn:parent;name:"play";size:12;color:Theme.text}}
@@ -116,8 +116,8 @@ Rectangle {
                 id:filenameButton;objectName:"attachmentOpen_"+tile.attachment.id;Layout.fillWidth:true;implicitHeight:34;enabled:tile.available
                 contentItem:Column {
                     spacing:2
-                    Text {width:parent.width;text:tile.attachment.name;elide:Text.ElideRight;color:Theme.text;font.pointSize:Theme.fontPoints(12.5);textFormat:Text.PlainText}
-                    Text {objectName:"attachmentStatus_"+tile.attachment.id;width:parent.width;text:tile.feedback || (!tile.available ? "Available after sync" : tile.formatSize(tile.attachment.size)+" · "+(tile.imageWidth ? tile.imageWidth+" × "+tile.imageHeight : tile.isVideo && tile.videoDuration>0 ? tile.clock(tile.videoDuration) : tile.extension));color:tile.saveFailed ? Theme.error : Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(11.5);elide:Text.ElideRight}
+                    Text {width:parent.width;text:tile.attachment.name;elide:Text.ElideRight;color:Theme.text;font.pointSize:Theme.fontPoints(12);textFormat:Text.PlainText}
+                    Text {objectName:"attachmentStatus_"+tile.attachment.id;width:parent.width;text:tile.feedback || (!tile.available ? "Available after sync" : tile.formatSize(tile.attachment.size)+" · "+(tile.imageWidth ? tile.imageWidth+" × "+tile.imageHeight : tile.isVideo && tile.videoDuration>0 ? tile.clock(tile.videoDuration) : tile.extension));color:tile.saveFailed ? Theme.error : Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(11);elide:Text.ElideRight}
                 }
                 onClicked:tile.open()
                 FmToolTip {shown:filenameButton.hovered;text:tile.feedback || tile.attachment.name}

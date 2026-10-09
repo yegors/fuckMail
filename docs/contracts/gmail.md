@@ -1,5 +1,12 @@
 # Gmail provider
 
+## D200 — label sync yields between labels (Gmail44)
+
+- Label name sync and the first import call `google_labels_merge` repeatedly while it returns `more`, adding up `pulled` and `renamed` and yielding to other store requests between calls. All pending projections finish before label memberships are queued, as before. Cancellation is checked between calls.
+- The label worker applies one pending projection part per step, so projections left by a restart or a CLI bind finish. A successful `google_category_bind` wakes that account's sync.
+
+Consumers: engine Google label sync; Core92.
+
 ## D172 — credential calls per account
 
 - The session credential vault serializes calls per account. Its refusal list takes a short lock of its own that is never held across a keychain call, so a prompt open for one account never blocks another account, or any sync start or refresh. Forgetting a refusal does not wait for that account's open prompt; the prompt's answer then decides.
@@ -203,7 +210,7 @@ D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages
 
 D054 adds explicit google_sync_refresh with empty parameters: start a session using published budgets if absent, or wake the existing account worker while retaining owners. Wake respects provider cooldowns and cancellation. Status exposes last_mail_sync_at; only completed Gmail history application advances it. Credential refusal blocks automatic repeated vault calls until explicit retry.
 
-D050 uses built-in published Gmail 1,200,000 project / 6,000 user quota units per minute and Calendar 10,000 project / 600 user requests per minute, retaining 20% headroom, bounded retries and provider throttling. Empty sync parameters resolve centrally; complete legacy overrides remain supported. No user quota setup or saved quota preference is required. Linking a cached user label projects retained message membership immediately and repairs older missing projections on reopen without provider writes.
+D050 uses built-in published Gmail 1,200,000 project / 6,000 user quota units per minute and Calendar 10,000 project / 600 user requests per minute, retaining 20% headroom, bounded retries and provider throttling. Empty sync parameters resolve centrally; complete legacy overrides remain supported. No user quota setup or saved quota preference is required. Linking a cached user label projects retained message membership in bounded parts (the first at once, the rest between other store requests) and schedules repair of older missing projections on reopen, without provider writes (Gmail44).
 
 D040 adds an optional bounded email hint to native browser authorization for personal Gmail and Workspace alike. It is URL-encoded once as `login_hint`, never an `hd` restriction or account identity. Signed Google subject, issuer/audience/nonce, actual grants and existing reconnect/restore checks remain authoritative, including a renamed Workspace address. Keep the owned loopback, PKCE, state, cancellation and shared vault coordinator. Login uses the app registration by default; setup status exposes availability and a sanitized failure only. Sign-in does not acquire mail or Calendar or send anything. Consumers: Platform 15/Gmail 13/Mail UI 26/CLI 21/Quality 24 with Core 27/Calendar 20/Search 5/schema 20 and fixtures 0/3/protocol 1 unchanged.
 

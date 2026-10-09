@@ -37,13 +37,17 @@ impl Store {
         Ok(())
     }
     /// Merges Gmail user labels from the cached catalog into local categories
-    /// by name.
+    /// by name, in bounded calls repeated while the result has `more: true`.
     ///
     /// A linked category takes its label's current name. An unlinked label is
     /// linked to the one unlinked category with the same name (ignoring case),
     /// or a new category is created for it. Ambiguous or conflicting names are
-    /// skipped. Nothing is written to Gmail. Returns counts plus the categories
-    /// still without a label and the number of links whose label vanished.
+    /// skipped. Nothing is written to Gmail. Each call either applies one part
+    /// of a pending category projection or links at most one label, so the
+    /// store is never held for a whole mailbox. Returns this call's `pulled`
+    /// and `renamed` counts, which callers add up, plus `skipped`, the
+    /// categories still without a label (`pending`) and the number of links
+    /// whose label vanished (`missing`), which are complete in the last call.
     /// Derived IDs make a repeated merge with the same `request` idempotent.
     pub fn google_labels_merge(&mut self, account: &str, request: &str) -> Result<Value> {
         self.label_sync_authority(account)?;
@@ -55,10 +59,17 @@ impl Store {
                 "Refresh Google labels before syncing names",
             ));
         }
+        // Finish linking already under way before linking another label.
+        if self.google_category_projection_step(account)? {
+            return Ok(
+                json!({"pulled":0,"renamed":0,"skipped":0,"pending":[],"missing":0,"more":true}),
+            );
+        }
         let remote=self.db.prepare("SELECT label_id,name FROM google_label_catalog_items WHERE account=?1 AND generation=(SELECT generation FROM google_label_catalogs WHERE account=?1) AND label_type='user' ORDER BY label_id")?.query_map([account],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
         let mut pulled = 0;
         let mut renamed = 0;
         let mut skipped = 0;
+        let mut more = false;
         for (label, name) in remote {
             if name.len() > 256 {
                 skipped += 1;
@@ -126,21 +137,29 @@ impl Store {
                 params![account, category, name],
             )?;
             self.db.execute("UPDATE google_label_creations SET state='created',provider_label_id=?3,error_code=NULL WHERE account=?1 AND category_id=?2 AND state='unknown'",params![account,category,label])?;
+            // The rest of this label's projection and any further labels
+            // follow in later calls.
+            more = true;
+            break;
         }
         let pending=self.db.prepare("SELECT c.id,c.name,g.state FROM categories c LEFT JOIN google_label_creations g ON g.account=c.account AND g.category_id=c.id WHERE c.account=?1 AND NOT EXISTS(SELECT 1 FROM google_category_labels m WHERE m.account=c.account AND m.category_id=c.id) ORDER BY c.id")?.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"state":r.get::<_,Option<String>>(2)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         let missing:i64=self.db.query_row("SELECT count(*) FROM google_category_labels g WHERE g.account=?1 AND NOT EXISTS(SELECT 1 FROM google_label_catalog_items i WHERE i.account=g.account AND i.generation=(SELECT generation FROM google_label_catalogs WHERE account=g.account) AND i.label_id=g.provider_label_id AND i.label_type='user')",[account],|r|r.get(0))?;
-        // Any completed merge satisfies a new account's pending first import.
-        self.db.execute(
-            "DELETE FROM meta WHERE key=?1",
-            [initial_import_key(account)],
-        )?;
+        if !more {
+            // Any completed merge satisfies a new account's pending first import.
+            self.db.execute(
+                "DELETE FROM meta WHERE key=?1",
+                [initial_import_key(account)],
+            )?;
+        }
         Ok(
-            json!({"pulled":pulled,"renamed":renamed,"skipped":skipped,"pending":pending,"missing":missing}),
+            json!({"pulled":pulled,"renamed":renamed,"skipped":skipped,"pending":pending,"missing":missing,"more":more}),
         )
     }
     /// Import a newly added account's Gmail labels once, after its first catalog
     /// refresh. This only links existing Gmail labels; it never creates labels at
     /// Google. Returns None when no import is pending or mail editing is unavailable.
+    /// Like [`Store::google_labels_merge`], whose result it returns, it does a
+    /// bounded part per call; repeat while the result has `more: true`.
     pub fn google_labels_initial_import(&mut self, account: &str) -> Result<Option<Value>> {
         let key = initial_import_key(account);
         let pending: bool = self.db.query_row(
@@ -230,8 +249,7 @@ impl Store {
             id(provider)?;
             let current:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM categories c JOIN accounts a ON a.id=c.account WHERE c.account=?1 AND c.id=?2 AND c.name=?3 AND a.lifecycle_state='active' AND NOT EXISTS(SELECT 1 FROM google_category_labels g WHERE g.account=c.account AND g.category_id=c.id))",params![account,category,name],|r|r.get(0))?;
             if current {
-                self.google_map_category(account, category, provider)?;
-                self.project_google_category(account, category, provider)?;
+                crate::google_labels::link_category(self, &tx, account, category, provider)?;
             }
         }
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;

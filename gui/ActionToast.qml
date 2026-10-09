@@ -14,11 +14,11 @@ Rectangle {
     Behavior on opacity { NumberAnimation { duration: 120 } }
     width: Math.min(maximumWidth, message.implicitWidth + action.implicitWidth + (action.visible ? 14 : 0) + (feedbackIcon.visible ? 28 : 0) + 32)
     height: Math.ceil(40 * Theme.fontScale)
-    color: Theme.bg4; border.color: Theme.line2; radius: 6
+    color: Theme.bg4; border.color: Theme.line2; radius: 8
     Accessible.role: Accessible.StaticText
     Accessible.name: backend.actionToast.text || ""
     layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
-    layer.effect: MultiEffect { shadowEnabled: true; shadowColor: "#80000000"; shadowVerticalOffset: 12; shadowBlur: 0.7 }
+    layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
     RowLayout {
         anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 14
         FmIcon {
@@ -31,7 +31,7 @@ Rectangle {
         Text {
             id: message; Layout.fillWidth: true
             text: backend.actionToast.text || ""; textFormat: Text.PlainText; elide: Text.ElideRight
-            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
         }
         Button {
             id: action; objectName: "actionToastButton"
@@ -43,13 +43,13 @@ Rectangle {
             Accessible.name: text + ": " + (backend.actionToast.text || "")
             contentItem: RowLayout {
                 spacing:7
-                Text {text:action.text;color:action.hovered ? Theme.text : Theme.accent;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13);font.weight:Font.Medium}
+                Text {text:action.text;color:action.hovered ? Theme.text : Theme.accent;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium}
                 Rectangle {
                     visible:action.text==="Undo"; implicitWidth:undoKey.implicitWidth+10; implicitHeight:18; radius:3; color:"transparent"; border.color:Theme.line2
-                    Text {id:undoKey;anchors.centerIn:parent;text:ShortcutRegistry.label(ShortcutRegistry.sequence("undo",backend.preferences));color:Theme.inkAlpha(.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11)}
+                    Text {id:undoKey;anchors.centerIn:parent;text:ShortcutRegistry.label(ShortcutRegistry.sequence("undo",backend.preferences));color:Theme.inkAlpha(.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(10.5)}
                 }
             }
-            background: Rectangle { color: "transparent"; radius: 3; border.color: action.visualFocus ? Theme.accent : "transparent" }
+            background: Rectangle { color: "transparent"; radius: 5; border.color: action.visualFocus ? Theme.accent : "transparent" }
             onClicked: backend.activateActionToast()
         }
     }

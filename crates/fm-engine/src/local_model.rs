@@ -10,7 +10,7 @@ use crate::{
 use fm_assist::ollama::Settings;
 use fm_core::{
     assist_backlog::{ProgressInterrupt, ProgressPlan, ProgressReader},
-    local_model::Prepared,
+    local_model::{Prepared, PreparedThread},
     Result,
 };
 use fm_google::transport::CancellationToken;
@@ -48,7 +48,8 @@ struct Worker {
     current: Option<(String, String)>,
 }
 /// The local-model runtime: a background queue that analyses mail while a
-/// session watches it, plus explicit single-email and settings-test requests.
+/// session watches it, plus explicit single-email, conversation-summary and
+/// settings-test requests.
 /// At most one inference runs at a time.
 pub struct Runtime {
     core: CoreBridge,
@@ -227,6 +228,74 @@ impl Runtime {
         facts["label_state"] = saved["label_state"].clone();
         facts["prompt_sha256"] = saved["prompt_sha256"].clone();
         diagnostics::event("Model", "completed", facts);
+        Ok(saved)
+    }
+    /// Summarize one prepared conversation and save it. Unlike [`Self::analyse`]
+    /// it leaves the per-message speed average alone.
+    async fn analyse_thread(
+        &self,
+        plan: PreparedThread,
+        job: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value> {
+        // Skip inference if the conversation changed since it was prepared;
+        // the store checks again on commit.
+        let check = plan.clone();
+        self.core
+            .call(move |s| s.local_model_validate_thread(&check))
+            .await?;
+        let started = Instant::now();
+        let model = plan.settings.model.clone();
+        let input_chars: usize = plan.thread["messages"].as_array().map_or(0, |messages| {
+            messages
+                .iter()
+                .map(|m| m["text"].as_str().map_or(0, |t| t.chars().count()))
+                .sum()
+        });
+        diagnostics::event(
+            "Model",
+            "started",
+            json!({"job_ref":&job[..8],"account_ref":diagnostics::reference("account",&plan.account),"target_ref":diagnostics::reference("conversation",&plan.conversation),"task":"thread","origin":"manual",
+            "input_chars":input_chars,"messages":plan.source_ids.len(),"partial":plan.partial,
+            "provider":plan.settings.provider.as_str(),"model":model.as_ref().map(|m|m.name.as_str()),"model_digest":model.as_ref().map(|m|m.digest.as_str())}),
+        );
+        let result = async {
+            self.qualify(&plan.settings, cancel).await?;
+            let measure = Mutex::new(Value::Null);
+            ollama::infer_thread(&plan.settings, &plan.thread, cancel, &measure).await
+        }
+        .await;
+        let output = match result {
+            Ok(output) => output,
+            Err(e) => {
+                if runner_failure(&e.code) {
+                    *self.qualified.lock().unwrap() = None;
+                }
+                diagnostics::event(
+                    "Model",
+                    "failed",
+                    json!({"job_ref":&job[..8],"origin":"manual","task":"thread","code":e.code,"elapsed_ms":started.elapsed().as_millis()}),
+                );
+                return Err(e);
+            }
+        };
+        let summary_chars = output["summary"].as_str().map(|s| s.chars().count());
+        let stop = cancel.clone();
+        let saved = self
+            .core
+            .call(move |s| {
+                if stop.is_cancelled() {
+                    return Err(failure("assistance_canceled", "Canceled"));
+                }
+                s.local_model_finish_thread(&plan, output)
+            })
+            .await?;
+        diagnostics::event(
+            "Model",
+            "completed",
+            json!({"job_ref":&job[..8],"task":"thread","origin":"manual","elapsed_ms":started.elapsed().as_millis(),
+                "summary_chars":summary_chars,"prompt_sha256":saved["prompt_sha256"]}),
+        );
         Ok(saved)
     }
     /// Cheap per-account progress for the Accounts view and account tabs.
@@ -751,8 +820,10 @@ impl Runtime {
             job.state = state;
         }
     }
-    /// An explicit request: one email (Summarize, Resummarize, Try again), or
-    /// the settings Test with a built-in sample and possibly unsaved settings.
+    /// An explicit request: one email (Summarize, Resummarize, Try again), a
+    /// whole conversation's summary (`task` `thread`, no `message_id`), or the
+    /// settings Test with a built-in sample and possibly unsaved settings.
+    /// All share admission, the inference seat and job polling.
     async fn start(
         self: &Arc<Self>,
         owner: &str,
@@ -761,10 +832,12 @@ impl Runtime {
         p: Value,
     ) -> Result<Value> {
         if p.get("task").is_some_and(|t| {
-            !["message", "summary", "classification"].contains(&t.as_str().unwrap_or_default())
+            !["message", "summary", "classification", "thread"]
+                .contains(&t.as_str().unwrap_or_default())
         }) {
             return Err(failure("invalid_request", "Unknown local model task"));
         }
+        let thread = p["task"] == "thread";
         // Admission is immediate or `assistance_busy`; admitted jobs then
         // queue for the inference seat in arrival order.
         let sample = p["sample"].as_bool().unwrap_or(false);
@@ -776,6 +849,7 @@ impl Runtime {
         enum Work {
             Sample(Box<Settings>, Value, Value),
             Message(Box<Prepared>),
+            Thread(Box<PreparedThread>),
         }
         let work = if sample {
             let state = self.core.call(|s| s.local_model_settings()).await?;
@@ -819,19 +893,39 @@ impl Runtime {
                 .ok_or_else(|| failure("account_required", "Choose an account"))?
                 .to_owned();
             let conversation = p["conversation_id"].as_str().unwrap_or_default().to_owned();
-            let target = p["message_id"].as_str().unwrap_or_default().to_owned();
-            if target.is_empty() {
-                return Err(failure(
-                    "invalid_request",
-                    "Choose one received message to summarize",
-                ));
+            if thread {
+                if p.get("message_id").is_some() {
+                    return Err(failure(
+                        "invalid_request",
+                        "A thread summary covers the whole conversation; omit message_id",
+                    ));
+                }
+                if conversation.is_empty() {
+                    return Err(failure(
+                        "invalid_request",
+                        "Choose a conversation to summarize",
+                    ));
+                }
+                let plan = self
+                    .core
+                    .call(move |s| s.local_model_prepare_thread(&account, &conversation))
+                    .await?;
+                Work::Thread(Box::new(plan))
+            } else {
+                let target = p["message_id"].as_str().unwrap_or_default().to_owned();
+                if target.is_empty() {
+                    return Err(failure(
+                        "invalid_request",
+                        "Choose one received message to summarize",
+                    ));
+                }
+                let mut plan = self
+                    .core
+                    .call(move |s| s.local_model_prepare(&account, &conversation, &target))
+                    .await?;
+                plan.overwrite = true;
+                Work::Message(Box::new(plan))
             }
-            let mut plan = self
-                .core
-                .call(move |s| s.local_model_prepare(&account, &conversation, &target))
-                .await?;
-            plan.overwrite = true;
-            Work::Message(Box::new(plan))
         };
         let id = fm_ipc::random_token();
         let token = cancel.child_token();
@@ -921,6 +1015,9 @@ impl Runtime {
                     }
                     result
                 }
+                // A conversation is not a queued email: a failure is only
+                // reported to this job, never counted against a message.
+                Work::Thread(plan) => runtime.analyse_thread(*plan, &job_id, &token).await,
             };
             let status = if token.is_cancelled() {
                 "canceled"
@@ -962,6 +1059,9 @@ fn analysis_fields(
         "summary_chars":output["summary"].as_str().map(|s|s.chars().count()),
         "sender_kind":output["sender_kind"],"category_ids":output["category_ids"],"partial":partial})
 }
+
+#[cfg(test)]
+mod thread_tests;
 
 #[cfg(test)]
 mod diagnostic_tests {

@@ -1,8 +1,9 @@
 import QtQuick
 
-// Local-model work (summaries and sender classification) for the conversation
-// open in MailView. One controller per loaded conversation: the per-message
-// views (MessageAssistance) read from it and never own jobs of their own.
+// Local-model work (message and thread summaries, sender classification) for
+// the conversation open in MailView. One controller per loaded conversation:
+// the per-message views (MessageAssistance) and the thread summary read from
+// it and never own jobs of their own.
 Item {
     id: assistance
     property string conversationId: backend.selectedId
@@ -43,10 +44,13 @@ Item {
     function resultFor(task, target) {
         return items.find(item => item.task === task && item.target === target && !(task === "summary" && item.format_outdated)) || null
     }
-    function workingOn(task, target) { return busy && (jobTask === task || jobTask === "message") && jobTarget === target }
+    // A message job writes both its summary and classification; a thread job
+    // writes the conversation's summary alone.
+    function covers(task) { return jobTask === task || (jobTask === "message" && task !== "thread") }
+    function workingOn(task, target) { return busy && covers(task) && jobTarget === target }
     function failureFor(target) { const f = failures.find(row => row.target === target); return f ? f.message || "The local model could not analyse this message." : "" }
     function errorFor(task, target) {
-        return ((jobTask === task || jobTask === "message") && jobTarget === target ? error : "")
+        return (covers(task) && jobTarget === target ? error : "")
             || (task === "classification" ? changeErrors[target] || "" : busy && jobTarget === target ? "" : failureFor(target))
     }
     function refresh() {
@@ -84,11 +88,12 @@ Item {
         if (busy || !backend.connected || !conversationId) return
         ++operation
         starting = true
-        jobTask = "message"
-        jobTarget = target || ""
+        const thread = task === "thread"
+        jobTask = thread ? "thread" : "message"
+        jobTarget = thread ? conversationId : target || ""
         status = "Queued"
         error = ""
-        send("assist_start", {conversation_id: conversationId, message_id: jobTarget}, "start")
+        send("assist_start", thread ? {conversation_id: conversationId, task: "thread"} : {conversation_id: conversationId, message_id: jobTarget}, "start")
     }
     function cancel() {
         ++operation

@@ -27,7 +27,7 @@ FmDialog {
         text: dialog.message
         color: Theme.inkAlpha(0.6)
         font.family: Theme.fontFamily
-        font.pointSize: Theme.fontPoints(13)
+        font.pointSize: Theme.fontPoints(12)
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)

@@ -2,6 +2,16 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-09
+
+- New look throughout: a darker Graphite theme, tighter type, a slimmer top bar and a list with hairlines instead of striped rows. Times read "22 min ago", "Yday 14:02" or "Thu 13:22".
+- A shortcut bar along the bottom shows the keys for the current view. Hide it in Settings → General → Shortcut bar.
+- Threads list every message. The ones since your last reply open, and a click anywhere on a message's header opens or closes it.
+- Summarize a whole thread with your local model from the button after Reply, Forward and Delay, or with `fm assist thread`.
+- "Classify thread" works again.
+- Sync no longer shows "syncing N items" forever when antivirus removed downloaded messages.
+- Linking Gmail labels no longer freezes the app on a large mailbox.
+
 ## 2026-10-08
 
 - Forward opens with the cursor in To, so you can type the address straight away. Replies still open in the body.
