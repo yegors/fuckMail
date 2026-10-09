@@ -612,6 +612,8 @@ private:
     void cancelGoogleProviderOperations(const QString &account);
     void pollGoogleSync();
     void resumeStartupGoogleSync();
+    // Coming back to the window wakes the sync it already runs.
+    void applicationActivated();
     QSet<QString> m_startupGoogleAccounts;
     // Local mail first: Google sync starts once the first list has shown, or
     // a few seconds after connecting when no list comes.
@@ -974,6 +976,8 @@ private:
     QVariantMap m_googleSyncLimits;
     QSet<GoogleOperation *> m_googleOperations;
     bool m_googleSyncPolling = false;
+    qint64 m_lastActivationWake = 0;
+    bool m_seenActive = false, m_leftApplication = false;
     QSet<QString> m_googleSyncChanging;
     QHash<QPair<QString, QString>, QVariantMap> m_mailDelivery;
     QList<QPair<QString, QString>> m_mailDeliveryOrder;

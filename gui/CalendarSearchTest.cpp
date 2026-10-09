@@ -468,6 +468,30 @@ class CalendarSearchTest {
         auto row=h.backend.m_googleSync["personal"].toMap(); row["credential_access_required"]=false;
         row["progress"]=QVariantMap{{"mail","running"}}; h.backend.m_googleSync["personal"]=row; emit h.backend.googleSyncChanged();
         require(sync->property("text").toString() == "Syncing" && sync->property("tip").toString().contains("Last successful mail sync: "), "running label matches the design; the tip keeps the previous successful time");
+        // Clicking back into the app wakes the sync this window runs, once per 10 s,
+        // never an account it does not sync.
+        row=h.backend.m_googleSync["personal"].toMap(); row["owned"]=true; h.backend.m_googleSync["personal"]=row;
+        h.backend.m_googleSync["workspace"]=QVariantMap{{"account","workspace"},{"active",true},{"owned",false}};
+        const auto beforeWake=h.methods.count("google_sync_refresh");
+        // Being active, leaving and coming back; the first activation at launch is not a return.
+        emit qGuiApp->applicationStateChanged(Qt::ApplicationActive);
+        QCoreApplication::processEvents();
+        require(h.methods.count("google_sync_refresh")==beforeWake, "being active without having left does not sync");
+        emit qGuiApp->applicationStateChanged(Qt::ApplicationInactive);
+        emit qGuiApp->applicationStateChanged(Qt::ApplicationActive);
+        await([&]{return h.methods.count("google_sync_refresh")==beforeWake+1;}, "activation wakes the owned account's sync");
+        h.backend.applicationActivated();
+        QElapsedTimer settleWake; settleWake.start(); while (settleWake.elapsed() < 100) QCoreApplication::processEvents();
+        require(h.methods.count("google_sync_refresh")==beforeWake+1, "a second activation within 10 s does not wake it again");
+        h.backend.m_lastActivationWake-=10001;
+        row["credential_access_required"]=true; h.backend.m_googleSync["personal"]=row;
+        h.backend.applicationActivated();
+        settleWake.restart(); while (settleWake.elapsed() < 100) QCoreApplication::processEvents();
+        require(h.methods.count("google_sync_refresh")==beforeWake+1, "an account waiting on keychain access is not woken");
+        row["credential_access_required"]=false; h.backend.m_googleSync["personal"]=row;
+        h.backend.applicationActivated();
+        await([&]{return h.methods.count("google_sync_refresh")==beforeWake+2;}, "activation after 10 s wakes it again");
+        h.backend.m_googleSync.remove("workspace"); emit h.backend.googleSyncChanged();
         h.backend.m_account="workspace"; emit h.backend.accountChanged();
         require(sync->property("lastSync").toDouble()==0, "sync timestamp cannot cross accounts");
         h.backend.m_account="personal"; emit h.backend.accountChanged();

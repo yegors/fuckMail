@@ -1,5 +1,23 @@
 # Mail UI, reader and human composer
 
+## D197 — coming back to the app syncs at once (Mail UI142)
+
+- When the application becomes active again after losing focus (not its first activation at launch), `google_sync_refresh` is sent quietly for every account whose sync this window owns. Accounts not owned, waiting on keychain access, or mid start/refresh/pause are skipped. At most one wake per 10 s, counted from the last wake that sent a refresh.
+
+Consumers: `MailBackend::applicationActivated`; CalendarSearchTest.
+
+## D196 — address suggestions without the wait (Mail UI141)
+
+- `recipient_suggestions` passes queued automatic reads, like an explicit query. The To/Cc/Bcc entry asks 50 ms after the last key; until the answer comes, the rows already shown narrow to those whose name or address contains the text.
+
+Consumers: `MailBackend::sendNext`, `RecipientField`; MailSelectionTest, ComposerInputTest.
+
+## D195 — a forward opens in To (Mail UI140)
+
+- Opening the composer focuses the To entry for a forward with no To recipient, and the body otherwise.
+
+Consumers: `ReplyComposer.focusEditor`, `RecipientField.focusEntry`; GUI integration self-test.
+
 ## D192 — mail actions do not wait (Mail UI139)
 
 - **Order.** The engine connection still sends one request at a time. An explicit query (`conversations`, `conversation`, `view_get`, `drafts`, `sender_summary`) or a mail change (`flag`, `set_category`, `mail_filing`, `mail_undo`) passes queued automatic reads (polling, including calendar catalog and window reads started by polling); an automatic read runs after four bypasses. Any other manual read or write is a barrier, and manual requests keep their order.

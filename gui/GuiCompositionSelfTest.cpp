@@ -387,6 +387,12 @@ void GuiCompositionSelfTest::step() {
     }
     case 21: {
         if (!saved() || m_backend.draft()["mode"].toString()!=modes[m_mode] || m_backend.activeDraftId()==m_draftId) return;
+        // A forward opens in To, ready for an address; a reply opens in its body.
+        const auto *focusTarget=item(m_mode==2 ? "draftRecipient_to_recipients" : "replyComposer");
+        if (!focusTarget || !focusTarget->hasActiveFocus()) {
+            if (m_ticks>150) finish(m_mode==2 ? "A new forward did not put the cursor in To." : "A new reply did not put the cursor in its body.");
+            return;
+        }
         m_draftId=m_backend.activeDraftId(); const auto draft=QJsonObject::fromVariantMap(m_backend.draft());
         const auto expectedTo=m_mode==1 ? QStringList{"status@service.example","alex@windscribe.example"} : m_mode==2 ? QStringList{} : QStringList{"status@service.example"};
         if (addresses(draft["to_recipients"])!=expectedTo || !addresses(draft["cc_recipients"]).isEmpty()

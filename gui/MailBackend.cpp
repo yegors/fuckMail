@@ -74,6 +74,12 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     initializeCalendarSearch();
     initializeSendUndo();
     m_readerPool.setMaxThreadCount(1);
+    // Only a return counts: the first activation at launch already starts sync.
+    connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+        if (state != Qt::ApplicationActive) { m_leftApplication = m_seenActive; return; }
+        m_seenActive = true;
+        if (std::exchange(m_leftApplication, false)) applicationActivated();
+    });
     connect(this, &MailBackend::accountsChanged, this, [this] { m_allAccountModel.replace(QStringLiteral("account-settings"), m_allAccounts); });
     m_readerPrefetchTimer.setSingleShot(true); m_readerPrefetchTimer.setInterval(60);
     // Just past the list's 170 ms collapse; then the row takes its new place.
@@ -388,9 +394,9 @@ void MailBackend::sendNext() {
     pruneSupersededQueries();
     while (!m_outgoing.isEmpty()) {
         qsizetype selected = 0;
-        // An explicit query or a mail change passes an unsent prefix of
-        // automatic reads, so marking mail read or Done never waits behind
-        // polling. Any other manual read or write is an ordering barrier.
+        // An explicit query, address suggestions or a mail change pass an
+        // unsent prefix of automatic reads, so marking mail read or Done, or
+        // typing an address, never waits behind polling. Any other manual read or write is an ordering barrier.
         // After four bypasses a polling read runs first, so sustained use
         // cannot starve refresh.
         for (qsizetype index = 0; index < m_outgoing.size(); ++index) {
@@ -400,6 +406,7 @@ void MailBackend::sendNext() {
             if (!pending->automaticRead && (pending->method == "conversations"
                 || pending->method == "conversation" || pending->method == "view_get"
                 || pending->method == "drafts" || pending->method == "sender_summary"
+                || pending->method == "recipient_suggestions"
                 || isMailAction(pending->method) || pending->method == "mail_undo")) selected = index;
             break;
         }

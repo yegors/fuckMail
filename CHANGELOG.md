@@ -2,6 +2,12 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-08
+
+- Forward opens with the cursor in To, so you can type the address straight away. Replies still open in the body.
+- Clicking back into the app syncs your accounts straight away instead of waiting for the next timed sync.
+- Address suggestions in To, Cc and Bcc appear almost at once and narrow as you type instead of blanking. On a large mailbox its slowest step took up to 0.7 s; it now takes a few milliseconds.
+
 ## 2026-10-05
 
 - Opening unread mail shows it read at once, and Done, Delay, Read and Unread show the moment you choose them. They no longer wait behind background calendar refreshes, and Done pressed right after opening a message is no longer ignored.

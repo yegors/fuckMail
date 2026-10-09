@@ -283,6 +283,24 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     QMouseEvent mouseUp(QEvent::MouseButtonRelease,mousePosition,globalPosition,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
     QCoreApplication::sendEvent(window,&mouseDown); QCoreApplication::sendEvent(window,&mouseUp);
     require(backend.m_draft["to_recipients"].toList().value(2).toMap()["name"]==quotedName,"mouse selection preserves quoted display name without parsing a formatted address");
+    // Typing on narrows the rows already shown at once, before the new lookup answers.
+    type("an"); await([&]{return lookups.size()==4;},"narrowing lookup");
+    lookups[3].peer->write(reply(lookups[3].id,{{"account","fixture-account"},{"query","an"},{"suggestions",QJsonArray{
+        QJsonObject{{"name","Ana Narrow"},{"email","ana@example.test"},{"account","fixture-account"},{"account_name","Work"}},
+        QJsonObject{{"name","Anatoly Wide"},{"email","wide@example.test"},{"account","fixture-account"},{"account_name","Work"}}}}}));
+    await([&]{return find(window->contentItem(),"recipientSuggestion_to_recipients_1");},"two candidates shown");
+    type("ana@");
+    QCoreApplication::processEvents();
+    {
+        auto first=find(window->contentItem(),"recipientSuggestion_to_recipients_0");
+        QVariant row=first ? first->property("modelData") : QVariant();
+        if (row.canConvert<QJSValue>()) row=row.value<QJSValue>().toVariant();
+        require(lookups.size()==4 && first && first->isVisible() && row.toMap()["email"]=="ana@example.test"
+            && !find(window->contentItem(),"recipientSuggestion_to_recipients_1"),"typing keeps matching rows and drops the rest without waiting");
+    }
+    await([&]{return lookups.size()==5;},"lookup for the longer text");
+    lookups[4].peer->write(reply(lookups[4].id,{{"account","fixture-account"},{"query","ana@"},{"suggestions",QJsonArray{}}}));
+    press(Qt::Key_Escape); type("");
     backend.m_draftTimer.stop(); backend.saveDraft(); await([&]{return !backend.m_draftDirty && !backend.draftBusy();},"recipient edits saved");
     auto composer=find(window->contentItem(),"composer");
     QMimeData mime; mime.setUrls({file("dropped-a.txt"),file("dropped-b.txt")});

@@ -2298,3 +2298,32 @@ The founder's reply "Hey Dave, all paid." failed with "the message identity cont
 - **Evidence.** A Core test sends a draft with bare IDs through `compose_request` and `build_mail`; the inventory test now requires a mirrored Gmail reply to carry `<parent@…>` and bracketed References. Both fail on the previous code.
 
 Core90. No schema, fixture or protocol change.
+
+## D195 — a forward opens in To (2026-10-08T10:00:00Z)
+
+The founder asked that a forward put the cursor in To, so the address can be typed at once; replies keep the cursor in the body.
+
+- **Change.** When the composer opens, a forward with no To recipient focuses the To entry. Every other draft, and a forward that already has a recipient, focuses the body as before. New messages are unchanged.
+- **Evidence.** The GUI integration self-test opens reply-all, forward and reply and requires focus in the body or To; the forward check fails on the previous composer.
+
+Mail UI140. No schema, fixture or protocol change.
+
+## D196 — address suggestions without the wait (2026-10-08T11:00:00Z)
+
+The founder found suggestions in To slow to appear.
+
+- **Found.** Each lookup read the newest 2,000 messages of the current account and of the other accounts together. The other-accounts query sorted every message those accounts hold: 0.28 to 0.74 s on the founder's store (414,000 messages across three accounts), against 4 ms for the current account's indexed query. Every row's To list was then parsed whether or not it could match. The request also waited behind queued polling reads (`accounts` took up to 1.3 s in the D192 log), after a 150 ms typing pause, and the open list was cleared on each key until the new answer came.
+- **Change.** Other accounts are read one at a time through their `(account, sent_at)` index and merged to the same newest 2,000: 4 to 6 ms per account on the store. A To list that does not contain the query is not parsed; stored lists are decoded text, so no match is lost. `recipient_suggestions` passes queued automatic reads like an explicit query. The pause is 50 ms, and while it runs the rows already shown narrow to those still matching the text.
+- **Evidence.** MailSelectionTest sends a lookup ahead of a queued calendar read; ComposerInputTest types on and finds the matching row kept and the other dropped before the next lookup is sent. Both fail on the previous code. The existing ranking test passes. Query timings are from read-only runs on the founder's store.
+- **Not measured.** The whole lookup end to end in the running app.
+
+Mail UI141. No schema, fixture or protocol change.
+
+## D197 — coming back to the app syncs at once (2026-10-08T12:00:00Z)
+
+The founder asked that clicking back into the app sync straight away instead of waiting for the next timed pass.
+
+- **Change.** When the application becomes active again after losing focus (not its first activation at launch, which already starts sync), the GUI sends `google_sync_refresh` for each account whose sync this window owns. It skips accounts it does not own (a paused account, or one synced only by the CLI), accounts waiting on keychain access (a refresh would ask the keychain again) and accounts mid start, refresh or pause. Wakes are at most every 10 s, counted from the last one that woke an account. They are quiet: a refusal shows in the account's sync state, with no error message and no busy state on the Sync button.
+- **Evidence.** CalendarSearchTest raises Qt's application-state signals: staying active sends nothing; leaving and returning sends one refresh for the owned account and none for an unowned one. A second activation within 10 s sends none, an account waiting on keychain access is skipped, and an activation after 10 s sends another. The first check fails without the signal hookup.
+
+Mail UI142. No schema, fixture or protocol change.

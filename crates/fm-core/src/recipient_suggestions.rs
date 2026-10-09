@@ -102,31 +102,48 @@ impl Store {
         };
         // Selected-account history gets its own allowance, so other accounts
         // cannot crowd it out. Other-account attribution stays visible in UI.
+        let others: Vec<String> = {
+            let mut statement = self.db.prepare(
+                "SELECT id FROM accounts WHERE id<>?1 AND lifecycle_state='active' ORDER BY id",
+            )?;
+            let rows = statement.query_map([account], |r| r.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
         for selected in [true, false] {
-            let predicate = if selected {
-                "m.account=?1"
+            // Each account's newest mail through its (account, sent_at) index;
+            // one query across accounts sorted every message they hold.
+            let mut recent = Vec::new();
+            let sources = if selected {
+                vec![account.to_owned()]
             } else {
-                "m.account<>?1"
+                others.clone()
             };
-            let sql = format!("SELECT substr(m.sender_name,1,4097),substr(m.sender_email,1,321),substr(m.recipient,1,65537),m.account,a.name FROM messages m JOIN accounts a ON a.id=m.account WHERE {predicate} AND a.lifecycle_state='active' AND m.trashed=0 ORDER BY m.sent_at DESC,m.id LIMIT 2000");
-            let mut statement = self.db.prepare(&sql)?;
-            let mut rows = statement.query([account])?;
-            while let Some(row) = rows.next()? {
-                let (name, email, recipient, source, source_name): (
-                    String,
-                    String,
-                    String,
-                    String,
-                    String,
-                ) = (
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                );
-                add(&name, &email, &source, &source_name);
-                if recipient.len() > 65536 || recipient.contains(['\r', '\n']) {
+            let mut statement = self.db.prepare("SELECT substr(m.sender_name,1,4097),substr(m.sender_email,1,321),substr(m.recipient,1,65537),m.account,a.name,m.sent_at,m.id FROM messages m JOIN accounts a ON a.id=m.account WHERE m.account=?1 AND m.trashed=0 ORDER BY m.sent_at DESC,m.id LIMIT 2000")?;
+            for source in &sources {
+                let mut rows = statement.query([source])?;
+                while let Some(row) = rows.next()? {
+                    let row: (String, String, String, String, String, String, String) = (
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    );
+                    recent.push(row);
+                }
+            }
+            recent.sort_by(|a, b| b.5.cmp(&a.5).then_with(|| a.6.cmp(&b.6)));
+            recent.truncate(2000);
+            for (name, email, recipient, source, source_name, _, _) in &recent {
+                add(name, email, source, source_name);
+                // Stored recipients are decoded text: a list that does not
+                // contain the query cannot yield a match, so skip parsing it.
+                if recipient.len() > 65536
+                    || recipient.contains(['\r', '\n'])
+                    || !recipient.to_lowercase().contains(&query)
+                {
                     continue;
                 }
                 let header = format!("To: {recipient}\r\n\r\n");
@@ -136,7 +153,7 @@ impl Store {
                     if let Some(addresses) = message.to() {
                         for address in addresses.iter().take(100) {
                             if let Some(email) = address.address() {
-                                add(address.name().unwrap_or(""), email, &source, &source_name);
+                                add(address.name().unwrap_or(""), email, source, source_name);
                             }
                         }
                     }

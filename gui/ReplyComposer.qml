@@ -43,7 +43,11 @@ Item {
     readonly property bool recentVisible: mode === "new" && !readOnly && !!firstRecipient && backend.recentWith.email === String(firstRecipient.email || "").toLowerCase() && (backend.recentWith.rows || []).length > 0
     readonly property string recentName: firstRecipient ? String(firstRecipient.name || firstRecipient.email || "").split(/\s+/)[0] : ""
     onFirstRecipientChanged: if (mode === "new") backend.loadRecentWith(firstRecipient ? firstRecipient.email : "")
-    function focusEditor() { bodyEditor.forceActiveFocus() }
+    // A forward with no recipient yet starts in To; everything else in the body.
+    function focusEditor() {
+        if (mode === "forward" && !firstRecipient && !root.readOnly) toField.focusEntry()
+        else bodyEditor.forceActiveFocus()
+    }
     function chooseLocalAttachment() {
         if (root.readOnly) return
         localAttachmentDialog.targetAccount = backend.account

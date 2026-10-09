@@ -30,6 +30,7 @@ Item {
             for (const recipient of (backend.draft[key] || [])) values.push(recipient.email.toLowerCase())
         return values
     }
+    function focusEntry() { entry.forceActiveFocus() }
     function resetSuggestions() { lookup.stop(); ticket = ""; candidates = []; highlighted = 0; suggestions.close() }
     function showCandidates(rows) {
         const used = excluded(), value = entry.text.trim()
@@ -38,6 +39,13 @@ Item {
             next.push({ name: "", email: value, raw: true })
         candidates = next; highlighted = 0
         if (next.length && entry.activeFocus) suggestions.open(); else suggestions.close()
+    }
+    // While a lookup for the new text is pending, the rows already shown
+    // narrow to those that still match, so typing never blanks the list.
+    function narrow() {
+        const value = entry.text.trim().toLowerCase()
+        if (!value.length) { resetSuggestions(); return }
+        showCandidates(candidates.filter(row => !row.raw && (String(row.email || "").toLowerCase().indexOf(value) >= 0 || String(row.name || "").toLowerCase().indexOf(value) >= 0)))
     }
     function choose(index) {
         if (index < 0 || index >= candidates.length) return false
@@ -55,7 +63,7 @@ Item {
     Component.onCompleted: entry.text = backend.recipientInputs[fieldName] || ""
     onVisibleChanged: if (!visible) resetSuggestions()
     Timer {
-        id: lookup; interval: 150
+        id: lookup; interval: 50
         onTriggered: if (entry.activeFocus && entry.text.trim().length) field.ticket = backend.recipientSuggestions(entry.text.trim(), field.excluded())
     }
     Connections {
@@ -96,7 +104,7 @@ Item {
             placeholderText: field.recipients.length ? "" : "Name or address"
             // Locked, it keeps the keyboard and refuses edits instead of dropping focus.
             readOnly: backend.draftLocked; selectByMouse: true
-            onTextEdited: { backend.stageDraftRecipient(field.fieldName,text); field.resetSuggestions(); field.showCandidates([]); lookup.restart() }
+            onTextEdited: { backend.stageDraftRecipient(field.fieldName,text); field.ticket = ""; field.narrow(); lookup.restart() }
             onAccepted: field.commit()
             onEditingFinished: { field.resetSuggestions(); if (text.trim().length) field.commit() }
             onActiveFocusChanged: if (activeFocus && text.trim().length) lookup.restart()

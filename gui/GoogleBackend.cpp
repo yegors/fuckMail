@@ -154,6 +154,24 @@ void MailBackend::pollGoogleSync() {
     });
 }
 
+// Clicking back into the app fetches at once instead of waiting for the next
+// timed pass. Only accounts this window already syncs are woken, never a
+// paused one or one waiting on keychain access, and at most every 10 s so
+// switching windows back and forth does not repeat it. Quiet: a refusal
+// shows in the account's sync state, not as an error.
+void MailBackend::applicationActivated() {
+    if (m_syntheticProfile || !m_connected || m_shutdown) return;
+    const auto now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_lastActivationWake < 10000) return;
+    for (auto entry = m_googleSync.cbegin(); entry != m_googleSync.cend(); ++entry) {
+        const auto row = entry.value().toMap();
+        if (!row.value("owned").toBool() || row.value("credential_access_required").toBool()
+            || m_googleSyncChanging.contains(entry.key()) || accountRemoved(entry.key())) continue;
+        m_lastActivationWake = now;
+        request("google_sync_refresh", entry.key(), {}, [this](auto, bool) { pollGoogleSync(); });
+    }
+}
+
 void MailBackend::pollMailDelivery() {
     if (m_syntheticProfile || !m_connected || m_shutdown || m_mailDeliveryPolling || m_mutatingConversation) return;
     const auto key = qMakePair(m_account, m_selected);

@@ -286,7 +286,17 @@ class MailSelectionTest {
         require(row("n1")["starred"].toBool(),"Delay shows at once");
         h.finish(star);
         await([&]{return !held && h.backend.m_pending.isEmpty();},"the polling reads still run");
-        qInfo()<<"Read on open and Done show at once; an action during a save runs next; writes pass polling reads.";
+        // Address suggestions while typing a recipient pass polling reads too.
+        h.methods.clear(); held=true;
+        h.backend.request("status",{},{},[&](auto,bool){ held=false; });
+        h.backend.m_automaticReadScope=true;
+        h.backend.request("calendar_sources",{},{},[](auto,bool){});
+        h.backend.m_automaticReadScope=false;
+        h.backend.recipientSuggestions("an",{});
+        await([&]{return h.methods.contains("recipient_suggestions") && h.methods.contains("calendar_sources");},"lookup and polling read both run");
+        require(h.methods.indexOf("recipient_suggestions")<h.methods.indexOf("calendar_sources"),"the address lookup is sent before the queued calendar read");
+        await([&]{return !held && h.backend.m_pending.isEmpty();},"lookup settles");
+        qInfo()<<"Read on open and Done show at once; an action during a save runs next; writes and address lookups pass polling reads.";
     }
     static void readerMemorySharing() {
         Harness h;
