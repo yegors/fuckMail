@@ -97,6 +97,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (rows.size() != before && publishConversations(std::move(rows))) emit conversationsChanged();
         if (m_connected && !m_shutdown) loadConversations(false, true);
     });
+    m_reviewLeaveTimer.setSingleShot(true);
+    connect(&m_reviewLeaveTimer, &QTimer::timeout, this, &MailBackend::leaveReview);
     connect(&m_readerPrefetchTimer, &QTimer::timeout, this, [this] {
         const auto id = m_readerPrefetchTarget, account = m_account;
         const auto generation = m_generation;
@@ -1613,6 +1615,7 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
         if (leaves) startLeaving(previous->toMap(), int(previous - m_conversations.cbegin()));
         m_pinnedRow.clear(); m_pinnedIndex = -1;
         if (review) { m_pinnedRow = std::move(clickedRow); m_pinnedIndex = clickedIndex; }
+        if (review) startReviewLeave(); else m_reviewLeaveTimer.stop();
         if (held && !reads && !leaves) QMetaObject::invokeMethod(this, [this] { loadConversations(false, true); }, Qt::QueuedConnection);
     }
     if (id == m_selected && m_activeDraft.isEmpty()) { if (review) loadConversation(false, true); return; }
@@ -1626,6 +1629,30 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
     // A server-only thread is not reopened after a restart.
     remember("selected", id.startsWith("remote:") ? QString{} : id); remember("readerY", 0); emit conversationChanged(); emit draftChanged(); emit mailDeliveryChanged();
     loadConversation(true, review);
+}
+
+void MailBackend::reviewOpenConversation() {
+    if (m_selected.isEmpty() || m_selected.startsWith("remote:") || m_selected.startsWith("outgoing:") || m_conversation.isEmpty()) return;
+    loadConversation(false, true);
+}
+
+void MailBackend::startReviewLeave() {
+    const auto seconds = m_preferences.value("review_leave_seconds", 10).toInt();
+    if (seconds <= 0) { m_reviewLeaveTimer.stop(); return; }
+    m_reviewLeaveTimer.start(seconds * 1000);
+}
+
+// The open conversation, read on opening, leaves To review for its own
+// section (usually Done) while it stays open. Only once it is read: a
+// read still saving is waited for, and a refused one keeps it there.
+void MailBackend::leaveReview() {
+    if (m_pinnedRow.isEmpty() || m_pinnedRow.value("id").toString() != m_selected || !m_connected || m_shutdown) return;
+    if (m_mutatingConversation || m_readerLoadingGeneration == m_generation) { m_reviewLeaveTimer.start(500); return; }
+    const auto shown = std::find_if(m_conversations.cbegin(), m_conversations.cend(), [this](const QVariant &row) {
+        return row.toMap().value("id").toString() == m_selected; });
+    if (shown == m_conversations.cend() || !shown->toMap().value("pinned").toBool() || shown->toMap().value("unread").toBool()) return;
+    releasePin();
+    loadConversations(false, true);
 }
 
 void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {

@@ -2,6 +2,7 @@
 // --self-test`. Types searches and filters into the real UI, opens results from
 // known demo messages, and checks read-on-open, request ordering and scrolling.
 #include "GuiMailNavigationSelfTest.h"
+#include <QGuiApplication>
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
@@ -349,7 +350,7 @@ bool GuiMailNavigationSelfTest::arrivalMembersMatch(const QJsonObject &conversat
         if (!expected.contains(id) || seen.contains(id)) return false;
         seen.insert(id);
         const bool arrived=includeArrival && id==m_arrivalId;
-        if (member["unread"].toBool()!=arrived || member["starred"].toBool()!=(arrived?false:starred)) return false;
+        if (member["unread"].toBool()!=(arrived && !m_arrivalRead) || member["starred"].toBool()!=(arrived?false:starred)) return false;
     }
     return seen==expected;
 }
@@ -872,6 +873,17 @@ void GuiMailNavigationSelfTest::step() {
             finish("Native Done did not retain its exact original-member receipt across one real provider arrival."); return;
         }
         if (m_backend.conversation()["messages"].toList().size()!=3) return;
+        // On screen with the app in front, the arrival is read as opening
+        // would have read it, by its own write; Done never touches it.
+        if (!m_arrivalRead && QGuiApplication::applicationState()==Qt::ApplicationActive) {
+            m_arrivalRead=true;
+            m_arrivalExpectedCounts["unread_count"]=m_arrivalExpectedCounts["unread_count"].toInteger()-1;
+            m_arrivalExpectedCounts["unread_conversation_count"]=m_arrivalExpectedCounts["unread_conversation_count"].toInteger()-1;
+            // Read and without stars, the thread counts as Done.
+            m_arrivalExpectedCounts["done_conversation_count"]=m_arrivalExpectedCounts["done_conversation_count"].toInteger()+1;
+        }
+        if (m_arrivalRead && (m_backend.mutationInFlight() || std::any_of(m_backend.conversation()["messages"].toList().cbegin(), m_backend.conversation()["messages"].toList().cend(),
+            [](const QVariant &m) { return m.toMap()["unread"].toBool(); }))) return;
         if (m_backend.selectedId()!=m_arrivalThread || !arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),false,true)
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
             finish("The arriving member inherited Done or refresh changed the selected reader or authored draft."); return;
@@ -882,7 +894,7 @@ void GuiMailNavigationSelfTest::step() {
     case 36:
         m_stage=37;
         arrivalCli({"mail","read",m_arrivalThread},[this](const auto &source) {
-            if (!arrivalMembersMatch(source,false,true)) finish("Independent CLI did not preserve the arrival unread while only original members became Done.");
+            if (!arrivalMembersMatch(source,false,true)) finish("Independent CLI did not keep the arrival apart from Done: only original members became Done, and the arrival is unread unless it was read on screen.");
         });
         break;
     case 37:
@@ -971,9 +983,9 @@ void GuiMailNavigationSelfTest::step() {
         QVariantMap row;
         for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_arrivalThread) row=value.toMap();
         if (row.isEmpty() || row["starred"].toBool()) return;
-        if (!row["unread"].toBool() || m_backend.selectedId()!=m_arrivalThread || m_backend.query()!="Snapshot arrival verification"
+        if (row["unread"].toBool()==m_arrivalRead || m_backend.selectedId()!=m_arrivalThread || m_backend.query()!="Snapshot arrival verification"
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
-            finish("Idle polling cleanup lost the arriving unread member, active query, selection or draft."); return;
+            finish("Idle polling cleanup changed the arriving member's read state, active query, selection or draft."); return;
         }
         if (const auto error=retainedNativeRowError(m_arrivalThread); !error.isEmpty()) { finish(error); return; }
         if (m_backend.accounts()==m_accountsDuringHold) return;
@@ -1006,9 +1018,9 @@ void GuiMailNavigationSelfTest::step() {
         if (draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
             finish("The account refresh/click round trip changed the origin mailbox's durable authored draft."); return;
         }
-        qInfo().noquote() << "Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts:"
+        qInfo().noquote() << "Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival stays unstarred and apart from Done (read only when shown with the app in front); exact GUI/CLI counts, selected reader and Unicode draft retained. Counts:"
             << QString::fromUtf8(QJsonDocument(m_arrivalExpectedCounts).toJson(QJsonDocument::Compact));
-        qInfo() << "Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.";
+        qInfo() << "Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, the arrival's read state and authored draft restored.";
         qInfo() << "Native mail delegate retained through independent CLI hold/unhold: identical item, current row fields and unchanged viewport.";
         qInfo() << "Native account tab retained across two actual account payload changes: unchanged item/geometry, native press survived refresh, original-center release opened the exact mailbox and normal return retained the origin draft.";
         restore(); m_stage=5; break;
@@ -1086,6 +1098,7 @@ void GuiMailNavigationSelfTest::step() {
         if (!heading || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))) {
             finish("The native group heading does not display its full filtered count."); return;
         }
+        m_expandedBeforeCollapse=m_backend.querySummary()["expanded_conversation_count"].toLongLong();
         if (!clickItem(heading)) {
             if (m_collapseSettledFrame != -99) {
                 qInfo()<<"Counted heading not clickable"<<geometryDiagnostic(heading,m_window)<<"enabled"<<heading->isEnabled()<<"folder"<<m_backend.folder()<<"first row"<<m_backend.conversations().first();
@@ -1119,8 +1132,11 @@ void GuiMailNavigationSelfTest::step() {
                 .arg(draftFields(QJsonObject::fromVariantMap(m_backend.draft()))==draftFields(QJsonObject::fromVariantMap(m_originalDraft)))
                 .arg(m_window->property("searchPopupOpen").toBool()).arg(geometryDiagnostic(heading,m_window))); return;
         }
+        // Done rows in folded older months are never expanded, so the
+        // collapsed group comes off what was expanded just before.
         qint64 expanded=0;
-        for (const auto group:{"review","held","done"}) if (QString(group)!=m_surfaceGroup) expanded+=m_surfaceCounts[group].toInteger();
+        if (m_surfaceGroup=="done") for (const auto group:{"review","held"}) expanded+=m_surfaceCounts[group].toInteger();
+        else expanded=m_expandedBeforeCollapse-m_surfaceCounts[m_surfaceGroup].toInteger();
         if (m_backend.querySummary()["expanded_conversation_count"].toLongLong()!=expanded
             || QJsonObject::fromVariantMap(m_backend.querySummary()["filtered_group_counts"].toMap())!=m_surfaceCounts
             || (expanded>0 && m_backend.conversations().isEmpty())) {

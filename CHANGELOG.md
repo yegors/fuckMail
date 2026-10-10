@@ -4,6 +4,8 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-09
 
+- Mail that arrives in the thread you're reading is marked read, so the thread no longer stays in To review after you leave it.
+- Mail you open from To review moves on to Done after 10 seconds, even while it stays open. Change or turn off in Settings → Mail.
 - Opening a long thread with new mail scrolls straight to the first unread message instead of showing the list of older ones.
 - Paste a screenshot into a reply or new message and it attaches as "Screenshot 2026-10-09 at 14.03.22.png". Copied files attach too.
 - New look throughout: a darker Graphite theme, tighter type, a slimmer top bar and a list with hairlines instead of striped rows. Times read "22 min ago", "Yday 14:02" or "Thu 13:22".

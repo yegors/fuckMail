@@ -385,6 +385,18 @@ Item {
                             Divider {}
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                                PreferenceLabel { label: "Reviewed mail leaves To review"; detail: "Mail you open moves on to Done after this long, even while it stays open. Off waits until you open something else." }
+                                FmSegmented {
+                                    readonly property var seconds: [5, 10, 30, 0]
+                                    objectName: "reviewLeavePreference"; model: ["5 s","10 s","30 s","Off"]
+                                    currentIndex: Math.max(0, seconds.indexOf(Number(backend.preferences.review_leave_seconds ?? 10)))
+                                    onActivated: function(index) { backend.setPreferences({review_leave_seconds:seconds[index]}); currentIndex = Qt.binding(function() { return Math.max(0, seconds.indexOf(Number(backend.preferences.review_leave_seconds ?? 10))) }) }
+                                    Accessible.name: "Reviewed mail leaves To review"
+                                }
+                            }
+                            Divider {}
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
                                 PreferenceLabel { label: "Week starts on"; detail: "Where “This Week” begins in the mail list." }
                                 FmComboBox {
                                     readonly property var days: ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]

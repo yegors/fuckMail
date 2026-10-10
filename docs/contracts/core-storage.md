@@ -1,5 +1,11 @@
 # Core and storage
 
+## D204 — reviewed mail preference (Core93)
+
+- Preferences gain `review_leave_seconds`: 0, 5, 10 (default) or 30; any other value is refused with `invalid_request`.
+
+Consumers: GUI Settings and `MailBackend`; preferences tests.
+
 ## D200 — blocked messages settle; label linking in parts (Core92)
 
 - Sync progress counts `source_blocked` messages as undownloadable, beside `item_too_large` and `malformed_response`.

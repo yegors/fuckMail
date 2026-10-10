@@ -11,7 +11,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","show_draft_chips":true,"reply_marks_delayed_done":true,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","mail_week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","show_draft_chips":true,"reply_marks_delayed_done":true,"review_leave_seconds":10,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","mail_week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"starred_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true,"key_hints":true})
 }
@@ -135,6 +135,7 @@ impl Store {
                 "density",
                 "show_draft_chips",
                 "reply_marks_delayed_done",
+                "review_leave_seconds",
                 "calendar_recent_searches",
                 "sync_every_minutes",
                 "week_start",
@@ -284,6 +285,17 @@ impl Store {
             return Err(err(
                 "invalid_request",
                 "Show declined events must be true or false",
+            ));
+        }
+        // How long an open To review conversation stays there; 0 keeps it
+        // until another is opened.
+        if !matches!(
+            preferences["review_leave_seconds"].as_i64(),
+            Some(0 | 5 | 10 | 30)
+        ) {
+            return Err(err(
+                "invalid_request",
+                "Leaving To review must be off or 5, 10 or 30 seconds",
             ));
         }
         if !preferences["reply_marks_delayed_done"].is_boolean() {
@@ -1352,8 +1364,12 @@ lines"]}),
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path()).unwrap();
         let draft_before = store.draft("windscribe", "windscribe-thread-003").unwrap();
+        assert_eq!(
+            store.preferences().unwrap()["preferences"]["review_leave_seconds"],
+            10
+        );
         let command = json!({"preferences":{"theme":"paper","text_size":"large","startup_view":"last",
-            "last_workspace":"calendar","timeline_position":"header","default_event_duration_minutes":45},
+            "last_workspace":"calendar","timeline_position":"header","default_event_duration_minutes":45,"review_leave_seconds":0},
             "expected_revision":0,"request_id":"appearance"});
         let saved = store
             .handle("preferences_save", None, command.clone())
@@ -1367,6 +1383,8 @@ lines"]}),
             json!({"default_event_duration_minutes":45.0}),
             json!({"default_event_duration_minutes":90}),
             json!({"sync_interval":5}),
+            json!({"review_leave_seconds":7}),
+            json!({"review_leave_seconds":"10"}),
         ] {
             let error = store
                 .handle(

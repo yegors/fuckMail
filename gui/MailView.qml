@@ -223,7 +223,7 @@ Item {
         if (f.before) labels.push("Before " + f.before + " UTC")
         return labels.join(" · ")
     }
-    onVisibleChanged: if (!visible) { morePopup.close(); senderCard.close(); railCategories.close(); binMenu.close(); if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false) } }
+    onVisibleChanged: { if (visible) { reviewArrivals(); return } morePopup.close(); senderCard.close(); railCategories.close(); binMenu.close(); if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false) } }
     function clearSelection() { selectionRows = []; selectionCursor = "" }
     function cancelKeyboardOpen() { keyboardOpen.stop(); keyboardOpen.target = "" }
     function listHasFocus() {
@@ -862,6 +862,16 @@ Item {
     // A thread opened with unread mail scrolls to its first unread message,
     // once per visit and again if a fuller copy of the thread moves it, until
     // the user scrolls. A position restored after a restart wins.
+    // New mail that arrives in the open thread is read once it is on screen
+    // with the app in front, as opening it would have; a message marked
+    // unread by hand is not new and stays unread.
+    property bool arrivalsUnread: false
+    function reviewArrivals() {
+        if (!arrivalsUnread || !mail.visible || Qt.application.state !== Qt.ApplicationActive || draftsMode) return
+        arrivalsUnread = false
+        backend.reviewOpenConversation()
+    }
+    Connections { target: Qt.application; function onStateChanged() { mail.reviewArrivals() } }
     property string visitRevealed: ""
     property bool visitScrollTouched: false
     function revealFirstUnread(messages) {
@@ -887,20 +897,22 @@ Item {
     }
     function followThread(thread) {
         const messages = draftsMode ? [] : (backend.conversation.messages || [])
-        if (thread !== visitThread) { visitThread = thread; visitUnread = ({}); visitSettled = false; visitTouched = false; lastMemberKey = ""; visitArrivedSent = ({}); visitSeen = ({}); visitRevealed = ""; visitScrollTouched = false }
+        if (thread !== visitThread) { visitThread = thread; visitUnread = ({}); visitSettled = false; visitTouched = false; lastMemberKey = ""; visitArrivedSent = ({}); visitSeen = ({}); visitRevealed = ""; visitScrollTouched = false; arrivalsUnread = false }
         // Unread stays remembered for the visit, so reading on open changes nothing.
         const unread = Object.assign({}, visitUnread), arrived = []
         for (const m of messages) if (m.unread && unread[m.id] !== true) { unread[m.id] = true; arrived.push(m.id) }
         visitUnread = unread
         // Your own messages that land after the thread was first shown.
-        const seen = Object.assign({}, visitSeen), shown = Object.keys(seen).length > 0; let sentArrived = null
+        const seen = Object.assign({}, visitSeen), shown = Object.keys(seen).length > 0; let sentArrived = null, newMail = false
         for (const m of messages) {
             if (seen[m.id] === true) continue
             seen[m.id] = true
             if (shown && m.sent && !m.is_outgoing) { sentArrived = sentArrived || Object.assign({}, visitArrivedSent); sentArrived[m.id] = true }
+            if (shown && m.unread && !m.sent) newMail = true
         }
         visitSeen = seen
         if (sentArrived) visitArrivedSent = sentArrived
+        if (newMail) { arrivalsUnread = true; reviewArrivals() }
         if (!messages.length) return
         if (!visitSettled) {
             if (!visitTouched) { openThread(messages); revealFirstUnread(messages) }

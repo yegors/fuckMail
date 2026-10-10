@@ -320,6 +320,9 @@ public:
     Q_INVOKABLE void selectAccount(const QString &id);
     Q_INVOKABLE void selectConversation(const QString &id);
     Q_INVOKABLE void openConversation(const QString &id);
+    // Reads mail that arrived in the open conversation while it was on
+    // screen, as opening it would have.
+    Q_INVOKABLE void reviewOpenConversation();
     Q_INVOKABLE void requestSenderCard(const QString &email);
     Q_INVOKABLE void clearSenderCard();
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
@@ -1053,6 +1056,11 @@ private:
     int m_leavingIndex = -1;
     QString m_leavingAccount;
     QTimer m_leavingTimer;
+    // An open conversation kept in To review moves to its own section after
+    // the review_leave_seconds preference, while it stays open.
+    QTimer m_reviewLeaveTimer;
+    void startReviewLeave();
+    void leaveReview();
     void startLeaving(const QVariantMap &row, int index);
     QVariantList m_calendarSources, m_captures;
     QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;

@@ -2405,3 +2405,14 @@ The founder opened a 33-message thread for the mail that had just arrived and sa
 - **Evidence.** MailSelectionTest opens a 31-message thread whose newest message is unread: its header ends up 12 px below the reader's top (1,216 px down, unscrolled, before). A thread with nothing unread opens at its top.
 
 Mail UI146. No schema, fixture or protocol change.
+
+## D204 — mail read on screen, and reviewed mail leaving To review (2026-10-09T21:00:00Z)
+
+The founder found that a message arriving in the open thread kept it in To review after leaving it, and asked that an opened To review conversation move on after 10 s without opening another, as a Settings → Mail choice.
+
+- **Found.** To review is unread mail. Read-on-open reads a conversation only when it is opened; a message arriving while it was open stayed unread. The open conversation, read on opening, is kept in To review until another opens.
+- **Arrivals.** A message new to the open thread, unread and not sent by you, is read like an opening would read it: at once when the reader is shown with the app in front, otherwise when both become true while it is still open. A message marked unread by hand is not new and stays unread. Done still applies only to the members it was pressed on.
+- **Leaving To review.** New preference `review_leave_seconds`: 0 (off), 5, 10 (default) or 30. That long after an opening from To review, the open conversation, once read, moves to its own section while it stays open, as Done or Delay move it. A read still saving is waited for; an unread one stays. It changes no mail state: the conversation was already read when opened. Settings → Mail → "Reviewed mail leaves To review" offers 5 s, 10 s, 30 s and Off.
+- **Evidence.** MailSelectionTest: a message arriving in the open thread sends a read for it; with the timer at one second the open conversation leaves To review while open, and with Off it stays. Both fail without the change. Core rejects other values. The GUI integration self-test's provider arrival now expects the arrival read when the app is in front, and its collapsed-group count check no longer assumes every Done month is open.
+
+Core93, Mail UI147. No schema, fixture or protocol change.

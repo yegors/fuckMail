@@ -254,6 +254,37 @@ class MailSelectionTest {
             else held.peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",held.request["id"]},{"ok",false},{"error",QJsonObject{{"code","stale_revision"},{"message","Conversation changed"}}}}).toJson(QJsonDocument::Compact)+'\n');
         }
     };
+    // An open conversation read from To review moves to Done after the
+    // review_leave_seconds preference while it stays open; Off keeps it.
+    static void reviewLeavesWhileOpen() {
+        for (const int seconds : {1, 0}) {
+            Harness h;
+            const auto make=[](const QString &id,bool unread){
+                return QVariant(QVariantMap{{"id",id},{"subject","Read "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T12:00:00Z"},
+                    {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                    {"group",unread ? "review" : "done"},{"kind","people"},{"unread",unread},{"starred",false}}); };
+            h.rows={make("n1",true),make("n2",true)};
+            h.summary={{"filtered_group_counts",QJsonObject{{"review",2},{"held",0}}},{"done_months",QJsonArray{}}};
+            // The preference allows 5, 10 or 30 s; one second keeps the test short.
+            h.backend.m_preferences["review_leave_seconds"]=seconds;
+            h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+            await([&]{return !h.backend.m_loading && h.backend.conversations().size()==2;},"unread Inbox loads");
+            const auto row=[&](const QString &id){ for (const auto &value:h.backend.conversations()) if (value.toMap()["id"]==id) return value.toMap(); return QVariantMap{}; };
+            h.backend.openConversation("n1");
+            auto read=h.take();
+            h.rows={make("n1",false),make("n2",true)};
+            h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0}}},{"done_months",QJsonArray{}}};
+            h.finish(read); await([&]{return !h.backend.m_mutatingConversation;},"read on open lands");
+            h.backend.loadConversations(false,true);
+            await([&]{return !h.backend.m_loading && row("n1")["pinned"].toBool() && row("n1")["display_group"]=="review";},"the read conversation stays in To review while open");
+            QElapsedTimer waited; waited.start();
+            while (waited.elapsed()<2500 && row("n1")["pinned"].toBool()) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(h.backend.selectedId()=="n1","it stays open");
+            if (seconds) require(!row("n1")["pinned"].toBool() && row("n1")["display_group"].toString()!="review","after the set time it leaves To review while still open");
+            else require(row("n1")["pinned"].toBool() && row("n1")["display_group"]=="review","Off keeps it in To review until another opens");
+        }
+        qInfo()<<"Reviewed mail leaves To review after the set time while open; Off keeps it.";
+    }
     // Opening unread mail shows it read at once, before the engine answers,
     // and Done pressed meanwhile is kept and sent next, not dropped. A user
     // write passes polling reads already queued.
@@ -1941,6 +1972,15 @@ public:
         // A thread with nothing unread opens at its top, as before.
         // Opening marked the new message read; the harness holds that write until released.
         h.finish(h.take()); await([&]{return !h.backend.m_mutatingConversation;},"read on open settles");
+        // New mail arriving in the open thread is read too, as it is on screen.
+        qInfo()<<"application state"<<QGuiApplication::applicationState();
+        h.laterMessages.append(QJsonObject{{"id","long-31"},{"unread",true},{"starred",false},{"sender_name","Vendor"},{"sent_at","2026-10-01T10:00:00Z"},
+            {"text","Another message, arriving while the thread is open."},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",QJsonArray{}}});
+        { auto row=h.rows[0].toMap(); auto ids=row["message_ids"].toList(); ids<<"long-31"; row["message_ids"]=ids; row["revision"]=5; h.rows[0]=row; }
+        h.backend.loadConversation(false,false);
+        auto arrival=h.take();
+        require(arrival.request["params"].toObject()["read"]==true && arrival.request["params"].toObject()["message_ids"].toArray().contains("long-31"),"mail arriving in the open thread is read");
+        h.finish(arrival); await([&]{return !h.backend.m_mutatingConversation;},"arrival read settles");
         h.backend.openConversation("read");
         await([&]{ auto *member=find(window->contentItem(),"messageMember_read-original"); return member && member->isVisible(); },"the read thread opens");
         settle(400);
@@ -2870,6 +2910,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){longThreadOpensAtUnread();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){longThreadOpensAtUnread();reviewLeavesWhileOpen();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

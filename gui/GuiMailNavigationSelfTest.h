@@ -67,6 +67,9 @@ private:
     QString m_arrivalReportPath, m_arrivalAccount, m_arrivalThread, m_arrivalId;
     QJsonArray m_arrivalOriginalIds;
     QJsonObject m_arrivalDraft, m_arrivalReceipt, m_arrivalExpectedCounts;
+    // Mail arriving in the open thread is read when the app is in front.
+    bool m_arrivalRead = false;
+    qint64 m_expandedBeforeCollapse = 0;
     bool m_arrivalDoneArmed = false, m_arrivalReceiptSeen = false, m_arrivalReceiptOk = false;
     int m_stage = 0, m_case = 0, m_ticks = 0, m_stable = 0, m_lastStage = -1;
     bool m_loadingSeen = false, m_searchPending = false, m_originalSettings = false;

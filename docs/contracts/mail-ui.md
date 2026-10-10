@@ -1,5 +1,12 @@
 # Mail UI, reader and human composer
 
+## D204 — read on screen; leaving To review (Mail UI147)
+
+- **Arrivals.** A message new to the open thread's visit, unread and not sent, makes `MailView` call `reviewOpenConversation()` (read-on-open again) once the reader is visible and the application is active. Messages already seen in the visit, including ones marked unread by hand, never trigger it.
+- **Leaving To review.** `review_leave_seconds` (0, 5, 10 default, 30) after a deliberate opening, a pinned, read open conversation is released (`releasePin`) and the list reloads, so it shows in its own section while open. 0 keeps the pin until another opening. Settings → Mail: `reviewLeavePreference`.
+
+Consumers: `MailView`, `MailBackend` (`reviewOpenConversation`, `leaveReview`), `SettingsView`; MailSelectionTest, GUI integration self-test.
+
 ## D203 — opening at the first unread message (Mail UI146)
 
 - A thread first shown with unread mail scrolls its first unread message's header to just below the reader's top (`revealFirstUnread`, through the same settle-and-place timer as Show match), once per visit and again if a fuller copy moves it, until the user scrolls. A restored `readerY`, an open reply, or no unread mail leaves the position alone.
