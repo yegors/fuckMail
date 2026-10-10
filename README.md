@@ -2,18 +2,20 @@
 
 A native desktop mail and calendar client for Gmail and Google Workspace, with a local LLM doing the sorting. Rust engine, C++/Qt Quick GUI, SQLite store, and a CLI on the same engine. Windows, macOS and Linux.
 
+![fuckMail: one account's inbox sorted into To review, Delayed and This week, an open thread with its summary, the week's calendar beside it and today's timeline along the bottom](docs/images/hero.webp)
+
 > **Status:** early, under active development, no release yet; build from source. The [changelog](CHANGELOG.md) lists what has shipped.
 
-![Mail: the conversation list for one account, an open thread, and the day's timeline underneath](docs/images/mail.png)
-
 <details>
-<summary>Calendar</summary>
+<summary>Screenshots</summary>
+
+![Mail: the conversation list for one account, an open thread, and the day's timeline underneath](docs/images/mail.png)
 
 ![Calendar day view combining three accounts, with the day's mail activity on the right](docs/images/calendar.png)
 
 </details>
 
-Screenshots use the built-in demo profile (`fuckMail --demo-profile`); every name and message in them is synthetic.
+The screenshots use the built-in demo profile (`fuckMail --demo-profile`). Every person and message in these images is made up.
 
 ## What it does
 
