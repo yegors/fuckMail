@@ -8,18 +8,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.1"
 bytes = "1.12.1"
 http-body = "1.1.0"
 oauth2 = { version = "5.0.0", default-features = false, features = ["timing-resistant-secret-traits"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10.8"
+sha2 = "0.11.0"
 reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-native-roots"] }
 tokio = { version = "1.53.1", features = ["net", "io-util", "time", "sync", "rt-multi-thread", "macros"] }
-tokio-util = { version = "=0.7.18", features = ["rt"] }
+tokio-util = { version = "=0.7.19", features = ["rt"] }
 httpdate = "=1.0.3"
-jsonwebtoken = { version = "=9.3.1", default-features = false }
+jsonwebtoken = { version = "=11.1.0", default-features = false }
 zeroize = "1.8.1"
 
 [target.'cfg(windows)'.dependencies]
