@@ -23,7 +23,7 @@ Item {
     property var messageMenuAssistance: null
     readonly property bool hasSelection: selectionRows.length > 0
     readonly property bool readerMatchesCursor: !keyboardNavigation || hasSelection || !selectionCursor || selectionCursor === (draftsMode ? backend.activeDraftId : backend.selectedId)
-    readonly property bool selectionMutable: readerMatchesCursor && !backend.mutationInFlight && canMutate && !(morePopup.opened ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
+    readonly property bool selectionMutable: readerMatchesCursor && !backend.mutationInFlight && canMutate && !(morePopup.visible ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
     property var thread: backend.conversation
     // Drafts open in the composer; a conversation from another scope stays hidden.
     property var members: draftsMode ? [] : thread.messages || []
@@ -50,7 +50,7 @@ Item {
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || textMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: mediaViewer.visible || assistancePopupOpen() || labelMenu.visible || textMenu.visible || discardSelection.visible || binConfirm.visible || reconnectPrompt.visible || railCategories.visible || senderCard.visible || morePopup.visible || capturePopup.visible || binMenu.visible || keepDialog.visible || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     // Spam is listed and read live from Gmail; none of it is stored. Spam and
@@ -295,7 +295,7 @@ Item {
     }
     function selectionAction(action, category) {
         if (!readerMatchesCursor) return
-        const rows = (morePopup.opened || labelMenu.opened) ? menuRows : selectionRows.length ? selectionRows : backend.snapshotMailRows([backend.selectedId])
+        const rows = (morePopup.visible || labelMenu.visible) ? menuRows : selectionRows.length ? selectionRows : backend.snapshotMailRows([backend.selectedId])
         if (!rows.length) return
         morePopup.close(); labelMenu.close()
         backend.applyMailSelection(rows, action, category || "")
@@ -553,7 +553,7 @@ Item {
                 font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1}
             }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            FmIcon { visible: backend.folder === "inbox" || mail.dateGroups; name: "down"; size: 10; color: heading.tone; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: 180 } } }
+            FmIcon { visible: backend.folder === "inbox" || mail.dateGroups; name: "down"; size: 10; color: heading.tone; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: Theme.ms(180); easing.type: Theme.enterEasing } } }
         }
     }
     // The Inbox list's items besides rows. Each is one row high, as a row
@@ -675,7 +675,7 @@ Item {
         background: Rectangle {
             radius: 5; color: pill.open && pill.hovered ? Theme.bg4 : "transparent"
             border.width: pill.visualFocus ? 1 : 0; border.color: Theme.focusBorder
-            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: Theme.ms(120) } }
         }
         contentItem: Item {
             implicitHeight: 18
@@ -1157,7 +1157,7 @@ Item {
         replyReveal.restart()
     }
     // The first move to the reply glides; later ones, as the thread lays out, follow at once.
-    NumberAnimation { id: revealScroll; target: reader; property: "contentY"; duration: 200; easing.type: Easing.OutCubic }
+    NumberAnimation { id: revealScroll; target: reader; property: "contentY"; duration: Theme.ms(200); easing.type: Easing.OutCubic }
     // An opened reply shows whole, at the end of the thread. The reader keeps
     // it there while the thread above finishes loading and laying out, until
     // the height has held for 250 ms (3 s at most) or the reader is scrolled.
@@ -1499,7 +1499,7 @@ Item {
                             Row {
                                 id: kindButtons; spacing: 2
                                 enabled: backend.folder === "inbox"; opacity: enabled ? 1 : 0
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
+                                Behavior on opacity { NumberAnimation { duration: Theme.ms(150); easing.type: Theme.enterEasing } }
                                 Repeater { model: ["people", "automated"]
                                     FmButton {
                                         id: kindButton; required property string modelData
@@ -1557,7 +1557,7 @@ Item {
                     // the answer brings them up again.
                     property bool dimmed: false
                     opacity: dimmed ? .55 : 1
-                    Behavior on opacity { NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
+                    Behavior on opacity { NumberAnimation { duration: Theme.ms(90); easing.type: Easing.OutQuad } }
                     Timer { interval: 80; running: backend.listPending; onTriggered: list.dimmed = true }
                     Connections {
                         target: backend
@@ -1640,10 +1640,14 @@ Item {
                                 // A row read in To review folds away once another opens: 170 ms,
                                 // faded by 70% of the way. The last row of its section keeps its
                                 // height and fades into the section's empty line instead.
+                                // Done, Delay and filing fold the open row the same way, and
+                                // it drifts toward where it goes: Done and filing to the left,
+                                // Delay to the right ("later").
                                 readonly property bool leaving: !!modelData.leaving
+                                readonly property real leaveDrift: modelData.leave_kind === "done" || modelData.leave_kind === "filed" ? -18 : modelData.leave_kind === "delay" ? 18 : 0
                                 readonly property bool leavesEmpty: leaving && !!modelData.leaves_empty
                                 property real leave: 0
-                                NumberAnimation on leave { id: leaveAnimation; running: false; from: 0; to: 1; duration: 170; easing.type: Easing.InQuad }
+                                NumberAnimation on leave { id: leaveAnimation; running: false; from: 0; to: 1; duration: Theme.ms(170); easing.type: Easing.InQuad }
                                 onLeavingChanged: { if (leaving) leaveAnimation.restart(); else { leaveAnimation.stop(); leave = 0 } }
                                 Component.onCompleted: if (leaving) leaveAnimation.restart()
                                 width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (leavesEmpty ? 1 : 1 - leave))
@@ -1660,6 +1664,7 @@ Item {
                                     visible: !groupedRow.collapsed
                                     y: groupedRow.headingHeight; width: parent.width; height: parent.height-y
                                     opacity: Math.max(0, 1 - groupedRow.leave / .7); clip: groupedRow.leaving
+                                    transform: Translate { x: groupedRow.leave * groupedRow.leaveDrift }
                                     leftPadding: 16; rightPadding: 16; topPadding: 0; bottomPadding: 0; hoverEnabled: true
                                     Accessible.name: groupedRow.modelData.subject+", "+groupedRow.modelData.sender_name+(groupedRow.modelData.unread ? ", unread" : ", reviewed")+(groupedRow.modelData.starred ? ", action held" : "")
                                     onClicked: mail.rowClick(groupedRow.modelData.id, 0)
@@ -2015,8 +2020,8 @@ Item {
                                 Component.onCompleted: if (modelData.is_outgoing && ["queued","preparing","in_flight"].indexOf(modelData.outgoing_state) >= 0) memberArrival.start()
                                 ParallelAnimation {
                                     id: memberArrival
-                                    NumberAnimation { target: member; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-                                    NumberAnimation { target: memberShift; property: "y"; from: 10; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: member; property: "opacity"; from: 0; to: 1; duration: Theme.ms(200); easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: memberShift; property: "y"; from: 10; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic }
                                 }
                                 implicitHeight: memberColumn.implicitHeight + (isExpanded ? 18 : 0)
                                 // Messages are divided by a hairline, none above the first.
@@ -2041,7 +2046,7 @@ Item {
                                         height: parent.height; radius: 1; color: Theme.accent
                                         width: known ? sendTrack.width * Math.max(.03, sendTrack.share) : sendTrack.width * .2
                                         onKnownChanged: if (known) x = 0
-                                        Behavior on width { enabled: sendFill.known; NumberAnimation { duration: 140 } }
+                                        Behavior on width { enabled: sendFill.known; NumberAnimation { duration: Theme.ms(140); easing.type: Theme.enterEasing } }
                                         NumberAnimation on x {
                                             running: sendTrack.visible && !sendFill.known; loops: Animation.Infinite
                                             from: -sendTrack.width * .2; to: sendTrack.width; duration: 1100; easing.type: Easing.InOutQuad
@@ -2076,7 +2081,7 @@ Item {
                                                 anchors.centerIn: parent
                                                 name: "chevronDown"; size: 10; color: memberHeading.hovered || caretHover.hovered ? Theme.text : Theme.inkAlpha(.4)
                                                 rotation: member.isExpanded ? 0 : -90
-                                                Behavior on rotation { NumberAnimation { duration: 120 } }
+                                                Behavior on rotation { NumberAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
                                             }
                                         }
                                     }
@@ -2137,7 +2142,7 @@ Item {
                                             FmIcon {
                                                 objectName: "messageSent_" + member.modelData.id
                                                 visible: opacity > 0; opacity: member.modelData.is_outgoing && member.modelData.outgoing_state === "accepted" ? 1 : 0
-                                                Behavior on opacity { NumberAnimation { duration: 120 } }
+                                                Behavior on opacity { NumberAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
                                                 name: "check"; size: 11; color: Theme.accent; Layout.rightMargin: 4
                                             }
                                             MessageHeaderButton {
@@ -2220,7 +2225,7 @@ Item {
                                 ColumnLayout {
                                     id: messageBody
                                     opacity: visible ? 1 : 0
-                                    Behavior on opacity { NumberAnimation {duration:140} }
+                                    Behavior on opacity { NumberAnimation {duration: Theme.ms(140); easing.type: Theme.enterEasing} }
                                     visible: member.isExpanded && !member.modelData.content_error
                                     // 16px after a summary or its progress, 10px after the recipients line, else 2px.
                                     Layout.fillWidth: true; Layout.topMargin: messageAssistance.visible && messageAssistance.summaryShowing && !messageAssistance.summaryFailed ? 16 : recipients.visible ? 10 : 2
@@ -2351,14 +2356,14 @@ Item {
                                         spacing: 10
                                         Text { text: (member.attachmentCount === 1 ? "1 attachment" : member.attachmentCount + " attachments").toUpperCase(); color: attachmentsHeading.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.letterSpacing: .55 }
                                         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-                                        FmIcon { name: "down"; size: 10; color: attachmentsHeading.tone; rotation: attachmentsHeading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: 180 } } }
+                                        FmIcon { name: "down"; size: 10; color: attachmentsHeading.tone; rotation: attachmentsHeading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: Theme.ms(180); easing.type: Theme.enterEasing } } }
                                     }
                                 }
                                 Flow {
                                     id: attachmentFlow
                                     objectName: "messageAttachments_" + member.modelData.id
                                     opacity: visible ? 1 : 0
-                                    Behavior on opacity { NumberAnimation {duration:140} }
+                                    Behavior on opacity { NumberAnimation {duration: Theme.ms(140); easing.type: Theme.enterEasing} }
                                     visible: member.isExpanded && member.attachmentCount > 0 && !attachmentsHeading.collapsed; Layout.fillWidth: true; Layout.maximumWidth: 798; spacing: 10
                                     Repeater {
                                         id: attachmentRepeater
@@ -2480,8 +2485,8 @@ Item {
                             onVisibleChanged: if (visible) replyOpening.restart()
                             ParallelAnimation {
                                 id: replyOpening
-                                NumberAnimation { target: reply; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-                                NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: 200; easing.type: Easing.OutCubic }
+                                NumberAnimation { target: reply; property: "opacity"; from: 0; to: 1; duration: Theme.ms(200); easing.type: Easing.OutCubic }
+                                NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic }
                             }
                             minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
                             // The whole form fits in the reader, with its 12 px above and 24 below.
@@ -2498,15 +2503,84 @@ Item {
                         readonly property bool clear: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && ((backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0) === 0 && ((backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0) === 0
                         readonly property var nextEvent: (backend.todayEvents || []).find(function(e) { return !e.all_day && e.start_hour > backend.nowHour }) || null
                         readonly property bool inboxClear: clear && !mail.firstLoading
+                        // Clearing the inbox through work gets one small moment
+                        // when the clear reader first shows: the check lands
+                        // with a little overshoot, a ring spreads from it and
+                        // the lines follow. Opening an inbox that was already
+                        // clear (at launch, on switching account) shows it still.
+                        readonly property bool waiting: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && !mail.firstLoading && !clear
+                        readonly property bool showingClear: visible && inboxClear
+                        property bool armed: false
+                        onWaitingChanged: if (waiting) armed = true
+                        onShowingClearChanged: {
+                            if (!showingClear || !armed) return
+                            armed = false
+                            if (!Theme.reducedMotion) celebration.restart()
+                        }
+                        Connections {
+                            target: backend
+                            function onAccountChanged() { emptyReader.armed = false; celebration.complete(); Qt.callLater(function() { emptyReader.armed = emptyReader.waiting }) }
+                        }
+                        SequentialAnimation {
+                            id: celebration
+                            PropertyAction { target: clearCheck; property: "scale"; value: .4 }
+                            PropertyAction { target: clearCheck; property: "rotation"; value: -25 }
+                            PropertyAction { target: clearCheck; property: "opacity"; value: 0 }
+                            PropertyAction { targets: [clearTitle, clearLine, nextEventRow]; property: "opacity"; value: 0 }
+                            PropertyAction { targets: [clearTitleShift, clearLineShift, nextEventShift]; property: "y"; value: 8 }
+                            PropertyAction { target: clearRing; property: "opacity"; value: 0 }
+                            ParallelAnimation {
+                                NumberAnimation { target: clearCheck; property: "opacity"; to: 1; duration: Theme.quickMs; easing.type: Theme.enterEasing }
+                                NumberAnimation { target: clearCheck; property: "scale"; to: 1; duration: Theme.emphasisMs; easing.type: Easing.OutBack; easing.overshoot: 2.2 }
+                                NumberAnimation { target: clearCheck; property: "rotation"; to: 0; duration: Theme.emphasisMs; easing.type: Theme.enterEasing }
+                                // The ring answers the check's landing, and is gone before it matters.
+                                SequentialAnimation {
+                                    PauseAnimation { duration: Theme.quickMs }
+                                    PropertyAction { target: clearRing; property: "scale"; value: 1 }
+                                    PropertyAction { target: clearRing; property: "opacity"; value: .55 }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: clearRing; property: "scale"; to: 2.6; duration: 560; easing.type: Theme.enterEasing }
+                                        NumberAnimation { target: clearRing; property: "opacity"; to: 0; duration: 560; easing.type: Theme.enterEasing }
+                                    }
+                                }
+                                // Each line starts before the one above has settled.
+                                SequentialAnimation {
+                                    PauseAnimation { duration: 80 }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: clearTitle; property: "opacity"; to: 1; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                        NumberAnimation { target: clearTitleShift; property: "y"; to: 0; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                    }
+                                }
+                                SequentialAnimation {
+                                    PauseAnimation { duration: 150 }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: clearLine; property: "opacity"; to: 1; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                        NumberAnimation { target: clearLineShift; property: "y"; to: 0; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                    }
+                                }
+                                SequentialAnimation {
+                                    PauseAnimation { duration: 220 }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: nextEventRow; property: "opacity"; to: 1; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                        NumberAnimation { target: nextEventShift; property: "y"; to: 0; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+                                    }
+                                }
+                            }
+                        }
                         visible: mail.members.length===0 && !mail.replyOpen && !mail.readerLoading; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * (inboxClear ? 0.16 : 0.18)); width: Math.min(inboxClear ? 520 : 640, parent.width-readerPane.margin*2); spacing: 0
                         // Inbox clear: a small check, the title, one line and today's next event.
                         RowLayout {
                             visible: emptyReader.inboxClear
                             spacing: 10
-                            FmIcon { name: "checkCircle"; size: 18; color: Theme.accent }
-                            Text { objectName: "inboxClearTitle"; text: "Inbox clear"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium; font.letterSpacing: 0}
+                            FmIcon {
+                                id: clearCheck; objectName: "inboxClearCheck"
+                                name: "checkCircle"; size: 18; color: Theme.accent
+                                Rectangle { id: clearRing; anchors.centerIn: parent; width: 16; height: 16; radius: 8; color: "transparent"; border.width: 1.5; border.color: Theme.accent; opacity: 0 }
+                            }
+                            Text { id: clearTitle; transform: Translate { id: clearTitleShift } objectName: "inboxClearTitle"; text: "Inbox clear"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium; font.letterSpacing: 0}
                         }
                         Text {
+                            id: clearLine; transform: Translate { id: clearLineShift }
                             visible: emptyReader.inboxClear
                             leftPadding: 28; topPadding: 10; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
                             text: "Nothing to review or delayed in " + (backend.currentAccount.name || "this account") + "."
@@ -2516,6 +2590,7 @@ Item {
                         ItemDelegate {
                             id: nextEventRow
                             objectName: "inboxClearNext"
+                            transform: Translate { id: nextEventShift }
                             visible: emptyReader.inboxClear && !!emptyReader.nextEvent
                             x: 28; width: parent.width - 28; implicitHeight: 40; topPadding: 12; bottomPadding: 4; leftPadding: 0; rightPadding: 0
                             hoverEnabled: true
@@ -2526,7 +2601,7 @@ Item {
                                 spacing: 10
                                 Text { text: "NEXT"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.letterSpacing: 0.66 }
                                 Text { text: emptyReader.nextEvent ? emptyReader.nextEvent.time_display || "" : ""; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1} }
-                                Text { Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; text: emptyReader.nextEvent ? String(emptyReader.nextEvent.title || "") : ""; textFormat: Text.PlainText; elide: Text.ElideRight; color: nextEventRow.hovered ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Behavior on color { ColorAnimation { duration: 150 } } }
+                                Text { Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; text: emptyReader.nextEvent ? String(emptyReader.nextEvent.title || "") : ""; textFormat: Text.PlainText; elide: Text.ElideRight; color: nextEventRow.hovered ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Behavior on color { ColorAnimation { duration: Theme.ms(150) } } }
                                 FmIcon { name: "next"; size: 10; color: Theme.inkAlpha(.4) }
                                 Item { Layout.fillWidth: true }
                             }
@@ -2584,11 +2659,11 @@ Item {
                 Accessible.name: "Draft: " + mail.chipSubject(modelData)
                 FmToolTip { shown: chip.hovered; text: mail.chipTip(chip.modelData) }
                 onClicked: mail.openDraftChip(modelData)
-                background: Rectangle { radius: 5; color: chip.hovered ? Theme.bg4 : Theme.canvasAlpha(.85); border.width: chip.visualFocus ? 1 : 0; border.color: Theme.focusBorder; Behavior on color { ColorAnimation { duration: 150 } } }
+                background: Rectangle { radius: 5; color: chip.hovered ? Theme.bg4 : Theme.canvasAlpha(.85); border.width: chip.visualFocus ? 1 : 0; border.color: Theme.focusBorder; Behavior on color { ColorAnimation { duration: Theme.ms(150) } } }
                 contentItem: RowLayout {
                     spacing: 7
                     FmIcon { name: chip.modelData.mode !== "new" && chip.modelData.conversation_id ? "reply" : "edit"; size: 11; color: Theme.accent }
-                    Text { id: chipText; Layout.fillWidth: true; text: mail.chipSubject(chip.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: chip.hovered ? Theme.text : Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Behavior on color { ColorAnimation { duration: 150 } } }
+                    Text { id: chipText; Layout.fillWidth: true; text: mail.chipSubject(chip.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: chip.hovered ? Theme.text : Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Behavior on color { ColorAnimation { duration: Theme.ms(150) } } }
                 }
             }
         }
@@ -2596,6 +2671,9 @@ Item {
     // Spam and Trash, behind the ▾ after Drafts.
     Popup {
         id: binMenu; objectName: "binMenu"
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopLeft
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         parent: Overlay.overlay; padding: 4; focus: true
         width: Math.max(150, binChoices.implicitWidth + 8)
         // Any press outside closes it, and so does moving to another mailbox
@@ -2603,7 +2681,7 @@ Item {
         // so that button's click must not open it again.
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         property double closedAt: 0
-        onClosed: closedAt = Date.now()
+        onAboutToHide: closedAt = Date.now()
         Connections { target: backend; function onQueryChanged() { binMenu.close() } }
         onAboutToShow: { const point = binMenuButton.mapToItem(parent, 0, binMenuButton.height + 6); x = point.x; y = point.y; backend.loadBinMenuCounts() }
         background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 8 }
@@ -2651,7 +2729,7 @@ Item {
             Item { implicitWidth: 16 }
         }
         function saveToDrafts() { close(); backend.saveDraft(); mail.setReplyOpen(false); backend.noteSavedToDrafts() }
-        Shortcut { sequences: ["Return", "Enter"]; enabled: keepDialog.opened; onActivated: keepDialog.saveToDrafts() }
+        Shortcut { sequences: ["Return", "Enter"]; enabled: keepDialog.visible; onActivated: keepDialog.saveToDrafts() }
     }
     AttachmentViewer { id: mediaViewer; backdrop: mail }
     function showAttachment(attachment) {
@@ -2682,6 +2760,9 @@ Item {
     }
     Popup {
         id: railCategories; objectName: "allCategoriesPopup"; parent: Overlay.overlay; width: 280; padding: 12
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopLeft
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         height: Math.min(categoryChoices.implicitHeight + 24, parent.height - 100); focus: true
         onAboutToShow: { const point = allLabels.mapToItem(parent, 0, allLabels.height + 8); x = Math.max(12,Math.min(point.x,parent.width-width-12)); y = Math.max(64,Math.min(point.y,parent.height-height-12)) }
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
@@ -2717,7 +2798,7 @@ Item {
         readonly property bool allUnread: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.unread === true })
         readonly property bool single: mail.menuRows.length === 1
         readonly property bool mailRows: !drafts && !outgoing
-        closePolicy: labelMenu.opened || formatMenu.opened ? Popup.CloseOnEscape : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: labelMenu.visible || formatMenu.visible ? Popup.CloseOnEscape : Popup.CloseOnEscape | Popup.CloseOnPressOutside
         contentItem: ColumnLayout {
             spacing: 0
             Text { visible: mail.menuRows.length > 1; text: mail.menuRows.length + " SELECTED"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.letterSpacing: .44; Layout.leftMargin: 9; Layout.topMargin: 5; Layout.bottomMargin: 6 }
@@ -2780,7 +2861,7 @@ Item {
                 Repeater { model: backend.categories
                     FmMenuItem {
                         required property var modelData
-                        readonly property string membership: labelMenu.opened ? mail.labelState(modelData.id) : "none"
+                        readonly property string membership: labelMenu.visible ? mail.labelState(modelData.id) : "none"
                         objectName: "applyLabel_" + modelData.id
                         text: modelData.name; markable: true; marked: membership !== "none"; partial: membership === "some"
                         tip: membership === "all" ? "Remove from " + (mail.menuRows.length > 1 ? "all selected" : "this conversation") : membership === "some" ? "On some selected conversations · click to apply to all" : "Apply to " + (mail.menuRows.length > 1 ? "all selected" : "this conversation")
@@ -2829,6 +2910,8 @@ Item {
     }
     Popup {
         id: capturePopup; objectName: "captureHistoryPopup"; parent: Overlay.overlay
+        // Eases in from just under full size; closes at once.
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         width: Math.min(560,parent.width-40); height: Math.min(420,parent.height-80); anchors.centerIn: parent
         padding: 20; focus: true; closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }

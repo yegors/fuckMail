@@ -1,6 +1,7 @@
-// Singleton design tokens: the four colour themes, text-size scaling, font and
-// line-height helpers, account colours and small shared formatters. Main.qml
-// binds themeId, textSize and devicePixelRatio from the user's preferences.
+// Singleton design tokens: the four colour themes, text-size scaling, motion
+// timing, font and line-height helpers, account colours and small shared
+// formatters. Main.qml binds themeId, textSize, motion and devicePixelRatio
+// from the user's preferences and the system.
 pragma Singleton
 import QtQuick
 QtObject {
@@ -8,6 +9,26 @@ QtObject {
     property string themeId: "graphite"
     property string textSize: "default"
     property real devicePixelRatio: 1
+    // Motion. `motion` is the user's choice (system, full or reduced) and
+    // systemReducesMotion the operating system's setting. Reduced motion
+    // keeps every change, without the movement: ms() turns transitions
+    // into cuts. Looping progress indicators keep their own pace.
+    // One timing scale: a press answers in 90 ms, small things in 120, rows
+    // and panels in 170, travel in 220, and the rare celebration in 420.
+    // Arrivals ease out (fast, then settling); departures ease in and are
+    // shorter, so leaving never holds up what comes next.
+    property string motion: "system"
+    property bool systemReducesMotion: false
+    readonly property bool reducedMotion: motion === "reduced" || (motion === "system" && systemReducesMotion)
+    readonly property int pressMs: 90
+    readonly property int quickMs: 120
+    readonly property int baseMs: 170
+    readonly property int glideMs: 220
+    readonly property int emphasisMs: 420
+    readonly property int enterEasing: Easing.OutCubic
+    readonly property int exitEasing: Easing.InCubic
+    readonly property int moveEasing: Easing.InOutCubic
+    function ms(duration) { return reducedMotion ? 0 : duration }
     readonly property real pixelScale: devicePixelRatio > 0 ? devicePixelRatio : 1
     readonly property real ruleWidth: Math.max(1, Math.round(pixelScale)) / pixelScale
     function snap(value) { return Math.round(value * pixelScale) / pixelScale }

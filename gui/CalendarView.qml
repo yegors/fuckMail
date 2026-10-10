@@ -70,7 +70,7 @@ Item {
         if (backend.setCalendarMailActivityContext !== undefined)
             backend.setCalendarMailActivityContext(visible && backend.calendarView !== "agenda", false)
     }
-    Component.onCompleted: updateMailActivityContext()
+    Component.onCompleted: { updateMailActivityContext(); travelView = backend.calendarView; travelDate = backend.calendarDate }
     readonly property var previewRows: { backend.calendarDate; backend.calendarView; backend.preferences; return editor.opened ? backend.calendarPreview(editor.preview) : [] }
     function editingEvent(event) { return editor.opened && editor.preview.eventId === event.event_id && editor.preview.account === event.account && editor.preview.calendar_id === event.calendar_id }
     function prepareSearch() {
@@ -108,7 +108,7 @@ Item {
         let end = new Date(selected.getFullYear(), selected.getMonth() + 1, 0, 12)
         return Math.ceil((Math.round((end - dateAt(0)) / 86400000) + 1) / 7) * 7
     }
-    readonly property bool popupOpen: editor.opened || details.opened || details.viewOpen || operationHistory.opened || datePicker.opened || moreMenu.opened || allDayOverflow.opened
+    readonly property bool popupOpen: editor.visible || details.visible || details.viewOpen || operationHistory.visible || datePicker.visible || moreMenu.visible || allDayOverflow.visible
     property bool shortcutsEnabled: visible && (!backend.reminders || backend.reminders.length === 0) && !editingField() && !popupOpen
     function editingField() {
         let item = Window.window ? Window.window.activeFocusItem : null
@@ -335,6 +335,23 @@ Item {
         function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.hoverSlot = ({}); calendar.updateMailActivityContext() }
     }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
+    // Moving to another day, week or month in the same view slides the new
+    // dates in from the side they come from, so the direction reads at a
+    // glance. `travel` runs from ±1 to 0; a view change is a cut.
+    property real travel: 0
+    property string travelView: ""
+    property string travelDate: ""
+    readonly property string travelKey: backend.calendarView + "|" + backend.calendarDate
+    onTravelKeyChanged: {
+        if (visible && travelDate.length && backend.calendarView === travelView && backend.calendarDate !== travelDate && !Theme.reducedMotion) {
+            travel = backend.calendarDate > travelDate ? 1 : -1
+            travelIn.restart()
+        }
+        travelView = backend.calendarView; travelDate = backend.calendarDate
+    }
+    NumberAnimation { id: travelIn; target: calendar; property: "travel"; to: 0; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+    readonly property real travelShift: travel * 18
+    readonly property real travelFade: 1 - Math.abs(travel) * .7
     onVisibleChanged: { updateMailActivityContext(); if (visible) Qt.callLater(revealNow); if (!visible) { dayEventRequest = null; cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
     Shortcut { sequence: ShortcutRegistry.sequence("day",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: ShortcutRegistry.sequence("week",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
@@ -446,6 +463,7 @@ Item {
         // title already names the day.
         RowLayout {
             id: dayHeaderRow; objectName: "calendarBand"
+            transform: Translate { x: calendar.travelShift } opacity: calendar.travelFade
             visible: calendar.timeGrid
             Layout.fillWidth: true; Layout.fillHeight: false
             Layout.preferredHeight: calendar.bandHeight; Layout.maximumHeight: calendar.bandHeight
@@ -524,6 +542,7 @@ Item {
                 }
                 Item {
                     id: grid; x: 56; width: gridScroll.width - 56; height: 24 * calendar.hourHeight; property real dayWidth: width / calendar.dayCount
+                    transform: Translate { x: calendar.travelShift } opacity: calendar.travelFade
                     Repeater { model: calendar.timeGrid ? calendar.dayCount : 0
                         Rectangle {
                             required property int index; x: index * grid.dayWidth; width: grid.dayWidth; height: grid.height
@@ -700,6 +719,7 @@ Item {
             }
             GridLayout {
                 id: monthGrid
+                transform: Translate { x: calendar.travelShift } opacity: calendar.travelFade
                 Layout.fillWidth: true; Layout.fillHeight: true; columns: 7; columnSpacing: 0; rowSpacing: 0
                 Repeater { model: 42
                     Rectangle {
@@ -874,6 +894,9 @@ Item {
     }
     Popup {
         id: datePicker; parent: dateButton; y: 36; x: parent.width - width + 31; width: 272; padding: 12
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopRight
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         property date month: new Date()
         property int weekStart: backend.preferences.week_start === "sunday" ? 0 : 1
         property int offset: (new Date(month.getFullYear(), month.getMonth(), 1).getDay() - weekStart + 7) % 7
@@ -923,6 +946,9 @@ Item {
     }
     Popup {
         id: moreMenu; parent: moreButton; x: parent.width - width; y: 34; width: 255; padding: 8; focus: true
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopRight
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ColumnLayout {
             property bool blocksWorkspaceShortcuts: true

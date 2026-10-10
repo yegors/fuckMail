@@ -50,6 +50,8 @@ ApplicationWindow {
     Binding { target: Theme; property: "themeId"; value: backend.preferences.theme || "graphite" }
     Binding { target: Theme; property: "textSize"; value: backend.preferences.text_size || "default" }
     Binding { target: Theme; property: "devicePixelRatio"; value: window.Screen.devicePixelRatio }
+    Binding { target: Theme; property: "motion"; value: backend.preferences.motion || "system" }
+    Binding { target: Theme; property: "systemReducesMotion"; value: typeof systemMotion !== "undefined" && systemMotion.reduced }
     function applyStartupPreference() {
         if (startupPreferenceApplied || !Object.keys(backend.preferences).length) return
         if (!suppressStartupPreference) {
@@ -291,6 +293,21 @@ ApplicationWindow {
                             readonly property color hue: Qt.color(Theme.accountColor(modelData.id))
                             property int reviewCount: (modelData.inbox_review_count ?? modelData.unread_conversation_count) || 0
                             readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
+                            // A changed count rolls in from the side it moved
+                            // from: down from above as mail is cleared, up from
+                            // below as it arrives.
+                            property int countBefore: 0
+                            onReviewCountChanged: {
+                                if (countBefore > 0 && reviewCount > 0 && !Theme.reducedMotion) {
+                                    countRoll.stop(); countShift.y = reviewCount < countBefore ? -7 : 7; accountCount.opacity = 0; countRoll.start()
+                                }
+                                countBefore = reviewCount
+                            }
+                            ParallelAnimation {
+                                id: countRoll
+                                NumberAnimation { target: countShift; property: "y"; to: 0; duration: Theme.baseMs; easing.type: Theme.enterEasing }
+                                NumberAnimation { target: accountCount; property: "opacity"; to: 1; duration: Theme.baseMs; easing.type: Theme.enterEasing }
+                            }
                             readonly property real naturalWidth: 6 + 18 + 8 + accountName.implicitWidth
                                 + (badgeText.length ? accountCount.implicitWidth + 8 : 0) + 10
                             readonly property color ink: selected || hovered ? Theme.text : Theme.inkAlpha(.5)
@@ -299,7 +316,7 @@ ApplicationWindow {
                             height: 30; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 760))
                             leftPadding: 6; rightPadding: 10; topPadding: 0; bottomPadding: 0; radius: 6
                             selected: backend.account === modelData.id
-                            Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
+                            Component.onCompleted: { countBefore = reviewCount; if (selected) Qt.callLater(accountTabs.revealSelected) }
                             onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                             onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                             onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
@@ -352,7 +369,7 @@ ApplicationWindow {
                                     }
                                 }
                                 Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text.toLowerCase(); width: Math.max(0, accountTab.availableWidth - 18 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
-                                Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} } }
+                                Text { id: accountCount; transform: Translate { id: countShift } anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.ink; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} } }
                             }
                         }
                     }
@@ -392,6 +409,7 @@ ApplicationWindow {
                     text: blocked || (syncState.active && !calendarGranted && progress.mail === "paused") ? "Retry"
                         : syncing ? "Syncing" : mailGranted && syncedAgo.length ? syncedAgo.replace(" ago", "") : "Sync"
                     iconName: "refresh"; iconSize: 11
+                    iconSpinning: syncing && Qt.application.state === Qt.ApplicationActive && !Theme.reducedMotion
                     height: 30; implicitHeight: 30; radius: 6; leftPadding: 10; rightPadding: 10; topPadding: 0; bottomPadding: 0
                     font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}; hoverBrightness: 1
                     foreground: hovered && enabled ? Theme.text : Theme.inkAlpha(.5)
@@ -412,7 +430,7 @@ ApplicationWindow {
                     Layout.fillWidth: true; implicitHeight: 30
                     color: Theme.surface; radius: 6
                     border.color: window.searchPopupOpen || search.activeFocus ? Theme.line3 : Theme.line
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: Theme.ms(150) } }
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8
                         FmIcon { name: "search"; size: 12; color: Theme.inkAlpha(.5) }

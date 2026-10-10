@@ -21,6 +21,8 @@ QVariantMap MailBackend::actionToast() const {
     const bool progress = toast.value("progress").toBool() && (m_queuedSends.contains(key) || m_sendNoticeRecipients.contains(key));
     toast["progress"] = progress;
     toast["visible"] = !m_actionToast.isEmpty() && (progress || m_actionClock.elapsed() < m_actionToastDeadline);
+    // What is left of its time on screen, for the Undo countdown line.
+    toast["remaining_ms"] = m_actionToast.isEmpty() ? 0 : qMax<qint64>(0, m_actionToastDeadline - m_actionClock.elapsed());
     toast["action_label"] = toast.value("action").toString().startsWith("undo_") ? "Undo" : toast.value("action") == "open_draft" ? "Open draft" : toast.value("action") == "calendar_activity" ? "View activity" : "";
     return toast;
 }

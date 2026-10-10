@@ -157,8 +157,8 @@ Popup {
     closePolicy: saving ? Popup.NoAutoClose : Popup.CloseOnEscape
     background: Rectangle { color: Theme.surface; layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.45); shadowBlur: .8; shadowHorizontalOffset: -12 } Rectangle { width: 1; height: parent.height; color: Theme.controlBorder } }
     enter: Transition {
-        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-        NumberAnimation { property: "slideOffset"; from: 24; to: 0; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(200); easing.type: Easing.OutCubic }
+        NumberAnimation { property: "slideOffset"; from: 24; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic }
     }
     function clockHour(text) { let parts = text.split(":"); return parts.length === 2 ? Number(parts[0]) + Number(parts[1]) / 60 : NaN }
     function allGuests() {

@@ -97,8 +97,8 @@ Rectangle {
             // change never moves a bar, and a finished stage never moves at all.
             property real done: Math.max(0, Math.min(1, meter.stage.frac || 0))
             property real queued: Math.max(0, Math.min(1, meter.stage.qfrac || 0))
-            Behavior on done { enabled: meter.stage.live === true; NumberAnimation { duration: 500 } }
-            Behavior on queued { enabled: meter.stage.live === true; NumberAnimation { duration: 500 } }
+            Behavior on done { enabled: meter.stage.live === true; NumberAnimation { duration: Theme.ms(500); easing.type: Theme.enterEasing } }
+            Behavior on queued { enabled: meter.stage.live === true; NumberAnimation { duration: Theme.ms(500); easing.type: Theme.enterEasing } }
             Rectangle { width: parent.width * track.done; height: 3; color: meter.stage.fill || Theme.ai }
             Rectangle {
                 visible: meter.twoTone
@@ -149,7 +149,7 @@ Rectangle {
         signal activated()
         Layout.fillWidth: true; implicitHeight: Math.max(46, rowLayout.implicitHeight + 12)
         color: actionHovered ? Theme.inkAlpha(.03) : "transparent"
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.ms(150) } }
         Rectangle { width: parent.width; height: 1; color: parent.rule }
         RowLayout { id: rowLayout; anchors.fill: parent; anchors.leftMargin: 18; anchors.rightMargin: 18; spacing: 14 }
         AbstractButton {

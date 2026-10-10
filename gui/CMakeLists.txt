@@ -109,14 +109,15 @@ elseif(APPLE)
     target_sources(fuckmail-gui PRIVATE app-icon/app-icon.icns)
     set_source_files_properties(app-icon/app-icon.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
-# The native title bar follows the theme, and meeting reminders bring the window
-# forward; macOS needs AppKit for both.
+# The native title bar follows the theme, meeting reminders bring the window
+# forward and motion follows the system's reduce-motion setting; macOS needs
+# AppKit for all three.
 if(APPLE)
     enable_language(OBJCXX)
-    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.mm WindowAttention.h WindowAttention.mm)
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.mm WindowAttention.h WindowAttention.mm SystemMotion.h SystemMotion.mm)
     target_link_libraries(fuckmail-gui PRIVATE "-framework AppKit")
 else()
-    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.cpp WindowAttention.h WindowAttention.cpp)
+    target_sources(fuckmail-gui PRIVATE TitleBar.h TitleBar.cpp WindowAttention.h WindowAttention.cpp SystemMotion.h SystemMotion.cpp)
 endif()
 # Qt's Windows runtime layout differs from the Unix subdirectory layout. Let
 # developer launchers consume the generator's actual path rather than guess it.

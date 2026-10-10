@@ -44,7 +44,7 @@ Rectangle {
         return moved
     }
     NumberAnimation {
-        id: slide; target: timeline; property: "dragOffset"; duration: 230; easing.type: Easing.OutCubic
+        id: slide; target: timeline; property: "dragOffset"; duration: Theme.ms(230); easing.type: Easing.OutCubic
         onFinished: { let delta = timeline.navigationDelta; timeline.navigationDelta = 0; if (delta) backend.moveTimeline(delta); timeline.dragOffset = 0 }
     }
     Rectangle { x: Theme.snapX(parent, 0); width: parent.width; y: Theme.snapY(parent, timeline.headerPosition ? parent.height - 1 : 0); height: Theme.ruleWidth; color: Theme.line }

@@ -1050,8 +1050,9 @@ private:
     void releasePin();
     int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &row) const;
     int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QVariantMap &row, int fallback) const;
-    // The kept row collapsing out of To review once another opens (Inbox only):
-    // it stays in place, marked `leaving`, until its animation ends.
+    // The kept row collapsing out of To review once another opens, or the open
+    // one an explicit Done, Delay or filing moves (Inbox only, `leave_kind`
+    // set): it stays in place, marked `leaving`, until its animation ends.
     QVariantMap m_leavingRow;
     int m_leavingIndex = -1;
     QString m_leavingAccount;
@@ -1062,6 +1063,9 @@ private:
     void startReviewLeave();
     void leaveReview();
     void startLeaving(const QVariantMap &row, int index);
+    bool foldOutMoved(const QString &id, const QString &method, const QJsonObject &params);
+    // A one-row selection action folding the open row: its refresh waits for the fold.
+    bool m_bulkFolding = false;
     QVariantList m_calendarSources, m_captures;
     QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;
     QVariantMap m_calendarSearchResult, m_calendarSearchTerms;

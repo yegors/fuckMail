@@ -104,7 +104,7 @@ Popup {
                 Rectangle {
                     visible:viewer.video; anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:44
                     color:"#d00e0f11"; opacity:!viewer.playing || mediaHover.hovered || controlsHover.hovered ? 1 : 0
-                    Behavior on opacity { NumberAnimation {duration:180} }
+                    Behavior on opacity { NumberAnimation {duration: Theme.ms(180); easing.type: Theme.enterEasing} }
                     HoverHandler {id:controlsHover}
                     RowLayout {
                         anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;spacing:10

@@ -6,6 +6,9 @@ import QtQuick.Effects
 // the popover radius and shadow.
 Popup {
     id: menu
+    // Eases in from just under full size; closes at once.
+    transformOrigin: Popup.TopLeft
+    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
     property real minimumWidth: 196
     // Submenus are positioned relative to their parent menu instead.
     property bool keepInside: true
@@ -19,9 +22,10 @@ Popup {
         x = Math.max(8, Math.min(x, parent.width - width - 8))
         y = Math.max(8, Math.min(y, parent.height - height - 8))
     }
+    onAboutToShow: clamp()
     onOpened: clamp()
-    onHeightChanged: if (opened) clamp()
-    onWidthChanged: if (opened) clamp()
+    onHeightChanged: if (visible) clamp()
+    onWidthChanged: if (visible) clamp()
     background: Rectangle {
         color: Theme.bg2; border.color: Theme.line2; radius: 8
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software

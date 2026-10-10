@@ -298,6 +298,17 @@ Item {
                             Divider {}
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                                PreferenceLabel { label: "Motion"; detail: Theme.reducedMotion ? "Changes happen at once, without movement." : "Rows fold, menus and dialogs ease in, and finishing To review gets a small check." }
+                                FmSegmented {
+                                    objectName: "motionPreference"; model: ["System","Full","Reduced"]; optionNames: ["motion_system","motion_full","motion_reduced"]
+                                    currentIndex: ["system","full","reduced"].indexOf(backend.preferences.motion || "system")
+                                    onActivated: function(index) { backend.setPreferences({motion:["system","full","reduced"][index]}); currentIndex = Qt.binding(function() { return ["system","full","reduced"].indexOf(backend.preferences.motion || "system") }) }
+                                    Accessible.name: "Motion"
+                                }
+                            }
+                            Divider {}
+                            RowLayout {
+                                Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
                                 PreferenceLabel { label: "Shortcut bar"; detail: "The keys for the current view, along the bottom of the window." }
                                 FmSegmented {
                                     objectName: "keyHintsPreference"; model: ["Show","Hide"]

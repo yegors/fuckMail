@@ -41,7 +41,7 @@ FmDialog {
             }
             LabelSettings {
                 Layout.fillWidth: true; Layout.maximumWidth: 640; Layout.topMargin: 14
-                visible: dialog.opened; account: dialog.account; showAccountPicker: false; showHeading: false
+                visible: dialog.visible; account: dialog.account; showAccountPicker: false; showHeading: false
             }
         }
     }

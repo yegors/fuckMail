@@ -2,6 +2,12 @@
 
 
 
+## D205 — moving through dates slides (Calendar46)
+
+- Moving to another day, week or month in the same view slides the header band, time grid and month grid 18 px in from the side the new dates come from while they fade up from 30%, over 220 ms (eased out). A view change, and reduced motion, are cuts. Popups ease in and out as in Mail UI148.
+
+Consumers: `CalendarView`. Mail UI148.
+
 ## D193 — reminder actions stay on screen; the alarm stops a minute in (Calendar45)
 
 - **Layout.** The reminder and View screen scroll their details and keep Join, Snooze and Dismiss/Close in a row below them that never scrolls away, whatever the guest list or notes length.

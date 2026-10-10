@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","show_draft_chips":true,"reply_marks_delayed_done":true,"review_leave_seconds":10,"calendar_recent_searches":[],"sync_every_minutes":1,"week_start":"monday","mail_week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
+        "theme":"graphite","text_size":"default","motion":"system","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"html_senders":[],"starred_senders":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true,"key_hints":true})
 }
 /// The account colour palette: muted swatches shown 8×2 in the picker. A new
@@ -152,6 +152,7 @@ impl Store {
                 "timeline_date",
                 "theme",
                 "text_size",
+                "motion",
                 "startup_view",
                 "last_workspace",
                 "timeline_position",
@@ -269,6 +270,9 @@ impl Store {
             ("calendar_account_visibility", &["all", "current"][..]),
             ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
+            // Interface motion: follow the system's reduce-motion setting,
+            // or always full, or always reduced.
+            ("motion", &["system", "full", "reduced"][..]),
             ("startup_view", &["mail", "calendar", "last"][..]),
             ("last_workspace", &["mail", "calendar"][..]),
             ("timeline_position", &["footer", "header"][..]),
@@ -1368,7 +1372,11 @@ lines"]}),
             store.preferences().unwrap()["preferences"]["review_leave_seconds"],
             10
         );
-        let command = json!({"preferences":{"theme":"paper","text_size":"large","startup_view":"last",
+        assert_eq!(
+            store.preferences().unwrap()["preferences"]["motion"],
+            "system"
+        );
+        let command = json!({"preferences":{"theme":"paper","text_size":"large","motion":"reduced","startup_view":"last",
             "last_workspace":"calendar","timeline_position":"header","default_event_duration_minutes":45,"review_leave_seconds":0},
             "expected_revision":0,"request_id":"appearance"});
         let saved = store
@@ -1377,6 +1385,8 @@ lines"]}),
         for invalid in [
             json!({"theme":"sepia"}),
             json!({"text_size":15.5}),
+            json!({"motion":"none"}),
+            json!({"motion":false}),
             json!({"startup_view":"settings"}),
             json!({"last_workspace":"last"}),
             json!({"timeline_position":"top"}),

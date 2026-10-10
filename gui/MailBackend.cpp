@@ -1321,7 +1321,7 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 // Placed first: the lookup below keeps an iterator into `collected`.
                 if (!m_leavingRow.isEmpty() && m_leavingAccount == m_account && m_folder == u"inbox") {
                     const auto leaving = m_leavingRow.value("id").toString();
-                    if (leaving != m_selected) {
+                    if (leaving != m_selected || m_leavingRow.value("leave_kind").toString().size()) {
                         collected.erase(std::remove_if(collected.begin(), collected.end(),
                             [&leaving](const QVariant &row) { return row.toMap().value("id").toString() == leaving; }), collected.end());
                         collected.insert(keptRowIndex(collected, previous, m_leavingRow, m_leavingIndex), m_leavingRow);
@@ -1401,7 +1401,30 @@ void MailBackend::startLeaving(const QVariantMap &row, int index) {
     if (publishConversations(std::move(rows))) emit conversationsChanged();
     m_leavingTimer.start();
 }
-// An explicit Done, Delay or filing moves the open conversation at once.
+// An explicit Done, Delay or filing that takes the open conversation out of
+// its Inbox section folds its row out where it is shown, as a reviewed row
+// leaves To review, before the refresh puts it in its new place. The kind
+// tells the list which way it goes: done, delay, back (to To review) or filed.
+bool MailBackend::foldOutMoved(const QString &id, const QString &method, const QJsonObject &params) {
+    if (m_folder != u"inbox") return false;
+    const auto shown = std::find_if(m_conversations.cbegin(), m_conversations.cend(),
+        [&id](const QVariant &row) { return row.toMap().value("id").toString() == id; });
+    if (shown == m_conversations.cend() || shown->toMap().value("leaving").toBool()) return false;
+    const auto row = shown->toMap();
+    const auto group = row.value("display_group").toString();
+    QString kind;
+    if (method == u"mail_filing") kind = QStringLiteral("filed");
+    else if (!params.contains("starred") || (group != u"review" && group != u"held")) return false;
+    else if (params["starred"].toBool()) kind = group == u"held" ? QString() : QStringLiteral("delay");
+    else if (params["read"].toBool()) kind = QStringLiteral("done");
+    else if (group == u"held") kind = QStringLiteral("back");
+    if (kind.isEmpty()) return false;
+    auto leaving = row; leaving["leave_kind"] = kind;
+    startLeaving(leaving, int(shown - m_conversations.cbegin()));
+    return true;
+}
+// An explicit Done, Delay or filing moves the open conversation out of the
+// place it was kept in.
 void MailBackend::releasePin() {
     m_navigationAnchor.clear();
     for (qsizetype i = 0; i < m_conversations.size(); ++i) if (m_conversations[i].toMap().value("id").toString() == m_selected) {
@@ -1652,7 +1675,9 @@ void MailBackend::leaveReview() {
         return row.toMap().value("id").toString() == m_selected; });
     if (shown == m_conversations.cend() || !shown->toMap().value("pinned").toBool() || shown->toMap().value("unread").toBool()) return;
     releasePin();
-    loadConversations(false, true);
+    // It folds out of To review first; the refresh follows the fold.
+    auto leaving = shown->toMap(); leaving["leave_kind"] = QStringLiteral("reviewed");
+    startLeaving(leaving, int(shown - m_conversations.cbegin()));
 }
 
 void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
@@ -1762,8 +1787,9 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             while (m_mailDeliveryOrder.size() > 128) m_mailDelivery.remove(m_mailDeliveryOrder.takeFirst());
             if (id == m_selected && account == m_account) emit mailDeliveryChanged();
         }
+        bool folding = false;
         if (ok && id == m_selected && account == m_account) {
-            if (method == "mail_filing" || params.contains("starred")) releasePin();
+            if (method == "mail_filing" || params.contains("starred")) { folding = foldOutMoved(id, method, params); releasePin(); }
             m_conversation = retainReaderPresentation(result.toVariantMap());
             cacheConversation(account, id, m_conversation, lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong());
             if (!m_pinnedRow.isEmpty()) {
@@ -1787,7 +1813,8 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
                 if (method == "set_category") loadCategories();
             }
             m_listRefreshPending = false;
-            loadConversations(false, true);
+            // A folding row's refresh follows its fold.
+            if (!folding) loadConversations(false, true);
         }
     });
 }
@@ -1959,8 +1986,11 @@ void MailBackend::runMailSelection() {
         if (m_shutdown) finishShutdown();
         else if (m_connected) {
             if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
-            loadAccounts(); loadCategories(); loadConversations(false, true);
+            loadAccounts(); loadCategories();
+            // A folding row's refresh follows its fold.
+            if (!std::exchange(m_bulkFolding, false)) loadConversations(false, true);
         }
+        m_bulkFolding = false;
         return;
     }
     const auto command = m_bulkCommands[m_bulkIndex];
@@ -1996,7 +2026,11 @@ void MailBackend::runMailSelection() {
                 if (key == qMakePair(m_account, m_selected)) emit mailDeliveryChanged();
             }
             if (currentLifecycle && account == m_account && id == m_selected) {
-                if (command["method"] == "mail_filing" || params.contains("starred")) releasePin();
+                if (command["method"] == "mail_filing" || params.contains("starred")) {
+                    // Done or Delay on the open conversation alone folds its row, as the reader's buttons do.
+                    if (m_bulkCommands.size() == 1) m_bulkFolding = foldOutMoved(id, command["method"].toString(), params);
+                    releasePin();
+                }
                 m_conversation = result.toVariantMap();
                 if (m_pinnedRow.value("id").toString() == id) {
                     m_pinnedRow["revision"] = result["revision"].toVariant();

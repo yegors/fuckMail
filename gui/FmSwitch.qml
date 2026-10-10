@@ -20,17 +20,28 @@ AbstractButton {
             visible: !control.pill
             anchors.fill: parent; color: "transparent"
             border.width: 1; border.color: control.visualFocus ? Theme.focusBorder : control.tone
-            Rectangle { visible: control.checked; x: 3; y: 3; width: 6; height: 6; color: control.tone }
+            // The mark pops in a touch past full size and settles.
+            Rectangle {
+                visible: control.checked || scale > .01; x: 3; y: 3; width: 6; height: 6; color: control.tone
+                scale: control.checked ? 1 : 0
+                Behavior on scale { NumberAnimation { duration: Theme.ms(Theme.quickMs); easing.type: control.checked ? Easing.OutBack : Theme.exitEasing; easing.overshoot: 2.5 } }
+            }
         }
         Rectangle {
             visible: control.pill
             anchors.fill: parent; radius: 5; color: control.tone
             border.width: control.visualFocus ? 1 : 0; border.color: Theme.focusBorder
+            // The knob stretches along its path while it travels and is round
+            // again when it lands, so it reads as moving rather than jumping.
             Rectangle {
-                width: parent.height - 4; height: width; radius: 5; y: 2
-                x: control.checked ? parent.width - width - 2 : 2
+                objectName: "switchKnob"
+                readonly property real size: parent.height - 4
+                property real travel: control.checked ? 1 : 0
+                Behavior on travel { NumberAnimation { duration: Theme.ms(Theme.baseMs); easing.type: Theme.moveEasing } }
+                readonly property real stretch: 5 * Math.sin(travel * Math.PI)
+                width: size + stretch; height: size; radius: 5; y: 2
+                x: 2 + travel * (parent.width - size - 4) - stretch / 2
                 color: control.checked ? Theme.canvas : Theme.inkAlpha(0.7)
-                Behavior on x { NumberAnimation { duration: 150 } }
             }
         }
     }

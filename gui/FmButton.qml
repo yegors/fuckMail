@@ -18,6 +18,9 @@ T.ToolButton {
     // Trailing icons follow the label, e.g. a picker's chevron.
     property bool iconTrailing: false
     property color iconColor: foreground
+    // The icon turns while work it stands for is running, finishing its turn
+    // when the work ends (Sync's arrows).
+    property bool iconSpinning: false
     property string shortcutHint: ""
     property color foreground: !enabled ? (prominent ? Theme.muted : Theme.subtle) : prominent ? Theme.canvas : selected || outlined ? Theme.text : Theme.muted
     property int textAlignment: Text.AlignHCenter
@@ -27,6 +30,9 @@ T.ToolButton {
     property real hoverBrightness: prominent ? 1.12 : 1.3
     // No member function here: bindings of a delegate being destroyed must not call into it.
     readonly property real lift: hovered && enabled ? hoverBrightness : 1
+    // A main action gives under the pointer: it sinks a little and darkens
+    // while held, before anything happens.
+    scale: prominent && down ? .97 : 1
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     // The Basic style's ToolButton defaults.
@@ -85,6 +91,7 @@ T.ToolButton {
                     visible: parent.hasIcon
                     x: parent.placed(0, width); anchors.verticalCenter: parent.verticalCenter
                     name: control.iconName; size: control.iconSize; color: control.lift !== 1 ? Theme.brighten(control.iconColor, control.lift) : control.iconColor
+                    RotationAnimator on rotation { running: control.iconSpinning; from: 0; to: 360; duration: 900; loops: Animation.Infinite; alwaysRunToEnd: true }
                 }
                 Loader {
                     id: hint
@@ -101,7 +108,7 @@ T.ToolButton {
     }
     background: Rectangle {
         radius: control.radius
-        color: control.prominent ? (control.enabled ? Theme.brighten(Theme.text, control.lift) : Theme.controlBorder) : control.down || control.selected ? Theme.brighten(Theme.selected, control.lift) : control.hovered ? Theme.surface : "transparent"
+        color: control.prominent ? (control.enabled ? Theme.brighten(Theme.text, control.down ? .88 : control.lift) : Theme.controlBorder) : control.down || control.selected ? Theme.brighten(Theme.selected, control.lift) : control.hovered ? Theme.surface : "transparent"
         border.width: control.visualFocus || control.outlined ? 1 : 0
         border.color: control.visualFocus ? Theme.focusBorder : Theme.controlBorder
     }

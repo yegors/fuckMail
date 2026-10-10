@@ -50,7 +50,7 @@ Popup {
     // A 200 ms linger lets the pointer travel onto the card.
     function scheduleHide() { openTimer.stop(); pendingLink = null; lingerTimer.restart() }
     Timer { id: lingerTimer; interval: 200; onTriggered: if (!cardHover.hovered) card.close() }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120; easing.type: Easing.OutCubic } }
+    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(120); easing.type: Easing.OutCubic } }
     background: Rectangle {
         color: Theme.bg2; radius: 8; border.color: Theme.line2
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software

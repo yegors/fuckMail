@@ -100,7 +100,7 @@ Popup {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
     }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
+    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(180); easing.type: Theme.enterEasing } }
     onAboutToShow: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
     onAboutToHide: { occurrenceRead.invalidate(); deleteConfirmation.close() }
     function openAt(event, anchor) {
@@ -386,7 +386,7 @@ Popup {
         readonly property bool reminderDue: visible && backend.reminders.length > 0
         onReminderDueChanged: if (reminderDue) close()
         onClosed: event = ({})
-        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 250 } }
+        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(250); easing.type: Theme.enterEasing } }
         background: Item {}
         contentItem: Loader {
             active: eventView.visible

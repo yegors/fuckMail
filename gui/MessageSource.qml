@@ -34,7 +34,7 @@ Item {
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
     readonly property bool hasHtml: !!result.body_html && !result.html_truncated
     readonly property var metadata: (result.metadata || []).filter(function(row) { return row.people.length > 0 })
-    readonly property bool popupOpen: original.opened
+    readonly property bool popupOpen: original.visible
     function adopt() {
         const prepared = message.reader_source
         if (prepared && prepared.id === message.id && prepared.account === account && prepared.source_version === message.source_version) {
@@ -56,7 +56,7 @@ Item {
         if (raw || rawTicket || !backend.connected || !message.source_available || !message.source_version) return
         rawTicket = backend.requestMessageSource(message.id, message.source_version, true)
     }
-    function releaseRaw() { if (!original.opened) { raw = ""; rawTicket = "" } }
+    function releaseRaw() { if (!original.visible) { raw = ""; rawTicket = "" } }
     function show() { if (error) error = ""; load(); loadRaw(); original.open() }
     Connections {
         target: backend
@@ -65,7 +65,7 @@ Item {
             if (request === source.rawTicket) {
                 source.rawTicket = ""
                 if (ok && content.id === source.message.id && content.account === source.account && content.source_version === source.message.source_version) source.raw = content.raw || ""
-                else if (original.opened) source.error = content.message || "Message source is unavailable."
+                else if (original.visible) source.error = content.message || "Message source is unavailable."
                 return
             }
             if (request !== source.ticket) return
@@ -90,7 +90,7 @@ Item {
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 5 } ContextMenu.menu: null; TextMenuHandler {} }
+                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.visible ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11.5); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 5 } ContextMenu.menu: null; TextMenuHandler {} }
             }
         }
     }

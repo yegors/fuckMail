@@ -6,6 +6,8 @@ import QtQuick.Layouts
 
 Popup {
     id: eventList
+    // Eases in from just under full size; closes at once.
+    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
     parent: Overlay.overlay
     property string title: "Events"
     property var eventRows: []

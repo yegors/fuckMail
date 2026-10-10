@@ -40,7 +40,7 @@ FmDialog {
     Connections {
         target:backend
         function onAccountPreferencesFinished(account,ok) {
-            if(!editor.opened || !editor.saving || account!==editor.account.id)return
+            if(!editor.visible || !editor.saving || account!==editor.account.id)return
             editor.saving=false
             if(!ok) {editor.error=backend.preferencesStatus;return}
             const row=editor.account, access=editor.requestedAccess, caps=(row.google || {}).granted_capabilities || (row.google || {}).capabilities || {}

@@ -278,8 +278,8 @@ Popup {
     Timer { interval: 1000; repeat: true; running: panel.opened && panel.tab === "state"; onTriggered: panel.refreshState() }
 
     // A quick slide, like a game console: down in 200 ms, up in 160 ms.
-    enter: Transition { NumberAnimation { property: "y"; from: -panel.height; to: 0; duration: 200; easing.type: Easing.OutCubic } }
-    exit: Transition { NumberAnimation { property: "y"; from: 0; to: -panel.height; duration: 160; easing.type: Easing.InCubic } }
+    enter: Transition { NumberAnimation { property: "y"; from: -panel.height; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic } }
+    exit: Transition { NumberAnimation { property: "y"; from: 0; to: -panel.height; duration: Theme.ms(160); easing.type: Easing.InCubic } }
     Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.4) }
     background: Rectangle { color: Theme.canvas }
 

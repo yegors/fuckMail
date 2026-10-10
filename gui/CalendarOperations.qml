@@ -7,6 +7,8 @@ import QtQuick.Layouts
 
 Popup {
     id: history
+    // Eases in from just under full size; closes at once.
+    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
     objectName: "calendarOperations"
     parent: Overlay.overlay
     readonly property bool live: !backend.syntheticProfile
@@ -19,7 +21,7 @@ Popup {
     anchors.centerIn: parent; modal: true; focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
-    onOpened: backend.loadCalendarOperations()
+    onAboutToShow: backend.loadCalendarOperations()
     contentItem: ColumnLayout {
         property bool blocksWorkspaceShortcuts: true
         spacing: 14

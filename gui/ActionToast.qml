@@ -1,6 +1,8 @@
 // The transient toast at the bottom of the main window (send progress, Undo
 // after an action, and so on). Text, optional action button and progress or
 // success icon all come from `backend.actionToast`; Main.qml positions it.
+// It rises into place and sinks as it fades; an Undo toast draws a line along
+// its foot that runs out with the time left to undo.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -9,9 +11,17 @@ import QtQuick.Effects
 Rectangle {
     id: toast; objectName: "actionToast"
     property real maximumWidth: parent ? parent.width * 0.7 : 600
-    visible: backend.actionToast.visible || opacity > 0
-    opacity: backend.actionToast.visible ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 120 } }
+    readonly property bool shown: !!backend.actionToast.visible
+    readonly property bool undoable: shown && String(backend.actionToast.action || "").indexOf("undo_") === 0
+    // A new toast, not the same one changing its text.
+    readonly property string identity: shown ? String(backend.actionToast.issued_at) + "|" + (backend.actionToast.action || "") : ""
+    visible: shown || opacity > 0
+    opacity: shown ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: Theme.ms(toast.shown ? Theme.baseMs : Theme.quickMs); easing.type: toast.shown ? Theme.enterEasing : Theme.exitEasing } }
+    property real rise: shown ? 0 : 8
+    Behavior on rise { NumberAnimation { duration: Theme.ms(toast.shown ? Theme.baseMs : Theme.quickMs); easing.type: toast.shown ? Theme.enterEasing : Theme.exitEasing } }
+    transform: Translate { y: toast.rise }
+    onIdentityChanged: countdown.restart()
     width: Math.min(maximumWidth, message.implicitWidth + action.implicitWidth + (action.visible ? 14 : 0) + (feedbackIcon.visible ? 28 : 0) + 32)
     height: Math.ceil(40 * Theme.fontScale)
     color: Theme.bg4; border.color: Theme.line2; radius: 8
@@ -19,6 +29,22 @@ Rectangle {
     Accessible.name: backend.actionToast.text || ""
     layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
     layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.55); shadowBlur: .8; shadowVerticalOffset: 18 }
+    Rectangle {
+        id: countdown; objectName: "actionToastCountdown"
+        property real remaining: 0
+        function restart() {
+            drain.stop()
+            const total = Number(backend.actionToast.duration) || 0, timeLeft = Number(backend.actionToast.remaining_ms) || 0
+            if (!toast.undoable || total <= 0 || timeLeft <= 0) { remaining = 0; return }
+            remaining = Math.min(1, timeLeft / total)
+            drain.from = remaining; drain.duration = timeLeft; drain.start()
+        }
+        visible: toast.undoable && !Theme.reducedMotion && remaining > 0
+        x: 8; y: parent.height - 3; width: Math.max(0, (parent.width - 16) * remaining); height: 2; radius: 1
+        color: Theme.accentAlpha(.5)
+        // Time runs at an even pace.
+        NumberAnimation on remaining { id: drain; running: false; to: 0; easing.type: Easing.Linear }
+    }
     RowLayout {
         anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 14
         FmIcon {

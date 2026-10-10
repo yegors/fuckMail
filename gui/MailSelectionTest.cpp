@@ -288,6 +288,85 @@ class MailSelectionTest {
     // Opening unread mail shows it read at once, before the engine answers,
     // and Done pressed meanwhile is kept and sent next, not dropped. A user
     // write passes polling reads already queued.
+    // Done from the reader folds the open row where it is shown, marked with
+    // where it goes, and the list refresh that moves it follows the fold.
+    static void explicitActionsFold() {
+        Harness h;
+        const auto make=[](const QString &id,const QString &group,bool unread){
+            return QVariant(QVariantMap{{"id",id},{"subject","Fold "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at","2026-09-14T12:00:00Z"},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",group},{"kind","people"},{"unread",unread},{"starred",false}}); };
+        h.rows={make("f1","review",true),make("f2","review",true)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",2},{"held",0}}},{"done_months",QJsonArray{}}};
+        h.backend.m_preferences["review_leave_seconds"]=0;
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==2;},"fold Inbox loads");
+        const auto row=[&](const QString &id){ for (const auto &value:h.backend.conversations()) if (value.toMap()["id"]==id) return value.toMap(); return QVariantMap{}; };
+        h.backend.openConversation("f1");
+        auto read=h.take();
+        h.rows={make("f2","review",true),make("f1","done",false)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0}}},{"done_months",QJsonArray{}}};
+        h.finish(read); await([&]{return !h.backend.m_mutatingConversation;},"read on open lands");
+        h.backend.loadConversations(false,true);
+        await([&]{return !h.backend.m_loading && row("f1")["pinned"].toBool() && row("f1")["display_group"]=="review";},"the open conversation is kept in To review");
+        h.backend.doneConversation();
+        auto done=h.take(); require(done.request["params"].toObject()["read"]==true && done.request["params"].toObject()["starred"]==false,"Done clears unread and the hold");
+        const int listsBefore=int(h.methods.count("conversations"));
+        h.finish(done);
+        await([&]{return row("f1")["leaving"].toBool();},"Done folds the open row where it is");
+        require(row("f1")["leave_kind"]=="done","the folding row says it goes to Done");
+        require(int(h.methods.count("conversations"))==listsBefore,"the list is not reloaded under the fold");
+        await([&]{return !h.backend.m_loading && !row("f1").isEmpty() && !row("f1")["leaving"].toBool() && row("f1")["display_group"]!="review";},"after the fold the conversation takes its place in Done");
+        require(h.backend.selectedId()=="f1","Done keeps the conversation open");
+        qInfo()<<"Done folds the open row before the list moves it.";
+    }
+    // Motion follows the preference and the system; an Undo toast's line runs
+    // out with the time left; the pill switch's knob stretches only in flight.
+    static void motionControls() {
+        Harness h;
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){for(const auto &error:errors) qWarning()<<error.toString();});
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:800; height:400; property var theme: Theme\n"
+            " ActionToast { anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 24 }\n FmSwitch { objectName: \"pillUnderTest\"; pill: true; x: 20; y: 20 } }",QUrl::fromLocalFile(copy.filePath("Motion.qml")));
+        require(!qml.rootObjects().isEmpty(),"motion window loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"motion window exposed");
+        auto *theme=qvariant_cast<QObject*>(window->property("theme")); require(theme,"Theme reachable");
+        const auto ms=[&](int value){ QVariant out; QMetaObject::invokeMethod(theme,"ms",Q_RETURN_ARG(QVariant,out),Q_ARG(QVariant,value)); return out.toInt(); };
+        require(!theme->property("reducedMotion").toBool() && ms(170)==170,"full motion by default");
+        theme->setProperty("systemReducesMotion",true);
+        require(theme->property("reducedMotion").toBool() && ms(170)==0,"System follows the system's reduce-motion setting");
+        theme->setProperty("motion","full");
+        require(!theme->property("reducedMotion").toBool(),"Full ignores it");
+        theme->setProperty("motion","reduced"); theme->setProperty("systemReducesMotion",false);
+        require(theme->property("reducedMotion").toBool() && ms(220)==0,"Reduced turns transitions into cuts");
+        theme->setProperty("motion","system");
+        // The Undo line runs out evenly with the toast's remaining time.
+        h.backend.showActionToast("Marked done","undo_mail",{},6000);
+        require(h.backend.actionToast()["remaining_ms"].toInt()>5000,"the toast reports the time it has left");
+        auto *line=find(window->contentItem(),"actionToastCountdown"); require(line,"countdown line exists");
+        await([&]{return line->isVisible() && line->width()>0;},"an Undo toast draws its countdown line");
+        const auto first=line->property("remaining").toDouble();
+        QElapsedTimer t; t.start(); while(t.elapsed()<400) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        const auto later=line->property("remaining").toDouble();
+        require(first>.9 && later<first-.03 && later>.8,"the line runs out evenly as time passes");
+        require(qAbs(line->width()-(line->parentItem()->width()-16)*later)<1,"its length is the share of time left");
+        theme->setProperty("motion","reduced");
+        require(!line->isVisible(),"reduced motion hides the countdown line");
+        theme->setProperty("motion","system");
+        // The knob is square at rest and stretches while it travels.
+        auto *pill=find(window->contentItem(),"pillUnderTest"); auto *knob=find(pill,"switchKnob"); require(pill && knob,"pill switch and knob");
+        const auto rest=knob->width(); qreal widest=rest;
+        const auto frames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ widest=std::max(widest,knob->width()); },Qt::DirectConnection);
+        pill->setProperty("checked",true);
+        t.restart(); while(t.elapsed()<400) { window->update(); QCoreApplication::processEvents(QEventLoop::AllEvents,10); }
+        QObject::disconnect(frames);
+        require(widest>rest+1,"the knob stretches in flight");
+        require(qAbs(knob->width()-rest)<.01 && qAbs(knob->x()+knob->width()-(pill->width()-2))<.01,"it lands square at the far end");
+        qInfo()<<"Motion follows the preference; the Undo line runs out; the knob stretches in flight.";
+    }
     static void actionsDuringRead() {
         Harness h;
         const auto make=[](const QString &id,bool unread){
@@ -510,7 +589,8 @@ class MailSelectionTest {
         const auto archive=filing.take();
         require(archive.request["method"]=="mail_filing" && archive.request["params"].toObject()["action"]=="archive","Archive uses shared filing command");
         filing.rows.removeFirst(); filing.finish(archive);
-        await([&]{return !filing.backend.m_mutatingConversation && !filing.backend.m_loading;},"filing refreshes Inbox");
+        await([&]{ for (const auto &row:filing.backend.conversations()) if (row.toMap()["id"]=="a") return row.toMap()["leaving"].toBool() && row.toMap()["leave_kind"]=="filed"; return false; },"archiving the open row folds it out of Inbox");
+        await([&]{return !filing.backend.m_mutatingConversation && !filing.backend.m_loading && filing.backend.conversations().size()==2;},"filing refreshes Inbox after the fold");
         require(filing.backend.m_pinnedRow.isEmpty() && filing.backend.conversations().size()==2,"archived selected row cannot remain pinned in Inbox");
         Harness reading;
         // Opened and read: the refreshed Inbox returns it as Done, but it stays in
@@ -631,6 +711,7 @@ class MailSelectionTest {
         h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
         auto delay=h.take(); require(delay.request["params"].toObject()["starred"]==true,"Delay sends the hold");
         set("r3","held",false,true); order({"h1","r3","r1","r2","d1"}); counts(0,2,3); h.finish(delay);
+        await([&]{ for (const auto &row:h.backend.conversations()) if (row.toMap()["id"]=="r3") return row.toMap()["leaving"].toBool() && row.toMap()["leave_kind"]=="delay"; return false; },"Delay folds the open row where it was, toward Delayed");
         await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().indexOf("r3")==1;},"Delay moves the open conversation to Delayed");
         settle(); window->update(); settle();
         QObject::disconnect(heldFrames);
@@ -946,6 +1027,8 @@ class MailSelectionTest {
         auto trash=h.take();
         require(trash.request["method"]=="mail_filing" && trash.request["params"].toObject()["action"]=="trash","menu uses recoverable Trash action");
         h.finish(trash); await([&]{return !h.backend.m_mutatingConversation;},"Trash completes");
+        // A trashed open row folds first; its refresh lands after the fold.
+        await([&]{return !h.backend.m_leavingTimer.isActive() && !h.backend.m_loading;},"Trash's fold settles");
         h.backend.setFolder("sent");
         await([&]{return !h.backend.m_loading && h.lastQuery["folder"]=="sent";},"Sent loads");
         require(h.lastQuery["grouped"]==false,"Sent sorts by date instead of review state");
@@ -971,6 +1054,8 @@ class MailSelectionTest {
         await([&]{auto item=find(window->contentItem(),"messageFormatToggle_a-original");return item && item->isVisible() && item->property("text")=="TEXT";},"plain text by default once the HTML is known");
         require(shown(window->contentItem(),"messageBody_a-original")->property("text").toString().contains("Retained plain body"),"the default body is the extracted text");
         require(find(window->contentItem(),"messageFormatToggle_a-original")->property("tip").toString().endsWith("for all mail from sender@example.test"),"the badge names the sender it changes");
+        // The header row lays out the badge once it shows; click where it settles.
+        layout.restart(); while(layout.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageFormatToggle_a-original"),Qt::LeftButton);
         {
             const auto chosen=h.backend.preferences().value("html_senders").toList();
@@ -2910,6 +2995,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){longThreadOpensAtUnread();reviewLeavesWhileOpen();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

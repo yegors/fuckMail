@@ -27,7 +27,7 @@ FmDialog {
     readonly property var retentionKeys: ["90_days", "1_year", "2_years", "5_years", "all"]
     readonly property var accountRow: backend.accounts.find(function(account) { return account.id === googleSignIn.connectedAccount }) || ({})
     readonly property var requestedAccess: ({mail: connectMail.checked ? (connectMailMode.currentIndex === 0 ? "read" : "write") : "none", calendar: connectCalendar.checked ? (connectCalendarMode.currentIndex === 0 ? "read" : "write") : "none"})
-    onOpened: {
+    onAboutToShow: {
         step = 0; connectedAccount = ""; finishing = false; authStarted = false; connectName.text = ""
         connectRetention.currentIndex = 1; connectHistory.currentIndex = 0
         modelConfigured = false; modelTicket = backend.connected ? backend.assistanceRequest("assist_settings_get", {}, "") : ""
@@ -58,7 +58,7 @@ FmDialog {
         target: backend
         function onConnectedChanged() { if (!backend.connected) googleSignIn.finishing = false }
         function onGoogleAuthChanged() {
-            if (!googleSignIn.opened || !googleSignIn.authStarted) return
+            if (!googleSignIn.visible || !googleSignIn.authStarted) return
             if (backend.googleAuth.phase === "connected") {
                 googleSignIn.connectedAccount = backend.googleAuth.account || ""; googleSignIn.step = 2
                 connectName.text = googleSignIn.accountRow.name || googleEmail.text.split("@")[0]
@@ -66,7 +66,7 @@ FmDialog {
             } else if (["failed","cancelled"].indexOf(backend.googleAuth.phase) >= 0) { googleSignIn.step = 0; googleSignIn.authStarted = false }
         }
         function onAccountPreferencesFinished(account, ok) {
-            if (!googleSignIn.opened || !googleSignIn.finishing || account !== googleSignIn.connectedAccount) return
+            if (!googleSignIn.visible || !googleSignIn.finishing || account !== googleSignIn.connectedAccount) return
             googleSignIn.finishing = false
             if (ok) { googleSignIn.close(); backend.selectAccount(account); googleSignIn.syncRequested(account) }
         }

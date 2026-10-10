@@ -20,6 +20,7 @@ Item {
             parent: holder.target
             visible: true
             delay: 600
+            enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } }
             padding: 10
             text: holder.text
             implicitWidth: Math.min(400, contentItem.implicitWidth + leftPadding + rightPadding)

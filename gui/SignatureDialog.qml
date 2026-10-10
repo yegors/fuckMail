@@ -27,7 +27,7 @@ FmDialog {
     Connections {
         target: backend
         function onAccountPreferencesFinished(account, ok) {
-            if (!dialog.opened || !dialog.saving || account !== dialog.account) return
+            if (!dialog.visible || !dialog.saving || account !== dialog.account) return
             dialog.saving = false
             if (ok) dialog.close()
             else dialog.error = backend.preferencesStatus.replace(/^Not saved — /, "") || "The signature was not saved."

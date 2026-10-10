@@ -2,6 +2,16 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-10
+
+- The app moves now. Menus, dropdowns, pickers, dialogs and tooltips ease in and out instead of popping.
+- Done, Delay and Archive fold the conversation out of its section where it was, drifting toward where it goes, before it takes its new place. Mail leaving To review on its own timer folds the same way.
+- The toast rises into place. An Undo toast shows a thin line that runs out with the time left to undo.
+- Clearing your inbox gets a small check animation, once, when you finish. An inbox that was already clear stays still.
+- Account counts roll as they change, Sync's arrows turn while it syncs, and switches and checkboxes move with a little give.
+- Calendar slides in the direction you move through days, weeks and months.
+- Settings → General → Motion: System, Full or Reduced. System follows your computer's reduce-motion setting; Reduced keeps every change without the movement.
+
 ## 2026-10-09
 
 - Mail that arrives in the thread you're reading is marked read, so the thread no longer stays in To review after you leave it.

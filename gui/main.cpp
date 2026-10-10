@@ -12,6 +12,7 @@
 #include "GuiInteractionBenchmark.h"
 #include "GuiResizeBenchmark.h"
 #include "GuiCalendarBenchmark.h"
+#include "SystemMotion.h"
 #include "TitleBar.h"
 #include "WindowAttention.h"
 #include "WindowPlacement.h"
@@ -172,8 +173,13 @@ int main(int argc, char **argv) {
     std::unique_ptr<GuiInteractionBenchmark> interactionBenchmark;
     std::unique_ptr<GuiResizeBenchmark> resizeBenchmark;
     std::unique_ptr<GuiCalendarBenchmark> calendarBenchmark;
+    // Test, capture and benchmark runs keep full motion whatever the host's
+    // setting, so their frames stay comparable.
+    SystemMotion systemMotion;
     QQmlApplicationEngine engine; FmIconItem::registerType();
     engine.rootContext()->setContextProperty("backend", &backend);
+    if (!parser.isSet("smoke") && !parser.isSet("self-test") && !parser.isSet("screenshot") && !parser.isSet("self-test-live-empty") && !benchmarkCount)
+        engine.rootContext()->setContextProperty("systemMotion", &systemMotion);
     engine.rootContext()->setContextProperty("debugDiagnostics", &debugConsole);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     QObject::connect(&backend, &MailBackend::shutdownReady, &app, &QCoreApplication::quit);

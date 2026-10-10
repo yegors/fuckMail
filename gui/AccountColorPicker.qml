@@ -6,6 +6,9 @@ import QtQuick.Controls
 // top-bar badge, card avatar and calendar events; GUI and CLI share it.
 Popup {
     id: picker
+    // Eases in from just under full size; closes at once.
+    transformOrigin: Popup.TopLeft
+    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
     objectName: "accountColorPicker"
     property string account: ""
     parent: Overlay.overlay
@@ -30,7 +33,7 @@ Popup {
                 readonly property bool current: Theme.accountColor(picker.account).toUpperCase() === modelData
                 width: 22; height: 22
                 scale: hovered ? 1.12 : 1
-                Behavior on scale { NumberAnimation { duration: 100 } }
+                Behavior on scale { NumberAnimation { duration: Theme.ms(100); easing.type: Theme.enterEasing } }
                 onClicked: picker.pick(modelData)
                 // The ring sits outside the swatch with a 2px gap of the menu colour.
                 background: Item {

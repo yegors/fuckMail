@@ -36,6 +36,7 @@ Evidence, comparisons and experiment reports, grouped by subject. Each file reco
 | [September 15 prototype](prototype-september-15.md) | Earlier alignment work and reader fixes | [Mail UI](../contracts/mail-ui.md) |
 | [Flight Progress v2](flight-progress-v2.md) | The original HTML design source and its native adaptation | [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md) |
 | [Early mockups](design-references.md) | The first PNG mockups and visual direction | [Mail UI](../contracts/mail-ui.md) |
+| [Motion](motion.md) | Lasseter's animation principles applied to timing, folds, popups and reduced motion | [Mail UI](../contracts/mail-ui.md), [Platform](../contracts/platform.md) |
 
 ## Adding findings
 

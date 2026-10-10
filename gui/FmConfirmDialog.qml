@@ -35,7 +35,7 @@ FmDialog {
     onActionEnabledChanged: { const action = standardButton(Dialog.Ok); if (action) action.enabled = actionEnabled }
     Shortcut {
         sequences: ["Return", "Enter"]
-        enabled: dialog.opened && dialog.actionEnabled
+        enabled: dialog.visible && dialog.actionEnabled
         onActivated: dialog.accept()
     }
 }

@@ -44,8 +44,8 @@ ScrollBar {
         if (!autoHide) return
         if (shown) { fadeOut.stop(); fadeIn.start() } else { fadeIn.stop(); fadeOut.start() }
     }
-    NumberAnimation { id: fadeIn; target: bar; property: "opacity"; to: 1; duration: 90; easing.type: Easing.OutQuad }
-    NumberAnimation { id: fadeOut; target: bar; property: "opacity"; to: 0; duration: 260; easing.type: Easing.InOutQuad }
+    NumberAnimation { id: fadeIn; target: bar; property: "opacity"; to: 1; duration: Theme.ms(90); easing.type: Easing.OutQuad }
+    NumberAnimation { id: fadeOut; target: bar; property: "opacity"; to: 0; duration: Theme.ms(260); easing.type: Easing.InOutQuad }
     minimumSize: 0.055
     padding: 3
     implicitWidth: horizontal ? 100 : 14
@@ -63,6 +63,6 @@ ScrollBar {
         color: Theme.line; radius: 5
         // An auto-hiding bar shows its track only while pointed at.
         opacity: !bar.autoHide ? 0.6 : bar.hovered || bar.pressed ? 0.6 : 0
-        Behavior on opacity { enabled: bar.autoHide; NumberAnimation { duration: 120 } }
+        Behavior on opacity { enabled: bar.autoHide; NumberAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
     }
 }

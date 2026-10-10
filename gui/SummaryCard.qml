@@ -31,7 +31,7 @@ Rectangle {
     readonly property bool heightAnimating: false
     readonly property string summaryText: result && result.output ? result.output.summary || "" : ""
     readonly property var sources: result ? ((result.output || {}).source_ids || result.source_ids || []) : []
-    readonly property bool popupOpen: actions.opened || sourcePopup.opened
+    readonly property bool popupOpen: actions.visible || sourcePopup.visible
     readonly property string resultIdentity: result ? [result.conversation_id || "", result.target || "", result.created_at || ""].join("/") : ""
     readonly property string captionModel: result ? (result.model || {}).name || modelName : modelName
     readonly property string generatedAt: result && result.created_at ? Qt.formatDateTime(new Date(result.created_at), "d MMM yyyy HH:mm") : ""
@@ -71,7 +71,7 @@ Rectangle {
     implicitHeight: showing ? (failed ? failure.implicitHeight + 24 : content.implicitHeight + 24) : 0
     radius: 8
     color: failed ? Theme.withAlpha(Theme.red, .07) : done ? Qt.rgba(111/255, 191/255, 138/255, .08) : Theme.withAlpha(Theme.ai, .07)
-    Behavior on color { enabled: card.fading; ColorAnimation { duration: 600; easing.type: Easing.InOutQuad } }
+    Behavior on color { enabled: card.fading; ColorAnimation { duration: Theme.ms(600); easing.type: Easing.InOutQuad } }
     HoverHandler { id: cardHover }
     FmToolTip { shown: cardHover.hovered && !card.busy && !card.failed && !actions.opened; text: [card.title, card.captionModel, card.generatedAt].filter(Boolean).join(" · ") }
     RowLayout {
@@ -170,6 +170,9 @@ Rectangle {
     onDetailsChanged: { if (details) sourcePopup.open(); else sourcePopup.close() }
     Popup {
         id: sourcePopup
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopRight
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         x: Math.max(0, card.width - width); y: 38
         width: Math.min(card.width, 320); padding: 12
         onClosed: card.details = false
@@ -205,6 +208,9 @@ Rectangle {
     }
     Popup {
         id: actions
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopRight
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         x: Math.max(0, card.width - width); y: 38
         width: Math.min(card.width, 220); padding: 6
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside

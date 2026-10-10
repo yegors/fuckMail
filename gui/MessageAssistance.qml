@@ -25,7 +25,7 @@ ColumnLayout {
     readonly property bool summaryBusy: summaryCard.busy
     readonly property bool summaryFailed: summaryCard.failed
     function summarize() { controller.start("summary", message.id) }
-    readonly property bool popupOpen: correction.opened || summaryCard.popupOpen
+    readonly property bool popupOpen: correction.visible || summaryCard.popupOpen
 
     spacing: 8
     visible: !message.sent && (controller.summariesEnabled || canClassify || !!summary || !!classification)
@@ -63,6 +63,9 @@ ColumnLayout {
     }
     Popup {
         id: correction; y: kind.height; width: Math.min(panel.width, 230); padding: 6
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.TopLeft
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         background: Rectangle { color: Theme.surface; radius: 8; border.color: Theme.controlBorder }
         contentItem: ColumnLayout {
             spacing: 2

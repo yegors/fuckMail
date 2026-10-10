@@ -35,6 +35,9 @@ FmTextField {
     }
     Popup {
         id: picker
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.Top
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         parent: Overlay.overlay
         width: 264; padding: 12; focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside

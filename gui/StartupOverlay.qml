@@ -42,7 +42,7 @@ Rectangle {
         }
     }
     Timer { id: minimumDisplay; interval: 1750; onTriggered: { loader.minimumElapsed = true; loader.release() } }
-    NumberAnimation { id: fade; target: loader; property: "opacity"; to: 0; duration: 350; easing.type: Easing.OutCubic; onFinished: loader.dismissed = true }
+    NumberAnimation { id: fade; target: loader; property: "opacity"; to: 0; duration: Theme.ms(350); easing.type: Easing.OutCubic; onFinished: loader.dismissed = true }
     MouseArea { anchors.fill: parent }
     Column {
         anchors.centerIn: parent
@@ -62,11 +62,11 @@ Rectangle {
                     transform: [Translate { id: offset; x: (2.17 - index * .62) * 60 }, Scale { id: zoom; origin.x: 0; origin.y: letter.height / 2; xScale: 4; yScale: 4 }]
                     SequentialAnimation {
                         running: loader.presented && !loader.dismissed
-                        PauseAnimation { duration: index * 110 }
+                        PauseAnimation { duration: Theme.ms(index * 110) }
                         ParallelAnimation {
-                            NumberAnimation { target: letter; property: "opacity"; to: 1; duration: 100 }
-                            NumberAnimation { target: offset; property: "x"; to: 0; duration: 550; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: zoom; properties: "xScale,yScale"; to: 1; duration: 550; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: letter; property: "opacity"; to: 1; duration: Theme.ms(100) }
+                            NumberAnimation { target: offset; property: "x"; to: 0; duration: Theme.ms(550); easing.type: Easing.OutCubic }
+                            NumberAnimation { target: zoom; properties: "xScale,yScale"; to: 1; duration: Theme.ms(550); easing.type: Easing.OutCubic }
                         }
                     }
                 }

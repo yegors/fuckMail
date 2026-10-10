@@ -50,7 +50,7 @@ Popup {
         // gap under the name never closes it on the way in.
         Item { objectName: "senderCardBridge"; y: -12; width: parent.width; height: 12; HoverHandler { onHoveredChanged: hovered ? card.stayOpen() : card.scheduleClose() } }
     }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(150); easing.type: Theme.enterEasing } }
     // Opens at once for a click. Hover goes through hoverSender/leaveSender:
     // a short dwell before opening, a longer one before an open card switches
     // to another contact, and none while the pointer heads into the card, so

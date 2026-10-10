@@ -33,6 +33,9 @@ ComboBox {
         highlighted: control.highlightedIndex === index
     }
     popup: Popup {
+        // Eases in from just under full size; closes at once.
+        transformOrigin: Popup.Top
+        enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.ms(Theme.quickMs); easing.type: Theme.enterEasing } } }
         y: control.height + 4
         width: Math.max(control.width, control.popupWidth)
         padding: 4

@@ -1,5 +1,11 @@
 # Core and storage
 
+## D205 — motion preference (Core94)
+
+- Preferences gain `motion`: `system` (default), `full` or `reduced`; any other value is refused with `invalid_request`.
+
+Consumers: GUI Settings and `Theme`; preferences tests.
+
 ## D204 — reviewed mail preference (Core93)
 
 - Preferences gain `review_leave_seconds`: 0, 5, 10 (default) or 30; any other value is refused with `invalid_request`.

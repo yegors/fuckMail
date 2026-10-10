@@ -52,7 +52,9 @@ Dialog {
             shadowBlur: 1; shadowVerticalOffset: 24
         }
     }
-    Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.45) }
+    // Rises out of the dim, which fades in with it.
+    Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.45); opacity: dialog.opacity }
+    enter: Transition { ParallelAnimation { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.ms(Theme.baseMs); easing.type: Theme.enterEasing } NumberAnimation { property: "scale"; from: .96; to: 1; duration: Theme.ms(Theme.baseMs); easing.type: Theme.enterEasing } } }
     footer: DialogButtonBox {
         implicitHeight: visible ? 32 + topPadding + bottomPadding : 0
         visible: count > 0

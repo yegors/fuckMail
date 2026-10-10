@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 23 · Updated: 2026-09-27 · Implementation: D155 app-wide Mail divider and D153 window placement passes on Windows 11 (unit, real-window and real-app checks); D132 icon and themed title bar pass on Windows 11; macOS and Linux are unbuilt. D130 unsigned Windows installer passes on Windows; the macOS disk image awaits its first Mac run.
+State: Draft · Revision: 24 · Updated: 2026-10-10 · Implementation: D155 app-wide Mail divider and D153 window placement passes on Windows 11 (unit, real-window and real-app checks); D132 icon and themed title bar pass on Windows 11; macOS and Linux are unbuilt. D130 unsigned Windows installer passes on Windows; the macOS disk image awaits its first Mac run.
+
+Revision 24 (D205) follows the system's reduce-motion setting. `SystemMotion` reads Windows' Animation effects (`SPI_GETCLIENTAREAANIMATION`), macOS's Reduce motion (`accessibilityDisplayShouldReduceMotion`) and, on Linux, GNOME's `org.gnome.desktop.interface enable-animations` through `gsettings` without blocking (full motion when either is missing), at launch and whenever the app returns to the front. QML reads it as `systemMotion.reduced`; smoke, self-test, screenshot and benchmark runs have no `systemMotion`, so they keep full motion. The `motion` preference (`system`, `full`, `reduced`) decides whether it applies. Consumers: Mail UI148, Core94.
 
 Revision 23 (D155) adds `mail_split_width` to `window.json`: the Mail list pane's width in logical pixels, one value for every account, written when a divider drag ends. QML reads it as `windowLayout.mailSplitWidth`; runs without window placement have no `windowLayout`. Consumers: Mail UI107.
 
@@ -91,6 +93,7 @@ These app-wide preferences use the existing revisioned Core preferences boundary
 | --- | --- | --- |
 | `theme` | `graphite`, `paper`, `harbour` | `graphite` |
 | `text_size` | `small`, `default`, `large` | `default` |
+| `motion` | `system`, `full`, `reduced` | `system` |
 | `startup_view` | `mail`, `calendar`, `last` | `mail` |
 | `last_workspace` | `mail`, `calendar` | `mail` |
 | `timeline_position` | `footer`, `header` | `footer` |

@@ -50,9 +50,10 @@ QQuickItem *captureItem(QQuickItem *parent, const QString &operationId) {
     for (auto child : parent->childItems()) if (auto found = captureItem(child, operationId)) return found;
     return nullptr;
 }
+// On screen counts: the popup reports `opened` only once it has eased in.
 bool capturePopupOpen(QObject *window) {
     for (auto popup : window->findChildren<QObject *>("captureHistoryPopup"))
-        if (popup->property("opened").toBool()) return true;
+        if (popup->property("visible").toBool()) return true;
     return false;
 }
 QObject *openedDiscardDialog(QObject *window) {
