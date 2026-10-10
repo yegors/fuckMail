@@ -107,6 +107,9 @@ Item {
         editor: bodyEditor
         readOnly: root.readOnly || backend.draftLocked
         onContentChanged: if (!root.loading) backend.editFormattedDraft(plainText, html)
+        // A pasted screenshot or copied files become attachments of this draft.
+        onImagePasted: image => backend.attachPastedImage(image, backend.account, backend.draft.draft_id || "")
+        onFilesPasted: files => backend.attachPastedFiles(files, backend.account, backend.draft.draft_id || "")
     }
     Item {
         id: composer
@@ -344,7 +347,8 @@ Item {
                             FmMenuItem { objectName: "spellingIgnore"; visible: !!contextMenu.spelling.word; separatorAbove: true; text: "Ignore spelling"; onClicked: { contextMenu.close(); document.ignoreSpelling(contextMenu.spelling.word) } },
                             FmMenuItem { objectName: "spellingLearn"; visible: !!contextMenu.spelling.word; text: "Learn spelling"; onClicked: { contextMenu.close(); document.learnSpelling(contextMenu.spelling.word) } }
                         ]
-                        pasteLabel: "Paste plain text"; pasteText: function() { document.pastePlain() }
+                        pasteLabel: document.clipboardAttachable ? "Paste as attachment" : "Paste plain text"; pasteText: function() { document.pastePlain() }
+                        pasteAvailable: bodyEditor.canPaste || document.clipboardAttachable
                         FmMenuItem { separatorAbove: true; text: "Bold"; shortcut: contextMenu.key + "B"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("bold") } }
                         FmMenuItem { text: "Italic"; shortcut: contextMenu.key + "I"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("italic") } }
                         FmMenuItem { text: "Underline"; shortcut: contextMenu.key + "U"; enabled: !root.readOnly; onClicked: { contextMenu.close(); document.format("underline") } }

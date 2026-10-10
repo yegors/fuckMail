@@ -8,6 +8,9 @@
 #include "SpellChecker.h"
 #include <QClipboard>
 #include <QElapsedTimer>
+#include <QFileInfo>
+#include <QImage>
+#include <QMimeData>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QRegularExpression>
@@ -112,7 +115,28 @@ ReplyDocument::ReplyDocument(QObject *parent)
       m_spelling(new SpellHighlighter(this, SpellChecker::system(), {
           [this] { return typingCaret(); },
           [this] { queueMarks(); },
-          [this] { queueRecheck(); }})) {}
+          [this] { queueRecheck(); }})) {
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &ReplyDocument::clipboardAttachableChanged);
+}
+namespace {
+// Copied local files, or none when anything else is copied with them.
+QList<QUrl> clipboardFiles(const QMimeData *mime) {
+    QList<QUrl> files;
+    if (!mime || !mime->hasUrls()) return files;
+    for (const auto &url : mime->urls()) {
+        if (!url.isLocalFile() || !QFileInfo(url.toLocalFile()).isFile()) return {};
+        files.append(url);
+    }
+    return files;
+}
+// An image copied without text: a screenshot or a copied picture. Text with
+// an image (a spreadsheet range, say) pastes as text.
+bool clipboardImage(const QMimeData *mime) { return mime && mime->hasImage() && !mime->hasText(); }
+}
+bool ReplyDocument::clipboardAttachable() const {
+    const auto *mime = QGuiApplication::clipboard()->mimeData();
+    return !clipboardFiles(mime).isEmpty() || clipboardImage(mime);
+}
 // Answers arrive in batches; one recheck covers all that arrived this turn.
 void ReplyDocument::queueRecheck() {
     if (m_recheckQueued) return;
@@ -345,6 +369,12 @@ void ReplyDocument::updateFormats() {
 }
 void ReplyDocument::pastePlain() {
     if (m_readOnly || !m_document || !m_editor) return;
+    const auto *mime = QGuiApplication::clipboard()->mimeData();
+    if (const auto files = clipboardFiles(mime); !files.isEmpty()) { emit filesPasted(files); return; }
+    if (clipboardImage(mime)) {
+        const auto image = qvariant_cast<QImage>(mime->imageData());
+        if (!image.isNull()) { emit imagePasted(image); return; }
+    }
     QTextCursor cursor(m_document->textDocument());
     cursor.setPosition(m_editor->property("selectionStart").toInt());
     cursor.setPosition(m_editor->property("selectionEnd").toInt(), QTextCursor::KeepAnchor);

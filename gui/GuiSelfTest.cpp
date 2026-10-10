@@ -388,10 +388,11 @@ void GuiSelfTest::step() {
         }
         break;
     case 22:
-        if (!click("categoryAssignmentButton")) return;
+        // Labels come from the reader's actions menu; the subject carries none.
+        if (!QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "openActions") || !click("contextLabels")) return;
         m_stage = 23; break;
     case 23:
-        if (!click("categoryAdd_finance")) return;
+        if (!click("applyLabel_finance")) return;
         m_stage = 24; break;
     case 24:
         if (m_backend.mutationInFlight() || m_backend.loading() || !membersCategorized(true)) return;

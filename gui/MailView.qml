@@ -50,7 +50,7 @@ Item {
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || textMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || textMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     // Spam is listed and read live from Gmail; none of it is stored. Spam and
@@ -223,7 +223,7 @@ Item {
         if (f.before) labels.push("Before " + f.before + " UTC")
         return labels.join(" · ")
     }
-    onVisibleChanged: if (!visible) { categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close(); binMenu.close(); if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false) } }
+    onVisibleChanged: if (!visible) { morePopup.close(); senderCard.close(); railCategories.close(); binMenu.close(); if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false) } }
     function clearSelection() { selectionRows = []; selectionCursor = "" }
     function cancelKeyboardOpen() { keyboardOpen.stop(); keyboardOpen.target = "" }
     function listHasFocus() {
@@ -334,7 +334,6 @@ Item {
         const mode = pendingComposeMode; pendingComposeId = ""; pendingComposeMode = ""
         backend.beginDraft(mode)
     }
-    function categoryCount(id) { return members.filter(function(m) { return (m.categories || []).indexOf(id) >= 0 }).length }
     function dateGroup(row) {
         const date = new Date(row.latest_at), today = new Date(backend.clockDay)
         if (isNaN(date.getTime())) return "Earlier"
@@ -860,6 +859,19 @@ Item {
     property bool visitSettled: false
     property bool visitTouched: false
     property var visitSeen: ({})
+    // A thread opened with unread mail scrolls to its first unread message,
+    // once per visit and again if a fuller copy of the thread moves it, until
+    // the user scrolls. A position restored after a restart wins.
+    property string visitRevealed: ""
+    property bool visitScrollTouched: false
+    function revealFirstUnread(messages) {
+        if (visitScrollTouched || replyOpen || replyReveal.running) return
+        const first = messages.find(function(m) { return visitUnread[m.id] === true })
+        if (!first || first.id === visitRevealed) return
+        if (!visitRevealed && (backend.presentation.readerY || 0) > 0) { visitScrollTouched = true; return }
+        visitRevealed = first.id
+        revealMember(first.id)
+    }
     function openThread(messages) {
         const open = Object.assign({}, expandedMembers)
         for (const key of Object.keys(open)) if (key.startsWith(expansionKey)) delete open[key]
@@ -875,7 +887,7 @@ Item {
     }
     function followThread(thread) {
         const messages = draftsMode ? [] : (backend.conversation.messages || [])
-        if (thread !== visitThread) { visitThread = thread; visitUnread = ({}); visitSettled = false; visitTouched = false; lastMemberKey = ""; visitArrivedSent = ({}); visitSeen = ({}) }
+        if (thread !== visitThread) { visitThread = thread; visitUnread = ({}); visitSettled = false; visitTouched = false; lastMemberKey = ""; visitArrivedSent = ({}); visitSeen = ({}); visitRevealed = ""; visitScrollTouched = false }
         // Unread stays remembered for the visit, so reading on open changes nothing.
         const unread = Object.assign({}, visitUnread), arrived = []
         for (const m of messages) if (m.unread && unread[m.id] !== true) { unread[m.id] = true; arrived.push(m.id) }
@@ -891,7 +903,7 @@ Item {
         if (sentArrived) visitArrivedSent = sentArrived
         if (!messages.length) return
         if (!visitSettled) {
-            if (!visitTouched) openThread(messages)
+            if (!visitTouched) { openThread(messages); revealFirstUnread(messages) }
             const row = rows.find(function(r) { return r.id === backend.selectedId })
             visitSettled = !row || (backend.conversation.revision || 0) >= (row.revision || 0)
             lastMemberKey = expansionKey + messages[messages.length - 1].id
@@ -934,6 +946,11 @@ Item {
         visitTouched = true; replyPinned = false
         const next = Object.assign({},expandedMembers); next[expansionKey+id] = true; expandedMembers = next
         backend.remember("selectedMember",id)
+        revealMember(id)
+    }
+    // Brings a message's top into view once the thread's layout settles,
+    // without opening or closing anything.
+    function revealMember(id) {
         reader.cancelFlick()
         matchReveal.identity = backend.account + "/" + backend.selectedId
         matchReveal.query = backend.query; matchReveal.memberId = id; matchReveal.toMatch = false
@@ -1888,20 +1905,6 @@ Item {
                                 color: Theme.text; font.pointSize: Theme.fontPoints(16); font.weight: Font.Medium; font.letterSpacing: 0
                             }
                         }
-                        // The thread's label, quiet after the subject; it opens the label chooser.
-                        Item {
-                            visible: (mail.thread.categories || []).length > 0; width: categoriesButton.implicitWidth; height: readerHeading.titleLine
-                            FmButton {
-                                id: categoriesButton; objectName: "categoryAssignmentButton"
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "#" + String(((mail.thread.categories || [])[0] || {}).name || "label").toLowerCase()
-                                font.pointSize: Theme.fontPoints(12); font.weight: Font.Normal; hoverBrightness: 1
-                                implicitHeight: 20; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                                foreground: hovered ? Theme.text : Theme.inkAlpha(.5); tip: "Change labels"
-                                background: Rectangle { color: "transparent"; radius: 5; border.width: categoriesButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
-                                onClicked: categoryPopup.open()
-                            }
-                        }
                     }
                     RowLayout {
                         objectName: "conversationMetaRow"
@@ -1952,7 +1955,7 @@ Item {
                     HoverHandler { onPointChanged: readerBar.pointerMoved(point.scenePosition) }
                     onMovementEnded: { if (!mail.restoring) backend.remember("readerY",contentY); mail.replyPinned = mail.replyWhollyShown() }
                     // Scrolling takes over from a reply being brought into view.
-                    onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop(); mail.replyPinned = false }
+                    onMovementStarted: { replyReveal.stop(); revealScroll.stop(); sentReveal.stop(); matchReveal.stop(); mail.replyPinned = false; mail.visitScrollTouched = true }
                     onHeightChanged: mail.keepReplyInView(false)
                     // A shorter thread never leaves the reader past its end.
                     onContentHeightChanged: { if (sentReveal.running) sentReveal.follow(); mail.keepReplyInView(false) }
@@ -2679,29 +2682,6 @@ Item {
                 Text { text: "All categories"; font.pointSize: Theme.fontPoints(12); color: Theme.text }
                 Repeater { model: mail.categoriesByName
                     FmButton { required property var modelData; Layout.fillWidth: true; textAlignment: Text.AlignLeft; text: modelData.name + "  " + modelData.conversation_count; selected: mail.categoryOn(modelData.id); onClicked: mail.toggleCategory(modelData.id) }
-                }
-            }
-        }
-    }
-    Popup {
-        id: categoryPopup; objectName: "categoryAssignmentPopup"; parent: Overlay.overlay; width: 350; padding: 16
-        onAboutToShow: { const p=categoriesButton.mapToItem(parent,0,categoriesButton.height+6); x=Math.min(p.x,parent.width-width-12); y=p.y }
-        focus: true; closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        contentItem: ColumnLayout {
-            spacing: 10
-            Text { text: "Categories"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium }
-            Text { Layout.fillWidth: true; text: "Apply to the "+mail.members.length+" loaded messages. Later replies keep their own labels."; color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap }
-            Repeater {
-                model: backend.categories
-                RowLayout {
-                    required property var modelData
-                    property int memberCount: mail.categoryCount(modelData.id)
-                    Layout.fillWidth: true
-                    Text { Layout.fillWidth: true; text: modelData.name; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText }
-                    Text { text: memberCount===0 ? "None" : memberCount===mail.members.length ? "All" : memberCount+"/"+mail.members.length; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
-                    FmButton { objectName: "categoryAdd_"+modelData.id; text: memberCount===mail.members.length ? "Clear" : "Apply"; enabled: !backend.mutationInFlight && mail.canMutate; outlined: true; font.pointSize: Theme.fontPoints(10.5); onClicked: backend.setCategoryMembership(modelData.id,memberCount!==mail.members.length) }
-                    FmButton { visible: memberCount>0 && memberCount<mail.members.length; text: "Clear"; font.pointSize: Theme.fontPoints(10.5); enabled: !backend.mutationInFlight && mail.canMutate; onClicked: backend.setCategoryMembership(modelData.id,false) }
                 }
             }
         }

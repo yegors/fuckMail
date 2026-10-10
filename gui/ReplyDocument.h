@@ -2,7 +2,9 @@
 // restricted HTML alternative; the plain text stays authoritative. Also owns
 // the editor's system spell checking: underlines, suggestions and correction.
 #pragma once
+#include <QImage>
 #include <QObject>
+#include <QUrl>
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickTextDocument>
@@ -35,6 +37,9 @@ class ReplyDocument : public QObject {
     /// Disables format(), pastePlain(), undo() and redo(). The TextEdit's own
     /// readOnly must be bound separately.
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
+    /// The clipboard holds what paste attaches instead of typing: local
+    /// files, or an image without text (a screenshot).
+    Q_PROPERTY(bool clipboardAttachable READ clipboardAttachable NOTIFY clipboardAttachableChanged)
     /// What the selection, or the caret with what is typed next, carries:
     /// bold, italic, underline, bullet and numbered, each true or false.
     Q_PROPERTY(QVariantMap formats READ formats NOTIFY formatsChanged)
@@ -74,8 +79,11 @@ public:
     /// of it when they all are already; a list just above with the same style
     /// is continued. Each is one undo step. Other values are ignored.
     Q_INVOKABLE void format(const QString &kind);
-    /// Replaces the selection with the clipboard's plain text.
+    /// Replaces the selection with the clipboard's plain text. Copied local
+    /// files emit filesPasted() and an image without text emits imagePasted()
+    /// instead; neither changes the text.
     Q_INVOKABLE void pastePlain();
+    bool clipboardAttachable() const;
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
     /// Rebuilds `html` keeping only the allowed tags, a fixed paragraph style,
@@ -113,6 +121,12 @@ signals:
     /// The user edited the content. Not emitted for load() or setIdentity(),
     /// so it can drive autosave without echoing saved drafts back.
     void contentChanged();
+    void clipboardAttachableChanged();
+    /// Paste found local files on the clipboard; the composer attaches them.
+    void filesPasted(const QList<QUrl> &files);
+    /// Paste found an image and no text, such as a screenshot; the composer
+    /// attaches it.
+    void imagePasted(const QImage &image);
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 private slots:

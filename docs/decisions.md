@@ -2375,3 +2375,33 @@ The founder's Windscribe account showed "syncing 4 items" forever and could not 
   - Not measured on the founder's store: an estimated 25 ms per warm part, about 57 parts per label.
 
 Core92, Gmail44. No schema, fixture or protocol change.
+
+## D201 — no label after the subject; the TLDR tag sits on the text (2026-10-09T12:00:00Z)
+
+The founder found two artifacts of the Terminal design.
+
+- **Subject.** The reader heading no longer shows the thread's `#label` after the subject. The label already shows in the list row and in the summary box. The label chooser it opened is gone; labels are changed from the actions menu's Labels submenu, as for list rows.
+- **TLDR tag.** The tag sat about 5 px below the first line of the summary. Its position assumed the text is centred in its 1.6 line, but Qt sets rich text at the top of the line and leaves the extra space below. The tag's capitals are now centred on the first line's capitals, from both fonts' metrics.
+- **Evidence.** LocalModelTest compares the rendered ink of "TLDR" with the first word in every theme and text size; they now differ by at most 1.5 px, against 5 px before. The GUI integration self-test labels the open thread through the actions menu while a reply is open, and the CLI sees the label.
+
+Mail UI144. No schema, fixture or protocol change.
+
+## D202 — paste screenshots and files as attachments (2026-10-09T15:00:00Z)
+
+The founder pastes screenshots into replies all the time and asked that a pasted image attach itself.
+
+- **Change.** Paste in the composer body (⌘V/Ctrl+V or the menu) looks at the clipboard first. Copied local files attach. An image copied without text, such as a screenshot, is written as a PNG under the profile's `cache/pasted` and attaches as "Screenshot YYYY-MM-DD at HH.MM.SS.png", with " (2)" and so on for a second paste in the same second. An image that comes with text (a spreadsheet range, say) pastes the text, and so does everything else. Encoding runs off the UI thread. Pasted images stay a week so an uncertain import can be retried from the same file, then are removed at the next paste.
+- **Queue.** A paste while an earlier file is still importing joins that queue instead of being refused. A stopped or failed import still has to be resolved first, as for chosen files. The 50-attachment limit counts waiting files.
+- **Menu.** The editor menu's Paste reads "Paste as attachment" and is enabled when the clipboard holds files or a screenshot.
+- **Evidence.** ComposerInputTest, on the offscreen platform's private clipboard: a pasted image starts an import of a PNG named like a screenshot with the same pixels and leaves the text alone; a second paste during that import queues and imports under its own name; copied files attach instead of pasting their names; an image with text pastes the text. The paste checks fail without the composer's handlers.
+
+Mail UI145. No schema, fixture or protocol change.
+
+## D203 — a long thread opens at its first unread message (2026-10-09T19:00:00Z)
+
+The founder opened a 33-message thread for the mail that had just arrived and saw the list of older messages instead; the new one was below the fold.
+
+- **Change.** When a thread is first shown with unread mail, the reader scrolls so the first unread message's header sits just below its top, after the thread's layout settles. It does so again if a fuller copy of the thread arrives and moves that message, until the user scrolls. It does not scroll when a position was restored after a restart, when the reply box is open, or when nothing is unread (the thread opens at its top, as before). Nothing opens or closes because of it.
+- **Evidence.** MailSelectionTest opens a 31-message thread whose newest message is unread: its header ends up 12 px below the reader's top (1,216 px down, unscrolled, before). A thread with nothing unread opens at its top.
+
+Mail UI146. No schema, fixture or protocol change.

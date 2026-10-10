@@ -105,10 +105,16 @@ Rectangle {
             Item {
                 Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
                 implicitHeight: card.busy ? Math.max(17, busyLine.implicitHeight) : summaryBody.implicitHeight
-                readonly property real firstLine: Theme.fontSize(12.5) * Theme.naturalLeading * 1.6
+                // Qt sets the text at the top of its 1.6 line and leaves the
+                // extra space below, so the tag's capitals are centred on the
+                // first line's capitals rather than on the line box.
+                FontMetrics { id: bodyMetrics; font: summaryBody.font }
+                FontMetrics { id: tagMetrics; font: tagText.font }
+                readonly property real bodyCapCentre: bodyMetrics.ascent - bodyMetrics.tightBoundingRect("H").height / 2
+                readonly property real tagCapCentre: (tag.height - tagText.implicitHeight) / 2 + tagMetrics.ascent - tagMetrics.tightBoundingRect("H").height / 2
                 AbstractButton {
                     id: tag; objectName: "summaryActions"
-                    y: card.busy ? (parent.implicitHeight - height) / 2 : Math.max(0, (parent.firstLine - height) / 2)
+                    y: card.busy ? (parent.implicitHeight - height) / 2 : Math.round(parent.bodyCapCentre - parent.tagCapCentre)
                     implicitWidth: tagText.implicitWidth + 12; implicitHeight: 17
                     Accessible.name: card.busy ? "Summary progress and cancel" : "Summary sources and details"
                     onClicked: actions.open()

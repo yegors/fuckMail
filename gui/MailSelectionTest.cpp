@@ -71,6 +71,9 @@ class MailSelectionTest {
         QJsonArray sourceFiles;
         // Messages after each thread's first, and headers by message.
         QJsonArray laterMessages;
+        bool originalRead=false;
+        // When set, only this thread carries laterMessages.
+        QString laterThread;
         QHash<QString,QJsonArray> sourceMetadata;
         // Every draft_create request, in order.
         QList<QJsonObject> creations;
@@ -152,7 +155,7 @@ class MailSelectionTest {
                     else if (method == "assist_start") result={{"job_id","thread-job"},{"status","queued"}};
                     else if (method == "assist_job") result={{"job_id","thread-job"},{"status","running"}};
                     else if (method == "assist_settings_get") result={{"revision",0},{"settings",QJsonObject{{"accounts",QJsonObject{}},{"model",QJsonObject{{"name","example.registry/team/a-very-long-qualified-model-name:large"},{"digest","synthetic"}}}}}};
-                    else if (method == "message_source" && texts.contains(request["params"].toObject()["id"].toString().chopped(QString("-original").size()))) {
+                    else if (method == "message_source" && request["params"].toObject()["id"].toString().endsWith("-original") && texts.contains(request["params"].toObject()["id"].toString().chopped(QString("-original").size()))) {
                         const auto params = request["params"].toObject();
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\n\r\nPlain"},
                             {"body_text",texts.value(params["id"].toString().chopped(QString("-original").size()))},{"metadata",QJsonArray{}}};
@@ -218,10 +221,10 @@ class MailSelectionTest {
                             ids=QJsonArray::fromVariantList(row.toMap().value("message_ids").toList()); revision=row.toMap().value("revision").toLongLong();
                             if (texts.contains(id)) subject=row.toMap().value("subject").toString();
                         }
-                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",sourceFiles}}}},
+                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",!originalRead},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",sourceFiles}}}},
                             {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
                         if (!subject.isEmpty()) result["subject"]=subject;
-                        if (!laterMessages.isEmpty()) {
+                        if (!laterMessages.isEmpty() && (laterThread.isEmpty() || laterThread==id)) {
                             auto messages=result["messages"].toArray(); auto ids=result["message_ids"].toArray();
                             for (const auto &message : laterMessages) { messages.append(message); ids.append(message.toObject()["id"]); }
                             result["messages"]=messages; result["message_ids"]=ids;
@@ -1898,6 +1901,52 @@ public:
         headingFits(1,"subject match only");
         qInfo()<<"A search result keeps its subject's own height, and Show match goes to the first match in the body.";
     }
+    // A long thread opened with new mail at its end scrolls to the first
+    // unread message instead of showing the list of older ones.
+    static void longThreadOpensAtUnread() {
+        Harness h;
+        h.originalRead=true; h.laterThread="long";
+        QVariantList ids{"long-original"};
+        for (int n=1; n<=30; ++n) {
+            const auto id=QString("long-%1").arg(n);
+            const bool fresh=n==30;
+            h.laterMessages.append(QJsonObject{{"id",id},{"unread",fresh},{"starred",false},{"sender_name",n%2 ? "Vendor" : "You"},
+                {"sent_at",QString("2026-09-%1T10:00:00Z").arg(n,2,10,QChar('0'))},{"text",fresh ? QString("The newest message, just arrived.\n\n").repeated(30) : QString("Older message %1 in the thread.").arg(n)},
+                {"source_available",true},{"source_version",QString(64,char(97))},{"sent",n%2==0},{"attachments",QJsonArray{}}});
+            ids<<id;
+        }
+        h.rows={QVariantMap{{"id","long"},{"subject","A very long thread"},{"sender_name","Vendor"},{"sender_email","vendor@example.test"},{"latest_at","2026-09-30T10:00:00Z"},
+            {"message_ids",ids},{"revision",3},{"message_count",ids.size()},{"categories",QVariantList{}},{"group","review"},{"kind","people"},{"unread",true},{"starred",false}},
+            QVariantMap{{"id","read"},{"subject","Already read"},{"sender_name","Vendor"},{"sender_email","vendor@example.test"},{"latest_at","2026-09-01T10:00:00Z"},
+            {"message_ids",QVariantList{"read-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},{"group","review"},{"kind","people"},{"unread",false},{"starred",false}}};
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("LongThread.qml")));
+        require(!qml.rootObjects().isEmpty(),"long thread MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"long thread window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,5); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==2;},"both threads listed");
+        h.backend.openConversation("long");
+        QQuickItem *fresh=nullptr;
+        await([&]{ fresh=find(window->contentItem(),"messageMember_long-30"); return fresh && fresh->isVisible() && fresh->height()>0; },"the new message lays out");
+        settle(600);
+        auto *reader=find(window->contentItem(),"reader"); require(reader,"reader");
+        const auto top=fresh->mapToItem(reader,QPointF(0,0)).y();
+        qInfo()<<"Long thread opened: unread message at"<<top<<"in a reader of"<<reader->height()<<"scrolled"<<reader->property("contentY").toReal();
+        // Its header sits just below the reader's top: the list of older messages is above.
+        require(reader->property("contentY").toReal()>0 && top>=0 && top<=24,"opening a long thread scrolls to its first unread message");
+        // A thread with nothing unread opens at its top, as before.
+        // Opening marked the new message read; the harness holds that write until released.
+        h.finish(h.take()); await([&]{return !h.backend.m_mutatingConversation;},"read on open settles");
+        h.backend.openConversation("read");
+        await([&]{ auto *member=find(window->contentItem(),"messageMember_read-original"); return member && member->isVisible(); },"the read thread opens");
+        settle(400);
+        require(reader->property("contentY").toReal()==0,"a thread with nothing unread opens at its top");
+        qInfo()<<"A long thread opens at its first unread message.";
+    }
     // A long plain-text body (a signature and legal notices well past Qt's
     // large-text size) paints all of its text wherever the reader is
     // scrolled, without a click to bring it in.
@@ -2821,6 +2870,6 @@ public:
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
         require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
     }
-    static void run(){scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){longThreadOpensAtUnread();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

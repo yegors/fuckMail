@@ -9,6 +9,9 @@
 #include "SpellChecker.h"
 #include <QGuiApplication>
 #include <QFontDatabase>
+#include <QClipboard>
+#include <QRegularExpression>
+#include <QImage>
 #include <QJsonArray>
 #include <QJSValue>
 #include <QKeyEvent>
@@ -316,6 +319,50 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     backend.skipQueuedDraftAttachments();
     backend.importDraftAttachments({QUrl("https://example.test/file")},"fixture-account","draft-fixture");
     require(!backend.attachmentImportPending() && imports.size()==5,"remote URL cannot become a file import");
+
+    // Paste: a screenshot on the clipboard becomes a named PNG attachment;
+    // a second paste while it imports joins the queue. Only on the offscreen
+    // platform, whose clipboard is private to this process.
+    if (QGuiApplication::platformName()=="offscreen") {
+        auto document=window->findChild<ReplyDocument*>("replyDocument"); require(document,"composer document for paste");
+        auto editor=find(window->contentItem(),"replyComposer"); require(editor,"composer body for paste");
+        const auto textBefore=document->plainText();
+        const auto pasteKey=[&]{ editor->forceActiveFocus(); QKeyEvent paste(QEvent::KeyPress,Qt::Key_V,Qt::ControlModifier); QCoreApplication::sendEvent(editor,&paste); };
+        QImage shot(40,30,QImage::Format_RGB32); shot.fill(Qt::red);
+        QGuiApplication::clipboard()->setImage(shot);
+        require(document->clipboardAttachable(),"a copied screenshot can be attached");
+        pasteKey();
+        await([&]{return imports.size()==6;},"pasted screenshot starts an import");
+        const auto pastedPath=imports[5].params["path"].toString();
+        static const QRegularExpression screenshotName("^Screenshot \\d{4}-\\d{2}-\\d{2} at \\d{2}\\.\\d{2}\\.\\d{2}( \\(\\d+\\))?\\.png$");
+        require(screenshotName.match(QFileInfo(pastedPath).fileName()).hasMatch(),qPrintable("pasted screenshot is named like a screenshot: "+pastedPath));
+        QImage written(pastedPath); require(written.size()==QSize(40,30) && written.pixelColor(5,5)==QColor(Qt::red),"the attachment is the pasted image as PNG");
+        require(document->plainText()==textBefore,"pasting a screenshot leaves the text alone");
+        QImage second(20,20,QImage::Format_RGB32); second.fill(Qt::blue);
+        QGuiApplication::clipboard()->setImage(second);
+        pasteKey();
+        await([&]{return backend.attachmentImport()["queued"].toInt()==1;},"a second paste joins the running import");
+        succeed(5,"pasted-1");
+        await([&]{return imports.size()==7;},"the second screenshot imports next");
+        const auto secondPath=imports[6].params["path"].toString();
+        require(secondPath!=pastedPath && screenshotName.match(QFileInfo(secondPath).fileName()).hasMatch(),"each paste gets its own screenshot name");
+        succeed(6,"pasted-2"); await([&]{return !backend.attachmentImportPending() && !backend.draftBusy();},"pasted screenshots attached");
+        // Copied files attach; an image that comes with text pastes the text.
+        QFile copied(fixture.temporary.filePath("copied.txt")); require(copied.open(QIODevice::WriteOnly) && copied.write("copied") > 0,"copied file"); copied.close();
+        auto files=new QMimeData; files->setUrls({file("copied.txt")}); files->setText("copied.txt");
+        QGuiApplication::clipboard()->setMimeData(files);
+        pasteKey();
+        await([&]{return imports.size()==8;},"copied file starts an import");
+        require(imports[7].params["path"].toString()==fixture.temporary.filePath("copied.txt") && document->plainText()==textBefore,"copied files attach instead of pasting their names");
+        succeed(7,"copied"); await([&]{return !backend.attachmentImportPending() && !backend.draftBusy();},"copied file attached");
+        auto mixed=new QMimeData; mixed->setImageData(shot); mixed->setText("Cell text");
+        QGuiApplication::clipboard()->setMimeData(mixed);
+        require(!document->clipboardAttachable(),"an image with text is pasted as text");
+        pasteKey();
+        await([&]{return document->plainText().contains("Cell text");},"image with text pastes the text");
+        require(imports.size()==8,"no attachment from an image that came with text");
+        QGuiApplication::clipboard()->clear();
+    } else qWarning()<<"Paste checks skipped: they run only on the offscreen platform.";
 
     // Spelling: a red dotted rule under a misspelled word, and its suggestions
     // first in the editor's menu; choosing one replaces the word undoably.

@@ -312,6 +312,30 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
   window->setWidth(480);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,QString(size)));QCoreApplication::processEvents();
   auto body=find(card,"summaryBody");require(body && body->width()<=card->width()-28 && body->width()>300,"summary fits narrow card");
   require(card->height()>40 && card->height()<300,"compact summary card");
+  {
+   // The TLDR tag's capitals sit on the first line's capitals: compare the ink
+   // of "TLDR" with the ink of the first word's opening letters.
+   QCoreApplication::processEvents();QThread::msleep(30);QCoreApplication::processEvents();
+   const auto image=window->grabWindow();const qreal scale=image.width()/qreal(window->width());
+   auto *tag=find(card,"summaryActions");require(tag && tag->isVisible(),"summary tag shown");
+   const auto tagRect=tag->mapRectToScene(QRectF(0,0,tag->width(),tag->height()));
+   const auto bodyTop=body->mapToScene(QPointF(0,0));
+   auto inkRows=[&](qreal x0,qreal x1,qreal y0,qreal y1,QColor ground){
+    int top=-1,bottom=-1;
+    for(int y=int(y0*scale);y<int(y1*scale);++y)for(int x=int(x0*scale);x<int(x1*scale);++x){
+     const auto c=image.pixelColor(x,y);
+     if(qAbs(c.red()-ground.red())+qAbs(c.green()-ground.green())+qAbs(c.blue()-ground.blue())>90){if(top<0)top=y;bottom=y;break;}
+    }
+    return top<0 ? qreal(-1000) : (top+bottom)/2.0/scale;
+   };
+   const auto tagGround=image.pixelColor(int((tagRect.left()+1.5)*scale),int(tagRect.center().y()*scale));
+   const auto cardGround=image.pixelColor(int((bodyTop.x()-6)*scale),int((tagRect.center().y())*scale));
+   const auto tagInk=inkRows(tagRect.left()+3,tagRect.right()-3,tagRect.top()+1,tagRect.bottom()-1,tagGround);
+   const auto firstX=tagRect.right()+10;
+   // "Al": a capital and an ascender, at every text size; rows down to just below the tag.
+   const auto wordInk=inkRows(firstX,firstX+16,bodyTop.y(),tagRect.bottom()+3,cardGround);
+   require(qAbs(tagInk-wordInk)<=1.5,qPrintable(QString("TLDR aligns with the first line (%1 %2): tag %3, text %4").arg(theme,size).arg(tagInk).arg(wordInk)));
+  }
   if(!screenshots.isEmpty() && QString(size)=="default"){window->setWidth(720);QCoreApplication::processEvents();QThread::msleep(30);QCoreApplication::processEvents();require(window->grabWindow().save(screenshots+"/summary-"+theme+".png"),"capture actual native frame");}
  }
  backend.summaryText=QString(600,'W');emit backend.conversationChanged();await([&]{return card->property("summaryText").toString().size()==600;});QCoreApplication::processEvents();require(find(card,"summaryBody")->width()<=card->width()-28 && card->height()>70,"long summary wraps within the padded full-width column");

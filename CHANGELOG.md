@@ -4,11 +4,15 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-09
 
+- Opening a long thread with new mail scrolls straight to the first unread message instead of showing the list of older ones.
+- Paste a screenshot into a reply or new message and it attaches as "Screenshot 2026-10-09 at 14.03.22.png". Copied files attach too.
 - New look throughout: a darker Graphite theme, tighter type, a slimmer top bar and a list with hairlines instead of striped rows. Times read "22 min ago", "Yday 14:02" or "Thu 13:22".
 - A shortcut bar along the bottom shows the keys for the current view. Hide it in Settings → General → Shortcut bar.
 - Threads list every message. The ones since your last reply open, and a click anywhere on a message's header opens or closes it.
 - Summarize a whole thread with your local model from the button after Reply, Forward and Delay, or with `fm assist thread`.
 - "Classify thread" works again.
+- The thread's subject no longer repeats its label; the label still shows in the list and the summary. Change labels from the thread's actions menu.
+- The TLDR tag lines up with the first line of the summary.
 - Sync no longer shows "syncing N items" forever when antivirus removed downloaded messages.
 - Linking Gmail labels no longer freezes the app on a large mailbox.
 

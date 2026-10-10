@@ -13,6 +13,10 @@
 #include <QVideoFrame>
 #include <QVideoSink>
 #include <QUuid>
+#include <QDateTime>
+#include <QImage>
+#include <QPointer>
+#include <QThreadPool>
 #include <memory>
 
 namespace {
@@ -40,6 +44,51 @@ void MailBackend::importDraftAttachment(const QUrl &file, const QString &account
 }
 
 void MailBackend::importDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId) {
+    queueDraftAttachments(files, account, draftId, false);
+}
+
+void MailBackend::attachPastedFiles(const QList<QUrl> &files, const QString &account, const QString &draftId) {
+    queueDraftAttachments(files, account, draftId, true);
+}
+
+QString MailBackend::pastedImageName(const QDir &folder, const QDateTime &time) {
+    const auto stem = "Screenshot " + time.toString("yyyy-MM-dd 'at' HH.mm.ss");
+    auto name = stem + ".png";
+    for (int copy = 2; folder.exists(name); ++copy) name = QString("%1 (%2).png").arg(stem).arg(copy);
+    return name;
+}
+
+void MailBackend::attachPastedImage(const QImage &image, const QString &account, const QString &draftId) {
+    if (image.isNull() || account != m_account || draftId.isEmpty() || draftId != m_draft.value("draft_id").toString()) return;
+    const auto key = importKey(account, draftId);
+    QDir folder(QDir(m_profile).filePath("cache/pasted"));
+    if (!folder.mkpath(".")) { m_attachmentImportStatus[key] = "Not attached — the pasted image could not be saved."; emit draftChanged(); return; }
+    // Retry reads the file again, so pasted images stay a week, then go.
+    const auto expired = QDateTime::currentDateTime().addDays(-7);
+    for (const auto &old : folder.entryInfoList(QDir::Files))
+        if (old.lastModified() < expired) QFile::remove(old.filePath());
+    const auto path = folder.filePath(pastedImageName(folder, QDateTime::currentDateTime()));
+    // Reserve the name now, so a second paste in the same second picks the next one.
+    if (QFile reserve(path); !reserve.open(QIODevice::WriteOnly)) { m_attachmentImportStatus[key] = "Not attached — the pasted image could not be saved."; emit draftChanged(); return; }
+    m_attachmentImportStatus[key] = "Preparing pasted image…"; emit draftChanged();
+    // Encoding a large screenshot takes a moment; keep it off the UI thread.
+    QPointer<MailBackend> self(this);
+    QThreadPool::globalInstance()->start([self, image, path, account, draftId] {
+        QSaveFile file(path);
+        const bool saved = file.open(QIODevice::WriteOnly) && image.save(&file, "PNG") && file.commit();
+        QMetaObject::invokeMethod(self, [self, saved, path, account, draftId] {
+            if (!self) return;
+            if (!saved) {
+                QFile::remove(path);
+                self->m_attachmentImportStatus[importKey(account, draftId)] = "Not attached — the pasted image could not be saved.";
+                emit self->draftChanged(); return;
+            }
+            self->queueDraftAttachments({QUrl::fromLocalFile(path)}, account, draftId, true);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void MailBackend::queueDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId, bool joinPending) {
     // The native picker captures its origin before opening. A later selection
     // cannot attach to whichever draft happens to be displayed by then.
     if (account != m_account || draftId.isEmpty() || draftId != m_draft.value("draft_id").toString()) return;
@@ -47,9 +96,25 @@ void MailBackend::importDraftAttachments(const QList<QUrl> &files, const QString
     auto reject = [this, key](const QString &message) { m_attachmentImportStatus[key] = message; emit draftChanged(); };
     if (!m_connected || m_shutdown || draftLocked()) { reject("Reconnect and finish the current draft operation before attaching a file."); return; }
     if (m_draftConflict) { reject("Resolve the saved draft conflict before attaching a file. Your edits remain here."); return; }
-    if (attachmentImportPending()) { reject("Finish or skip the pending files before choosing more."); return; }
     if (files.isEmpty()) return;
-    if (files.size() + m_draft.value("attachment_ids").toList().size() > 50) { reject("A draft supports at most 50 attachments."); return; }
+    const auto waiting = m_attachmentQueues.value(key).size() + (m_attachmentImports.contains(key) ? 1 : 0);
+    if (files.size() + waiting + m_draft.value("attachment_ids").toList().size() > 50) { reject("A draft supports at most 50 attachments."); return; }
+    if (attachmentImportPending()) {
+        // A paste joins files still importing normally; a stopped or failed
+        // import is resolved first, as for chosen files.
+        if (!joinPending || m_attachmentQueuePaused.contains(key) || m_attachmentImportRetry.contains(key)) {
+            reject("Finish or skip the pending files before choosing more."); return;
+        }
+        for (const auto &file : files)
+            if (!file.isLocalFile() || !QDir::isAbsolutePath(file.toLocalFile())) { reject("Choose local files using absolute paths."); return; }
+        auto &queue = m_attachmentQueues[key];
+        if (!m_attachmentQueueLifecycle.contains(key))
+            m_attachmentQueueLifecycle[key] = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
+        for (const auto &file : files) if (!queue.contains(file)) queue.append(file);
+        emit draftChanged();
+        advanceDraftAttachments();
+        return;
+    }
     for (const auto &file : files)
         if (!file.isLocalFile() || !QDir::isAbsolutePath(file.toLocalFile())) { reject("Choose local files using absolute paths."); return; }
     QSet<QString> pending;

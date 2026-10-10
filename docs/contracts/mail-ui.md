@@ -1,5 +1,24 @@
 # Mail UI, reader and human composer
 
+## D203 — opening at the first unread message (Mail UI146)
+
+- A thread first shown with unread mail scrolls its first unread message's header to just below the reader's top (`revealFirstUnread`, through the same settle-and-place timer as Show match), once per visit and again if a fuller copy moves it, until the user scrolls. A restored `readerY`, an open reply, or no unread mail leaves the position alone.
+
+Consumers: `MailView` (`followThread`, `revealMember`); MailSelectionTest.
+
+## D202 — paste attaches screenshots and files (Mail UI145)
+
+- Paste in the composer body attaches copied local files, and an image copied without text as `Screenshot YYYY-MM-DD at HH.MM.SS.png` (then ` (2)`, …), written under the profile's `cache/pasted` and kept a week. Anything else, including an image with text, pastes as plain text. A paste during a running import joins its queue; a paused or uncertain import is resolved first. The editor menu shows "Paste as attachment" when that applies.
+
+Consumers: `ReplyDocument` (`pastePlain`, `clipboardAttachable`, `imagePasted`, `filesPasted`), `MailBackend::attachPastedImage`/`attachPastedFiles`, `TextMenu.pasteAvailable`; ComposerInputTest.
+
+## D201 — reader heading and TLDR tag (Mail UI144)
+
+- **Reader heading.** The subject stands alone: no `#label` after it and no `categoryAssignmentButton`. Labels are changed from the actions menu's Labels submenu (`contextLabels`, `applyLabel_<id>`). This replaces the label in the D198 reader heading below.
+- **TLDR tag.** The tag's capitals are centred on the first line's capitals (Qt sets the 1.6-line text at the top of its line box).
+
+Consumers: `MailView` reader heading, `SummaryCard`; LocalModelTest, GUI integration self-test.
+
 ## D198 — the Terminal design (Mail UI143)
 
 Replaces these earlier rules: the reader subject size (21px), the To review/Delayed headers with count chips (Mail UI130), list shading, the thread fold ("N earlier messages") with its opening rule and folded-thread rule, odd-message tones and hover washes, the 44px message header, and the neutral participant discs.

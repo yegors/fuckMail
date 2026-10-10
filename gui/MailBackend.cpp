@@ -1824,9 +1824,6 @@ void MailBackend::requestMailAction(const QString &method, const QString &accoun
 }
 void MailBackend::setRead(bool read) { flag("read", read); }
 void MailBackend::setStarred(bool starred) { flag("starred", starred); }
-void MailBackend::setCategoryMembership(const QString &categoryId, bool present) {
-    mutateConversation("set_category", {{"category_id", categoryId}, {"present", present}});
-}
 void MailBackend::fileConversation(const QString &action) {
     if (m_syntheticProfile || (action != "archive" && action != "trash" && action != "restore")) return;
     mutateConversation("mail_filing", {{"action", action}});

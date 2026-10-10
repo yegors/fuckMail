@@ -7,7 +7,8 @@ import QtQuick.Layouts
 // copies through copySelection(). Editable text adds Undo, Redo, Cut and
 // Paste; `extras` rows (such as the composer's formatting) follow Paste,
 // `leading` rows (such as spelling suggestions) come first, and `pasteText`
-// can replace the plain Paste (the composer pastes plain text).
+// can replace the plain Paste (the composer pastes plain text, and pastes
+// images and copied files as attachments).
 FmMenu {
     id: menu
     objectName: "textMenu"
@@ -16,6 +17,8 @@ FmMenu {
     property alias leading: leadingRows.data
     property string pasteLabel: "Paste"
     property var pasteText: null
+    // Whether Paste has something to insert; the composer also pastes images as attachments.
+    property bool pasteAvailable: !!target && !!target.canPaste
     readonly property bool editable: !!target && target.readOnly === false
     readonly property bool selected: !!target && (target.hasSelection !== undefined ? target.hasSelection : String(target.selectedText || "").length > 0)
     readonly property string key: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
@@ -36,7 +39,7 @@ FmMenu {
         FmMenuItem { objectName: "textMenuRedo"; visible: menu.editable; text: "Redo"; shortcut: menu.key + (Qt.platform.os === "osx" ? "⇧Z" : "Y"); enabled: menu.editable && menu.target.canRedo; onClicked: menu.run(function(t) { t.redo() }) }
         FmMenuItem { objectName: "textMenuCut"; visible: menu.editable; separatorAbove: true; text: "Cut"; shortcut: menu.key + "X"; enabled: menu.selected; onClicked: menu.run(function(t) { t.cut() }) }
         FmMenuItem { objectName: "textMenuCopy"; text: "Copy"; shortcut: menu.key + "C"; enabled: menu.selected; onClicked: menu.run(function(t) { if (t.copySelection) t.copySelection(); else t.copy() }) }
-        FmMenuItem { objectName: "textMenuPaste"; visible: menu.editable; text: menu.pasteLabel; shortcut: menu.key + "V"; enabled: menu.editable && menu.target.canPaste; onClicked: menu.run(function(t) { if (menu.pasteText) menu.pasteText(); else t.paste() }) }
+        FmMenuItem { objectName: "textMenuPaste"; visible: menu.editable; text: menu.pasteLabel; shortcut: menu.key + "V"; enabled: menu.editable && menu.pasteAvailable; onClicked: menu.run(function(t) { if (menu.pasteText) menu.pasteText(); else t.paste() }) }
         ColumnLayout { id: extraRows; Layout.fillWidth: true; spacing: 0; visible: children.length > 0 }
         FmMenuItem { objectName: "textMenuSelectAll"; separatorAbove: true; text: "Select all"; shortcut: menu.key + "A"; onClicked: menu.run(function(t) { t.selectAll() }) }
     }

@@ -5,6 +5,8 @@
 #include "ConversationListModel.h"
 
 #include <QColor>
+#include <QImage>
+#include <QDir>
 #include <QObject>
 #include <QElapsedTimer>
 #include <QJsonObject>
@@ -383,7 +385,6 @@ public:
     Q_INVOKABLE void setStarred(bool starred);
     Q_INVOKABLE void doneConversation();
     Q_INVOKABLE void dismissMailUndo();
-    Q_INVOKABLE void setCategoryMembership(const QString &categoryId, bool present);
     Q_INVOKABLE void fileConversation(const QString &action);
     Q_INVOKABLE void editDraft(const QString &body);
     Q_INVOKABLE void beginDraft(const QString &mode);
@@ -412,6 +413,14 @@ public:
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
     Q_INVOKABLE void importDraftAttachment(const QUrl &file, const QString &account, const QString &draftId);
     Q_INVOKABLE void importDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId);
+    // Paste into the composer: copied files, or an image (a screenshot) saved
+    // as a PNG under the profile and named like the system's screenshots.
+    // Both join an import already running for the draft.
+    Q_INVOKABLE void attachPastedFiles(const QList<QUrl> &files, const QString &account, const QString &draftId);
+    Q_INVOKABLE void attachPastedImage(const QImage &image, const QString &account, const QString &draftId);
+    // "Screenshot 2026-10-09 at 14.03.22.png", or with " (2)" and so on when
+    // that name is already in `folder`.
+    static QString pastedImageName(const QDir &folder, const QDateTime &time);
     Q_INVOKABLE void retryDraftAttachment();
     Q_INVOKABLE void skipQueuedDraftAttachments();
     QVariantMap attachmentImport() const;
@@ -873,6 +882,7 @@ private:
     bool attachmentImportPending() const;
     void startDraftAttachmentImport(const QString &key);
     void advanceDraftAttachments();
+    void queueDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId, bool joinPending);
     QHash<QString, QList<QUrl>> m_attachmentQueues;
     // Video posters kept this run, by account and attachment, under the profile.
     std::unique_ptr<QTemporaryDir> m_posterDirectory;
