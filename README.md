@@ -1,45 +1,46 @@
-# fuckMail
+<h1 align="center">fuckMail</h1>
 
-A native desktop mail and calendar client for Gmail and Google Workspace, with a local LLM doing the sorting. Rust engine, C++/Qt Quick GUI, SQLite store, and a CLI on the same engine. Windows, macOS and Linux.
+<p align="center">
+  <b>Fast desktop mail and calendar for Gmail and Google Workspace.</b><br>
+  Your whole mailbox on your machine. Noise sorted by a local model. Nothing unread, nothing starred by the end of the day.
+</p>
 
-![fuckMail: one account's inbox sorted into To review, Delayed and This week, an open thread with its summary, the week's calendar beside it and today's timeline along the bottom](docs/images/hero.webp)
+<p align="center">
+  <img src="docs/images/hero.webp" width="100%" alt="fuckMail: an inbox sorted into To review, Delayed and This week, an open thread with its summary, the week's calendar beside it and today's timeline along the bottom">
+</p>
 
-> **Status:** early, under active development, no release yet; build from source. The [changelog](CHANGELOG.md) lists what has shipped.
+<p align="center"><sub>Early and in active development. No release yet; build from source. See the <a href="CHANGELOG.md">changelog</a>.</sub></p>
 
-<details>
-<summary>Screenshots</summary>
+## Why
 
-![Mail: the conversation list for one account, an open thread, and the day's timeline underneath](docs/images/mail.png)
-
-![Calendar day view combining three accounts, with the day's mail activity on the right](docs/images/calendar.png)
-
-</details>
-
-The screenshots use the built-in demo profile (`fuckMail --demo-profile`). Every person and message in these images is made up.
+Mail clients slow down as your history grows, bury the basics under features, and treat the calendar as an afterthought. fuckMail does less, on purpose: mail and calendar, quick at any mailbox size, with every old conversation available offline.
 
 ## What it does
 
-**Mirrors your mailbox locally.** Every message, its raw MIME source and its attachments are stored in SQLite on your machine. Sync pulls the last 30 days first, then walks the full mailbox in the background, with Gmail history checks for new mail slotted in between. Reads, account switches and search never touch the network.
+|   |   |
+| --- | --- |
+| **Your mail, offline** | Every message and attachment is stored locally. Reading, switching accounts and searching never wait on the network. |
+| **Two-flag triage** | Unread means you haven't looked at it. Starred means it still needs doing. **Done** clears both; **Delay** keeps the star for later. |
+| **Noise sorts itself** | An optional model on your own machine ([Ollama](https://ollama.com) or any OpenAI-compatible server) summarizes each message and files newsletters and notifications under your Gmail labels. It never writes or sends mail. |
+| **Separate accounts** | Each account has its own inbox, always in threaded conversations. No unified inbox. |
+| **One calendar** | Day, week and month views across every account, with invitations, RSVP and reminders with a Join button. Today's timeline sits under your mail. |
+| **Instant search** | Your whole mailbox, searched locally, with `from:`, `to:`, `subject:`, `label:`, `has:attachment` and more. |
+| **Safe HTML** | Scripts and trackers are stripped. Remote images stay blocked until you allow them. |
+| **A real CLI** | `fm` does what the app does, as JSON, for scripts and agents. |
 
-**Sorts mail with a local model.** Every received message goes to a model on your own model server: [Ollama](https://ollama.com) or anything OpenAI-compatible. It returns a one-line summary, human or bot, and at most one of your Gmail labels, picked using descriptions you write for each label. Output is constrained to a JSON schema and validated. Per label, you choose whether an applied label also marks the mail read or sends it to Spam. Newsletters and notifications then file themselves, and Unread is mostly people.
-- New mail is processed first. Older mail is processed on request, from the last week back to all of it.
-- The system and user prompts are editable.
-- Results are cached with the name of the model that wrote them, and redone only when the message or your labels change.
-- Your own labels and corrections always win over the model's.
+No servers of ours and no telemetry. Sign-in tokens stay in your system keychain. [PRIVACY.md](PRIVACY.md) lists every host the app contacts.
 
-**Keeps triage to two flags.** Unread is "not reviewed". Starred is "still needs action". Done clears both, and Delay keeps the star. The aim is zero of each at the end of the day.
+### Mail
 
-**Keeps accounts separate.** Each account has its own mailbox, picked at the top, and remembers its own view. There's no unified inbox. Mail is always grouped into conversations.
+<img src="docs/images/mail.webp" width="100%" alt="Mail: the inbox sorted into To review, Delayed and This week, an open thread with its summary, and today's timeline along the bottom">
 
-**Searches locally.** SQLite FTS5 over subject, body and people, with `from:`, `to:`, `subject:`, `body:`, `label:`, `has:attachment` and `is:` operators ([syntax](docs/user-guide.md#search)). Works offline across the whole mirror.
+### Calendar
 
-**Composes plain text first.** New message, reply, reply all and forward, with attachments. Drafts round-trip through the Gmail drafts API, sending uses the Gmail API, and recent actions can be undone. The model doesn't write or send mail.
+<img src="docs/images/calendar.webp" width="100%" alt="Calendar: day, week and month views with every account's events on one grid">
 
-**Renders HTML mail safely.** HTML is sanitized, and scripts and trackers are stripped. Remote images stay blocked until you allow them, load over https only, and can go through your own proxy. Link hosts can be blocked.
+### Accounts
 
-**Calendar.** Google Calendar API across all your accounts, in day, week and month views. Handles recurring events, invitations and RSVP, and reminders with a Join button. A timeline strip under the mail view shows your day.
-
-**Has a full CLI.** `fm` sends the same engine requests the GUI does and returns JSON, so scripts and external agents can search, read, draft, run model work and manage the calendar without the GUI.
+<img src="docs/images/accounts.webp" width="100%" alt="Settings, Accounts: each account's mail, calendar and local model progress, with sync controls">
 
 ## Architecture
 
@@ -48,62 +49,50 @@ fuckmail-gui (C++20, Qt 6 Quick) ─┐
                                   ├─ JSON over a local socket / named pipe ─ fm-engine (Rust) ─ SQLite (WAL, FTS5) + blob store
 fm (Rust CLI) ────────────────────┘                                              │
                                                                                  ├─ Gmail API, Google Calendar API
-                                                                                 └─ your model server
+                                                                                 └─ your model server (optional)
 ```
 
-- **`fm-engine`** is the only process that writes the store. It runs Gmail and Calendar sync, sending, remote-content fetches and the model queue. Clients find it through the profile's `engine.json`, or start it on demand. It exits shortly after the last client disconnects; there's no resident service.
-- **`fuckmail-gui`** is the desktop client. It never opens the database; it keeps recent views and threads in memory and asks the engine for changes.
-- **`fm`** doesn't link the store at all. Every command is an engine request.
+- **`fm-engine`** is the only process that touches the store. It runs sync, sending, remote images and model work. Clients start it on demand, and it exits shortly after the last one disconnects. No always-on service.
+- **`fuckmail-gui`** is the desktop app. It never opens the database; it asks the engine.
+- **`fm`** is the CLI. Every command is an engine request.
 
-OAuth refresh tokens are stored in the OS keychain. There are no servers of ours and no telemetry. Besides Google and your model server, the app only contacts hosts for things you control: remote images you load, sender pictures (on by default) and unsubscribe links. [PRIVACY.md](PRIVACY.md) lists every destination. There's no web runtime and no Node.js. [crates/README.md](crates/README.md) and [gui/README.md](gui/README.md) map the source.
+No web runtime, no Node.js. More in [docs/architecture.md](docs/architecture.md), [crates/](crates/README.md) and [gui/](gui/README.md).
 
 ## Build and run
 
-You need:
+Windows, macOS and Linux. You need:
 
-- **Windows:** Visual Studio 2022 C++ build tools. The bootstrap step can install them.
+- **Windows:** Visual Studio 2022 C++ build tools (bootstrap can install them).
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`).
-- **Linux (Ubuntu 24.04):** a C++ compiler, Python with venv, and the graphics libraries listed in [the CI workflow](.github/workflows/native.yml).
+- **Linux:** a C++ compiler, Python with venv, and the graphics libraries in [the CI workflow](.github/workflows/native.yml).
 
-Bootstrap downloads the pinned Rust, Qt and build tools into `.tools/` inside the checkout and leaves system installs alone.
+Bootstrap downloads the pinned Rust, Qt and build tools into `.tools/` inside the checkout and leaves your system alone.
 
 ```sh
 scripts/dev.sh bootstrap              # once; ./scripts/dev.ps1 on Windows
 scripts/dev.sh run --preset release
 ```
 
-Without `--preset release` you get a debug build, several times slower. Add `-- --demo-profile` to run against sample data. Other commands:
-- `test` runs the tests.
-- `cli -- --help` shows the CLI.
-- `package --preset release` builds an unsigned installer in `dist/`: `.exe` on Windows, `.dmg` on macOS, `.tar.gz` on Linux.
+Add `-- --demo-profile` to try it with sample data. `package --preset release` builds an installer in `dist/`. The [build guide](docs/build-development.md) has the rest.
 
-The [build guide](docs/build-development.md) has the details.
+### Connect Google
 
-## Google account setup
-
-You need your own Google Cloud project with the Gmail and Calendar APIs enabled, and an OAuth client of type **Desktop app**. See the [setup guide](docs/build-development.md#google-sign-in-setup). Register the client JSON once per checkout (`python` on Windows):
+Create a Google Cloud project with the Gmail and Calendar APIs enabled and an OAuth client of type **Desktop app** ([setup guide](docs/build-development.md#google-sign-in-setup)). Register it once per checkout (`python` on Windows), then rebuild:
 
 ```sh
 python3 scripts/configure_google.py /path/to/desktop-client.json
 ```
 
-It's copied into the ignored `.tools/` folder, so it stays out of Git. Rebuild, then go to **Settings → Accounts → Connect Google account**. Nothing downloads until you start sync for that account.
+Then open **Settings → Accounts → Connect Google account**.
 
-## Local model setup
+### Local model (optional)
 
-Run Ollama, or any OpenAI-compatible server, and pull a model. Then set the endpoint and model under **Settings → Local LLM**, and turn it on for the accounts you want. Label descriptions, and the Read and Spam choices, are in each account's label settings.
+Run Ollama or any OpenAI-compatible server, then set it up under **Settings → Local LLM**.
 
 ## More
 
-- [User guide](docs/user-guide.md): triage, shortcuts, search, calendar, settings, your data
-- [CLI reference](docs/cli.md) and [troubleshooting](docs/troubleshooting.md)
-- [Architecture](docs/architecture.md) and the [documentation index](docs/README.md)
-- [Changelog](CHANGELOG.md), [privacy](PRIVACY.md) and [security policy](SECURITY.md)
+[User guide](docs/user-guide.md) · [CLI](docs/cli.md) · [Troubleshooting](docs/troubleshooting.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
-## Contributing
+Gmail and Google Workspace only. Bug fixes are welcome; for other providers or features, fork it.
 
-fuckMail targets Gmail and Google Workspace through Google's APIs only. Bug fixes are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). For other providers or a different feature set, fork it.
-
-## License
-
-[MIT](LICENSE). Bundled third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[MIT](LICENSE). Third-party components keep their own licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
