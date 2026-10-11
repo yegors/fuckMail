@@ -1,5 +1,20 @@
 # Mail UI, reader and human composer
 
+## D207 — mail each way in address suggestions (Mail UI150)
+
+- Each To, Cc and Bcc suggestion row shows how many messages went to the address and came from it (`sent`, `received` from Core95), between the address and any other-account name: a 9 px up arrow then the count, a down arrow then the count, in the subtle colour with tabular figures. Counts of 1,000 and more read `1.2k` or `12k`. A direction with none is left out; a row with neither, and the raw "Use address" row, show no counts. The row's accessible name adds "12 sent, 40 received".
+- Rows arrive in the engine's order, busiest first. Narrowing while a lookup is pending keeps that order.
+
+Consumers: `RecipientField`; ComposerInputTest.
+
+## D206 — menus open where clicked; the workspace switch moves (Mail UI149)
+
+- **Menus.** `FmMenu` keeps itself inside the window only once it is visible (`onVisibleChanged`, and on size changes while visible). Before a popup shows, Qt reads its `x` and `y` as 0, so D205's clamp in `aboutToShow` put every context menu at the left edge.
+- **Mail/Calendar switch.** The switch stays instant. Then the ink is one shape behind both tabs (`workspaceInk`): its leading edge travels in 180 ms and its trailing edge in 280 ms (eased out), so it stretches on the way and settles on the open tab. It finds its tab through the Repeater's `count` (`itemAt()` notifies nothing, which left launch without ink) and is placed without travel the first time. The tab it lands on pops from 90% with an overshoot (320 ms), and its label colour fades over 170 ms. The view arrives 28 px from the side its tab sits on (Calendar from the right, Mail from the left), fading up from 40%, over 220 ms (`workspaceTravel` from ±1 to 0). Settings, and reduced motion, are cuts.
+- **Startup.** The splash shows the animated wordmark only; the amber cursor after it is gone.
+
+Consumers: `FmMenu`, `Main`, `StartupOverlay`; MailSelectionTest, GUI integration self-test.
+
 ## D205 — motion (Mail UI148)
 
 - **Timing.** `Theme` owns one scale: `pressMs` 90, `quickMs` 120, `baseMs` 170, `glideMs` 220, `emphasisMs` 420; `enterEasing` OutCubic for arrivals, `exitEasing` InCubic for departures (shorter), `moveEasing` InOutCubic for travel. Every one-shot transition's duration passes through `Theme.ms()`, which returns 0 under reduced motion. Looping progress indicators keep their own pace. Durations already in this contract are unchanged. State always changes first; no action, navigation or input waits for motion, and the toast accepts a click from its first frame.

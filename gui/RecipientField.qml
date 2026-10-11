@@ -1,5 +1,6 @@
 // A To / Cc / Bcc row in ReplyComposer: recipient chips from backend.draft
-// plus a text entry with address suggestions from backend.recipientSuggestions().
+// plus a text entry with address suggestions from backend.recipientSuggestions(),
+// each showing how much mail went to and came from that address.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -46,6 +47,18 @@ Item {
         const value = entry.text.trim().toLowerCase()
         if (!value.length) { resetSuggestions(); return }
         showCandidates(candidates.filter(row => !row.raw && (String(row.email || "").toLowerCase().indexOf(value) >= 0 || String(row.name || "").toLowerCase().indexOf(value) >= 0)))
+    }
+    // 7, 1.2k, 12k: a count that stays short beside the address.
+    function compactCount(n) {
+        if (n < 1000) return String(n)
+        if (n < 9950) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k"
+        return Math.round(n / 1000) + "k"
+    }
+    function countSummary(row) {
+        let parts = []
+        if (row.sent) parts.push(row.sent + " sent")
+        if (row.received) parts.push(row.received + " received")
+        return parts.join(", ")
     }
     function choose(index) {
         if (index < 0 || index >= candidates.length) return false
@@ -149,7 +162,7 @@ Item {
                     focusPolicy: Qt.NoFocus; padding: 6
                     onHoveredChanged: if (hovered) field.highlighted = index
                     onClicked: field.choose(index)
-                    Accessible.name: (modelData.name || modelData.email) + ", " + modelData.email + (modelData.account !== backend.account && modelData.account_name ? ", " + modelData.account_name : "")
+                    Accessible.name: (modelData.name || modelData.email) + ", " + modelData.email + (field.countSummary(modelData) ? ", " + field.countSummary(modelData) : "") + (modelData.account !== backend.account && modelData.account_name ? ", " + modelData.account_name : "")
                     background: Rectangle { radius: 5; color: candidate.index === field.highlighted ? Theme.inkAlpha(.06) : "transparent" }
                     contentItem: RowLayout {
                         spacing: 10
@@ -161,6 +174,21 @@ Item {
                             id: candidateText; Layout.fillWidth: true; spacing: 2
                             Text { width: parent.width; text: candidate.modelData.raw ? "Use “" + candidate.modelData.email + "”" : candidate.modelData.name || candidate.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
                             Text { width: parent.width; text: candidate.modelData.raw ? "Enter this address" : candidate.modelData.email; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); elide: Text.ElideRight; textFormat: Text.PlainText }
+                        }
+                        // Sent to them, then received from them; a direction with none is left out.
+                        Row {
+                            objectName: "recipientCounts_" + field.fieldName + "_" + candidate.index
+                            visible: !candidate.modelData.raw && (candidate.modelData.sent > 0 || candidate.modelData.received > 0)
+                            spacing: 9
+                            Repeater {
+                                model: [{ icon: "arrowUp", count: candidate.modelData.sent || 0 }, { icon: "arrowDown", count: candidate.modelData.received || 0 }]
+                                Row {
+                                    required property var modelData
+                                    visible: modelData.count > 0; spacing: 2
+                                    FmIcon { name: parent.modelData.icon; size: 9; color: Theme.inkAlpha(.32); anchors.verticalCenter: parent.verticalCenter }
+                                    Text { anchors.verticalCenter: parent.verticalCenter; text: field.compactCount(parent.modelData.count); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: { "tnum": 1 } }
+                                }
+                            }
                         }
                         Text { visible: !candidate.modelData.raw && candidate.modelData.account !== backend.account; Layout.maximumWidth: 95; text: candidate.modelData.account_name || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                     }

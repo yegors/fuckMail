@@ -71,28 +71,6 @@ Rectangle {
                     }
                 }
             }
-            // A block cursor after the wordmark, blinking in amber.
-            Item {
-                width: 60 * (.12 + .56); height: wordHeight.height
-                Text { id: wordHeight; visible: false; text: "f"; font { family: Theme.fontFamily; pixelSize: 60; weight: Font.Medium } }
-                Rectangle {
-                    id: cursor
-                    objectName: "startupCursor"
-                    x: 60 * .12; width: 60 * .56; height: 60 * .92; y: (parent.height + 60) / 2 - height
-                    color: Theme.amber; opacity: 0
-                    SequentialAnimation {
-                        running: loader.presented && !loader.dismissed
-                        PauseAnimation { duration: 450 }
-                        SequentialAnimation {
-                            loops: Animation.Infinite
-                            PropertyAction { target: cursor; property: "opacity"; value: 1 }
-                            PauseAnimation { duration: 250 }
-                            PropertyAction { target: cursor; property: "opacity"; value: .25 }
-                            PauseAnimation { duration: 250 }
-                        }
-                    }
-                }
-            }
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter

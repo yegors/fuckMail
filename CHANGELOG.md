@@ -2,8 +2,15 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-11
+
+- Address suggestions in To, Cc and Bcc show how many emails you've sent to and received from each person, and list the people you trade the most mail with first.
+
 ## 2026-10-10
 
+- Right-click menus open where you click again, instead of at the left edge of the window.
+- Switching between Mail and Calendar slides the new view in from its side, and the tab highlight glides across with a little stretch.
+- The startup screen shows just the animated wordmark, without the blinking cursor.
 - The app moves now. Menus, dropdowns, pickers, dialogs and tooltips ease in and out instead of popping.
 - Done, Delay and Archive fold the conversation out of its section where it was, drifting toward where it goes, before it takes its new place. Mail leaving To review on its own timer folds the same way.
 - The toast rises into place. An Undo toast shows a thin line that runs out with the time left to undo.

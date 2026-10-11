@@ -68,7 +68,24 @@ ApplicationWindow {
         searchPopup.close(); calendarSearchPopup.close()
     }
     onSettingsOpenChanged: { searchPopup.close(); calendarSearchPopup.close() }
-    Component.onCompleted: applyStartupPreference()
+    // Switching between Mail and Calendar is instant; then the new view
+    // arrives from the side its tab sits on (Calendar from the right) while
+    // the tab's ink glides across. Settings is a cut.
+    readonly property string viewKey: settingsOpen ? "settings" : workspace
+    property string lastViewKey: ""
+    property real workspaceTravel: 0
+    onViewKeyChanged: {
+        const between = function(key) { return key === "mail" || key === "calendar" }
+        if (between(lastViewKey) && between(viewKey) && !Theme.reducedMotion) {
+            workspaceTravel = viewKey === "calendar" ? 1 : -1
+            workspaceArrival.restart()
+        }
+        lastViewKey = viewKey
+    }
+    NumberAnimation { id: workspaceArrival; target: window; property: "workspaceTravel"; to: 0; duration: Theme.glideMs; easing.type: Theme.enterEasing }
+    readonly property real workspaceShift: workspaceTravel * 28
+    readonly property real workspaceFade: 1 - Math.abs(workspaceTravel) * .6
+    Component.onCompleted: { applyStartupPreference(); lastViewKey = viewKey }
     Connections { target: backend; function onPreferencesChanged() { window.applyStartupPreference() } }
     function cycleAccount(direction) {
         const accounts = backend.accounts
@@ -226,12 +243,34 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 12
             // The view switch: the open view is inverted, page colour on ink.
+            // The ink is one shape that travels between tabs: its leading edge
+            // moves first and the trailing edge follows, so it stretches on the
+            // way and settles as it lands; the tab it lands on pops.
             Rectangle {
                 implicitWidth: viewTabs.implicitWidth + 4; implicitHeight: 30
                 radius: 7; color: Theme.surface
+                Rectangle {
+                    id: viewInk; objectName: "workspaceInk"
+                    // itemAt() notifies nothing; reading count re-evaluates once the tabs exist.
+                    readonly property Item target: viewRepeater.count < 2 || window.settingsOpen ? null : viewRepeater.itemAt(window.workspace === "mail" ? 0 : 1)
+                    // Placed without travel at launch; it glides only between tabs after that.
+                    property bool settled: false
+                    onTargetChanged: if (target && !settled) Qt.callLater(function() { viewInk.settled = true })
+                    readonly property bool towardRight: window.workspace === "calendar"
+                    readonly property real targetLeft: target ? viewTabs.x + target.x : 0
+                    readonly property real targetRight: target ? targetLeft + target.width : 0
+                    property real leftEdge: targetLeft
+                    property real rightEdge: targetRight
+                    Behavior on leftEdge { enabled: viewInk.settled; NumberAnimation { duration: Theme.ms(viewInk.towardRight ? 280 : 180); easing.type: Theme.enterEasing } }
+                    Behavior on rightEdge { enabled: viewInk.settled; NumberAnimation { duration: Theme.ms(viewInk.towardRight ? 180 : 280); easing.type: Theme.enterEasing } }
+                    visible: !!target
+                    x: leftEdge; y: viewTabs.y; width: Math.max(0, rightEdge - leftEdge); height: 26
+                    radius: 5; color: Theme.text
+                }
                 Row {
                     id: viewTabs; anchors.centerIn: parent; spacing: 2
                     Repeater {
+                        id: viewRepeater
                         model: [{view: "mail", icon: "mail", tip: "Mail"}, {view: "calendar", icon: "calendar", tip: "Calendar"}]
                         FmButton {
                             id: viewTab
@@ -243,8 +282,16 @@ ApplicationWindow {
                             font.pointSize: Theme.fontPoints(12); font.weight: Font.Normal
                             prominent: open; hoverBrightness: 1
                             foreground: open ? Theme.canvas : hovered ? Theme.text : Theme.inkAlpha(.5)
+                            Behavior on foreground { ColorAnimation { duration: Theme.ms(Theme.baseMs); easing.type: Theme.enterEasing } }
+                            transform: Scale { id: tabPop; origin.x: viewTab.width / 2; origin.y: viewTab.height / 2 }
+                            onOpenChanged: if (open && !Theme.reducedMotion) landing.restart()
+                            SequentialAnimation {
+                                id: landing
+                                PropertyAction { target: tabPop; properties: "xScale,yScale"; value: .9 }
+                                NumberAnimation { target: tabPop; properties: "xScale,yScale"; to: 1; duration: 320; easing.type: Easing.OutBack; easing.overshoot: 3 }
+                            }
                             tip: modelData.tip + " — " + ShortcutRegistry.label(ShortcutRegistry.sequence("view", backend.preferences)).toLowerCase()
-                            background: Rectangle { radius: 5; color: viewTab.open ? Theme.text : "transparent"; border.width: viewTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                            background: Rectangle { radius: 5; color: "transparent"; border.width: viewTab.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
                             onClicked: window.navigate(modelData.view)
                         }
                     }
@@ -507,11 +554,12 @@ ApplicationWindow {
             // never resizes either view and neither has to lay out again.
             ColumnLayout {
                 spacing: 0
+                transform: Translate { x: window.workspaceShift } opacity: window.workspaceFade
                 Item { id: timelineHeaderSlot; visible: window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
                 MailView { id: mailView; Layout.fillWidth: true; Layout.fillHeight: true }
                 Item { id: timelineFooterSlot; visible: !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
             }
-            CalendarView { id: calendarView; onOpenMailRequested: window.navigate("mail") }
+            CalendarView { id: calendarView; transform: Translate { x: window.workspaceShift } opacity: window.workspaceFade; onOpenMailRequested: window.navigate("mail") }
             Loader {
                 id: settingsLoader
                 property bool built: false

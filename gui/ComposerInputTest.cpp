@@ -25,6 +25,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <functional>
 
 using namespace GoogleOperationFixture;
 namespace {
@@ -247,9 +248,23 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     auto type=[&](const QString &text) { entry->forceActiveFocus(); entry->setProperty("text",text); require(QMetaObject::invokeMethod(entry,"textEdited"),"real text editing handler"); };
     auto press=[&](int key){QKeyEvent event(QEvent::KeyPress,key,Qt::NoModifier); QCoreApplication::sendEvent(window,&event);};
     type("zo"); await([&]{return lookups.size()==1;},"debounced cached lookup");
-    const QJsonArray candidates{QJsonObject{{"name","Zoë Current"},{"email","zoe@example.test"},{"account","fixture-account"},{"account_name","Work"}},QJsonObject{{"name","Zoë Elsewhere"},{"email","elsewhere@example.test"},{"account","other"},{"account_name","Personal"}}};
+    const QJsonArray candidates{QJsonObject{{"name","Zoë Current"},{"email","zoe@example.test"},{"account","fixture-account"},{"account_name","Work"},{"sent",1234},{"received",3}},QJsonObject{{"name","Zoë Elsewhere"},{"email","elsewhere@example.test"},{"account","other"},{"account_name","Personal"},{"sent",0},{"received",0}}};
     lookups[0].peer->write(reply(lookups[0].id,{{"account","fixture-account"},{"query","zo"},{"suggestions",candidates}}));
     await([&]{return find(window->contentItem(),"recipientSuggestion_to_recipients_1");},"actual suggestion rows appear");
+    {
+        // Mail each way sits beside the address, short; a row with none shows no counts.
+        std::function<void(QQuickItem *, QStringList &)> shown=[&](QQuickItem *item, QStringList &texts) {
+            if (!item->isVisible()) return;
+            if (item->inherits("QQuickText")) texts << item->property("text").toString();
+            for (auto child : item->childItems()) shown(child, texts);
+        };
+        auto counts=find(window->contentItem(),"recipientCounts_to_recipients_0"); QStringList texts;
+        require(counts && counts->isVisible(),"counts shown for a correspondent");
+        shown(counts,texts);
+        require(texts==QStringList({"1.2k","3"}),"sent then received, compact");
+        auto none=find(window->contentItem(),"recipientCounts_to_recipients_1");
+        require(none && !none->isVisible(),"no counts for an address with no mail");
+    }
     const auto captures=qEnvironmentVariable("FM_COMPOSER_SCREENSHOTS");
     if(!captures.isEmpty()) {
         QDir().mkpath(captures);

@@ -16,14 +16,15 @@ Popup {
     width: Math.max(minimumWidth, implicitContentWidth + leftPadding + rightPadding)
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    // Keep the whole menu inside its overlay once its size is known.
+    // Keep the whole menu inside its overlay once its size is known. Only
+    // while shown: before that a popup reads x and y as 0, and a clamp would
+    // move every menu to the left edge.
     function clamp() {
         if (!parent || !keepInside) return
         x = Math.max(8, Math.min(x, parent.width - width - 8))
         y = Math.max(8, Math.min(y, parent.height - height - 8))
     }
-    onAboutToShow: clamp()
-    onOpened: clamp()
+    onVisibleChanged: if (visible) clamp()
     onHeightChanged: if (visible) clamp()
     onWidthChanged: if (visible) clamp()
     background: Rectangle {

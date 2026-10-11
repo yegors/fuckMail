@@ -1,8 +1,26 @@
 //! Read-only address hints from bounded recent cached metadata, never source I/O.
+//! Each hint carries how much mail went each way, which also orders them.
 use crate::{err, fields, string, Result, Store};
 use rusqlite::params;
 use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// How long an account's sent counts serve lookups before they are taken
+/// again; new mail reaching the people index retakes them sooner.
+const SENT_COUNTS_AGE: Duration = Duration::from_secs(300);
+
+/// Per account, how many sent messages named each address, so typing an
+/// address does not walk all sent mail on every key.
+pub(crate) type SentCounts = RefCell<HashMap<String, SentTally>>;
+
+pub(crate) struct SentTally {
+    indexed_through: i64,
+    taken: Instant,
+    counts: Arc<HashMap<String, u64>>,
+}
 
 struct Candidate {
     name: String,
@@ -10,6 +28,8 @@ struct Candidate {
     account: String,
     account_name: String,
     score: u8,
+    sent: u64,
+    received: u64,
 }
 
 impl Store {
@@ -18,7 +38,9 @@ impl Store {
     ///
     /// `limit` is 1-10 (default 6); `exclude` lists up to 100 addresses
     /// already chosen. The account's own address is never suggested. Each
-    /// suggestion names the account it was seen in.
+    /// suggestion names the account it was seen in, with how many cached
+    /// messages that account sent to and received from the address; the
+    /// busiest correspondents come first.
     pub(crate) fn recipient_suggestions(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["query", "exclude", "limit"])?;
         self.require_active_account(account)?;
@@ -97,6 +119,8 @@ impl Store {
                     account: source.to_owned(),
                     account_name: source_name.to_owned(),
                     score,
+                    sent: 0,
+                    received: 0,
                 },
             );
         };
@@ -191,16 +215,67 @@ impl Store {
             }
         }
         let mut candidates: Vec<_> = candidates.into_values().collect();
+        self.count_correspondence(&mut candidates)?;
         candidates.sort_by(|a, b| {
-            b.score
-                .cmp(&a.score)
+            (b.sent + b.received)
+                .cmp(&(a.sent + a.received))
+                .then_with(|| b.score.cmp(&a.score))
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                 .then_with(|| a.email.to_lowercase().cmp(&b.email.to_lowercase()))
         });
-        let suggestions: Vec<_> = candidates.into_iter().take(limit).map(|c| json!({"name":c.name,"email":c.email,"account":c.account,"account_name":c.account_name})).collect();
+        let suggestions: Vec<_> = candidates.into_iter().take(limit).map(|c| json!({"name":c.name,"email":c.email,"account":c.account,"account_name":c.account_name,"sent":c.sent,"received":c.received})).collect();
         Ok(
             json!({"account":account,"query":query,"suggestions":suggestions,"scope":"recent_cached_mail_and_drafts"}),
         )
+    }
+
+    /// Counts every cached message, in the account each candidate was seen
+    /// in, that came from the candidate or that the account sent with them
+    /// on From, To or Cc. Received counts read the sender index; sent counts
+    /// come from [`Store::sent_counts`]. Mail newer than the people index is
+    /// not yet counted.
+    fn count_correspondence(&self, candidates: &mut [Candidate]) -> Result<()> {
+        let mut received = self.db.prepare_cached(
+            "SELECT count(*) FROM messages WHERE account=?1 AND sender_email=?2 COLLATE NOCASE",
+        )?;
+        let mut sent: HashMap<String, Arc<HashMap<String, u64>>> = HashMap::new();
+        for candidate in candidates.iter_mut() {
+            candidate.received =
+                received.query_row(params![candidate.account, candidate.email], |r| r.get(0))?;
+            if !sent.contains_key(&candidate.account) {
+                let counts = self.sent_counts(&candidate.account)?;
+                sent.insert(candidate.account.clone(), counts);
+            }
+            candidate.sent = sent[&candidate.account]
+                .get(&candidate.email.trim().to_ascii_lowercase())
+                .copied()
+                .unwrap_or(0);
+        }
+        Ok(())
+    }
+
+    /// How many of the account's sent messages name each address, walking
+    /// its own sent mail once through the sender index and its people rows.
+    /// Kept until the people index moves on or the counts are five minutes old.
+    fn sent_counts(&self, account: &str) -> Result<Arc<HashMap<String, u64>>> {
+        let indexed_through = self.indexed_rowid()?;
+        if let Some(tally) = self.sent_counts.borrow().get(account) {
+            if tally.indexed_through == indexed_through && tally.taken.elapsed() < SENT_COUNTS_AGE {
+                return Ok(tally.counts.clone());
+            }
+        }
+        let mut statement = self.db.prepare_cached("SELECT p.email,count(*) FROM accounts a JOIN messages m ON m.account=a.id AND m.sender_email=a.email COLLATE NOCASE JOIN message_people mp ON mp.message_rowid=m.rowid JOIN people p ON p.id=mp.person WHERE a.id=?1 AND m.sent=1 GROUP BY p.id")?;
+        let rows = statement.query_map([account], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let counts = Arc::new(rows.collect::<rusqlite::Result<HashMap<String, u64>>>()?);
+        self.sent_counts.borrow_mut().insert(
+            account.to_owned(),
+            SentTally {
+                indexed_through,
+                taken: Instant::now(),
+                counts: counts.clone(),
+            },
+        );
+        Ok(counts)
     }
 }
 
@@ -234,9 +309,25 @@ mod tests {
             .handle("recipient_suggestions", Some(a), json!({"query":"zoë"}))
             .unwrap();
         let rows = result["suggestions"].as_array().unwrap();
-        assert_eq!(rows.len(), 4);
-        assert!(rows.iter().take(3).all(|r| r["account"] == a));
-        assert_eq!(rows[3]["account"], b);
+        let order: Vec<_> = rows
+            .iter()
+            .map(|r| (r["email"].as_str().unwrap(), r["account"].as_str().unwrap()))
+            .collect();
+        // One message each from Same and Outside; at equal counts this
+        // account's match wins, then name order.
+        assert_eq!(
+            order,
+            [
+                ("same@example.test", a),
+                ("outside@example.test", b),
+                ("draft@example.test", a),
+                ("recipient@example.test", a)
+            ]
+        );
+        assert_eq!(
+            (rows[0]["sent"].as_u64(), rows[0]["received"].as_u64()),
+            (Some(0), Some(1))
+        );
         assert_eq!(
             rows.iter()
                 .find(|r| r["email"] == "same@example.test")
@@ -244,10 +335,7 @@ mod tests {
             "Zoë Current"
         );
         let filtered = store.handle("recipient_suggestions",Some(a),json!({"query":"zoë","exclude":["SAME@example.test","draft@example.test"],"limit":1})).unwrap();
-        assert_eq!(
-            filtered["suggestions"][0]["email"],
-            "recipient@example.test"
-        );
+        assert_eq!(filtered["suggestions"][0]["email"], "outside@example.test");
         assert_eq!(
             store.db.total_changes(),
             changes,
@@ -291,6 +379,83 @@ mod tests {
                 .unwrap_err()
                 .code,
             "account_removed"
+        );
+    }
+
+    #[test]
+    fn busiest_correspondents_come_first_with_counts_each_way() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_synthetic(dir.path()).unwrap();
+        let a = "windscribe";
+        let own: String = store
+            .db
+            .query_row("SELECT email FROM accounts WHERE id=?1", [a], |r| r.get(0))
+            .unwrap();
+        let seed = |offset: i64, name: &str, email: &str, recipient: &str, sent: bool| {
+            store.db.execute("UPDATE messages SET sender_name=?3,sender_email=?4,recipient=?5,sent=?6,sent_at='2030-01-01T00:00:00Z',trashed=0 WHERE account=?1 AND id=(SELECT id FROM messages WHERE account=?1 ORDER BY id LIMIT 1 OFFSET ?2)",params![a,offset,name,email,recipient,sent]).unwrap();
+        };
+        // A prefix match heard from once, a substring match heard from twice,
+        // and a substring match written to three times.
+        seed(0, "Quill Once", "once@example.test", "", false);
+        seed(1, "Two Quillers", "twice@example.test", "", false);
+        seed(2, "Two Quillers", "TWICE@example.test", "", false);
+        for offset in 3..6 {
+            seed(
+                offset,
+                "Me",
+                &own.to_uppercase(),
+                "Friend Aquilla <friend@example.test>",
+                true,
+            );
+        }
+        store.db.execute("INSERT OR IGNORE INTO people(email,name) VALUES('friend@example.test','Friend Aquilla')", []).unwrap();
+        store.db.execute("INSERT INTO message_people(message_rowid,person) SELECT m.rowid,p.id FROM messages m,people p WHERE m.account=?1 AND m.sent=1 AND m.sender_email=?2 AND p.email='friend@example.test'", params![a, own.to_uppercase()]).unwrap();
+        let result = store
+            .recipient_suggestions(a, &json!({"query":"quil"}))
+            .unwrap();
+        let rows: Vec<_> = result["suggestions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r["email"].as_str().unwrap().to_owned(),
+                    r["sent"].as_u64().unwrap(),
+                    r["received"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("friend@example.test".to_owned(), 3, 0),
+                ("twice@example.test".to_owned(), 0, 2),
+                ("once@example.test".to_owned(), 0, 1)
+            ]
+        );
+        // Sent counts are kept until the people index moves on.
+        seed(6, "Me", &own, "friend@example.test", true);
+        store.db.execute("INSERT INTO message_people(message_rowid,person) SELECT m.rowid,p.id FROM messages m,people p WHERE m.id=(SELECT id FROM messages WHERE account=?1 ORDER BY id LIMIT 1 OFFSET 6) AND m.account=?1 AND p.email='friend@example.test'", [a]).unwrap();
+        let friend_sent = |store: &Store| {
+            store
+                .recipient_suggestions(a, &json!({"query":"aquilla"}))
+                .unwrap()["suggestions"][0]["sent"]
+                .as_u64()
+        };
+        assert_eq!(friend_sent(&store), Some(3));
+        store.db.execute("INSERT INTO link_index_state VALUES(1,(SELECT max(rowid) FROM messages)) ON CONFLICT(singleton) DO UPDATE SET indexed_rowid=excluded.indexed_rowid", []).unwrap();
+        assert_eq!(friend_sent(&store), Some(4));
+        let plan: Vec<String> = store
+            .db
+            .prepare("EXPLAIN QUERY PLAN SELECT p.email,count(*) FROM accounts a JOIN messages m ON m.account=a.id AND m.sender_email=a.email COLLATE NOCASE JOIN message_people mp ON mp.message_rowid=m.rowid JOIN people p ON p.id=mp.person WHERE a.id=?1 AND m.sent=1 GROUP BY p.id")
+            .unwrap()
+            .query_map([a], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|step| step.contains("messages_sender")),
+            "sent counts must walk only the account's own mail: {plan:?}"
         );
     }
 }

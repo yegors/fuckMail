@@ -750,6 +750,7 @@ mod tests {
             _lock: File::create(profile.join("content-test.lock")).unwrap(),
             projection_cache: Default::default(),
             coverage_cache: Default::default(),
+            sent_counts: Default::default(),
             model_progress_cache: Default::default(),
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),

@@ -974,6 +974,12 @@ class MailSelectionTest {
         require(!find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"source preview has no assistance icon");
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::RightButton);
         await([&]{auto item=find(window->contentItem(),"contextDone");return item && item->isVisible();},"right click opens actual menu");
+        {
+            auto *menu=window->findChild<QObject*>("mailContextMenu"); auto *clicked=find(window->contentItem(),"conversationRow_a");
+            const auto at=clicked->mapToScene(clicked->boundingRect().center());
+            const auto expected=std::max(8.0,std::min(at.x(),window->width()-menu->property("width").toReal()-8));
+            require(at.x()>20 && qAbs(menu->property("x").toReal()-expected)<1.5,"the row menu opens where it was clicked, not at the left edge");
+        }
         require(h.writes.isEmpty() && !h.methods.contains("conversation"),"right click is not deliberate open/read");
         QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QCoreApplication::sendEvent(window,&escape);
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::LeftButton,Qt::ControlModifier);

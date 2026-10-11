@@ -55,7 +55,7 @@ struct IndexedMessage {
 }
 
 impl Store {
-    fn indexed_rowid(&self) -> Result<i64> {
+    pub(crate) fn indexed_rowid(&self) -> Result<i64> {
         Ok(self
             .db
             .query_row(

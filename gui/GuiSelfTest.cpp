@@ -445,7 +445,15 @@ void GuiSelfTest::step() {
         if (!membersHave("unread", true)) return;
         if (!membersHave("starred", true)) { failed("Changing read state cleared independent stars."); return; }
         if (m_backend.todayEvents().isEmpty()) return;
+        // From launch, before any switch, the tab ink already sits on Mail.
+        if (auto *root = qobject_cast<QQuickWindow *>(m_window) ? qobject_cast<QQuickWindow *>(m_window)->contentItem() : nullptr) {
+            auto *ink = visualChild(root, "workspaceInk"), *tab = visualChild(root, "mailWorkspaceButton");
+            if (!ink || !tab || !ink->isVisible() || std::abs(ink->mapToScene({0, 0}).x() - tab->mapToScene({0, 0}).x()) > .5 || std::abs(ink->width() - tab->width()) > .5) {
+                failed("At launch the Mail tab has no ink under it."); return;
+            }
+        }
         m_window->setProperty("workspace", "calendar");
+        if (m_window->property("workspaceTravel").toReal() != 1) { failed("Switching to Calendar did not slide it in from the right."); return; }
         m_backend.moveWeek(1); ++m_stage; break;
     case 8:
         if (m_backend.calendarFrom() != "2026-09-14") return;
@@ -454,10 +462,18 @@ void GuiSelfTest::step() {
         m_window->setProperty("settingsOpen", false);
         if (m_window->property("workspace").toString() != "calendar") { failed("Settings lost calendar navigation."); return; }
         m_backend.showFixtureWeek(); m_window->setProperty("workspace", "mail"); ++m_stage; break;
-    case 9:
+    case 9: {
         if (m_backend.events().isEmpty() || m_backend.loading()) return;
+        // Back on Mail, the tab ink comes to rest exactly on the Mail tab.
+        auto *root = qobject_cast<QQuickWindow *>(m_window) ? qobject_cast<QQuickWindow *>(m_window)->contentItem() : nullptr;
+        auto *ink = root ? visualChild(root, "workspaceInk") : nullptr;
+        auto *tab = root ? visualChild(root, "mailWorkspaceButton") : nullptr;
+        if (!ink || !tab) { failed("The workspace switch has no ink."); return; }
+        if (m_window->property("workspaceTravel").toReal() != 0 || std::abs(ink->mapToScene({0, 0}).x() - tab->mapToScene({0, 0}).x()) > .5
+            || std::abs(ink->width() - tab->width()) > .5) return;
         if (!click("conversationRow_" + m_id)) return;
         m_stage = 30; break;
+    }
     case 30:
         if (m_backend.mutationInFlight() || !membersHave("unread", false)) return;
         if (!membersHave("starred", true)) { failed("Read-on-open cleared held action."); return; }

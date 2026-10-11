@@ -1,5 +1,13 @@
 # Core and storage
 
+## D207 — recipient suggestions carry mail each way (Core95)
+
+- Each `recipient_suggestions` row gains `sent` and `received`, counted in the account the row names. `received` is every cached message from the address (trashed included), through `messages_sender`. `sent` is every cached message with `sent=1` from the account's own address that names the address on From, To or Cc, from the people index; mail the index has not reached yet is not counted.
+- Rows sort by `sent + received`, highest first, then by the existing match strength and account preference, then name and address.
+- Sent counts are walked once per account and kept in memory until the people index moves on or five minutes pass; received counts are read on every lookup. No schema change.
+
+Consumers: GUI `RecipientField`; `fm mail recipients`; recipient suggestion tests.
+
 ## D205 — motion preference (Core94)
 
 - Preferences gain `motion`: `system` (default), `full` or `reduced`; any other value is refused with `invalid_request`.
