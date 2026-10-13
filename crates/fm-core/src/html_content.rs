@@ -33,19 +33,28 @@ pub struct HtmlPlan {
     pub version: String,
     /// Sender address, for "always load images from" preferences.
     pub sender: String,
+    /// The view keeps quoted reply history (`quotes: true` in the request).
+    /// Its image and link ids are its own.
+    pub quotes: bool,
 }
 
 impl Store {
     /// Validate that `id` is this account's message at exactly `source_version`.
+    /// An optional `quotes` boolean asks for the view with reply history kept.
     pub fn message_html_begin(
         &self,
         account: &str,
         request: &Value,
         extra: &[&str],
     ) -> Result<HtmlPlan> {
-        let mut allowed = vec!["id", "source_version"];
+        let mut allowed = vec!["id", "source_version", "quotes"];
         allowed.extend_from_slice(extra);
         fields(request, &allowed)?;
+        let quotes = match request.get("quotes") {
+            None => false,
+            Some(Value::Bool(v)) => *v,
+            _ => return Err(err("invalid_request", "quotes must be true or false")),
+        };
         let mid = id(string(request, "id")?)?;
         let found: Option<(String, String)> = self
             .db
@@ -69,8 +78,20 @@ impl Store {
             message: mid.into(),
             version,
             sender: sender.trim().to_ascii_lowercase(),
+            quotes,
         })
     }
+}
+
+/// The view cache's name for one of the plan's inline images. Ids of the view
+/// with quotes kept number a different document, so they get their own names.
+fn inline_key(plan: &HtmlPlan, resource: usize) -> String {
+    let kind = if plan.quotes {
+        "inline-quotes"
+    } else {
+        "inline"
+    };
+    view_cache::key(&[kind, &plan.version, &resource.to_string()])
 }
 
 fn parse_source(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Vec<u8>> {
@@ -88,13 +109,16 @@ fn unparsable() -> crate::CoreError {
 }
 
 /// The sanitised view of a source, shared by the reader and image requests.
-/// The last 16 views are memoised by source hash, so image requests right
-/// after a read do not re-parse the message.
+/// The last 16 views are memoised by source hash and `quotes`, so image
+/// requests right after a read do not re-parse the message.
 fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlView>>> {
-    static MANIFESTS: Mutex<VecDeque<(String, Option<Arc<HtmlView>>)>> =
-        Mutex::new(VecDeque::new());
+    type Manifest = (String, bool, Option<Arc<HtmlView>>);
+    static MANIFESTS: Mutex<VecDeque<Manifest>> = Mutex::new(VecDeque::new());
     if let Ok(cache) = MANIFESTS.lock() {
-        if let Some((_, view)) = cache.iter().find(|(v, _)| v == &plan.version) {
+        if let Some((_, _, view)) = cache
+            .iter()
+            .find(|(v, q, _)| v == &plan.version && *q == plan.quotes)
+        {
             return Ok(view.clone());
         }
     }
@@ -102,7 +126,12 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
     let parsed = mail_parser::MessageParser::default()
         .parse(&bytes)
         .ok_or_else(unparsable)?;
-    let view = html_view::html_part(&parsed).map(|html| html_view::sanitize(html).map(Arc::new));
+    let sanitize = if plan.quotes {
+        html_view::sanitize_with_quotes
+    } else {
+        html_view::sanitize
+    };
+    let view = html_view::html_part(&parsed).map(|html| sanitize(html).map(Arc::new));
     let view = match view {
         None => None,
         Some(None) => {
@@ -117,7 +146,7 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
         return Err(err("cancelled", "Message read cancelled"));
     }
     if let Ok(mut cache) = MANIFESTS.lock() {
-        cache.push_front((plan.version.clone(), view.clone()));
+        cache.push_front((plan.version.clone(), plan.quotes, view.clone()));
         cache.truncate(MANIFESTS_KEPT);
     }
     Ok(view)
@@ -132,7 +161,7 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
 /// `has_html: false`; one too large to sanitise returns `too_large: true`.
 pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) -> Result<Value> {
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
-        "sanitizer":html_view::SANITIZER_VERSION,"sender":plan.sender});
+        "sanitizer":html_view::SANITIZER_VERSION,"sender":plan.sender,"quotes":plan.quotes});
     let view = match view(&plan, cancel) {
         Ok(view) => view,
         Err(e) if e.code == "too_large" => {
@@ -150,7 +179,8 @@ pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) 
     result["too_large"] = false.into();
     // Measure the JSON-escaped size: quotes and backslashes grow on the wire.
     if serde_json::to_vec(&view.html)?.len() > INLINE_HTML_BYTES {
-        let name = format!("{}-{}", plan.version, html_view::SANITIZER_VERSION);
+        let quotes = if plan.quotes { "-quotes" } else { "" };
+        let name = format!("{}-{}{quotes}", plan.version, html_view::SANITIZER_VERSION);
         let path = cache.html_file(&name, &view.html)?;
         result["html_path"] = path.to_string_lossy().into_owned().into();
     } else {
@@ -174,11 +204,7 @@ pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) 
             // earlier, and this version's own inline images.
             let key = match r.kind {
                 ResourceKind::Remote => Some(view_cache::key(&["remote", &r.source])),
-                ResourceKind::Cid | ResourceKind::Data => Some(view_cache::key(&[
-                    "inline",
-                    &plan.version,
-                    &r.id.to_string(),
-                ])),
+                ResourceKind::Cid | ResourceKind::Data => Some(inline_key(&plan, r.id)),
                 ResourceKind::Insecure => None,
             };
             if let Some((path, width, height)) =
@@ -242,7 +268,7 @@ pub fn resolve_image(
             key: view_cache::key(&["remote", &item.source]),
         }),
         ResourceKind::Cid | ResourceKind::Data => {
-            let key = view_cache::key(&["inline", &plan.version, &resource.to_string()]);
+            let key = inline_key(plan, resource);
             if let Some((path, width, height)) = cache.cached_image(&plan.account, &key) {
                 return Ok(ImageSource::Ready {
                     path: path.to_string_lossy().into_owned(),
@@ -406,6 +432,49 @@ mod tests {
         assert!(store.message_html_begin("other", &request, &[]).is_err());
         assert!(store
             .message_html_begin(&account, &json!({"id":mid,"source_version":"x"}), &[])
+            .is_err());
+    }
+
+    #[test]
+    fn quoted_history_is_its_own_view_on_request() {
+        let source = format!(
+            "From: A <a@x.test>\r\nContent-Type: text/html\r\n\r\n<p>Answers inline.</p><blockquote type=\"cite\"><p>Question?</p><p>Answer.</p><img src=\"data:image/png;base64,{}\"></blockquote>",
+            png_base64()
+        );
+        let (temp, store, account, mid, hash) = store_with(source.as_bytes());
+        let cache = ViewCache::new(temp.path());
+        let read = |request: Value| {
+            let plan = store.message_html_begin(&account, &request, &[]).unwrap();
+            read_html(plan, &cache, &CancellationToken::new()).unwrap()
+        };
+        let trimmed = read(json!({"id":mid,"source_version":hash}));
+        assert_eq!(trimmed["quote_removed"], true);
+        assert!(!trimmed["html"].as_str().unwrap().contains("Answer."));
+        assert_eq!(trimmed["resources"].as_array().unwrap().len(), 0);
+        let full = read(json!({"id":mid,"source_version":hash,"quotes":true}));
+        assert_eq!(
+            (full["quote_removed"].clone(), full["quotes"].clone()),
+            (false.into(), true.into())
+        );
+        assert!(full["html"].as_str().unwrap().contains("Answer."));
+        // The quote's image resolves in the view that shows it.
+        let plan = store
+            .message_html_begin(
+                &account,
+                &json!({"id":mid,"source_version":hash,"quotes":true}),
+                &[],
+            )
+            .unwrap();
+        assert!(matches!(
+            resolve_image(&plan, 1, &cache, &CancellationToken::new()).unwrap(),
+            ImageSource::Ready { .. }
+        ));
+        assert!(store
+            .message_html_begin(
+                &account,
+                &json!({"id":mid,"source_version":hash,"quotes":"yes"}),
+                &[]
+            )
             .is_err());
     }
 

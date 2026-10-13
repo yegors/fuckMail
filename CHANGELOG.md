@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-12
+
+- A small "···" button under a message shows the quoted text the reader hides, in both HTML and text, so answers written inside the quote can be read. It shows only when something was hidden; click it again to hide.
+- In that quoted text, lines that aren't in the earlier email (answers typed inside the quote) are highlighted.
+
 ## 2026-10-11
 
 - Address suggestions in To, Cc and Bcc show how many emails you've sent to and received from each person, and list the people you trade the most mail with first.

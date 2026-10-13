@@ -165,6 +165,14 @@ fn quoted_history_is_removed_unless_forwarded() {
         "<div>\u{a0}\u{200b}<br></div><div class=\"gmail_quote\"><p>Dear A, the details</p></div>";
     let view = sanitize(only_quote).unwrap();
     assert!(!view.quote_removed && view.html.contains("Dear A, the details"));
+    // Asked for, the history stays, answers written inside the quote included.
+    let inline = r##"<p>Answers below.</p><div class="gmail_quote"><p>1. Families?</p><p style="color:red">Yes.</p><img src="https://img.test/q.png"></div>"##;
+    assert!(sanitize(inline).unwrap().quote_removed);
+    let view = sanitize_with_quotes(inline).unwrap();
+    assert!(!view.quote_removed && view.html.contains("Families?") && view.html.contains("Yes."));
+    assert_eq!(view.resources.len(), 1);
+    let view = sanitize_with_quotes(outlook).unwrap();
+    assert!(view.html.contains("Quoted body"));
 }
 
 #[test]

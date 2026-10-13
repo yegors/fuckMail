@@ -355,6 +355,12 @@ public:
     Q_INVOKABLE bool calendarEventDeclining(const QVariantMap &event) const;
     Q_INVOKABLE QString receivedHtml(const QString &html) const;
     Q_INVOKABLE QVariantList receivedBody(const QString &html, const QString &plain) const;
+    // Reader rows for a whole received text, quoted reply history included;
+    // quoted lines in `added` are marked as not in the original.
+    Q_INVOKABLE QVariantList historyBody(const QString &plain, const QStringList &added = {}) const;
+    // Quoted lines of a whole received text that the earlier messages'
+    // texts `originals` (newest first) do not contain.
+    Q_INVOKABLE QStringList quoteAdditions(const QString &full, const QStringList &originals) const;
     Q_INVOKABLE QString fixedFontFamily() const;
     Q_INVOKABLE void copyText(const QString &text);
     Q_INVOKABLE void refresh();

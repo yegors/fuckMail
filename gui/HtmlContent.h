@@ -54,17 +54,19 @@ public:
 
     /// Returns a ticket; `htmlReady(ticket, result, ok)` follows.
     /// The eight most recent successful results, keyed by account, id and
-    /// `sourceVersion`, are answered from memory.
-    Q_INVOKABLE QString load(const QString &account, const QString &id, const QString &sourceVersion);
+    /// `sourceVersion`, are answered from memory. `quotes` asks for the view
+    /// with quoted reply history kept, a separate result with its own image ids.
+    Q_INVOKABLE QString load(const QString &account, const QString &id, const QString &sourceVersion, bool quotes = false);
     /// A result already held, with the images loaded since; empty otherwise.
     /// Never contacts the engine.
-    Q_INVOKABLE QVariantMap cached(const QString &account, const QString &id, const QString &sourceVersion);
+    Q_INVOKABLE QVariantMap cached(const QString &account, const QString &id, const QString &sourceVersion, bool quotes = false);
     /// Returns a ticket; `imageReady(ticket, result, ok)` follows.
     /// `resource` is the N of an `fm-res:N` reference in the sanitised HTML.
     /// Jobs queue and run at most six at a time. `cachedOnly` asks for the
-    /// engine's on-disk copy without a network fetch.
+    /// engine's on-disk copy without a network fetch. `quotes` names an image
+    /// of the view load() returned with the same flag.
     Q_INVOKABLE QString loadImage(const QString &account, const QString &id, const QString &sourceVersion,
-                                  int resource, bool cachedOnly = false);
+                                  int resource, bool cachedOnly = false, bool quotes = false);
     /// Drops queued and running image work for one message.
     /// Dropped tickets get no imageReady signal.
     Q_INVOKABLE void cancelMessage(const QString &account, const QString &id);
@@ -149,7 +151,7 @@ signals:
     void revisionChanged();
     void pictureRevisionChanged();
 private:
-    struct ImageJob { QString ticket, account, id, version; int resource = 0; bool cachedOnly = false; };
+    struct ImageJob { QString ticket, account, id, version; int resource = 0; bool cachedOnly = false, quotes = false; };
     using Callback = std::function<void(const QJsonObject &, bool)>;
     void call(const QString &account, const QString &method, const QJsonObject &params, Callback callback);
     void pumpImages();

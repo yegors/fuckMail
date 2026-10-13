@@ -180,6 +180,17 @@ pub fn part_content_id(part: &mail_parser::MessagePart<'_>) -> Option<String> {
 
 /// Rebuild `html` for display. Returns `None` when the input exceeds the size limit.
 pub fn sanitize(html: &str) -> Option<HtmlView> {
+    rebuild(html, false)
+}
+
+/// [`sanitize`], keeping quoted reply history in place, for a reader who asked
+/// to see it. Resource and link ids are numbered over the whole document, so
+/// they differ from [`sanitize`]'s when the history holds any.
+pub fn sanitize_with_quotes(html: &str) -> Option<HtmlView> {
+    rebuild(html, true)
+}
+
+fn rebuild(html: &str, keep_quotes: bool) -> Option<HtmlView> {
     if html.len() > MAX_HTML_BYTES {
         return None;
     }
@@ -188,7 +199,7 @@ pub fn sanitize(html: &str) -> Option<HtmlView> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     // A forward's quote blocks hold the forwarded message itself; keep them.
     let forwarded = html.to_ascii_lowercase().contains("forwarded message");
-    let mut walk = walk_document(&dom, forwarded);
+    let mut walk = walk_document(&dom, keep_quotes || forwarded);
     if walk.view.quote_removed && !shows_anything(&walk.body) {
         // Nothing but quoted history, as in a reply without new text: showing
         // the quote beats an empty message.

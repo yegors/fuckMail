@@ -15,8 +15,13 @@ ColumnLayout {
     property string account: ""
     property string conversation: ""
     property bool active: false
+    // Show the quoted reply history the reader otherwise leaves out.
+    property bool quotes: false
     // The search's phrases, tinted where they appear.
     property var matchPhrases: []
+    // Quoted lines the original does not have, tinted in the accent while no
+    // search is shown.
+    property var addedPhrases: []
     property var result: ({})
     property string ticket: ""
     property string error: ""
@@ -26,7 +31,7 @@ ColumnLayout {
     property bool loadRequested: false
     property bool proxyFailed: false
     readonly property var service: backend.htmlContent || null
-    readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
+    readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "") + (quotes ? "/quotes" : "")
     readonly property string sender: message.sender_email || ""
     readonly property bool failed: !!error || !!result.too_large || result.has_html === false || view.status === "failed"
     readonly property string failure: error || (result.too_large ? "This message's HTML is too large to show." : view.failure)
@@ -56,7 +61,7 @@ ColumnLayout {
     // A result the GUI already holds is shown without waiting for the engine.
     function fromCache() {
         if (!active || !service || ticket || result.id || error || !message.id || !message.source_version) return false
-        const hit = service.cached(account, message.id, message.source_version)
+        const hit = service.cached(account, message.id, message.source_version, quotes)
         if (!hit || hit.id !== message.id || hit.source_version !== message.source_version) return false
         result = hit
         assign()
@@ -65,10 +70,10 @@ ColumnLayout {
     function load() {
         if (!active || !service || ticket || result.id || error || fromCache() || !backend.connected) return
         if (!message.source_available || !message.source_version) { error = "This message's source is not available."; return }
-        ticket = service.load(account, message.id, message.source_version)
+        ticket = service.load(account, message.id, message.source_version, quotes)
     }
     function request(id, cachedOnly) {
-        const ticket = service.loadImage(account, message.id, message.source_version, id, cachedOnly)
+        const ticket = service.loadImage(account, message.id, message.source_version, id, cachedOnly, quotes)
         const next = Object.assign({}, imageTickets); next[ticket] = id; imageTickets = next
     }
     function setImage(id, value) { const next = Object.assign({}, images); next[id] = value; images = next }
@@ -165,8 +170,8 @@ ColumnLayout {
             images: body.images
             blockedLinks: body.blockedLinks
             fontPixels: Theme.fontSize(16)
-            highlightPhrases: body.matchPhrases
-            highlightColor: Theme.matchPaper
+            highlightPhrases: (body.matchPhrases || []).length ? body.matchPhrases : body.addedPhrases || []
+            highlightColor: (body.matchPhrases || []).length ? Theme.matchPaper : Theme.accentAlpha(.22)
             onLinkActivated: function(id) { body.activate(id) }
             // The view takes only the left button; a right press opens the text menu.
             TextMenuHandler {}

@@ -55,9 +55,11 @@ fn bounded_at(value: &str, limit: usize) -> (String, bool) {
 /// Verifies and parses the source off the writer and returns reader content:
 /// address metadata, unsubscribe options, whether it has an invitation, the
 /// HTML part, the reading text as this build extracts it (`body_text`, which
-/// may be newer than the stored copy) and the raw source.
+/// may be newer than the stored copy), the whole text with the reply history
+/// it leaves out (`body_full`, empty when nothing was left out) and the raw
+/// source.
 ///
-/// HTML, reading text and raw text are each cut at 256 KiB, then the longest
+/// HTML, both texts and raw text are each cut at 256 KiB, then the longest
 /// is halved until the reply fits in about 900 KiB of JSON; the `*_truncated`
 /// flags say so. Fails
 /// with `content_unavailable` if the blob is missing, altered or unparseable.
@@ -109,23 +111,32 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     let has_invite = crate::message_invite::message_calendar(&parsed).is_some();
     let text = fm_mail::extract_parsed_incoming_contribution(&parsed).unwrap_or_default();
     let (body_text, text_truncated) = bounded(&text);
+    // The whole reading text, quoted history included, for a reader who asks
+    // to see it; empty when nothing was left out.
+    let full = fm_mail::extract_parsed_incoming_text(&parsed).unwrap_or_default();
+    let (body_full, full_truncated) = if full.trim() == text.trim() {
+        (String::new(), false)
+    } else {
+        bounded(&full)
+    };
     let (raw, raw_truncated) = bounded(&String::from_utf8_lossy(&bytes));
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
         "metadata":metadata,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
-        "body_text":body_text,"text_truncated":text_truncated,"raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
+        "body_text":body_text,"text_truncated":text_truncated,"body_full":body_full,"full_truncated":full_truncated,"raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
     fit_reply(&mut result)?;
     Ok(result)
 }
 
 fn fit_reply(result: &mut Value) -> Result<()> {
     // JSON escaping can enlarge even bounded UTF-8. Leave room for the IPC envelope.
-    const PARTS: [(&str, &str); 3] = [
+    const PARTS: [(&str, &str); 4] = [
         ("raw", "raw_truncated"),
         ("body_html", "html_truncated"),
         ("body_text", "text_truncated"),
+        ("body_full", "full_truncated"),
     ];
     while serde_json::to_vec(result)?.len() > 900 * 1024 {
         let (key, flag) = PARTS
@@ -188,6 +199,7 @@ mod tests {
         assert_eq!(result["body_html"], "<p>Hello <b>team</b>.</p>");
         assert_eq!(result["body_text"], "Hello team.");
         assert_eq!(result["text_truncated"], false);
+        assert_eq!(result["body_full"], "");
         assert_eq!(
             result["metadata"][1]["people"][0]["email"],
             "copy@example.test"
@@ -224,16 +236,58 @@ mod tests {
         .is_err());
     }
     #[test]
+    fn whole_text_comes_with_left_out_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let (account, mid): (String, String) = store
+            .db
+            .query_row("SELECT account,id FROM messages LIMIT 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        let source = b"From: Sender <sender@example.test>\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Answers inline.</p><blockquote><p>Question one?</p><p>Yes, families.</p></blockquote>";
+        let hash = store.stage_blob(source).unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE messages SET source_hash=?1 WHERE account=?2 AND id=?3",
+                params![hash, account, mid],
+            )
+            .unwrap();
+        let request = json!({"id":mid,"source_version":hash});
+        let result = read(
+            store.message_source_begin(&account, &request).unwrap(),
+            &CancellationToken::new(),
+        )
+        .unwrap();
+        assert!(!result["body_text"]
+            .as_str()
+            .unwrap()
+            .contains("Yes, families."));
+        let full = result["body_full"].as_str().unwrap();
+        assert!(
+            full.contains("Answers inline.") && full.contains("> Yes, families."),
+            "{full}"
+        );
+    }
+
+    #[test]
     fn preview_bounds_preserve_unicode() {
         let text = "日".repeat(100_000);
         let (preview, truncated) = bounded(&text);
         assert!(truncated);
         assert!(preview.len() <= 256 * 1024);
         assert!(text.starts_with(&preview));
-        let mut result = json!({"raw":"\u{1}".repeat(256*1024),"body_html":"\u{2}".repeat(256*1024),"body_text":"\u{3}".repeat(256*1024),"raw_truncated":false,"html_truncated":false,"text_truncated":false});
+        let mut result = json!({"raw":"\u{1}".repeat(256*1024),"body_html":"\u{2}".repeat(256*1024),"body_text":"\u{3}".repeat(256*1024),"body_full":"\u{4}".repeat(256*1024),
+            "raw_truncated":false,"html_truncated":false,"text_truncated":false,"full_truncated":false});
         fit_reply(&mut result).unwrap();
         assert!(serde_json::to_vec(&result).unwrap().len() <= 900 * 1024);
-        for flag in ["raw_truncated", "html_truncated", "text_truncated"] {
+        for flag in [
+            "raw_truncated",
+            "html_truncated",
+            "text_truncated",
+            "full_truncated",
+        ] {
             assert_eq!(result[flag], true);
         }
     }

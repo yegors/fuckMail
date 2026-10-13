@@ -1,5 +1,12 @@
 # Core and storage
 
+## D208 — quoted history on request (Core96)
+
+- `message_html` and `message_image` accept an optional boolean `quotes`. With `quotes: true` the sanitiser keeps quoted reply history (`fm_mail::html_view::sanitize_with_quotes`); the result echoes `quotes`, reports `quote_removed: false`, and numbers resources and links over the whole document. Manifests are memoised per source version and `quotes`; inline images and `html_path` files of that view have their own cache names. A non-boolean `quotes` fails `invalid_request`.
+- `message_source` adds `body_full`, the whole reading text with quoted history (`>` per blockquote level for HTML), cut at 256 KiB, and `full_truncated`. It is empty when it would equal `body_text`. Under reply-size pressure it is halved with the other parts.
+
+Consumers: Mail UI151, CLI `mail source` (passes the field through); no schema, fixture or protocol change.
+
 ## D207 — recipient suggestions carry mail each way (Core95)
 
 - Each `recipient_suggestions` row gains `sent` and `received`, counted in the account the row names. `received` is every cached message from the address (trashed included), through `messages_sender`. `sent` is every cached message with `sent=1` from the account's own address that names the address on From, To or Cc, from the people index; mail the index has not reached yet is not counted.

@@ -2,6 +2,7 @@
 // selection, undo/redo kept separate per draft, the restricted HTML round trip,
 // and layout time of deeply nested received HTML.
 #include "ReplyDocument.h"
+#include "ReceivedBody.h"
 
 #include <QDebug>
 #include <QElapsedTimer>
@@ -107,6 +108,22 @@ int main(int argc, char **argv) {
     require(prose.size()==1 && prose.first().startsWith("@0:I saw the forwarded message"),"a sentence mentioning a forwarded message is ordinary text");
     const auto forwardInForward=kinds(ReplyDocument::receivedBody({},"Begin forwarded message:\n\nFrom: A <a@example.test>\nSubject: One\n\nFirst note\n\n---------- Forwarded message ---------\nFrom: B <b@example.test>\nDate: Monday\n\nInner text"));
     require(forwardInForward.count("forward@0:Forwarded message")==2 && forwardInForward.last()=="@0:Inner text" && forwardInForward.contains("@0:First note"),"a forward inside a forward gets its own label and headers");
+    // Asked for, the whole text shows: answers written inside the quote too.
+    const auto history=kinds(ReceivedBody::historySections("Answers inline below.\n\nOn Monday, Sam <sam@example.test> wrote:\n> 1. Families?\n> Yes, families are fine.\n>\n>> Older note"));
+    const QStringList historyExpected{"@0:Answers inline below.","attribution@0:On Monday, Sam <sam@example.test> wrote:","quote@1:1. Families? Yes, families are fine.","quote@2:Older note"};
+    if(history!=historyExpected)qWarning().noquote()<<history.join(" | ");
+    require(history==historyExpected,"the whole text shows the sender's text, the attribution and each quote level");
+    // Diffed against the original, answers written inside the quote stand out,
+    // however the quote was re-wrapped; a short "Yes." is not found far off.
+    const QString original="Hi team,\n\nI'm building a small service for families. Before I go further, could you help with a few questions?\n\n1. Can my end clients be individual families rather than businesses?\n2. What would the per-device price be, and is there a monthly minimum?\n\nYes, thank you.\nStephen";
+    const QString answered="Answers inline.\n\nOn Friday, Stephen <s@example.test> wrote:\n> Hi team,\n>\n> I'm building a small service for families. Before I go\n> further, could you help with a few questions?\n>\n> 1. Can my end clients be individual families rather than businesses?\n> Yes.\n> 2. What would the per-device price be, and is there a monthly minimum?\n> $2 per device, no minimum.\n> Yes, thank you.\n> Stephen";
+    const auto additions=ReceivedBody::quoteAdditions(answered,{original});
+    if(additions!=QStringList{"Yes.","$2 per device, no minimum."})qWarning().noquote()<<additions.join(" | ");
+    require(additions==QStringList{"Yes.","$2 per device, no minimum."},"only the answers inside the quote differ from the original");
+    require(ReceivedBody::quoteAdditions(answered,{}).isEmpty(),"without the original nothing is marked");
+    QStringList marked;
+    for(const auto &value:ReceivedBody::historySections(answered,additions)){const auto row=value.toMap();if(row.value("added").toBool()){QTextDocument doc;doc.setHtml(row.value("html").toString());marked<<doc.toPlainText().simplified();}}
+    require(marked==QStringList{"Yes.","$2 per device, no minimum."},"each added line is its own marked quote row");
     auto compact=ReplyDocument::limitedHtml("<p>One</p><p>&nbsp;</p><p><br></p><p>Two</p>",true);
     require(!compact.contains("&nbsp;") && compact.count("margin-bottom:7px")==2,"received paragraphs use compact controlled gaps without empty spacer blocks");
     QString deep="Deepest quoted text"; for(int i=0;i<70;++i)deep="<blockquote>"+deep+"</blockquote>";

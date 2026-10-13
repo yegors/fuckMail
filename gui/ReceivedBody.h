@@ -85,6 +85,102 @@ inline bool attribution(const QString &text) {
     static const QRegularExpression digit("\\d");
     return text.size()<=400 && ending.match(text).hasMatch() && (text.startsWith("On ") || digit.match(text).hasMatch());
 }
+/// Appends a reader row {html, parents, quote}, plus `kind` and `depth` when
+/// `kind` is set, unless its visible text is blank (empty divs, spacer tables).
+inline void appendRow(QVariantList &rows,const QString &rendered,const QString &kind,int depth,bool added=false) {
+    QTextDocument check; check.setHtml(rendered);
+    if(check.toPlainText().trimmed().isEmpty())return;
+    QVariantMap entry{{"html",rendered},{"parents",QVariantList{}},{"quote",false}};
+    if(!kind.isEmpty()){entry["kind"]=kind;entry["depth"]=depth;}
+    if(added)entry["added"]=true;
+    rows.append(entry);
+}
+/// Consecutive lines at one quote level; blank lines join the run before them.
+/// `added` marks quoted lines its original does not have.
+struct QuoteRun { int level; QStringList lines; bool added=false; };
+/// Rows for runs of text: level 0 as text, deeper levels as `quote` rows with
+/// that `depth`, and an "On … wrote:" line closing a run as an `attribution`
+/// row introducing the deeper quote after it.
+inline void appendRuns(QVariantList &rows,QList<QuoteRun> runs) {
+    for(int g=0;g<runs.size();++g) {
+        auto &run=runs[g];
+        QString introduction;
+        if(g+1<runs.size() && runs[g+1].level>run.level) {
+            int end=run.lines.size(); while(end>0 && run.lines[end-1].trimmed().isEmpty()) --end;
+            for(int start=end-1;start>=0 && start>=end-3 && !run.lines[start].trimmed().isEmpty();--start) {
+                const auto joined=run.lines.mid(start,end-start).join(' ').simplified();
+                if(attribution(joined)){introduction=joined;run.lines=run.lines.mid(0,start);break;}
+            }
+        }
+        appendRow(rows,plainHtml(run.lines.join('\n'),run.level?12:24,run.level?0:-1),run.level?"quote":"",run.level,run.added);
+        if(!introduction.isEmpty())appendRow(rows,plainHtml(introduction,0),QStringLiteral("attribution"),run.level);
+    }
+}
+/// Lower-case words of `text`, letters and digits only: what a quote and its
+/// original share whatever their wrapping, punctuation or markup.
+inline QStringList words(const QString &text) {
+    static const QRegularExpression split("[^\\p{L}\\p{N}]+");
+    return text.toLower().split(split,Qt::SkipEmptyParts);
+}
+/// Quoted lines of `full` (any `>` level) that the earlier messages
+/// `originals` do not contain: answers written inside the quote, or edits to
+/// it. Returned trimmed, as written. Empty when there are no originals.
+///
+/// Each quoted line's words are looked for, in order, in the originals'
+/// words joined newest first. A line of 6 words or more found anywhere is
+/// original. A shorter one must continue where the previous line matched,
+/// or open one of the originals (within 3 words), so a "Yes." is not
+/// explained away by a later "yes".
+/// Wrapping is free: a re-wrapped sentence is several runs found in a row.
+/// At most 20,000 original words and 2,000 quoted lines are compared.
+inline QStringList quoteAdditions(QString full,const QStringList &originals) {
+    QStringList origin; QList<qsizetype> starts;
+    for(const auto &text:originals){starts.append(origin.size());origin+=words(text);if(origin.size()>=20000)break;}
+    QStringList added;
+    if(origin.isEmpty())return added;
+    full.replace("\r\n","\n"); full.replace('\r','\n');
+    // The first place at or after `from`, and before `until`, where `needle` starts.
+    const auto findAt=[&](const QStringList &needle,qsizetype from,qsizetype until)->qsizetype {
+        for(qsizetype i=std::max<qsizetype>(0,from);i<until && i+needle.size()<=origin.size();++i) {
+            qsizetype k=0; while(k<needle.size() && origin[i+k]==needle[k]) ++k;
+            if(k==needle.size())return i;
+        }
+        return -1;
+    };
+    qsizetype at=0; int compared=0;
+    for(const auto &line:full.split('\n')) {
+        const auto [level,text]=quoteLevel(line);
+        if(level==0 || attribution(text.trimmed()))continue;
+        const auto needle=words(text);
+        if(needle.isEmpty())continue;
+        if(++compared>2000)break;
+        qsizetype found=-1;
+        if(needle.size()>=6) { found=findAt(needle,at,origin.size()); if(found<0)found=findAt(needle,0,at); }
+        else for(const auto from:QList<qsizetype>{at}+starts) if((found=findAt(needle,from,from+4))>=0)break;
+        if(found>=0)at=found+needle.size();
+        else added.append(text.trimmed());
+    }
+    return added;
+}
+/// The whole of a received text, quoted reply history included, laid out as
+/// a forward's text is: the sender's text, then each `>` level as `quote`
+/// rows and its "On … wrote:" line as an `attribution` row. For a reader who
+/// asked to see what sections() leaves out. Quoted lines listed in `added`
+/// (from quoteAdditions()) get rows of their own marked `added: true`.
+inline QVariantList historySections(QString plain,const QStringList &added={}) {
+    plain.replace("\r\n","\n"); plain.replace('\r','\n');
+    const QSet<QString> marked(added.begin(),added.end());
+    QList<QuoteRun> runs;
+    for(const auto &line:plain.split('\n')) {
+        const auto [level,text]=quoteLevel(line);
+        const bool blank=text.trimmed().isEmpty();
+        const bool isAdded=level>0 && !blank && marked.contains(text.trimmed());
+        if(runs.isEmpty() || (!blank && (runs.last().level!=level || runs.last().added!=isAdded)))runs.append(QuoteRun{blank?0:level,{},isAdded});
+        runs.last().lines.append(text);
+    }
+    QVariantList rows; appendRuns(rows,runs);
+    return rows;
+}
 /// Splits a received body into the sender's new text, dropping quoted reply
 /// history. Uses `html` when non-empty, else `plain`.
 ///
@@ -109,14 +205,7 @@ inline bool attribution(const QString &text) {
 /// Nesting is followed at most 32 levels deep.
 inline QVariantList sections(const QString &html,const QString &plain,const std::function<QString(const QString &)> &sanitize) {
     QVariantList rows; int serial=0;
-    auto row=[&](const QString &rendered,const QString &kind,int depth) {
-        // Markup-only fragments (empty divs, spacer tables) have no visible text.
-        QTextDocument check; check.setHtml(rendered);
-        if(check.toPlainText().trimmed().isEmpty())return;
-        QVariantMap entry{{"html",rendered},{"parents",QVariantList{}},{"quote",false}};
-        if(!kind.isEmpty()){entry["kind"]=kind;entry["depth"]=depth;}
-        rows.append(entry);
-    };
+    auto row=[&](const QString &rendered,const QString &kind,int depth) { appendRow(rows,rendered,kind,depth); };
     auto append=[&](const QString &body,const QVariantList &parents,bool rich) {
         if(!parents.isEmpty() || body.trimmed().isEmpty())return;
         row(rich?sanitize(body):plainHtml(body),{},0);
@@ -142,8 +231,7 @@ inline QVariantList sections(const QString &html,const QString &plain,const std:
             for(const auto &[label,value]:headers)table+="<tr><td style=\"padding:0 16px 4px 0\"><b>"+label.toHtmlEscaped()+"</b></td><td style=\"padding:0 0 4px 0\">"+value.toHtmlEscaped()+"</td></tr>";
             row(table+"</table>",QStringLiteral("headers"),0);
         } else next=0;
-        struct Group { int level; QStringList lines; };
-        QList<Group> groups;
+        QList<QuoteRun> groups;
         for(int i=next;i<body.size();++i) {
             const auto &[level,text]=body[i];
             const bool blank=text.trimmed().isEmpty();
@@ -153,23 +241,10 @@ inline QVariantList sections(const QString &html,const QString &plain,const std:
                 for(const auto &group:std::as_const(groups))row(plainHtml(group.lines.join('\n'),group.level?12:24,group.level?0:-1),group.level?"quote":"",group.level);
                 forward(rest,depth+1); return;
             }
-            if(groups.isEmpty() || (!blank && groups.last().level!=level))groups.append(Group{blank?0:level,{}});
+            if(groups.isEmpty() || (!blank && groups.last().level!=level))groups.append(QuoteRun{blank?0:level,{}});
             groups.last().lines.append(text);
         }
-        for(int g=0;g<groups.size();++g) {
-            auto &group=groups[g];
-            // An "On … wrote:" closing a group introduces the deeper quote after it.
-            QString introduction;
-            if(g+1<groups.size() && groups[g+1].level>group.level) {
-                int end=group.lines.size(); while(end>0 && group.lines[end-1].trimmed().isEmpty()) --end;
-                for(int start=end-1;start>=0 && start>=end-3 && !group.lines[start].trimmed().isEmpty();--start) {
-                    const auto joined=group.lines.mid(start,end-start).join(' ').simplified();
-                    if(attribution(joined)){introduction=joined;group.lines=group.lines.mid(0,start);break;}
-                }
-            }
-            row(plainHtml(group.lines.join('\n'),group.level?12:24,group.level?0:-1),group.level?"quote":"",group.level);
-            if(!introduction.isEmpty())row(plainHtml(introduction,0),QStringLiteral("attribution"),group.level);
-        }
+        appendRuns(rows,groups);
     };
     // Callers discard the returned list, so quoted history is never emitted;
     // what matters is `serial`, which counts reply boundaries for htmlFragment.

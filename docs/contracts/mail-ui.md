@@ -1,5 +1,17 @@
 # Mail UI, reader and human composer
 
+## D208 — quoted history on request (Mail UI151)
+
+- Each expanded received message whose reader left quoted history out ends with a 28 × 14 px "···" button: 4 px corners, 7% ink fill (14% hovered or while showing), the `more` icon at 55% ink. Tooltip and accessible name: "Show quoted text" / "Hide quoted text". It is absent when nothing was left out.
+- **Left out** means, in HTML mode, the engine's `quote_removed`; in text mode, a non-empty `body_full` in the source reply.
+- **Showing it.** HTML mode reloads `message_html` with `quotes: true` (its own GUI cache entry and image ids). Text mode lays out `body_full` as a forward's text is laid out: the sender's text, `attribution` rows and `quote` rows per level (D160's styles). A failed HTML load falls back to that text.
+- **What changed in the quote.** While shown, quoted lines that the earlier messages in the conversation do not contain (answers written inside the quote, or edits to it) are highlighted. `ReceivedBody::quoteAdditions` compares words (lower case, letters and digits) in order against the earlier messages' texts, newest first, so re-wrapping does not count. A line of 6 words or more found anywhere is original. A shorter one must continue within 3 words of where the previous line matched, or of where an earlier message starts. Bounds: 20,000 original words, 2,000 quoted lines. A message with no earlier message here is not diffed.
+  - Text mode: each added line is its own `quote` row with `added: true`, at full ink on a 10% accent tint, its own level's bar at 70% accent.
+  - HTML mode: the added lines are tinted on the paper at 22% accent through the search-highlight path. A search's matches take their place while a search is shown.
+- The choice belongs to the open message view and is not saved.
+
+Consumers: `MailView.qml`, `HtmlMessageBody`, `HtmlContent`, `ReceivedBody::historySections` and `quoteAdditions`; HtmlMessageBodyTest, ReplyDocumentTest; Core96.
+
 ## D207 — mail each way in address suggestions (Mail UI150)
 
 - Each To, Cc and Bcc suggestion row shows how many messages went to the address and came from it (`sent`, `received` from Core95), between the address and any other-account name: a 9 px up arrow then the count, a down arrow then the count, in the subtle colour with tabular figures. Counts of 1,000 and more read `1.2k` or `12k`. A direction with none is left out; a row with neither, and the raw "Use address" row, show no counts. The row's accessible name adds "12 sent, 40 received".

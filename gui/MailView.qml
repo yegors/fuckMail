@@ -2240,9 +2240,22 @@ Item {
                                     // Not Qt.callLater: a timer goes with this message's view,
                                     // so a projection put off as the view closes never runs.
                                     Timer { id: reproject; interval: 0; onTriggered: messageBody.project() }
-                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
+                                    // Quoted reply history the reader leaves out, shown on request:
+                                    // the whole text from the source, or the engine's HTML with it kept.
+                                    property bool showQuotes: false
+                                    readonly property string historyText: member.modelData.content_pending ? "" : messageSource.result.body_full || ""
+                                    onHistoryTextChanged: reproject.restart()
+                                    readonly property bool historyHidden: htmlShown ? !!htmlBody.item.result.quote_removed : !!historyText
+                                    // Quoted lines the earlier messages here do not have, highlighted
+                                    // as answers written inside the quote.
+                                    readonly property var quoteAdditions: showQuotes && historyText
+                                        ? backend.quoteAdditions(historyText, mail.members.slice(0, member.index).reverse().filter(function(m) { return !m.content_pending }).map(function(m) { return m.text || "" }))
+                                        : []
+                                    onQuoteAdditionsChanged: reproject.restart()
+                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded + "/" + showQuotes
                                     function project() {
                                         if (!member.isExpanded) { rows = []; return }
+                                        if (showQuotes && historyText) { rows = backend.historyBody(historyText, quoteAdditions); return }
                                         const prepared = messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
                                         rows = (prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", sourceText || plainText)).filter(function(row) { return !row.quote && !(row.parents || []).length })
                                     }
@@ -2271,6 +2284,8 @@ Item {
                                         visible: messageBody.htmlShown; Layout.fillWidth: true
                                         sourceComponent: HtmlMessageBody {
                                             message: member.modelData; account: backend.account; conversation: backend.selectedId
+                                            quotes: messageBody.showQuotes
+                                            addedPhrases: messageBody.quoteAdditions
                                             matchPhrases: mail.bodyPhrases
                                             active: member.isExpanded && member.visible
                                             onLinkHovered: function(href, box) { const p = mapToItem(Overlay.overlay, box.x, box.y); linkCard.hover(href, Qt.rect(p.x, p.y, box.width, box.height), backend.selectedId) }
@@ -2293,6 +2308,8 @@ Item {
                                             // history it quotes, one indent and bar per level.
                                             readonly property string kind: modelData.kind || ""
                                             readonly property int level: modelData.depth || 0
+                                            // A quoted line the original does not have: an answer inside the quote.
+                                            readonly property bool added: !!modelData.added
                                             objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
                                             // Search matches tinted in the document.
                                             readonly property var matchKey: [mail.bodyPhrases, Theme.matchTint]
@@ -2303,7 +2320,7 @@ Item {
                                             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                             palette.link: Theme.text
                                             color: kind === "forward" ? Theme.inkAlpha(.5) : kind === "headers" ? Theme.inkAlpha(.72)
-                                                : kind === "quote" || kind === "attribution" ? Theme.inkAlpha(.55) : member.isLast ? Theme.text : Theme.inkAlpha(.78)
+                                                : added ? Theme.text : kind === "quote" || kind === "attribution" ? Theme.inkAlpha(.55) : member.isLast ? Theme.text : Theme.inkAlpha(.78)
                                             font.family: Theme.fontFamily
                                             font.pointSize: Theme.fontPoints(kind === "forward" ? 10.5 : kind === "headers" || kind === "attribution" ? 12 : kind === "quote" ? 13 : 14)
                                             font.capitalization: kind === "forward" ? Font.AllUppercase : Font.MixedCase
@@ -2312,6 +2329,11 @@ Item {
                                             topPadding: kind === "forward" && index > 0 ? 14 : 0
                                             bottomPadding: kind === "headers" ? 10 : kind === "quote" ? 12 : kind === "attribution" ? 6 : 0
                                             background: null
+                                            // An added line sits on an accent tint, its bar in the accent.
+                                            Rectangle {
+                                                visible: bodyText.added; z: -1; radius: 3; color: Theme.accentAlpha(.1)
+                                                x: bodyText.level * 16 - 6; y: -3; width: bodyText.width - x; height: bodyText.height - bodyText.bottomPadding + 6
+                                            }
                                             // A rule above the label sets the forward apart from the note before it.
                                             Rectangle { visible: bodyText.kind === "forward" && bodyText.index > 0; width: parent.width; height: 1; color: Theme.inkAlpha(.1) }
                                             // A level's bar runs on into the next row while the quote does.
@@ -2321,7 +2343,7 @@ Item {
                                                 Rectangle {
                                                     required property int index
                                                     readonly property bool continues: bodyText.following.kind === "quote" && bodyText.following.depth > index
-                                                    x: index * 16; width: 2; radius: continues ? 0 : 1; color: Theme.inkAlpha(.16)
+                                                    x: index * 16; width: 2; radius: continues ? 0 : 1; color: bodyText.added && index === bodyText.level - 1 ? Theme.accentAlpha(.7) : Theme.inkAlpha(.16)
                                                     height: continues ? bodyText.height + messageBody.spacing : bodyText.height - bodyText.bottomPadding
                                                 }
                                             }
@@ -2338,6 +2360,25 @@ Item {
                                                 linkCard.hover(hoveredLink, Qt.rect(p.x, p.y, Math.max(1, r.width), r.height), backend.selectedId)
                                             }
                                         }
+                                    }
+                                    // "···" under the message: shows or hides the quoted history left
+                                    // out above, for replies written inside the quote.
+                                    AbstractButton {
+                                        id: quotesToggle
+                                        objectName: "messageQuotesToggle_" + member.modelData.id
+                                        visible: messageBody.showQuotes || messageBody.historyHidden
+                                        Layout.topMargin: 3
+                                        implicitWidth: 28; implicitHeight: 14; padding: 0; hoverEnabled: true
+                                        Accessible.name: messageBody.showQuotes ? "Hide quoted text" : "Show quoted text"
+                                        onClicked: messageBody.showQuotes = !messageBody.showQuotes
+                                        background: Rectangle {
+                                            radius: 4
+                                            color: quotesToggle.hovered || messageBody.showQuotes ? Theme.inkAlpha(.14) : Theme.inkAlpha(.07)
+                                            Behavior on color { ColorAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
+                                            border.width: quotesToggle.visualFocus ? 1 : 0; border.color: Theme.focusBorder
+                                        }
+                                        contentItem: Item { FmIcon { anchors.centerIn: parent; name: "more"; size: 14; color: quotesToggle.hovered ? Theme.text : Theme.inkAlpha(.55) } }
+                                        FmToolTip { shown: quotesToggle.hovered; text: quotesToggle.Accessible.name }
                                     }
                                 }
                                 // "4 ATTACHMENTS", a hairline to the edge and a chevron, 24px above

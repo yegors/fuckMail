@@ -74,15 +74,24 @@ void HtmlContent::call(const QString &account, const QString &method, const QJso
     });
 }
 
-QString HtmlContent::load(const QString &account, const QString &id, const QString &sourceVersion) {
+namespace {
+// One held HTML view: a message version, with or without its quoted history.
+QString htmlKey(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
+    return account + '/' + id + '/' + sourceVersion + (quotes ? QStringLiteral("/quotes") : QString());
+}
+}
+
+QString HtmlContent::load(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
     const auto ticket = QStringLiteral("html-%1").arg(++m_serial);
-    const auto key = account + '/' + id + '/' + sourceVersion;
+    const auto key = htmlKey(account, id, sourceVersion, quotes);
     if (const auto cached = m_htmlCache.constFind(key); cached != m_htmlCache.cend()) {
         m_htmlOrder.removeOne(key); m_htmlOrder.append(key);
         QMetaObject::invokeMethod(this, [this, ticket, result = *cached] { emit htmlReady(ticket, result, true); }, Qt::QueuedConnection);
         return ticket;
     }
-    call(account, "message_html", {{"id", id}, {"source_version", sourceVersion}}, [this, ticket, key](const QJsonObject &result, bool ok) {
+    QJsonObject params{{"id", id}, {"source_version", sourceVersion}};
+    if (quotes) params["quotes"] = true;
+    call(account, "message_html", params, [this, ticket, key](const QJsonObject &result, bool ok) {
         const auto value = result.toVariantMap();
         if (ok) {
             m_htmlCache.insert(key, value); m_htmlOrder.removeOne(key); m_htmlOrder.append(key);
@@ -93,16 +102,16 @@ QString HtmlContent::load(const QString &account, const QString &id, const QStri
     return ticket;
 }
 
-QVariantMap HtmlContent::cached(const QString &account, const QString &id, const QString &sourceVersion) {
-    const auto key = account + '/' + id + '/' + sourceVersion;
+QVariantMap HtmlContent::cached(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
+    const auto key = htmlKey(account, id, sourceVersion, quotes);
     const auto hit = m_htmlCache.constFind(key);
     if (hit == m_htmlCache.cend()) return {};
     m_htmlOrder.removeOne(key); m_htmlOrder.append(key);
     return *hit;
 }
 
-QString HtmlContent::loadImage(const QString &account, const QString &id, const QString &sourceVersion, int resource, bool cachedOnly) {
-    ImageJob job{QStringLiteral("image-%1").arg(++m_serial), account, id, sourceVersion, resource, cachedOnly};
+QString HtmlContent::loadImage(const QString &account, const QString &id, const QString &sourceVersion, int resource, bool cachedOnly, bool quotes) {
+    ImageJob job{QStringLiteral("image-%1").arg(++m_serial), account, id, sourceVersion, resource, cachedOnly, quotes};
     m_images.enqueue(job);
     QMetaObject::invokeMethod(this, &HtmlContent::pumpImages, Qt::QueuedConnection);
     return job.ticket;
@@ -117,6 +126,7 @@ void HtmlContent::pumpImages() {
         }
         QJsonObject params{{"id", job.id}, {"source_version", job.version}, {"resource", job.resource}};
         if (job.cachedOnly) params["cached_only"] = true;
+        if (job.quotes) params["quotes"] = true;
         auto operation = new GoogleOperation(job.account, {}, this);
         m_running.insert(job.ticket, {operation, job});
         operation->start(m_backend->m_profile, m_backend->m_enginePid, "message_image", params, [this, ticket = job.ticket](auto result, bool ok) {
@@ -125,7 +135,7 @@ void HtmlContent::pumpImages() {
             const auto value = result.toVariantMap();
             // Reopening from the GUI cache shows what already loaded.
             const auto &job = running.second;
-            const auto key = job.account + '/' + job.id + '/' + job.version;
+            const auto key = htmlKey(job.account, job.id, job.version, job.quotes);
             if (ok && value.value("state") == "ready" && m_htmlCache.contains(key)) {
                 auto cached = m_htmlCache.value(key);
                 auto resources = cached.value("resources").toList();

@@ -2452,3 +2452,15 @@ The founder asked for address suggestions to show how many emails were sent to a
 - **Not measured.** Lookup time on the founder's store: the app was running on it, so the new engine could not open it.
 
 Mail UI150, Core95. No schema, fixture or protocol change.
+
+## D208 — quoted history on request, with what changed highlighted (2026-10-12T12:00:00Z)
+
+The founder showed a reply whose answers were written inline inside the quoted original. The reader hides quoted history in both HTML and text, so the answers were invisible. They asked for a minimal "···" button at the bottom of a message that reveals the quote. Then, mid-change, they asked for the quote to be diffed against the original email with the differences highlighted.
+
+- **Reveal.** The button appears only when the reader left something out. A button that does nothing on most mail would be noise. HTML mode asks the engine for a second sanitised view with history kept (`message_html` `quotes: true`). Text mode lays out the whole reading text, which `message_source` now returns as `body_full` when it differs from `body_text`. The quotes view numbers images and links over the whole document, so its manifests, inline-image cache names and GUI cache entries are kept apart from the default view's.
+- **Diff.** Done in the GUI against the earlier messages already in the conversation; no new engine call. The comparison is by words in order, not by lines, so a quote re-wrapped at 72 columns still matches. Short lines must continue where the previous line matched, so a one-word "Yes." inserted into the quote is not explained away by a "yes" later in the original. Whole lines are marked; an edit inside a line marks that line. An original that is not in this conversation (another account, or never synced) gives no highlight rather than marking everything.
+- **Trade-off.** HTML mode reuses the search-highlight path, so a shown search replaces the diff tint until it is cleared, rather than showing two tints at once.
+- **Evidence.** fm-mail and fm-core tests: the HTML view keeps history on request, the quotes view resolves its own images, a non-boolean `quotes` fails, and `body_full` carries `>` quotes and is empty when nothing was left out. On a Release `build/check`, these pass: ReplyDocumentTest (the whole-text layout; the diff of a re-wrapped quote with a short "Yes." and a one-line answer; no marks without an original), HtmlMessageBodyTest (reload with quotes, images asked for in that view, the added-line tint, search taking precedence) and MailSelectionTest.
+- **Not checked.** The founder's real thread in the running app: it was running from `build/release`, which this change did not relink.
+
+Mail UI151, Core96. No schema, fixture or protocol change.

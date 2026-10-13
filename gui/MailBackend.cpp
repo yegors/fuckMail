@@ -3,6 +3,7 @@
 // actions, draft saving, calendar windows, saved views and shutdown.
 #include "MailBackend.h"
 #include "ReplyDocument.h"
+#include "ReceivedBody.h"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QFontDatabase>
@@ -2685,6 +2686,8 @@ QVariantList MailBackend::receivedBody(const QString &html,const QString &plain)
     if (bytes <= maxFrame) m_bodyCache.insert(key, new QVariantList(rows), int(bytes + 256));
     return rows;
 }
+QVariantList MailBackend::historyBody(const QString &plain, const QStringList &added) const { return ReceivedBody::historySections(plain, added); }
+QStringList MailBackend::quoteAdditions(const QString &full, const QStringList &originals) const { return ReceivedBody::quoteAdditions(full, originals); }
 // The bundled Geist Mono first; elsewhere (tests that load no fonts) the
 // platform's fixed-pitch font.
 QString MailBackend::fixedFontFamily() const {

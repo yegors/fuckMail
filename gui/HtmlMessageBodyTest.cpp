@@ -56,14 +56,16 @@ public:
     int revision() const { return rev; }
     QVariantMap proxy() const { return proxyValue; }
     QVariantMap imageCache() const { return {{"bytes", 1024 * 1024}, {"limit", 256 * 1024 * 1024}}; }
-    Q_INVOKABLE QString load(const QString &, const QString &id, const QString &version) {
+    Q_INVOKABLE QString load(const QString &, const QString &id, const QString &version, bool quotes = false) {
         const auto ticket = QString("html-%1").arg(++serial);
-        QTimer::singleShot(0, this, [this, ticket, id, version] {
+        QTimer::singleShot(0, this, [this, ticket, id, version, quotes] {
             QVariantMap result{{"id", id}, {"source_version", version}, {"has_html", !plainOnly}, {"too_large", false}};
             if (!plainOnly) {
                 result["html"] = "<!DOCTYPE html><html><body style=\"margin:8px\"><p><a href=\"fm-link:1\">News</a> <a href=\"fm-link:2\">Ad</a></p>"
                                  "<img src=\"fm-res:1\" width=\"200\" height=\"80\"><img src=\"fm-res:2\" width=\"40\" height=\"40\">"
-                                 "<img src=\"fm-res:3\" width=\"60\" height=\"40\"><img src=\"fm-res:4\" width=\"60\" height=\"40\"></body></html>";
+                                 "<img src=\"fm-res:3\" width=\"60\" height=\"40\"><img src=\"fm-res:4\" width=\"60\" height=\"40\">"
+                                 + QString(quotes ? "<blockquote><p>Quoted answer</p></blockquote>" : "") + "</body></html>";
+                result["quote_removed"] = !quotes;
                 result["resources"] = QVariantList{
                     QVariantMap{{"id", 1}, {"kind", "remote"}, {"alt", "Hero"}, {"host", "img.test"}},
                     QVariantMap{{"id", 2}, {"kind", "cid"}, {"alt", "Logo"}},
@@ -73,16 +75,16 @@ public:
                     QVariantMap{{"id", 1}, {"href", "https://news.test/a"}, {"scheme", "https"}, {"host", "news.test"}},
                     QVariantMap{{"id", 2}, {"href", "https://tracker.io/c"}, {"scheme", "https"}, {"host", "tracker.io"}}};
             }
-            results.insert(id + "/" + version, result);
+            results.insert(id + "/" + version + (quotes ? "/quotes" : ""), result);
             emit htmlReady(ticket, result, true);
         });
         return ticket;
     }
-    Q_INVOKABLE QVariantMap cached(const QString &, const QString &id, const QString &version) const { return results.value(id + "/" + version); }
-    Q_INVOKABLE QString loadImage(const QString &, const QString &id, const QString &version, int resource, bool cachedOnly) {
+    Q_INVOKABLE QVariantMap cached(const QString &, const QString &id, const QString &version, bool quotes = false) const { return results.value(id + "/" + version + (quotes ? "/quotes" : "")); }
+    Q_INVOKABLE QString loadImage(const QString &, const QString &id, const QString &version, int resource, bool cachedOnly, bool quotes = false) {
         const auto ticket = QString("image-%1").arg(++serial);
-        requests.append(QString("%1:%2%3").arg(id).arg(resource).arg(cachedOnly ? "?" : ""));
-        QTimer::singleShot(0, this, [this, ticket, resource, key = id + "/" + version] {
+        requests.append(QString("%1:%2%3%4").arg(id).arg(resource).arg(cachedOnly ? "?" : "").arg(quotes ? "q" : ""));
+        QTimer::singleShot(0, this, [this, ticket, resource, key = id + "/" + version + (quotes ? "/quotes" : "")] {
             if (resource == 1 && proxyDown) { emit imageReady(ticket, {{"state", "proxy_unavailable"}, {"reason", "proxy:connect"}}, true); return; }
             const QVariantMap image{{"path", resource == 2 ? red : blue}, {"width", 40}, {"height", 40}};
             if (results.contains(key)) {
@@ -412,6 +414,20 @@ ApplicationWindow {
     check(settled > 0 && firstFrame == settled, "a message shown again has its final height on its first frame");
     check(service.requests.size() == requestsBefore, "its loaded images are reused");
     check(await(ready) && paper()->height() == settled, "the height stays once it lays out");
+
+    // Asked for, the quoted history loads as its own view, with its own images.
+    check(body()->property("result").toMap()["quote_removed"] == true, "the reader's view leaves the history out");
+    body()->setProperty("quotes", true);
+    check(await([&] { return ready() && view()->property("text").toString().contains("Quoted answer"); }), "the quoted history shows when asked for");
+    check(await([&] { return service.requests.contains("m3:2q"); }), "images are asked for in the view that shows them");
+    body()->setProperty("addedPhrases", QStringList{"Quoted answer"});
+    check(await([&] { return view()->property("highlightCount").toInt() == 1; }), "a line the original does not have is tinted");
+    body()->setProperty("matchPhrases", QStringList{"news", "ad"});
+    check(await([&] { return view()->property("highlightCount").toInt() == 2; }), "a search's matches take the tint's place while shown");
+    body()->setProperty("matchPhrases", QStringList{});
+    body()->setProperty("addedPhrases", QStringList{});
+    body()->setProperty("quotes", false);
+    check(await([&] { return ready() && !view()->property("text").toString().contains("Quoted answer"); }), "hiding it again shows the reader's view");
 
     // Plain-only results ask the reader for Text.
     service.plainOnly = true;
