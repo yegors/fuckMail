@@ -2464,3 +2464,19 @@ The founder showed a reply whose answers were written inline inside the quoted o
 - **Not checked.** The founder's real thread in the running app: it was running from `build/release`, which this change did not relink.
 
 Mail UI151, Core96. No schema, fixture or protocol change.
+
+## D209 — signed and notarized macOS disk image (2026-10-13T20:30:00Z)
+
+The founder's Apple Developer membership is active. They asked for a signed, notarized Mac build they can send to people, without the keychain prompts. D130 had left both installers unsigned until then.
+
+- **Opt-in.** `package` signs when `FM_MAC_SIGN_IDENTITY` names a Developer ID Application identity, and notarizes when `FM_MAC_NOTARY_PROFILE` names a `notarytool` keychain profile. Both credentials stay in the founder's keychain. CI sets neither, so its packages stay unsigned; signing in GitHub Actions is left for later. An identity alone signs without notarizing, for a quick local check.
+- **Signing.** Inside out, as Apple advises instead of `codesign --deep`: loose libraries and plugins, the Qt frameworks, `fm` and `fm-engine`, then the app. All use the hardened runtime and a secure timestamp. The app's only entitlement is `allow-jit`, for the QML engine.
+- **Keychain.** macOS lets a program back into its keychain items when it matches the same identifier and team. `fm-engine` is signed as `com.fuckmail.engine` and `fm` as `com.fuckmail.cli`, so a signed update counts as the same program. A Mac that ran an unsigned build asks once more. Changing these identifiers or the team brings the prompts back.
+- **Client registration.** `google-oauth-client.json` moves to `Contents/Resources`, because a signed bundle's `Contents/MacOS` may hold only code. An engine running from `Contents/MacOS` looks there; any other engine looks beside itself. Accounts that recorded the old path fall back to the packaged file when the client id matches, as before.
+- **Disk image.** It is signed, notarized and stapled. Only the image is submitted: Apple's ticket also covers the app inside it, and Gatekeeper looks that up online the first time the app opens from Applications. The trade-off is that a first launch with no network can't confirm the app; stapling the app too would need a second submission.
+- **Checks.** The relocated-package checks run on the signed app. Their Qt load trace is skipped there, because the hardened runtime ignores `DYLD_*` variables and library validation refuses libraries signed by another team. After notarization, `spctl` assesses the image and the app inside it.
+- **Setup found on this Mac.** The certificate went into the System keychain and showed as not valid until Apple's Developer ID G2 intermediate certificate was imported. Choosing Allow at `codesign`'s key prompt asked again for every file; `security set-key-partition-list` stopped it. `notarytool` reports a wrong Apple ID as "Your Apple ID has been locked". The build guide lists the steps.
+- **Evidence.** An fm-engine test covers the client path inside and outside an app bundle, and the Google sign-in tests pass. On macOS 15.7.7 (arm64), a signed copy of the release app passes `codesign --verify --deep --strict`, the GUI smoke, a CLI query and the full self-test under the hardened runtime. `package --preset release` with both variables passes the relocated-package checks on the signed app. Apple accepted the 92 MB image, the team's first submission, in under an hour. The packaging run was stopped while it waited, so the same image was stapled by hand. `stapler validate` passes; `spctl` accepts the image and the app inside it as "Notarized Developer ID".
+- **Not checked.** Opening the image on a second Mac. An update from one signed build to the next without a keychain prompt, which needs two signed builds installed in turn.
+
+Platform25. The engine's client lookup changes; GUI, CLI, schema, fixtures and protocol unchanged.

@@ -51,6 +51,12 @@ add_custom_target(fm-client-runtime ALL
 
 # App registration belongs to the configured build, never to each user's account
 # setup. The source file and staged copies are ignored local/package artifacts.
+# A macOS app keeps it in Resources: a signed bundle's MacOS folder holds only code.
+if(APPLE)
+    set(FM_GUI_CLIENT_CONFIG_DIR "$<TARGET_BUNDLE_CONTENT_DIR:fuckmail-gui>/Resources")
+else()
+    set(FM_GUI_CLIENT_CONFIG_DIR "$<TARGET_FILE_DIR:fuckmail-gui>")
+endif()
 set(FM_GOOGLE_CLIENT_CONFIG "$ENV{FM_GOOGLE_CLIENT_CONFIG}")
 if(NOT FM_GOOGLE_CLIENT_CONFIG)
     set(FM_GOOGLE_CLIENT_CONFIG "${CMAKE_SOURCE_DIR}/.tools/google-oauth-client.json")
@@ -62,20 +68,22 @@ if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${FM_GOOGLE_CLIENT_CONFIG}"
             "${FM_RUST_BIN_DIR}/google-oauth-client.json"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${FM_GOOGLE_CLIENT_CONFIG}"
-            "$<TARGET_FILE_DIR:fuckmail-gui>/google-oauth-client.json")
+            "${FM_GUI_CLIENT_CONFIG_DIR}/google-oauth-client.json")
 else()
     add_custom_command(TARGET fm-client-runtime POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E rm -f "${FM_RUST_BIN_DIR}/google-oauth-client.json"
-            "$<TARGET_FILE_DIR:fuckmail-gui>/google-oauth-client.json")
+            "${FM_GUI_CLIENT_CONFIG_DIR}/google-oauth-client.json")
     message(STATUS "Google app registration is not configured; browser sign-in will report this in Settings")
 endif()
 
 install(TARGETS fuckmail-gui BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 if(APPLE)
     set(FM_INSTALL_BIN "fuckMail.app/Contents/MacOS")
+    set(FM_INSTALL_CLIENT_CONFIG "fuckMail.app/Contents/Resources")
     set(FM_INSTALL_LICENSES "fuckMail.app/Contents/Resources/licenses")
 else()
     set(FM_INSTALL_BIN bin)
+    set(FM_INSTALL_CLIENT_CONFIG "${FM_INSTALL_BIN}")
     set(FM_INSTALL_LICENSES "${FM_INSTALL_BIN}/licenses")
 endif()
 install(PROGRAMS
@@ -83,7 +91,7 @@ install(PROGRAMS
     "${FM_RUST_BIN_DIR}/fm${CMAKE_EXECUTABLE_SUFFIX}"
     DESTINATION "${FM_INSTALL_BIN}")
 if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
-    install(FILES "${FM_GOOGLE_CLIENT_CONFIG}" DESTINATION "${FM_INSTALL_BIN}" RENAME "google-oauth-client.json")
+    install(FILES "${FM_GOOGLE_CLIENT_CONFIG}" DESTINATION "${FM_INSTALL_CLIENT_CONFIG}" RENAME "google-oauth-client.json")
 endif()
 # License texts for fuckMail and everything it redistributes; THIRD_PARTY_NOTICES.md
 # explains which text covers which component.

@@ -30,6 +30,7 @@ Don't invent product behaviour, stack locks or "done" features from memory. If a
 ## Standing rules
 
 - **Real data.** Never automate sending mail or invitations to real people, and never put raw mailbox data, tokens or OAuth client files in Git.
+- **Public repository.** The GitHub repository is public, so everything committed is published: code, docs, decisions, the changelog and commit messages. Keep out personal and account details. That means real email addresses and names (use `example.test` and synthetic people), mail content, the Apple ID, the signing identity and Team ID (write `TEAMID`), certificate hashes, notarization IDs, keychain entry names, and local usernames and paths. Host- and account-specific notes go in `AGENTS.local.md`. The Google client file stays out of Git because each builder supplies their own; packages carry it, as every desktop OAuth app must.
 - **Repository hygiene.** Generated evidence (logs, manifests, run archives, profiles) stays out of Git, in ignored local or CI artifact storage. Keep authored reports, supplied design assets and runtime fixtures. Run `python3 scripts/check_repo_hygiene.py` (`python` on Windows) before committing.
 - **Gmail only.** The product is Gmail and Google Workspace through Google's APIs. IMAP/SMTP, other providers and external calendar subscriptions are out of scope; people who want them can fork. Bug fixes are welcome.
 - **Stale docs.** When a plan is finished or a record is superseded, delete it rather than letting it drift; Git history keeps it.

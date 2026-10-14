@@ -98,7 +98,7 @@ The app requests `openid`, `email`, `https://mail.google.com/`, `calendar.events
 
 Sign-in happens in the system browser. The engine receives the callback on a temporary `http://127.0.0.1:<port>/oauth2/callback` listener, so there is no web callback URL or hosted service. In the app, use **Settings → Accounts → Connect Google account**, enter the email and continue with Google. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync: choose **Start sync** for each account.
 
-The script stores only the client registration fields, in the ignored `.tools/google-oauth-client.json`. CMake copies that file beside the engine in builds and packages, so **a package you share contains your client ID and secret**. Google treats desktop client secrets as non-confidential, but share packages only with people you are happy to have use your Cloud project. An absolute `FM_GOOGLE_CLIENT_CONFIG` path overrides the file, including when you run an engine directly. Never commit the file or put access or refresh tokens in it. A build without it reports Google sign-in as unavailable. CI builds carry no credentials.
+The script stores only the client registration fields, in the ignored `.tools/google-oauth-client.json`. CMake copies that file beside the engine in builds and packages (into `Contents/Resources` in the macOS app, whose `Contents/MacOS` holds only code), so **a package you share contains your client ID and secret**. Google treats desktop client secrets as non-confidential, but share packages only with people you are happy to have use your Cloud project. An absolute `FM_GOOGLE_CLIENT_CONFIG` path overrides the file, including when you run an engine directly. Never commit the file or put access or refresh tokens in it. A build without it reports Google sign-in as unavailable. CI builds carry no credentials.
 
 The CLI shares the same setup:
 
@@ -130,12 +130,29 @@ Known timing issues: `gui-startup-recovery` can time out when cargo rebuilds ins
 `scripts/dev.sh package --preset release` builds in its own tree, `build/<preset>-package`, so it works while an app from `build/release` is running. It stages the app in `dist/<os>-<arch>` with install notes, this guide as `BUILD-AND-LICENSE-NOTES.md` and a `build-manifest.json` (source commit, toolchain). It then tests a relocated copy with a system-only PATH and writes one file to `dist/`:
 
 - **Windows:** `fuckMail-<version>-<commit>-windows-amd64-setup.exe`, built with Inno Setup from [scripts/windows-installer.iss](../scripts/windows-installer.iss). It installs for the current user in `%LOCALAPPDATA%\Programs\fuckMail` without an admin prompt, with a Start menu entry, an optional desktop icon and an uninstaller under Settings → Apps. Upgrades replace the program files. The MSVC runtime DLLs ship beside the executables, because a per-user install can't run `vc_redist`.
-- **macOS:** `fuckMail-<version>-<commit>-macos-<arch>.dmg` with `fuckMail.app` and an Applications shortcut, made with `hdiutil`. The script mounts the image and verifies the app's code signature. `fm` and `fm-engine` are in `fuckMail.app/Contents/MacOS`.
+- **macOS:** `fuckMail-<version>-<commit>-macos-<arch>.dmg` with `fuckMail.app` and an Applications shortcut, made with `hdiutil`. The script mounts the image and verifies the app's code signature. `fm` and `fm-engine` are in `fuckMail.app/Contents/MacOS`. It can be signed and notarized; see below.
 - **Linux:** `fuckMail-<version>-<commit>-linux-<arch>.tar.gz` of the staged folder; start `bin/fuckMail`.
 
 The version comes from `project(fuckMail VERSION ...)` in [CMakeLists.txt](../CMakeLists.txt). On Windows and Linux the executables are in `bin/`. Nothing puts `fm` on PATH; call it by its full path.
 
-**Unsigned builds.** Installers are not signed yet. On Windows, SmartScreen warns: choose **More info → Run anyway**. On macOS, open System Settings → Privacy & Security and choose **Open Anyway** (on macOS 14 and earlier, Control-click the app and choose Open). After each update macOS may ask whether `fm-engine` can use your keychain; choose **Always Allow**. Before adding Developer ID signing and notarization, move `google-oauth-client.json` out of `Contents/MacOS`, which should hold only code.
+**Signed macOS packages.** With a Developer ID certificate and a saved notarization login (below), set two variables:
+
+```sh
+FM_MAC_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+FM_MAC_NOTARY_PROFILE=fuckmail-notary scripts/dev.sh package --preset release
+```
+
+`package` then signs every library, plugin and framework, `fm` (as `com.fuckmail.cli`), `fm-engine` (as `com.fuckmail.engine`) and the app, with Apple's hardened runtime and a secure timestamp. The app's one exception, `allow-jit` for the QML engine, is in [scripts/macos-entitlements.plist](../scripts/macos-entitlements.plist). The relocated-package checks run on the signed app. The disk image is then signed, sent to Apple's notary service, stapled, and checked by Gatekeeper (`spctl`) along with the app inside it; Apple usually answers within minutes. If the run stops while waiting for Apple, `xcrun notarytool history --keychain-profile fuckmail-notary` shows the result; once it says Accepted, `xcrun stapler staple` the image in `dist/`. Setting only `FM_MAC_SIGN_IDENTITY` signs without notarizing, for a quick local check; other Macs still block its first launch. Without either, the package is unsigned, as in CI.
+
+The keychain recognizes a signed `fm-engine` by its identifier and team, so updates signed by the same team don't ask for keychain access again. On a Mac that ran an unsigned build, the first signed one asks once. Keep the identifiers and the team unchanged.
+
+One-time setup on the Mac (Apple's Command Line Tools are enough; Xcode isn't needed):
+
+1. In Keychain Access, choose Certificate Assistant → Request a Certificate From a Certificate Authority and save it to disk. At developer.apple.com → Certificates, add a **Developer ID Application** certificate from that request (only the account holder can), download it and open it. `security find-identity -v -p codesigning` should then list it. If it finds 0 valid identities, add Apple's intermediate certificate: download [DeveloperIDG2CA.cer](https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer) and run `security import DeveloperIDG2CA.cer -k ~/Library/Keychains/login.keychain-db`.
+2. Let `codesign` use the key without asking for each file: `security set-key-partition-list -S apple-tool:,apple: -s ~/Library/Keychains/login.keychain-db` (it asks for your login password). Choosing **Always Allow** at the first prompt also works; **Allow** asks again for every file.
+3. Make an app-specific password at appleid.apple.com → Sign-In and Security, then run `xcrun notarytool store-credentials fuckmail-notary --apple-id <your Apple ID> --team-id <TEAMID>`. The login stays in your keychain. A wrong Apple ID is reported as "Your Apple ID has been locked".
+
+**Unsigned builds.** Windows installers, and macOS packages built without the variables above, are unsigned. On Windows, SmartScreen warns: choose **More info → Run anyway**. On macOS, open System Settings → Privacy & Security and choose **Open Anyway** (on macOS 14 and earlier, Control-click the app and choose Open). After each update macOS may ask whether `fm-engine` can use your keychain; choose **Always Allow**.
 
 **App icon.** The app, window, Dock and installer icon comes from `gui/app-icon/app-icon.png`. When it changes, run `python scripts/make_app_icons.py` to regenerate the committed `.ico` and `.icns`; this one script needs Pillow, which the build does not. The source is 128 px, so the largest sizes are upscaled; a 1024 px source would make them sharp. The `.dmg` keeps the standard disk-image icon.
 

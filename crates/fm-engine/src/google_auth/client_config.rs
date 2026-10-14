@@ -2,8 +2,19 @@
 use super::*;
 use std::path::PathBuf;
 
-/// The client registration file shipped next to the engine executable.
+/// The client registration file shipped with the engine executable.
 pub(super) const APP_CLIENT_FILE: &str = "google-oauth-client.json";
+
+/// Where a package keeps its registration: beside the executable, or in
+/// `Contents/Resources` inside a macOS app, whose `Contents/MacOS` may hold
+/// only code once the app is signed.
+pub(super) fn packaged_client_path(exe: &Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    if dir.ends_with("Contents/MacOS") {
+        return Some(dir.with_file_name("Resources").join(APP_CLIENT_FILE));
+    }
+    Some(dir.join(APP_CLIENT_FILE))
+}
 
 /// Where this build finds its Google OAuth client registration.
 #[derive(Default)]
@@ -16,7 +27,7 @@ pub(super) struct AppClient {
 }
 
 impl AppClient {
-    /// The packaged registration beside the executable, or the file named by
+    /// The packaged registration, or the file named by
     /// `FM_GOOGLE_CLIENT_CONFIG`, which is then required.
     pub(super) fn installed() -> Self {
         if let Some(path) = std::env::var_os("FM_GOOGLE_CLIENT_CONFIG") {
@@ -25,7 +36,7 @@ impl AppClient {
         Self {
             path: std::env::current_exe()
                 .ok()
-                .and_then(|exe| exe.parent().map(|dir| dir.join(APP_CLIENT_FILE))),
+                .and_then(|exe| packaged_client_path(&exe)),
             required: false,
         }
     }

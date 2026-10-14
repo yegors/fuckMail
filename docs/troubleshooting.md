@@ -66,11 +66,11 @@ You can also point a single run at a client file by starting the app (or `fm`) w
 
 ### macOS asks about the keychain after every update
 
-Builds aren't signed yet, so each new build looks like a new program to macOS. When asked whether `fm-engine` may use your keychain, choose **Always Allow**. If you deny it, the app shows "Credential access was denied or the keychain is locked. Sync is paused; click Sync to try again."
+Unsigned builds look like a new program to macOS after each update. Signed builds don't, but the first signed build asks once on a Mac that ran an unsigned one. When asked whether `fm-engine` may use your keychain, choose **Always Allow**. If you deny it, the app shows "Credential access was denied or the keychain is locked. Sync is paused; click Sync to try again."
 
 ### macOS won't open the app, or Windows warns about it
 
-- **macOS:** open System Settings → Privacy & Security and choose **Open Anyway**. On macOS 14 and earlier, Control-click the app and choose **Open**.
+- **macOS:** signed and notarized builds open normally. For an unsigned build, open System Settings → Privacy & Security and choose **Open Anyway**. On macOS 14 and earlier, Control-click the app and choose **Open**.
 - **Windows:** SmartScreen warns about unsigned installers. Choose **More info** → **Run anyway**.
 
 ### Linux: sign-in works but nothing is saved

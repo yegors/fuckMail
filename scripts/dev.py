@@ -25,6 +25,9 @@ VENV_BIN = VENV / ("Scripts" if WINDOWS else "bin")
 PYTHON = VENV_BIN / ("python.exe" if WINDOWS else "python")
 # The installed bundle name is what testers see in Finder and Applications.
 MAC_APP = "fuckMail.app"
+# Fixed signing identifiers for the bundled programs. The keychain recognizes an
+# updated fm-engine by this identifier and the signing team, so keep them stable.
+MAC_HELPERS = {"fm": "com.fuckmail.cli", "fm-engine": "com.fuckmail.engine"}
 
 
 def managed_tool(name):
@@ -270,7 +273,7 @@ def verify_engine_stopped(profile):
     print("Verified final-client engine shutdown:", profile.name, flush=True)
 
 
-def verify_package(preset, stage):
+def verify_package(preset, stage, signed=False):
     env = package_environment()
     with tempfile.TemporaryDirectory(prefix="fuckmail-package-check-") as scratch:
         scratch = Path(scratch).resolve()
@@ -304,7 +307,9 @@ def verify_package(preset, stage):
         if smoke.returncode:
             print(smoke.stdout + smoke.stderr)
             raise RuntimeError("Relocated packaged GUI smoke failed")
-        if HOST == "Darwin":
+        # The hardened runtime ignores DYLD_* variables. Its library validation
+        # refuses any library not signed by the same team, so the SDK's Qt cannot load.
+        if HOST == "Darwin" and not signed:
             sdk = environment()["FM_QT_ROOT"]
             if sdk in smoke.stderr or "QtCore.framework" not in smoke.stderr:
                 raise RuntimeError("Runtime trace did not prove Qt loaded from the relocated package")
@@ -320,7 +325,8 @@ def verify_package(preset, stage):
         verify_engine_stopped(live_profile)
         setup = json.loads(run(cli, "--profile", live_profile, "--json", "google", "setup-status",
                                env=env, cwd=relocated, capture=True, timeout=45))
-        configured = (cli.parent / "google-oauth-client.json").is_file()
+        client_dir = cli.parent.parent / "Resources" if HOST == "Darwin" else cli.parent
+        configured = (client_dir / "google-oauth-client.json").is_file()
         if not setup.get("ok") or setup.get("result", {}).get("available") is not configured:
             raise RuntimeError("Relocated Google app registration did not match the package configuration")
         verify_engine_stopped(live_profile)
@@ -351,6 +357,13 @@ def verify_package(preset, stage):
         run(gui, "--self-test", env=env, cwd=relocated, timeout=180)
         print("Relocated package passed: SDK-free GUI smoke/self-test, paired empty live profile, fresh-terminal CLI help/query, final engine shutdown", flush=True)
 
+
+MAC_NOTARIZED_NOTES = (
+    "Install: open the disk image and drag fuckMail to Applications. The app is signed and notarized, so it opens normally.\n"
+    "If you used an unsigned build before, macOS asks once more whether fm-engine can use your keychain: choose Always Allow. "
+    "Signed updates don't ask again.\n"
+    "Uninstall by deleting the app. Your mail data in ~/Library/Application Support/fuckMail is kept.\n"
+    "The fm CLI is in fuckMail.app/Contents/MacOS.\n")
 
 INSTALL_NOTES = {
     "Windows": (
@@ -387,7 +400,53 @@ def windows_installer(stage, name, version, commit):
     return output
 
 
-def mac_disk_image(stage, name):
+def mac_signing():
+    """The Developer ID identity and notarytool keychain profile, from the environment.
+
+    Without an identity the package stays unsigned. An identity alone signs it
+    for a quick local check; macOS still blocks its first launch on other Macs.
+    """
+    identity = os.environ.get("FM_MAC_SIGN_IDENTITY") or None
+    profile = os.environ.get("FM_MAC_NOTARY_PROFILE") or None
+    if profile and not identity:
+        raise RuntimeError("FM_MAC_NOTARY_PROFILE needs FM_MAC_SIGN_IDENTITY: notarization takes a signed app")
+    return identity, profile
+
+
+def mac_sign(app, identity):
+    """Signs the bundle inside out, with the hardened runtime notarization requires."""
+    sign = ["codesign", "--force", "--timestamp", "--options", "runtime", "--sign", identity]
+    contents = app / "Contents"
+    # Loose libraries and plugins, then frameworks, then the bundled programs, then the app.
+    libraries = sorted(path for path in contents.rglob("*.dylib")
+                       if ".framework/" not in path.as_posix() and not path.is_symlink())
+    run(*sign, *libraries)
+    run(*sign, *sorted((contents / "Frameworks").glob("*.framework")))
+    for helper, identifier in MAC_HELPERS.items():
+        run(*sign, "--identifier", identifier, contents / "MacOS" / helper)
+    run(*sign, "--entitlements", ROOT / "scripts/macos-entitlements.plist", app)
+    run("codesign", "--verify", "--deep", "--strict", app)
+
+
+def notarize(path, profile):
+    """Has Apple's notary service check `path`, then staples its ticket so the first launch needs no lookup."""
+    command = ["xcrun", "notarytool", "submit", str(path), "--keychain-profile", profile,
+               "--wait", "--output-format", "json"]
+    print("+ " + subprocess.list2cmdline(command), flush=True)
+    submitted = subprocess.run(command, text=True, stdout=subprocess.PIPE)
+    try:
+        reply = json.loads(submitted.stdout)
+    except ValueError:
+        raise RuntimeError("notarytool gave no result: " + submitted.stdout.strip()) from None
+    if reply.get("status") != "Accepted":
+        if reply.get("id"):
+            run("xcrun", "notarytool", "log", reply["id"], "--keychain-profile", profile)
+        raise RuntimeError("Apple did not notarize " + path.name + ": " + str(reply.get("status") or reply.get("message")))
+    run("xcrun", "stapler", "staple", path)
+    run("xcrun", "stapler", "validate", path)
+
+
+def mac_disk_image(stage, name, identity=None, profile=None):
     output = ROOT / "dist" / (name + ".dmg")
     with tempfile.TemporaryDirectory(prefix="fuckmail-dmg-") as scratch:
         content = Path(scratch) / "fuckMail"
@@ -404,12 +463,20 @@ def mac_disk_image(stage, name):
                 if attempt == 2:
                     raise
                 time.sleep(5)
+        if identity:
+            run("codesign", "--force", "--timestamp", "--sign", identity, output)
+        if profile:
+            notarize(output, profile)
+            run("spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "-v", output)
         # Read back what testers open: a broken signature shows up as "damaged".
         mount = Path(scratch) / "mount"
         mount.mkdir()
         run("hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", mount, output)
         try:
             run("codesign", "--verify", "--deep", "--strict", mount / MAC_APP)
+            if profile:
+                # Gatekeeper's own verdict on the app testers drag out.
+                run("spctl", "--assess", "--type", "execute", "-v", mount / MAC_APP)
             if not (mount / "Applications").is_symlink():
                 raise RuntimeError("Disk image lacks its Applications shortcut")
         finally:
@@ -429,14 +496,18 @@ def package(preset):
     if stage.exists():
         shutil.rmtree(stage)
     run(managed_tool("cmake"), "--install", build, "--prefix", stage, env=env)
+    identity, profile = mac_signing() if HOST == "Darwin" else (None, None)
+    if identity:
+        mac_sign(stage / MAC_APP, identity)
+    notarized = bool(profile)
     if WINDOWS:
         # Per-user installs cannot run vc_redist, so the MSVC runtime ships beside the executables.
         missing = [dll for dll in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll") if not (stage / "bin" / dll).is_file()]
         if missing:
             raise RuntimeError("Package lacks the app-local MSVC runtime: " + ", ".join(missing))
     (stage / "README.txt").write_text(
-        "fuckMail development build (unsigned)\n\n"
-        + INSTALL_NOTES[HOST] + "\n"
+        ("fuckMail test build (signed and notarized)\n\n" + MAC_NOTARIZED_NOTES if notarized
+         else "fuckMail development build (unsigned)\n\n" + INSTALL_NOTES[HOST]) + "\n"
         "A first install starts with an empty profile. Profiles from before the current storage baseline are refused: close the app and move the whole old fuckMail/default folder away before launch.\n"
         "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
         "Google sign-in requires the app registration included by the build's developer. No per-account JSON file is needed.\n"
@@ -447,8 +518,9 @@ def package(preset):
         "Closing the GUI ends its sync and reminders; an explicitly running CLI has its own lifetime.\n"
         "Use fm --help for CLI commands. Ordinary startup uses fuckMail/default under your local app-data directory.\n"
         "Existing demo-v1 profiles are preserved; --demo-profile selects synthetic data explicitly.\n"
-        "This is a development artifact, not a signed/notarized public release.\n"
-        "License texts for fuckMail and the components it bundles are in the licenses folder.\n",
+        + ("This is a test build for invited testers, not a public release.\n" if notarized
+           else "This is a development artifact, not a signed/notarized public release.\n")
+        + "License texts for fuckMail and the components it bundles are in the licenses folder.\n",
         encoding="utf-8")
     guide = ROOT / "docs/build-development.md"
     if guide.exists():
@@ -460,7 +532,7 @@ def package(preset):
                 "rust": run("rustc", "--version", env=env, capture=True),
                 "cargo": run("cargo", "--version", env=env, capture=True)}
     (stage / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    verify_package(preset, stage)
+    verify_package(preset, stage, signed=bool(identity))
     version = project_version()
     commit = source[:7]
     system = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}[HOST]
@@ -468,7 +540,7 @@ def package(preset):
     if WINDOWS:
         artifact = windows_installer(stage, name, version, commit)
     elif HOST == "Darwin":
-        artifact = mac_disk_image(stage, name)
+        artifact = mac_disk_image(stage, name, identity, profile)
     else:
         artifact = shutil.make_archive(str(ROOT / "dist" / name), "gztar", root_dir=stage.parent, base_dir=stage.name)
     print("Package:", artifact)

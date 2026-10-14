@@ -195,6 +195,22 @@ async fn relocated_registration_preserves_client_binding_and_explicit_overrides(
     );
     h.close().await;
 }
+
+#[test]
+fn packaged_registration_sits_in_app_resources_on_macos_and_beside_the_engine_elsewhere() {
+    let bundled = client_config::packaged_client_path(Path::new(
+        "/Applications/fuckMail.app/Contents/MacOS/fm-engine",
+    ));
+    assert_eq!(
+        bundled.unwrap(),
+        Path::new("/Applications/fuckMail.app/Contents/Resources/google-oauth-client.json")
+    );
+    let plain = client_config::packaged_client_path(Path::new("/opt/fuckMail/bin/fm-engine"));
+    assert_eq!(
+        plain.unwrap(),
+        Path::new("/opt/fuckMail/bin/google-oauth-client.json")
+    );
+}
 #[path = "account_lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[derive(Default)]

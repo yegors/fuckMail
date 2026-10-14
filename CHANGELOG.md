@@ -2,6 +2,10 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-13
+
+- Mac builds can be signed with a Developer ID and notarized by Apple. They open normally, without Open Anyway, and updates stop asking whether `fm-engine` can use the keychain.
+
 ## 2026-10-12
 
 - A small "···" button under a message shows the quoted text the reader hides, in both HTML and text, so answers written inside the quote can be read. It shows only when something was hidden; click it again to hide.
