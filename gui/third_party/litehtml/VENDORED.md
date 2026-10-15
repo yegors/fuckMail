@@ -33,6 +33,15 @@ Each is marked `fuckMail:` in the source. Reapply them when updating.
   attribute styles (`width`, `align`, `bgcolor`...) instead of dropping them,
   rebuilds the anonymous boxes of CSS tables, and releases the old render tree
   so elements point at their current render items.
+- **Splitting inline boxes** (`render_item.h/.cpp`, `render_block.cpp`): an
+  inline box's block children are split out in one pass, and only inline boxes
+  are split. Upstream split one block per call and moved the remaining children
+  each time (quadratic in the blocks), pulled blocks out of inline-blocks and
+  floats, and put the text after a nested block out of order.
+- **Render list sweep** (`element.cpp`): `add_render` drops expired items from
+  the front each time and sweeps the whole list only when it doubles. A sweep
+  on every add was quadratic for an inline box split around thousands of
+  blocks (30 s for a 34 KB message).
 - **Height-only images** (`render_image.cpp`): an image sized by its height alone
   stays within its column, keeping its shape.
 

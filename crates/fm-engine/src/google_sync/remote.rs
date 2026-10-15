@@ -193,8 +193,17 @@ pub(crate) async fn thread(ctx: &SyncContext, params: Value) -> Result<Value> {
 
 /// `{id}` from a remote thread's attachment list: the file, written to the
 /// view cache, in the shape of the local `attachment` reply.
+///
+/// With `preview: true` an image instead gains `preview_path`, `width` and
+/// `height`, a PNG the engine decoded and re-encoded, or `preview_error`, as
+/// a stored attachment's preview does.
 pub(crate) async fn attachment(ctx: &SyncContext, params: Value) -> Result<Value> {
-    let fields = object(&params, &["id"])?;
+    let fields = object(&params, &["id", "preview"])?;
+    let preview = match fields.get("preview") {
+        None => false,
+        Some(Value::Bool(preview)) => *preview,
+        Some(_) => return Err(failure("invalid_request", "preview must be true or false")),
+    };
     let full = fields
         .get("id")
         .and_then(Value::as_str)
@@ -228,6 +237,31 @@ pub(crate) async fn attachment(ctx: &SyncContext, params: Value) -> Result<Value
             .unwrap_or("attachment.bin")
             .to_owned();
         let bytes = part.contents();
+        if preview {
+            let mut reply = json!({"account": account, "id": full, "name": name,
+                "mime_type": mime_type(part), "size": bytes.len()});
+            let key = fm_core::view_cache::key(&["remote-attachment-preview", &full]);
+            let shown = match cache.cached_image(&account, &key) {
+                Some(hit) => Some(hit),
+                None => match fm_mail::image_view::normalize_image(bytes) {
+                    Ok(image) => Some((
+                        cache.store_image(&account, &key, &image.png)?,
+                        image.width,
+                        image.height,
+                    )),
+                    Err(error) => {
+                        reply["preview_error"] = json!(error.code());
+                        None
+                    }
+                },
+            };
+            if let Some((path, width, height)) = shown {
+                reply["preview_path"] = json!(path.to_string_lossy());
+                reply["width"] = json!(width);
+                reply["height"] = json!(height);
+            }
+            return Ok(reply);
+        }
         let (path, sha256) = fm_core::remote_mail::remote_attachment_file(&cache, &name, bytes)?;
         Ok(json!({
             "account": account,
@@ -447,6 +481,7 @@ fn project(content: &fm_google::sync::MessageContent, newest: bool) -> Option<Va
         "source_version": "",
         "attachments": attachments,
         "categories": [],
+        "sender_check": fm_core::message_source::sender_check(&parsed),
     });
     if newest {
         if let Some(html) = fm_mail::html_view::html_part(&parsed) {

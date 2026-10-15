@@ -1759,8 +1759,10 @@ fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value
 /// Copies the retained file named by the reply's `path` to `output`.
 ///
 /// An error reply, a missing `path` or an unreadable source fails before
-/// `output` is created. The output file is created exclusively, so an existing
-/// file is never overwritten, and it is synced to disk before this returns.
+/// `output` is created. An existing file is never overwritten, and the copy
+/// is synced to disk before this returns. It keeps the engine's
+/// downloaded-from-the-internet mark (the macOS quarantine flag, the Windows
+/// Internet zone) where the destination can hold it.
 fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
     let data = result(reply.clone())?;
     let source = data["path"].as_str().ok_or_else(|| Failure {
@@ -1768,13 +1770,37 @@ fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
         message: "Retained content is not fully available offline".into(),
         recovery: RecoveryProofs::default(),
     })?;
-    let mut source = std::fs::File::open(source)?;
-    let mut file = std::fs::OpenOptions::new()
+    let mut opened = std::fs::File::open(source)?;
+    // The system copy brings the mark only to a new file, so copy to a fresh
+    // name beside `output` and link it into place, which fails if `output`
+    // exists. Without hard links, fall back to an exclusive plain copy.
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.subsec_nanos());
+    let staged = parent.join(format!(".fm-export-{}-{nanos}.tmp", std::process::id()));
+    let linked = std::fs::copy(source, &staged).and_then(|_| std::fs::hard_link(&staged, output));
+    let _ = std::fs::remove_file(&staged);
+    match linked {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists || output.exists() => {
+            return Err(error.into())
+        }
+        Err(_) => {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(output)?;
+            io::copy(&mut opened, &mut file)?;
+        }
+    }
+    std::fs::OpenOptions::new()
         .write(true)
-        .create_new(true)
-        .open(output)?;
-    io::copy(&mut source, &mut file)?;
-    file.sync_all()?;
+        .open(output)?
+        .sync_all()?;
     Ok(())
 }
 
@@ -4277,6 +4303,35 @@ mod tests {
         std::fs::remove_file(&source).unwrap();
         assert!(copy_export(&reply, &refused).is_err());
         assert!(!refused.exists());
+        assert_eq!(
+            std::fs::read_dir(root.path()).unwrap().count(),
+            1,
+            "no staged copy is left behind"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn verified_export_keeps_the_downloaded_mark() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("invoice.pkg");
+        let output = root.path().join("saved.pkg");
+        std::fs::write(&source, b"installer").unwrap();
+        let mark = "0081;00000000;fuckMail;";
+        let xattr = |args: &[&str]| {
+            std::process::Command::new("/usr/bin/xattr")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        assert!(
+            xattr(&["-w", "com.apple.quarantine", mark, source.to_str().unwrap()])
+                .status
+                .success()
+        );
+        copy_export(&json!({"ok":true,"result":{"path":source}}), &output).unwrap();
+        let copied = xattr(&["-p", "com.apple.quarantine", output.to_str().unwrap()]);
+        assert_eq!(String::from_utf8_lossy(&copied.stdout).trim(), mark);
     }
 
     #[test]

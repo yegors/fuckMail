@@ -53,7 +53,9 @@ fn bounded_at(value: &str, limit: usize) -> (String, bool) {
 }
 
 /// Verifies and parses the source off the writer and returns reader content:
-/// address metadata, unsubscribe options, whether it has an invitation, the
+/// address metadata, Gmail's verdicts on the sender (`sender_check`: `checked`,
+/// `verified`, `spf`, `dkim`, `dmarc`, `from_domain` and `warnings`, each
+/// `{code, text}`), unsubscribe options, whether it has an invitation, the
 /// HTML part, the reading text as this build extracts it (`body_text`, which
 /// may be newer than the stored copy), the whole text with the reply history
 /// it leaves out (`body_full`, empty when nothing was left out) and the raw
@@ -107,6 +109,7 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         .unwrap_or_default();
     let unsubscribe =
         crate::unsubscribe::describe(fm_mail::unsubscribe::unsubscribe(&parsed, &plain).as_ref());
+    let sender_check = sender_check(&parsed);
     // Readers ask message_invite only for mail with a usable calendar part.
     let has_invite = crate::message_invite::message_calendar(&parsed).is_some();
     let text = fm_mail::extract_parsed_incoming_contribution(&parsed).unwrap_or_default();
@@ -124,10 +127,25 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
-        "metadata":metadata,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
+        "metadata":metadata,"sender_check":sender_check,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
         "body_text":body_text,"text_truncated":text_truncated,"body_full":body_full,"full_truncated":full_truncated,"raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
     fit_reply(&mut result)?;
     Ok(result)
+}
+
+/// Gmail's verdicts on a received message's sender, as readers show them:
+/// `checked`, `verified`, `spf`, `dkim`, `dmarc`, `from_domain` and
+/// `warnings`, each `{code, text}`.
+pub fn sender_check(parsed: &mail_parser::Message<'_>) -> Value {
+    let sender = fm_mail::sender_check::check(parsed);
+    let warnings: Vec<Value> = sender
+        .warnings
+        .iter()
+        .map(|warning| json!({"code":warning.code,"text":bounded_at(&warning.text, 1024).0}))
+        .collect();
+    json!({"checked":sender.checked,"verified":sender.verified,"spf":bounded_at(&sender.spf, 32).0,
+        "dkim":bounded_at(&sender.dkim, 32).0,"dmarc":bounded_at(&sender.dmarc, 32).0,
+        "from_domain":bounded_at(&sender.from_domain, 255).0,"warnings":warnings})
 }
 
 fn fit_reply(result: &mut Value) -> Result<()> {
@@ -206,6 +224,11 @@ mod tests {
         );
         assert_eq!(result["raw_truncated"], false);
         assert_eq!(result["has_invite"], false);
+        // No verdicts from Gmail: nothing is verified and nothing warns.
+        assert_eq!(result["sender_check"]["checked"], false);
+        assert_eq!(result["sender_check"]["verified"], false);
+        assert_eq!(result["sender_check"]["from_domain"], "example.test");
+        assert_eq!(result["sender_check"]["warnings"], json!([]));
         let after: (bool, bool, i64) = store
             .db
             .query_row(

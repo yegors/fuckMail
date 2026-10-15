@@ -7,8 +7,10 @@
 //! Every read re-verifies size and hash and refuses symlinks, Windows reparse
 //! points and anything that is not a regular file. Files handed to other
 //! applications are verified copies under `<profile>/exports`, never the
-//! retained original. Received attachments are extracted from their verified
-//! original MIME on demand; exports are disposable and size-budgeted.
+//! retained original, and they carry the system's downloaded-from-the-internet
+//! mark. Received attachments are extracted from their verified original MIME
+//! on demand; exports are disposable and size-budgeted. Image previews are
+//! PNGs the engine decoded and re-encoded, never the sender's bytes.
 use crate::{
     attachment_content::{self, SourcePart},
     err, id, Result, Store,
@@ -294,6 +296,7 @@ fn export_content(
                 verify_file(&destination, hash, size)?;
                 remember_export(&destination);
             }
+            mark_downloaded(&destination)?;
             touch_export(&destination);
             maybe_prune_exports(profile);
             return Ok(destination);
@@ -365,9 +368,67 @@ fn export_content(
     if !published {
         verify_file(&destination, hash, size)?;
     }
+    mark_downloaded(&destination)?;
     touch_export(&destination);
     maybe_prune_exports(profile);
     Ok(destination)
+}
+
+/// Marks a file handed to other applications as downloaded from the
+/// internet, so the system checks it before anything in it runs: the
+/// quarantine flag on macOS (Gatekeeper), the Internet zone on Windows
+/// (SmartScreen, Office Protected View). Linux has no such mark. A mark
+/// already present is kept, with any approval the person gave it.
+pub(crate) fn mark_downloaded(path: &Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let name = c"com.apple.quarantine";
+        let file =
+            std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|_| unavailable())?;
+        // SAFETY: `file` and `name` are NUL-terminated and outlive the call; a
+        // null buffer of length 0 only asks whether the attribute exists.
+        let present = unsafe {
+            libc::getxattr(
+                file.as_ptr(),
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                libc::XATTR_NOFOLLOW,
+            )
+        } >= 0;
+        if !present {
+            let seconds = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_secs());
+            // The layout browsers write: downloaded, not yet approved, by this app.
+            let value = format!("0081;{seconds:08x};fuckMail;");
+            // SAFETY: as above; `value` is a live buffer of `value.len()` bytes.
+            let status = unsafe {
+                libc::setxattr(
+                    file.as_ptr(),
+                    name.as_ptr(),
+                    value.as_ptr().cast(),
+                    value.len(),
+                    0,
+                    libc::XATTR_NOFOLLOW,
+                )
+            };
+            if status != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        let mut stream = path.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n")?;
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = path;
+    Ok(())
 }
 
 fn touch_export(path: &Path) {
@@ -459,9 +520,21 @@ impl Store {
     /// The store half of [`Store::attachment`]: its description, and the
     /// retained content to copy, which [`AttachmentPlan::export`] does off
     /// the writer.
+    ///
+    /// With `preview: true`, an available image instead gains `preview_path`,
+    /// `width` and `height`: a PNG decoded and re-encoded by the engine, or
+    /// `preview_error` (`unsupported`, `too_large`, `invalid`) when it cannot
+    /// be shown.
     pub fn attachment_begin(&self, account: &str, params: &Value) -> Result<AttachmentPlan> {
-        crate::fields(params, &["id"])?;
-        self.attachment_plan(account, crate::string(params, "id")?)
+        crate::fields(params, &["id", "preview"])?;
+        let preview = match params.get("preview") {
+            None => false,
+            Some(Value::Bool(preview)) => *preview,
+            Some(_) => return Err(err("invalid_request", "preview must be true or false")),
+        };
+        let mut plan = self.attachment_plan(account, crate::string(params, "id")?)?;
+        plan.preview = preview;
+        Ok(plan)
     }
 
     fn attachment_plan(&self, account: &str, attachment_id: &str) -> Result<AttachmentPlan> {
@@ -486,7 +559,11 @@ impl Store {
         } else {
             None
         };
-        Ok(AttachmentPlan { result, export })
+        Ok(AttachmentPlan {
+            result,
+            export,
+            preview: false,
+        })
     }
 }
 
@@ -495,7 +572,11 @@ impl Store {
 pub struct AttachmentPlan {
     result: Value,
     export: Option<(BlobStore, String, u64, String, Option<SourcePart>)>,
+    preview: bool,
 }
+
+/// Largest attachment read for a preview; bigger files show their type only.
+const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
 
 impl AttachmentPlan {
     /// Adds `path`, a verified copy under `exports/` named after the
@@ -504,6 +585,10 @@ impl AttachmentPlan {
     /// read again.
     pub fn export(self) -> Result<Value> {
         let mut result = self.result;
+        if let (true, Some((blobs, hash, size, name, source))) = (self.preview, &self.export) {
+            preview(&mut result, blobs, hash, *size, name, source.as_ref())?;
+            return Ok(result);
+        }
         if let Some((blobs, hash, size, name, source)) = self.export {
             // External editors receive a verified copy with a usable extension,
             // never the immutable retained original or a client-selected path.
@@ -513,6 +598,46 @@ impl AttachmentPlan {
         }
         Ok(result)
     }
+}
+
+/// Adds an image attachment's engine-made PNG to `result`. The GUI decodes
+/// only this PNG, never the sender's bytes, as with inline images.
+fn preview(
+    result: &mut Value,
+    blobs: &BlobStore,
+    hash: &str,
+    size: u64,
+    name: &str,
+    source: Option<&SourcePart>,
+) -> Result<()> {
+    let account = result["account"].as_str().unwrap_or_default().to_owned();
+    let cache = crate::view_cache::ViewCache::new(&blobs.profile);
+    let key = crate::view_cache::key(&["attachment-preview", hash]);
+    let (path, width, height) = match cache.cached_image(&account, &key) {
+        Some(hit) => hit,
+        None if size > MAX_PREVIEW_BYTES => {
+            result["preview_error"] = json!("too_large");
+            return Ok(());
+        }
+        None => {
+            let bytes = attachment_content::read_cached(blobs, hash, size, name, source)?;
+            match fm_mail::image_view::normalize_image(&bytes) {
+                Ok(image) => (
+                    cache.store_image(&account, &key, &image.png)?,
+                    image.width,
+                    image.height,
+                ),
+                Err(error) => {
+                    result["preview_error"] = json!(error.code());
+                    return Ok(());
+                }
+            }
+        }
+    };
+    result["preview_path"] = json!(path.to_str().ok_or_else(unavailable)?);
+    result["width"] = json!(width);
+    result["height"] = json!(height);
+    Ok(())
 }
 
 fn unavailable() -> crate::CoreError {
@@ -955,6 +1080,121 @@ mod tests {
         let path = store.export_attachment(&hash, 10, &long).unwrap();
         assert_eq!(path.extension().unwrap(), "pdf");
         assert!(path.file_name().unwrap().len() < 180);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn quarantine(path: &Path) -> Option<String> {
+        use std::os::unix::ffi::OsStrExt;
+        let file = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        let mut value = vec![0u8; 256];
+        // SAFETY: NUL-terminated strings and a live buffer of `value.len()` bytes.
+        let read = unsafe {
+            libc::getxattr(
+                file.as_ptr(),
+                c"com.apple.quarantine".as_ptr(),
+                value.as_mut_ptr().cast(),
+                value.len(),
+                0,
+                0,
+            )
+        };
+        (read >= 0).then(|| String::from_utf8_lossy(&value[..read as usize]).into_owned())
+    }
+
+    #[test]
+    fn exports_are_marked_downloaded_and_keep_an_existing_mark() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = store(&temp.path().join("profile"));
+        let hash = store.stage_blob(b"invoice").unwrap();
+        let path = store.export_attachment(&hash, 7, "invoice.pkg").unwrap();
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let mark = quarantine(&path).expect("an export carries the quarantine flag");
+            assert!(
+                mark.starts_with("0081;") && mark.ends_with(";fuckMail;"),
+                "{mark}"
+            );
+            let file = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+            // An export made before marks existed gains one when reused.
+            // SAFETY: NUL-terminated strings that outlive the call.
+            unsafe { libc::removexattr(file.as_ptr(), c"com.apple.quarantine".as_ptr(), 0) };
+            assert_eq!(quarantine(&path), None);
+            store.export_attachment(&hash, 7, "invoice.pkg").unwrap();
+            assert!(quarantine(&path).is_some());
+            // An approval given in Gatekeeper survives opening it again.
+            let approved = "0041;00000000;fuckMail;";
+            // SAFETY: as above; `approved` is a live buffer of its length.
+            unsafe {
+                libc::setxattr(
+                    file.as_ptr(),
+                    c"com.apple.quarantine".as_ptr(),
+                    approved.as_ptr().cast(),
+                    approved.len(),
+                    0,
+                    0,
+                )
+            };
+            store.export_attachment(&hash, 7, "invoice.pkg").unwrap();
+            assert_eq!(quarantine(&path).unwrap(), approved);
+        }
+        #[cfg(windows)]
+        {
+            let mut stream = path.as_os_str().to_owned();
+            stream.push(":Zone.Identifier");
+            assert!(fs::read_to_string(stream).unwrap().contains("ZoneId=3"));
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn image_previews_are_engine_made_pngs_and_other_bytes_are_refused() {
+        use base64::Engine;
+        let temp = tempfile::tempdir().unwrap();
+        let store = store(&temp.path().join("profile"));
+        let png = base64::engine::general_purpose::STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+            .unwrap();
+        let hash = store.stage_blob(&png).unwrap();
+        add_attachment(&store, "work", &hash, png.len() as i64, "available");
+        let preview = store
+            .attachment_begin("work", &json!({"id":"attachment","preview":true}))
+            .unwrap()
+            .export()
+            .unwrap();
+        let path = Path::new(preview["preview_path"].as_str().unwrap());
+        assert!(path.starts_with(fs::canonicalize(store.profile.join("cache")).unwrap()));
+        assert!(fs::read(path).unwrap().starts_with(b"\x89PNG"));
+        assert_eq!(
+            (&preview["width"], &preview["height"]),
+            (&json!(1), &json!(1))
+        );
+        assert!(preview["path"].is_null());
+        // A second preview reuses the cached PNG.
+        let again = store
+            .attachment_begin("work", &json!({"id":"attachment","preview":true}))
+            .unwrap()
+            .export()
+            .unwrap();
+        assert_eq!(again["preview_path"], preview["preview_path"]);
+        let text = store.stage_blob(b"plain words").unwrap();
+        add_attachment(&store, "personal", &text, 11, "available");
+        let refused = store
+            .attachment_begin("personal", &json!({"id":"attachment","preview":true}))
+            .unwrap()
+            .export()
+            .unwrap();
+        assert_eq!(refused["preview_error"], "unsupported");
+        assert!(refused["preview_path"].is_null());
+        assert_eq!(
+            store
+                .attachment_begin("work", &json!({"id":"attachment","preview":"yes"}))
+                .err()
+                .unwrap()
+                .code,
+            "invalid_request"
+        );
     }
 
     #[cfg(unix)]

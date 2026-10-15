@@ -1,7 +1,8 @@
 //! Message content for fuckMail: plain-text extraction from received MIME,
 //! MIME construction for human-written mail, and the display transforms for
 //! received HTML ([`html_view`]), images ([`image_view`]), previews
-//! ([`preview`]) and unsubscribe options ([`unsubscribe`]).
+//! ([`preview`]), unsubscribe options ([`unsubscribe`]) and Gmail's sender
+//! verdicts ([`sender_check`]).
 //!
 //! Everything here is a pure transform: no network, file reads, database or
 //! model calls.
@@ -11,6 +12,7 @@ pub mod image_view;
 mod incoming;
 pub mod preview;
 mod reply_text;
+pub mod sender_check;
 pub mod unsubscribe;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
 pub use incoming::{

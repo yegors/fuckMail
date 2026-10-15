@@ -77,23 +77,23 @@ std::shared_ptr<litehtml::render_item> litehtml::render_item_block::init()
         }
     }
     // Split inline blocks with box blocks inside
+    // fuckMail: all of an inline box's blocks come out in one pass, and its
+    // pieces hold no more blocks, so the loop moves past them.
     auto iter = m_children.begin();
     while(iter != m_children.end())
     {
         const auto& el = *iter;
         if(el->src_el()->css().get_display() == display_inline && !el->children().empty())
         {
-            auto split_el = el->split_inlines();
-            if(std::get<0>(split_el))
+            const auto pieces = el->split_inlines();
+            if(pieces.size() > 1)
             {
                 iter = m_children.erase(iter);
-                iter = m_children.insert(iter, std::get<2>(split_el));
-                iter = m_children.insert(iter, std::get<1>(split_el));
-                iter = m_children.insert(iter, std::get<0>(split_el));
-
-                std::get<0>(split_el)->parent(shared_from_this());
-                std::get<1>(split_el)->parent(shared_from_this());
-                std::get<2>(split_el)->parent(shared_from_this());
+                for(const auto& piece : pieces)
+                {
+                    piece->parent(shared_from_this());
+                    iter = std::next(m_children.insert(iter, piece));
+                }
                 continue;
             }
         }

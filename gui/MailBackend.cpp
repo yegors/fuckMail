@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDesktopServices>
+#include <QFileInfo>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -2149,13 +2150,42 @@ void MailBackend::saveDraft() {
     });
 }
 
+// Types that run code, install software or change settings when opened, and
+// pages that open in a browser, where a fake sign-in form is the usual trick.
+// Apple Mail and Outlook hold these back too; the person saves them instead.
+static bool opensAsProgram(const QString &suffix) {
+    static const QSet<QString> types{
+        // macOS
+        "app", "command", "tool", "terminal", "scpt", "scptd", "applescript", "workflow", "action", "shortcut",
+        "pkg", "mpkg", "dmg", "fileloc", "inetloc", "webloc", "prefpane", "mobileconfig", "configprofile", "osax",
+        // Windows
+        "exe", "com", "scr", "pif", "bat", "cmd", "ps1", "psm1", "vb", "vbs", "vbe", "js", "jse", "ws", "wsf", "wsh",
+        "hta", "msi", "msp", "msix", "appx", "appxbundle", "appinstaller", "msc", "lnk", "url", "reg", "scf", "cpl",
+        "inf", "iso", "img", "vhd", "vhdx", "library-ms", "search-ms", "settingcontent-ms", "application", "appref-ms",
+        "gadget", "chm", "dll", "sys", "ocx",
+        // Linux and anywhere
+        "desktop", "sh", "bash", "zsh", "csh", "ksh", "run", "appimage", "deb", "rpm", "flatpakref", "snap", "jar",
+        "jnlp", "py", "pyw", "pl", "rb", "php",
+        // Pages that open in the browser
+        "html", "htm", "xhtml", "shtml", "mht", "mhtml", "svg", "svgz"};
+    return types.contains(suffix.toLower());
+}
+
 void MailBackend::openAttachment(const QString &id) {
     attachmentFile(m_account, id, [this, id](auto result, bool ok) {
         if (!ok) { if (id.startsWith(u"remote-att:")) fail(result["message"].toString("This attachment could not be read from the server.")); return; }
         const auto path = result["path"].toString();
         if (path.isEmpty()) { fail("This attachment has no complete, verified local copy (" + result["state"].toString("unavailable") + ")."); return; }
+        const auto name = result["name"].toString();
+        const auto suffix = QFileInfo(path).suffix(), named = QFileInfo(name).suffix();
+        if (opensAsProgram(suffix) || opensAsProgram(named)) {
+            const auto type = (suffix.isEmpty() ? named : suffix).toLower();
+            showActionToast("fuckMail doesn't open ." + type + " files: they can run programs or show fake sign-in pages. Save it and open it yourself only if you trust it.",
+                            "save_attachment", {{"account", m_account}, {"id", id}, {"name", name}}, 9000);
+            return;
+        }
         if (!QDir::isAbsolutePath(path) || !QDesktopServices::openUrl(QUrl::fromLocalFile(path))) fail("No application could open this retained attachment.");
-        else showActionToast("Opening " + result["name"].toString() + "…", {}, {}, 3500);
+        else showActionToast("Opening " + name + "…", {}, {}, 3500);
     });
 }
 QStringList MailBackend::linksInText(const QString &text) const {

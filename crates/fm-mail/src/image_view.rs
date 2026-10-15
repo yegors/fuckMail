@@ -1,6 +1,8 @@
 //! Sender-supplied image bytes become a bounded PNG decoded by memory-safe code.
 //! The GUI only ever decodes the PNG produced here. Pure transform: no I/O.
-use image::{codecs::png, GenericImageView, ImageFormat, ImageReader, Limits};
+use image::{
+    codecs::png, DynamicImage, GenericImageView, ImageDecoder, ImageFormat, ImageReader, Limits,
+};
 use std::io::Cursor;
 
 /// Decoded pixel budget: 16 megapixels, about 64 MiB as RGBA.
@@ -41,9 +43,9 @@ pub struct NormalizedImage {
 /// Decodes PNG, JPEG, GIF or WebP bytes and re-encodes them as an RGBA PNG no
 /// wider than [`MAX_WIDTH`].
 ///
-/// The format comes from the magic bytes, not a declared content type. Wider
-/// images are scaled down keeping their aspect ratio; animations keep their
-/// first frame.
+/// The format comes from the magic bytes, not a declared content type. A
+/// camera's EXIF orientation is applied, then wider images are scaled down
+/// keeping their aspect ratio; animations keep their first frame.
 pub fn normalize_image(bytes: &[u8]) -> Result<NormalizedImage, ImageError> {
     let format = image::guess_format(bytes).map_err(|_| ImageError::Unsupported)?;
     if !matches!(
@@ -72,11 +74,17 @@ pub fn normalize_image(bytes: &[u8]) -> Result<NormalizedImage, ImageError> {
     if u64::from(width) * u64::from(height) > MAX_PIXELS {
         return Err(ImageError::TooLarge);
     }
-    // Animated GIF and WebP decode to their first frame.
-    let mut decoded = reader(bytes).decode().map_err(|error| match error {
+    let refused = |error| match error {
         image::ImageError::Limits(_) => ImageError::TooLarge,
         _ => ImageError::Invalid,
-    })?;
+    };
+    // Animated GIF and WebP decode to their first frame.
+    let mut decoder = reader(bytes).into_decoder().map_err(refused)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut decoded = DynamicImage::from_decoder(decoder).map_err(refused)?;
+    decoded.apply_orientation(orientation);
     if decoded.width() > MAX_WIDTH {
         let height = ((u64::from(decoded.height()) * u64::from(MAX_WIDTH))
             / u64::from(decoded.width()))
@@ -122,6 +130,14 @@ mod tests {
             assert_eq!((result.width, result.height), (40, 20));
             assert_eq!(image::guess_format(&result.png).unwrap(), ImageFormat::Png);
         }
+        // EXIF orientation 6 (rotate 90 degrees clockwise) turns 40×20 into 20×40.
+        let mut camera = encoded(40, 20, ImageFormat::Jpeg);
+        let exif = b"Exif\0\0II*\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
+        let mut segment = vec![0xff, 0xe1, 0, (exif.len() + 2) as u8];
+        segment.extend_from_slice(exif);
+        camera.splice(2..2, segment);
+        let turned = normalize_image(&camera).unwrap();
+        assert_eq!((turned.width, turned.height), (20, 40));
         let wide = normalize_image(&encoded(3200, 100, ImageFormat::Png)).unwrap();
         assert_eq!((wide.width, wide.height), (MAX_WIDTH, 50));
     }

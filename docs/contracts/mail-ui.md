@@ -1,5 +1,15 @@
 # Mail UI, reader and human composer
 
+## D210 — sender warnings, verified image loading, attachment safety (Mail UI152)
+
+- **Sender warning.** An expanded received message whose `sender_check.warnings` is not empty shows a 13 px `warning` icon left of TEXT/HTML (`messageSenderWarning_<id>`), red (`Theme.error`) when one is `dmarc_fail`, else `Theme.warn`. Its tooltip: "Check before you trust this message", one "• " line per warning, then "Gmail’s checks: SPF … · DKIM … · DMARC …" when Gmail checked. Sent mail never shows it. `MessageSource` exposes `senderCheck`, `senderVerified` and `senderWarnings`, from the parsed source or a live Gmail message.
+- **Always load images.** `HtmlMessageBody.senderVerified` is true only when Gmail verified the sender and the message is not in Spam. An allowed sender's images load automatically only then, including once the verdict arrives after the HTML. Otherwise the image row reads "N images hidden: they load automatically only when Gmail verifies the sender and it isn’t Spam". Load images still works for the one message.
+- **Unsubscribe by email.** Clicking Unsubscribe for a `mailto` method opens a confirmation (`unsubscribeConfirmation_<id>`): "Send an unsubscribe email?", naming the address and saying Gmail confirmed it belongs to the sender. Send sends; Cancel sends nothing.
+- **Attachments.** Image thumbnails and the viewer show only the engine's PNG preview, never the file itself. A video card decodes nothing: it shows a play badge (`attachmentPlay_<id>`) and plays only in the viewer once opened; the poster frame and duration are gone. Opening a file whose type runs code, installs software, changes settings or opens in a browser (apps, installers, disk images, scripts, shortcuts, `.terminal`, `.fileloc`/`.inetloc`/`.webloc`, `.jar`, HTML and SVG, and the Windows and Linux equivalents) shows a toast instead: "fuckMail doesn't open .x files: they can run programs or show fake sign-in pages. Save it and open it yourself only if you trust it.", with Save to Downloads. Saved copies are marked as downloaded from the internet.
+
+Consumers: `MailBackend` (`requestAttachmentPreview(account, id, video)`, `openAttachment`, toast action `save_attachment`), `AttachmentTile`, `AttachmentViewer`, `MessageNotices`, `HtmlMessageBody`, `MessageSource`; Core97, Gmail45; gui-mail-selection, gui-html-message-body.
+
+
 ## D208 — quoted history on request (Mail UI151)
 
 - Each expanded received message whose reader left quoted history out ends with a 28 × 14 px "···" button: 4 px corners, 7% ink fill (14% hovered or while showing), the `more` icon at 55% ink. Tooltip and accessible name: "Show quoted text" / "Hide quoted text". It is absent when nothing was left out.

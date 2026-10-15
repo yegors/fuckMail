@@ -1,5 +1,6 @@
 #include "FmHtmlView.h"
 #include "FmIconItem.h"
+#include "HtmlDocument.h"
 #include "HtmlLinks.h"
 #include <QClipboard>
 #include <QElapsedTimer>
@@ -137,6 +138,32 @@ Flickable {
     view->setImages({{"1", image("blocked")}, {"2", image("failed")}});
     check(await([&] { return countNear(grab(&window), QRect(0, 0, 480, 640), Qt::red, 10) == 0; }), "a blocked image never shows its pixels");
     check(HtmlDocument::liveImageBytes() == 0, "replaced images are released");
+
+    // A blocked link is drawn grey and struck through; the others keep their colour.
+    {
+        const auto box = [&](int id) { return view->mapRectToScene(view->linkRects(id).first().toRectF()).toAlignedRect(); };
+        view->setBlockedLinks({2});
+        check(await([&] { return ready() && countNear(grab(&window), box(2), QColor(0x9a, 0xa0, 0xa6), 30) > 20; }), "a blocked link is painted grey");
+        check(countNear(grab(&window), box(1), QColor(0x9a, 0xa0, 0xa6), 30) < 5, "a link that is not blocked keeps its colour");
+        view->setBlockedLinks({});
+        check(await([&] { return ready() && countNear(grab(&window), box(2), QColor(0x9a, 0xa0, 0xa6), 30) < 5; }), "unblocking restores the link");
+    }
+
+    // Blocks inside inline boxes: text after a nested block keeps its order, an
+    // inline-block keeps its own blocks, and thousands of blocks under deep
+    // inline boxes lay out in well under a second (was half a minute).
+    {
+        HtmlDocument split("<span>a <b>b <p>p</p> c</b> d</span><em>x <span style=\"display:inline-block\">i <div>j</div></span> y</em>", 16, {}, {});
+        split.layout(480);
+        const auto text = split.snapshot().text;
+        check(text.contains("\nc d"), "text after a nested block keeps its order");
+        check(text.contains("j y"), "an inline-block keeps its blocks, with the text after it on its line");
+        QByteArray bomb = "<div>" + QByteArray("<b>").repeated(120) + QByteArray("<p>x</p>").repeated(4000) + QByteArray("</b>").repeated(120) + "</div>";
+        QElapsedTimer timer; timer.start();
+        HtmlDocument deep(bomb, 16, {}, {});
+        deep.layout(480);
+        check(timer.elapsed() < 5000, "4,000 blocks under 120 inline boxes lay out quickly");
+    }
 
     // Links: hover and click by id; blocked links stay clickable only through QML's check.
     QSignalSpy activated(view, &FmHtmlView::linkActivated);

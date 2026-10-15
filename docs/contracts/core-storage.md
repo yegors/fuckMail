@@ -1,5 +1,26 @@
 # Core and storage
 
+## D210 — sender verdicts, image previews, downloaded marks (Core97)
+
+- `message_source` adds `sender_check` from `fm_core::message_source::sender_check`: `{checked, verified, spf, dkim, dmarc, from_domain, warnings: [{code, text}]}`. It reads only the topmost `Authentication-Results` header, and only when its service is `mx.google.com`; mail-parser's `header_raw` returns the last copy of a header, which a sender can write, so the headers are walked in order. Comments are dropped before parsing. `verified` is DMARC `pass`, or a passing DKIM signature whose domain is the From domain or a parent or child of it. Warning codes: `dmarc_fail`; `unauthenticated` (neither SPF nor DKIM passed, when DMARC did not fail); `name_address` (the display name holds another address); `lookalike_domain` (a non-ASCII or `xn--` label in the From domain). Without Gmail's header nothing is verified and no verdict warning is given.
+- `attachment {id, preview?}`: with `preview: true` an available attachment returns `preview_path`, `width` and `height` instead of `path` and `sha256`. The path is a PNG made by `fm_mail::image_view::normalize_image` and cached under the view cache by content hash, or the reply has `preview_error` (`unsupported`, `too_large`, `invalid`). Attachments over 64 MiB are `too_large` without being read. `normalize_image` now applies EXIF orientation before scaling.
+- Every file handed to other applications is marked as downloaded from the internet: exports under `exports/` (newly made or reused) and fetched remote attachments. On macOS this is `com.apple.quarantine` = `0081;<hex time>;fuckMail;`, kept when already present so a Gatekeeper approval survives; on Windows a `:Zone.Identifier` stream with `ZoneId=3`; Linux has no mark. Failing to set it fails the export.
+- **HTML view, sanitiser version 5.** Output is bounded for litehtml, which matches selectors by backtracking and pads table grids:
+  - element depth 128 (deeper text stays as text);
+  - `colspan`/`rowspan` at most 100 and only on `td`/`th`, `span` only on `col`/`colgroup`;
+  - 100,000 grid cells per message across all tables, counted as litehtml places cells; a table over it loses its spans, then its grid (its text stays, rows end with `<br>`);
+  - 200 elements that inline CSS makes another kind of table part;
+  - 5,000 selectors, 12 compounds per selector;
+  - a matching budget: each selector's worst-case matching work over the output tree is estimated, including sibling scans, class lookups and a second match when `@media` rules exist, and selectors past 10⁷ units (about 70 ms) are dropped in document order.
+  - output that parses back into the same tree: a `p` holding a block is written as a `div`, and an `li`/`dd`/`dt`, heading or `a` that would end an open one is unwrapped; the cost estimate runs on a reparse of the output, and output that still reparses larger keeps only its text;
+  - 2×10⁷ litehtml row scans per message for table placement.
+  Each cap sets `limited`. Ordinary newsletters are unchanged.
+- The GUI marks blocked links with one `data-fm-blocked` attribute and styles them with one rule, rather than a rule per link.
+- `unsubscribe::resolve` and `resolve_mailto` offer a `mailto:` entry only when its domain matches a domain Gmail authenticated for that message (`SenderCheck::vouches_for`): a passing DKIM signer, the envelope domain when SPF passed, or the From domain when DMARC passed, or a parent or child of one of them.
+
+Consumers: Gmail45, Mail UI152, Platform26, CLI. No schema, fixture or protocol change.
+
+
 ## D208 — quoted history on request (Core96)
 
 - `message_html` and `message_image` accept an optional boolean `quotes`. With `quotes: true` the sanitiser keeps quoted reply history (`fm_mail::html_view::sanitize_with_quotes`); the result echoes `quotes`, reports `quote_removed: false`, and numbers resources and links over the whole document. Manifests are memoised per source version and `quotes`; inline images and `html_path` files of that view have their own cache names. A non-boolean `quotes` fails `invalid_request`.

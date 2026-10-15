@@ -188,76 +188,60 @@ void litehtml::render_item::apply_relative_shift(const containing_block_context&
     }
 }
 
-std::tuple<std::shared_ptr<litehtml::render_item>, std::shared_ptr<litehtml::render_item>,
-           std::shared_ptr<litehtml::render_item>>
-litehtml::render_item::split_inlines()
+// fuckMail: splits every block box out of this inline box in one pass. The
+// pieces come in order: clones of this box holding the inline runs between
+// blocks, and the blocks, always starting and ending with a clone. Upstream
+// split out one block per call and moved the remaining children each time, so
+// N blocks inside D nested inline boxes cost about D·N² (half a minute for a
+// short message). Only inline boxes are split; upstream also pulled blocks out
+// of inline-blocks and floats, and put the pieces after a nested block out of
+// order. Returns this box alone when it holds no block.
+std::vector<std::shared_ptr<litehtml::render_item>> litehtml::render_item::split_inlines()
 {
-    std::tuple<std::shared_ptr<litehtml::render_item>, std::shared_ptr<litehtml::render_item>,
-               std::shared_ptr<litehtml::render_item>>
-        ret;
+    std::vector<std::shared_ptr<render_item>> blocks;
+    std::vector<std::vector<std::shared_ptr<render_item>>> runs(1);
     for(const auto& child : m_children)
     {
         if(child->src_el()->is_block_box() && child->src_el()->css().get_float() == float_none)
         {
-            std::get<0>(ret) = clone();
-            std::get<1>(ret) = child;
-            std::get<2>(ret) = clone();
-
-            std::get<1>(ret)->parent(std::get<0>(ret));
-            std::get<2>(ret)->parent(std::get<0>(ret));
-
-            bool found = false;
-            for(const auto& ch : m_children)
-            {
-                if(ch == child)
-                {
-                    found = true;
-                    continue;
-                }
-                if(!found)
-                {
-                    std::get<0>(ret)->add_child(ch);
-                } else
-                {
-                    std::get<2>(ret)->add_child(ch);
-                }
-            }
-            break;
-        }
-        if(!child->children().empty())
+            blocks.push_back(child);
+            runs.emplace_back();
+        } else if(child->src_el()->css().get_display() == display_inline && !child->children().empty())
         {
-            auto child_split = child->split_inlines();
-            if(std::get<0>(child_split))
+            // An inline-block or a float lays out its own blocks, as browsers do.
+            const auto inner = child->split_inlines();
+            runs.back().push_back(inner.front());
+            for(size_t i = 1; i + 1 < inner.size(); i += 2)
             {
-                std::get<0>(ret) = clone();
-                std::get<1>(ret) = std::get<1>(child_split);
-                std::get<2>(ret) = clone();
-
-                std::get<2>(ret)->parent(std::get<0>(ret));
-
-                bool found = false;
-                for(const auto& ch : m_children)
-                {
-                    if(ch == child)
-                    {
-                        found = true;
-                        continue;
-                    }
-                    if(!found)
-                    {
-                        std::get<0>(ret)->add_child(ch);
-                    } else
-                    {
-                        std::get<2>(ret)->add_child(ch);
-                    }
-                }
-                std::get<0>(ret)->add_child(std::get<0>(child_split));
-                std::get<2>(ret)->add_child(std::get<2>(child_split));
-                break;
+                blocks.push_back(inner[i]);
+                runs.emplace_back();
+                runs.back().push_back(inner[i + 1]);
             }
+        } else
+        {
+            runs.back().push_back(child);
         }
     }
-    return ret;
+    if(blocks.empty())
+    {
+        return {shared_from_this()};
+    }
+    std::vector<std::shared_ptr<render_item>> pieces;
+    pieces.reserve(runs.size() + blocks.size());
+    for(size_t i = 0; i < runs.size(); i++)
+    {
+        auto run = clone();
+        for(const auto& ch : runs[i])
+        {
+            run->add_child(ch);
+        }
+        pieces.push_back(run);
+        if(i < blocks.size())
+        {
+            pieces.push_back(blocks[i]);
+        }
+    }
+    return pieces;
 }
 
 bool litehtml::render_item::fetch_positioned()

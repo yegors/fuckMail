@@ -194,9 +194,20 @@ namespace litehtml
     void element::add_render(const std::shared_ptr<render_item>& ri)
     {
         // fuckMail: drop items of a released render tree, so get_render_item()
-        // returns the current one after a rebuild.
-        m_renders.remove_if([](const std::weak_ptr<render_item>& weak) { return weak.expired(); });
+        // returns the current one after a rebuild. Only the front must be
+        // current, and the rest is swept each time the list doubles: an inline
+        // box split around thousands of blocks has an item per piece, and a
+        // sweep on every add made building them quadratic.
+        while(!m_renders.empty() && m_renders.front().expired())
+        {
+            m_renders.pop_front();
+        }
         m_renders.push_back(ri);
+        const auto size = m_renders.size();
+        if(size >= 8 && (size & (size - 1)) == 0)
+        {
+            m_renders.remove_if([](const std::weak_ptr<render_item>& weak) { return weak.expired(); });
+        }
     }
 
     bool element::find_styles_changes(const std::function<void(const position&)>& redraw_box)

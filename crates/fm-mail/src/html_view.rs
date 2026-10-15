@@ -14,20 +14,60 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// Bump when output or manifest meaning changes, so cached copies are rebuilt.
-pub const SANITIZER_VERSION: u32 = 4;
+pub const SANITIZER_VERSION: u32 = 5;
 /// Largest HTML input [`sanitize`] accepts, in bytes (4 MiB).
 pub const MAX_HTML_BYTES: usize = 4 * 1024 * 1024;
 // Bounds on sender-controlled input. Past most of them the excess is dropped
 // or flattened and `HtmlView::limited` is set, rather than refusing the message.
 const MAX_NODES: usize = 50_000;
-const MAX_DEPTH: usize = 256;
+/// Element nesting kept as markup: sixteen nested tables with their row
+/// groups, rows and cells, with room to spare. Deeper content is kept as text.
+const MAX_DEPTH: usize = 128;
 const MAX_TABLE_DEPTH: usize = 16;
 const MAX_CSS_RULES: usize = 2_000;
+/// Selectors over all rules; litehtml keeps about 1.6 KB for each.
+const MAX_CSS_SELECTORS: usize = 5_000;
 const MAX_CSS_BYTES: usize = 256 * 1024;
 const MAX_RESOURCES: usize = 500;
 const MAX_LINKS: usize = 2_000;
 const MAX_DATA_URI: usize = 2 * 1024 * 1024;
 const MAX_URL: usize = 8 * 1024;
+/// Largest `colspan`, `rowspan` or `span`; bigger values are clamped to it.
+const MAX_SPAN: u32 = 100;
+/// What litehtml's table grids may cost across a message. It pads each row
+/// to the widest one and gives every spanned column its own cell, at about
+/// 70 bytes each, so a few kilobytes of spans could otherwise cost
+/// gigabytes. Placing each cell it also looks back through every earlier row
+/// for a rowspan, about 1.2 ns a row, so a long narrow table costs rows²/2
+/// (16,000 rows: 190 ms). Past either budget a table loses its spans, or then
+/// its grid.
+const MAX_TABLE_GRID: Grid = Grid {
+    cells: 100_000,
+    scans: 20_000_000,
+};
+/// Elements CSS may turn into a kind of table part other than their own, such
+/// as a `<div>` made a row or a cell. Those grids are padded the same way.
+const MAX_TABLE_DISPLAY: usize = 200;
+/// Compound selectors in one complex selector, such as `a > b c` (three).
+const MAX_SELECTOR_PARTS: usize = 12;
+/// What litehtml may spend matching the sender's stylesheet, in units of one
+/// compound selector check (about 7 ns). It matches every selector against
+/// every element and retries descendant and sibling combinators by plain
+/// backtracking, so a short rule over deep or wide markup can take minutes.
+/// Selectors past the budget are dropped; ordinary mail uses a small part.
+const CSS_MATCH_BUDGET: f64 = 10_000_000.0;
+/// Trying a selector on an element its tag rules out (about 1 ns).
+const CSS_LOOP_COST: f64 = 0.1;
+/// Checking a selector's first class on an element of its tag (about 2 ns).
+const CSS_CLASS_COST: f64 = 0.3;
+/// Comparing one of a selector's classes with one of an element's, which
+/// litehtml does by scanning the element's list (about 0.2 ns).
+const CSS_LOOKUP_COST: f64 = 0.03;
+/// Stepping over one sibling to find a neighbour or a position (about 1.5 ns).
+const CSS_SCAN_COST: f64 = 0.25;
+/// Recording and applying one matched rule, about 30 ns and 40 bytes. Set
+/// higher than the time alone so the budget also bounds that memory, to 20 MB.
+const CSS_MATCH_COST: f64 = 20.0;
 
 /// Where an image in the view comes from, which decides whether and how it loads.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +245,7 @@ fn rebuild(html: &str, keep_quotes: bool) -> Option<HtmlView> {
         // the quote beats an empty message.
         walk = walk_document(&dom, true);
     }
+    walk.settle_styles();
     let mut out = String::with_capacity(walk.body.len() + walk.css.len() + 128);
     out.push_str("<!DOCTYPE html><html><head>");
     if !walk.css.is_empty() {
@@ -226,15 +267,26 @@ fn walk_document(dom: &RcDom, keep_quotes: bool) -> Walk {
         view: HtmlView::default(),
         body: String::new(),
         css: String::new(),
+        css_len: 0,
         css_rules: 0,
+        css_selectors: 0,
+        rules: Vec::new(),
+        media: Vec::new(),
         nodes: 0,
         table_depth: 0,
         flat_tables: 0,
+        table_grid: MAX_TABLE_GRID,
+        spanless: Vec::new(),
+        open: Open::default(),
+        table_display: 0,
         stopped: false,
         keep_quotes,
         body_attrs: String::new(),
         align: BlockAlign::Start,
         extra_style: HashMap::new(),
+        elements: Vec::new(),
+        parent: 0,
+        names: Names::default(),
     };
     walk.document(&dom.document);
     walk
@@ -409,13 +461,27 @@ struct Walk {
     view: HtmlView,
     /// Rebuilt markup for the inside of `<body>`.
     body: String,
-    /// Accepted rules from every `<style>` element, in document order.
+    /// The output stylesheet, written once the body is walked.
     css: String,
+    /// Length the accepted rules will take in `css`.
+    css_len: usize,
     css_rules: usize,
+    css_selectors: usize,
+    /// Accepted rules from every `<style>` element, in document order.
+    rules: Vec<StyleRule>,
+    /// Preludes of the `@media` blocks that `StyleRule::media` refers to.
+    media: Vec<String>,
     nodes: usize,
     table_depth: usize,
     /// Tables past the nesting limit whose structure is being unwrapped.
     flat_tables: usize,
+    /// Grid budget left for further tables.
+    table_grid: Grid,
+    /// For each open table, whether its cells lose their spans.
+    spanless: Vec<bool>,
+    open: Open,
+    /// Elements whose inline style makes them another kind of table part.
+    table_display: usize,
     /// Set at the node limit or an Outlook reply header; the rest is skipped.
     stopped: bool,
     keep_quotes: bool,
@@ -426,6 +492,160 @@ struct Walk {
     align: BlockAlign,
     /// Declarations added to particular elements, keyed by node address.
     extra_style: HashMap<usize, String>,
+    /// Every element of the output as written, in document order, to check
+    /// that a parser reads the output back to the same tree.
+    elements: Vec<Element>,
+    /// Index in `elements` of the element being filled.
+    parent: usize,
+    names: Names,
+}
+
+/// Tag, class and id names, ASCII-lowercased, as small integers. Matching on
+/// lowercase names finds at least every match litehtml makes.
+#[derive(Default)]
+struct Names(HashMap<String, u32>);
+
+/// What `Names::find` gives a name no selector uses.
+const UNNAMED: u32 = u32::MAX;
+
+impl Names {
+    fn id(&mut self, name: &str) -> u32 {
+        if let Some(&id) = self.0.get(name) {
+            return id;
+        }
+        let next = self.0.len() as u32;
+        *self.0.entry(name.to_ascii_lowercase()).or_insert(next)
+    }
+
+    /// The id of a name already seen, or `UNNAMED`.
+    fn find(&self, name: &str) -> u32 {
+        let lower;
+        let name = if name.bytes().any(|b| b.is_ascii_uppercase()) {
+            lower = name.to_ascii_lowercase();
+            &lower
+        } else {
+            name
+        };
+        self.0.get(name).copied().unwrap_or(UNNAMED)
+    }
+}
+
+/// An output element as litehtml's selector matching sees it.
+struct Element {
+    parent: Option<usize>,
+    tag: u32,
+    /// Sorted, as are `classes`, which keep repeats as litehtml does.
+    ids: Vec<u32>,
+    classes: Vec<u32>,
+    /// Children as litehtml stores them: each element, and at most one per
+    /// character of text, which it splits into words and spaces.
+    children: usize,
+    /// The most classes any child element has.
+    child_classes: usize,
+    /// What `own_table_part` gives for its tag.
+    part: &'static str,
+}
+
+/// Add an element under `parent` to `elements`, with the id and class names
+/// of `node`; returns its index. Names no selector uses stay `UNNAMED`.
+fn push_element(
+    elements: &mut Vec<Element>,
+    names: &mut Names,
+    parent: Option<usize>,
+    tag: &str,
+    node: Option<&Handle>,
+) -> usize {
+    let tokens = |name: &str| {
+        let value = node.and_then(|node| attr(node, name)).unwrap_or_default();
+        let mut found: Vec<u32> = value
+            .split_ascii_whitespace()
+            .map(|token| names.find(token))
+            .collect();
+        found.sort_unstable();
+        found
+    };
+    let (ids, classes) = (tokens("id"), tokens("class"));
+    if let Some(parent) = parent {
+        let parent = &mut elements[parent];
+        parent.children += 1;
+        parent.child_classes = parent.child_classes.max(classes.len());
+    }
+    elements.push(Element {
+        parent,
+        tag: names.id(tag),
+        ids,
+        classes,
+        children: 0,
+        child_classes: 0,
+        part: own_table_part(tag),
+    });
+    elements.len() - 1
+}
+
+/// The elements of a parsed document in document order, as litehtml's
+/// selector matching sees them.
+fn parsed_elements(document: &Handle, names: &mut Names) -> Vec<Element> {
+    let mut elements = Vec::new();
+    let mut stack = vec![(document.clone(), None)];
+    while let Some((node, parent)) = stack.pop() {
+        let mut inner = parent;
+        match &node.data {
+            NodeData::Text { contents } => {
+                if let Some(parent) = parent {
+                    let element: &mut Element = &mut elements[parent];
+                    element.children += contents.borrow().chars().count();
+                }
+                continue;
+            }
+            NodeData::Element { name, .. } => {
+                inner = Some(push_element(
+                    &mut elements,
+                    names,
+                    parent,
+                    &name.local,
+                    Some(&node),
+                ));
+            }
+            NodeData::Document => {}
+            _ => continue,
+        }
+        for child in node.children.borrow().iter().rev() {
+            stack.push((child.clone(), inner));
+        }
+    }
+    elements
+}
+
+/// Whether two element lists form the same tree of the same tags.
+fn same_tree(a: &[Element], b: &[Element]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(a, b)| a.tag == b.tag && a.parent == b.parent)
+}
+
+/// The deepest element's number of ancestors.
+fn tree_depth(elements: &[Element]) -> usize {
+    let mut depths = vec![0; elements.len()];
+    for (at, element) in elements.iter().enumerate() {
+        if let Some(parent) = element.parent {
+            depths[at] = depths[parent] + 1;
+        }
+    }
+    depths.into_iter().max().unwrap_or(0)
+}
+
+/// A style rule kept from the sender's stylesheet.
+struct StyleRule {
+    /// The selector list as written to the output.
+    prelude: String,
+    selectors: Vec<Selector>,
+    body: String,
+    /// `body` without the `display` values that make table parts, and those values.
+    plain: String,
+    table_display: Vec<String>,
+    /// Index in `Walk::media` of the enclosing `@media` block.
+    media: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -531,12 +751,35 @@ impl Walk {
         // Collect every style element first: email clients put them in head
         // and body alike, and cascade order follows document order.
         self.collect_styles(document);
+        // The output's own frame: html, head, its style element and body.
+        push_element(&mut self.elements, &mut self.names, None, "html", None);
+        self.parent = self.add_element("head", None);
+        self.add_element("style", None);
+        self.parent = 0;
         let html = child_element(document, "html");
         let Some(html) = html else { return };
         if let Some(body) = child_element(&html, "body") {
             self.body_attrs = self.attributes("body", &body);
+            self.parent = self.add_element("body", Some(&body));
             self.children(&body, 1);
         }
+    }
+
+    /// Record an output element under the current parent; returns its index.
+    /// Its names are the source's, a superset of those emitted.
+    fn add_element(&mut self, tag: &str, node: Option<&Handle>) -> usize {
+        push_element(
+            &mut self.elements,
+            &mut self.names,
+            Some(self.parent),
+            tag,
+            node,
+        )
+    }
+
+    fn text(&mut self, text: &str) {
+        escape_text(text, &mut self.body);
+        self.elements[self.parent].children += text.chars().count();
     }
 
     fn collect_styles(&mut self, root: &Handle) {
@@ -580,7 +823,7 @@ impl Walk {
             return;
         }
         match &node.data {
-            NodeData::Text { contents } => escape_text(&contents.borrow(), &mut self.body),
+            NodeData::Text { contents } => self.text(&contents.borrow()),
             NodeData::Element { name, .. } => {
                 let tag = name.local.as_ref().to_ascii_lowercase();
                 if tag == "style" || tag == "head" || DROP_WITH_CONTENT.contains(&tag.as_str()) {
@@ -615,8 +858,26 @@ impl Walk {
                         | "col"
                         | "colgroup"
                 );
-                if table && (self.flat_tables > 0 || self.table_depth >= MAX_TABLE_DEPTH) {
-                    // Past the nesting limit: keep the content, drop the grid.
+                // A table whose cells would pass the depth limit is flattened
+                // whole, so no text is left directly in a row.
+                let mut flatten = self.flat_tables > 0
+                    || self.table_depth >= MAX_TABLE_DEPTH
+                    || depth + 3 > MAX_DEPTH;
+                let mut spanless = false;
+                if table && !flatten {
+                    // A grid past the budgets loses its spans, or then itself.
+                    if let Some(cost) = grid(node, true, self.table_grid) {
+                        self.table_grid = self.table_grid.less(cost);
+                    } else if let Some(cost) = grid(node, false, self.table_grid) {
+                        self.view.limited = true;
+                        self.table_grid = self.table_grid.less(cost);
+                        spanless = true;
+                    } else {
+                        flatten = true;
+                    }
+                }
+                if table && flatten {
+                    // Past a limit: keep the content, drop the grid.
                     self.view.limited = true;
                     self.flat_tables += 1;
                     self.children(node, depth + 1);
@@ -626,23 +887,37 @@ impl Walk {
                 // A table part with no emitted table around it (its table was
                 // flattened) is unwrapped too, so no orphan row or cell reaches
                 // the renderer. A `<br>` keeps flattened rows on separate lines.
+                // So is an element a parser would read as ending an open one,
+                // such as an `li` in an `li`, which the source parse kept apart
+                // only through a `marquee` or cell this walk removed.
                 if !KEEP.contains(&tag.as_str())
                     || (table_part && (self.flat_tables > 0 || self.table_depth == 0))
+                    || self.open.ends(&tag)
                 {
                     self.children(node, depth + 1);
                     if tag == "tr" && self.flat_tables > 0 {
                         self.body.push_str("<br>");
+                        self.add_element("br", None);
                     }
                     return;
                 }
+                // A paragraph holding a block would end at the block when the
+                // output is parsed again, so it is written as a `div`.
+                let tag = if tag == "p" && holds_block(node) {
+                    "div".to_owned()
+                } else {
+                    tag
+                };
                 if matches!(tag.as_str(), "table" | "div") {
                     self.align_block(node);
                 }
                 if table {
+                    self.spanless.push(spanless);
                     self.fixed_layout(node);
                 }
                 let attrs = self.attributes(&tag, node);
                 let _ = write!(self.body, "<{tag}{attrs}>");
+                let element = self.add_element(&tag, Some(node));
                 if VOID.contains(&tag.as_str()) {
                     return;
                 }
@@ -650,11 +925,17 @@ impl Walk {
                     self.table_depth += 1;
                 }
                 let outer = self.align;
+                let outer_parent = std::mem::replace(&mut self.parent, element);
+                let outer_open = self.open;
+                self.open = outer_open.inside(&tag);
                 self.align = inherited_align(&tag, node, outer);
                 self.children(node, depth + 1);
                 self.align = outer;
+                self.parent = outer_parent;
+                self.open = outer_open;
                 if table {
                     self.table_depth -= 1;
+                    self.spanless.pop();
                 }
                 let _ = write!(self.body, "</{tag}>");
             }
@@ -698,11 +979,12 @@ impl Walk {
             .filter(|c| matches!(&c.data, NodeData::Element { name, .. } if matches!(&*name.local, "td" | "th")))
             .cloned()
             .collect();
+        let spanless = self.spanless.last().copied().unwrap_or(false);
         let span = |cell: &Handle| {
             attr(cell, "colspan")
-                .and_then(|v| v.trim().parse::<u32>().ok())
+                .and_then(|v| span_value(&v))
+                .filter(|_| !spanless)
                 .unwrap_or(1)
-                .clamp(1, 1000)
         };
         let columns: u32 = cells.iter().map(span).sum();
         let widthless = cells.iter().all(|cell| {
@@ -743,7 +1025,7 @@ impl Walk {
                 return;
             }
             match &node.data {
-                NodeData::Text { contents } => escape_text(&contents.borrow(), &mut self.body),
+                NodeData::Text { contents } => self.text(&contents.borrow()),
                 NodeData::Element { name, .. } => {
                     let tag = name.local.as_ref().to_ascii_lowercase();
                     if tag == "style" || DROP_WITH_CONTENT.contains(&tag.as_str()) {
@@ -797,7 +1079,7 @@ impl Walk {
             }
         }
         if let Some(css) = attr(node, "style") {
-            let css = self.declarations(&css);
+            let css = self.declarations("img", &css);
             if !css.is_empty() {
                 attrs.push_str(" style=\"");
                 escape_attr(&css, &mut attrs);
@@ -805,6 +1087,7 @@ impl Walk {
             }
         }
         let _ = write!(self.body, "<img{attrs}>");
+        self.add_element("img", None);
     }
 
     /// Record an image source. Returns its manifest id, or `None` to drop it.
@@ -909,7 +1192,7 @@ impl Walk {
                         let _ = write!(out, " href=\"fm-link:{id}\"");
                     }
                 }
-                "style" => style = self.declarations(value),
+                "style" => style = self.declarations(tag, value),
                 "background" if matches!(tag, "table" | "td" | "th" | "body" | "tr") => {
                     background = self.resource(value, None, None, "")
                 }
@@ -946,6 +1229,15 @@ impl Walk {
     /// A validated, escaped attribute value, or `None` to drop the attribute.
     fn attribute_value(&self, tag: &str, name: &str, value: &str) -> Option<String> {
         let value = value.trim();
+        // litehtml reads spans from any element shown as a cell, so they stay
+        // on the elements they belong to, and off a table over its budget.
+        if matches!(name, "colspan" | "rowspan" | "span") {
+            let ok = match name {
+                "span" => matches!(tag, "col" | "colgroup"),
+                _ => matches!(tag, "td" | "th") && self.spanless.last() != Some(&true),
+            };
+            return span_value(value).filter(|_| ok).map(|v| v.to_string());
+        }
         // Each attribute has its own value grammar. Anything unlisted is
         // dropped, which covers event handlers and every URL-bearing attribute.
         let ok = match name {
@@ -965,7 +1257,6 @@ impl Walk {
             ),
             "bgcolor" | "color" => color_attr(value),
             "border" | "cellpadding" | "cellspacing" => small_number(value, 100),
-            "colspan" | "rowspan" | "span" => small_number(value, 1000) && value != "0",
             "start" => tag == "ol" && small_number(value, 100_000),
             "type" => matches!(tag, "ol" | "ul" | "li") && value.len() <= 8,
             "size" => tag == "font" && font_size_attr(value),
@@ -1006,41 +1297,716 @@ impl Walk {
         Some(escaped)
     }
 
-    /// Re-serialize an inline `style` value, keeping only allowed declarations.
-    fn declarations(&mut self, css: &str) -> String {
+    /// Re-serialize an inline `style` value of a `tag` element, keeping only
+    /// allowed declarations. A `display` making it another kind of table
+    /// part counts toward `MAX_TABLE_DISPLAY`, past which it is dropped.
+    fn declarations(&mut self, tag: &str, css: &str) -> String {
         if css.len() > MAX_CSS_BYTES {
             self.view.limited = true;
             return String::new();
         }
         let mut input = ParserInput::new(css);
         let mut parser = Parser::new(&mut input);
-        let mut out = String::new();
+        let mut out = Vec::new();
         let mut decls = Declarations {
             walk: self,
             out: &mut out,
         };
         for _ in RuleBodyParser::new(&mut parser, &mut decls) {}
-        out
+        let foreign = |display: &Option<String>| {
+            display
+                .as_deref()
+                .is_some_and(|display| display != own_table_part(tag))
+        };
+        let mut keep = true;
+        if out.iter().any(|(_, display)| foreign(display)) {
+            keep = self.table_display < MAX_TABLE_DISPLAY;
+            if keep {
+                self.table_display += 1;
+            } else {
+                self.view.limited = true;
+            }
+        }
+        join_declarations(&out, |display| keep || !foreign(display))
     }
 
-    /// Append a `<style>` element's accepted rules to the output stylesheet. A
-    /// rule with an unsupported selector, or no allowed declaration, is dropped.
+    /// Collect a `<style>` element's accepted rules for the output stylesheet.
+    /// A rule with an unsupported selector, or no allowed declaration, is dropped.
     fn stylesheet(&mut self, css: &str) {
-        if self.css.len() + css.len() > MAX_CSS_BYTES {
+        if self.css_len + css.len() > MAX_CSS_BYTES {
             self.view.limited = true;
             return;
         }
         let mut input = ParserInput::new(css);
         let mut parser = Parser::new(&mut input);
-        let mut out = String::new();
         let mut rules = Rules {
             walk: self,
-            out: &mut out,
-            nested: false,
+            media: None,
         };
         for _ in StyleSheetParser::new(&mut parser, &mut rules) {}
-        self.css.push_str(&out);
     }
+
+    /// Write the output stylesheet now that the output's elements are known.
+    /// Selectors that would take litehtml past `CSS_MATCH_BUDGET` are dropped,
+    /// in document order, as are `display` values making table parts once
+    /// more than `MAX_TABLE_DISPLAY` elements could get one.
+    fn settle_styles(&mut self) {
+        // Costs are estimated on the tree a parser builds from the output,
+        // which is what litehtml matches against. The walk writes markup that
+        // parses back to the tree it recorded; should a parser still rebuild
+        // some construct, the estimate follows the parser, and if that adds
+        // elements, depth or grid, only the text is kept.
+        let document = format!(
+            "<!DOCTYPE html><html><head><style></style></head><body{}>{}</body></html>",
+            self.body_attrs, self.body
+        );
+        let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(document);
+        let parsed = parsed_elements(&dom.document, &mut self.names);
+        if !same_tree(&parsed, &self.elements) {
+            self.view.limited = true;
+            if parsed.len() > self.elements.len()
+                || tree_depth(&parsed) > tree_depth(&self.elements)
+                || !grids_fit(&dom.document)
+            {
+                self.body = text_only(&dom.document);
+                self.rules.clear();
+            }
+        }
+        let elements = &parsed;
+        let index = ElementIndex::new(elements, &self.names);
+        // When a media query changes with the width, litehtml matches every
+        // matched rule again, on each such layout.
+        let rematch = !self.media.is_empty();
+        let mut budget = CSS_MATCH_BUDGET;
+        // Estimating a selector is work too, whether or not it is kept: each
+        // one is charged its fixed costs, the elements it looks at and what it
+        // was found to cost. Past twice the budget in all, the remaining
+        // selectors are dropped unestimated.
+        let mut effort = 2.0 * CSS_MATCH_BUDGET;
+        let mut trimmed = false;
+        for rule in &mut self.rules {
+            let before = rule.selectors.len();
+            rule.selectors.retain(|selector| {
+                if effort <= 0.0 {
+                    return false;
+                }
+                let (checks, pool) = index.tried(selector);
+                let fixed = elements.len() as f64 * CSS_LOOP_COST + checks;
+                let limit = budget - fixed;
+                let found = matching_cost(selector, elements, pool, rematch, limit);
+                effort -= fixed + pool.len() as f64 + found.unwrap_or(limit).max(0.0);
+                let Some(cost) = found else { return false };
+                budget = limit - cost;
+                true
+            });
+            if rule.selectors.len() != before {
+                trimmed = true;
+                let texts: Vec<&str> = rule.selectors.iter().map(|s| s.text.as_str()).collect();
+                rule.prelude = texts.join(",");
+            }
+        }
+        // Count the elements a table-part `display` could make another kind of
+        // part, assuming each selector matches wherever its rightmost compound
+        // does, and note the rules that could.
+        let mut reached = std::collections::HashSet::new();
+        let mut foreign = vec![false; self.rules.len()];
+        let limit = MAX_TABLE_DISPLAY.saturating_sub(self.table_display);
+        for (rule, foreign) in self.rules.iter().zip(&mut foreign) {
+            if rule.table_display.is_empty() {
+                continue;
+            }
+            for selector in &rule.selectors {
+                let right = selector.rightmost();
+                for &at in index.tried(selector).1 {
+                    let element = &elements[at];
+                    let other = |display: &String| display != element.part;
+                    if right.may_match(element) && rule.table_display.iter().any(other) {
+                        *foreign = true;
+                        if reached.len() <= limit {
+                            reached.insert(at);
+                        }
+                    }
+                }
+            }
+        }
+        let strip = reached.len() > limit;
+        self.view.limited |= trimmed || strip;
+        let mut css = String::with_capacity(self.css_len);
+        let mut open: Option<usize> = None;
+        for (rule, &foreign) in self.rules.iter().zip(&foreign) {
+            let body = if strip && foreign {
+                &rule.plain
+            } else {
+                &rule.body
+            };
+            if rule.selectors.is_empty() || body.is_empty() {
+                continue;
+            }
+            if open != rule.media {
+                if open.is_some() {
+                    css.push('}');
+                }
+                if let Some(media) = rule.media {
+                    let _ = write!(css, "@media {}{{", self.media[media]);
+                }
+                open = rule.media;
+            }
+            let _ = write!(css, "{}{{{body}}}", rule.prelude);
+        }
+        if open.is_some() {
+            css.push('}');
+        }
+        self.css = css;
+    }
+}
+
+/// Output elements by tag and by class name.
+struct ElementIndex {
+    by_tag: Vec<Vec<usize>>,
+    by_class: Vec<Vec<usize>>,
+    /// Classes over the elements of each tag.
+    tag_classes: Vec<usize>,
+    all: Vec<usize>,
+    all_classes: usize,
+}
+
+impl ElementIndex {
+    fn new(elements: &[Element], names: &Names) -> Self {
+        let mut index = ElementIndex {
+            by_tag: vec![Vec::new(); names.0.len()],
+            by_class: vec![Vec::new(); names.0.len()],
+            tag_classes: vec![0; names.0.len()],
+            all: (0..elements.len()).collect(),
+            all_classes: 0,
+        };
+        for (at, element) in elements.iter().enumerate() {
+            index.by_tag[element.tag as usize].push(at);
+            index.tag_classes[element.tag as usize] += element.classes.len();
+            index.all_classes += element.classes.len();
+            for &class in element.classes.iter().filter(|&&class| class != UNNAMED) {
+                index.by_class[class as usize].push(at);
+            }
+        }
+        index
+    }
+
+    /// Elements to look at for `selector`, with the cost of litehtml's quick
+    /// check of its rightmost compound's first class on each element of that
+    /// compound's tag. Those that pass `Compound::tried` are the ones
+    /// litehtml then matches against; the list is never longer than what the
+    /// check costs, so walking it is paid for.
+    fn tried(&self, selector: &Selector) -> (f64, &[usize]) {
+        let right = selector.rightmost();
+        let (tagged, classes) = match right.tag {
+            Some(tag) => (&self.by_tag[tag as usize], self.tag_classes[tag as usize]),
+            None => (&self.all, self.all_classes),
+        };
+        let Some(class) = right.first_class else {
+            return (0.0, tagged);
+        };
+        let classed = &self.by_class[class as usize];
+        let pool = if classed.len() < tagged.len() {
+            classed
+        } else {
+            tagged
+        };
+        let cost = tagged.len() as f64 * CSS_CLASS_COST + classes as f64 * CSS_LOOKUP_COST;
+        (cost, pool)
+    }
+}
+
+/// Upper bound of what litehtml spends matching `selector` against the
+/// elements of `pool` that it tries it on, or `None` past `limit`. With
+/// `rematch`, elements that may match are counted twice.
+fn matching_cost(
+    selector: &Selector,
+    elements: &[Element],
+    pool: &[usize],
+    rematch: bool,
+    limit: f64,
+) -> Option<f64> {
+    if limit < 0.0 {
+        return None;
+    }
+    let right = selector.rightmost();
+    let last = selector.parts.len() - 1;
+    // Pseudo-classes are ignored on a first pass and checked on a second.
+    let pass = |scans| Matching {
+        selector,
+        elements,
+        scans,
+        tries: HashMap::default(),
+        chains: HashMap::default(),
+    };
+    let mut first = pass(false);
+    let mut second = selector.pseudo.then(|| pass(true));
+    let times = if rematch { 2.0 } else { 1.0 };
+    let mut cost = 0.0;
+    for &index in pool {
+        let element = &elements[index];
+        if !right.tried(element) {
+            continue;
+        }
+        // Each element is tried once, so the rightmost part is not memoised.
+        let check = right.check(element.classes.len());
+        cost += if right.may_match(element) {
+            let pseudo = second
+                .as_mut()
+                .map_or(0.0, |second| second.matched(last, index, check));
+            CSS_MATCH_COST + times * (first.matched(last, index, check) + pseudo)
+        } else {
+            check
+        };
+        if cost > limit {
+            return None;
+        }
+    }
+    Some(cost)
+}
+
+/// Memoised costs by selector part and element index.
+type Memo = HashMap<(usize, usize), f64, std::hash::BuildHasherDefault<IndexHasher>>;
+
+/// A multiply-rotate hash for keys of small integers, which the default
+/// hasher spends most of the estimate on.
+#[derive(Default)]
+struct IndexHasher(u64);
+
+impl std::hash::Hasher for IndexHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
+        }
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+}
+
+/// litehtml matches a complex selector right to left by backtracking without
+/// memoisation: a descendant combinator retries the rest of the selector on
+/// every ancestor until it succeeds, a general sibling one on every earlier
+/// sibling, so the work multiplies with nesting. This counts those tries as if
+/// each one failed. Siblings off the element's own ancestor chain are not
+/// recorded, so they are assumed to match.
+struct Matching<'a> {
+    selector: &'a Selector,
+    elements: &'a [Element],
+    /// Counting the pass that checks pseudo-classes.
+    scans: bool,
+    tries: Memo,
+    chains: Memo,
+}
+
+impl Matching<'_> {
+    /// Checks made matching the selector's parts up to `part` on `element`.
+    fn tries(&mut self, part: usize, element: usize) -> f64 {
+        if let Some(&cost) = self.tries.get(&(part, element)) {
+            return cost;
+        }
+        let (selector, elements) = (self.selector, self.elements);
+        let compound = &selector.parts[part];
+        let node = &elements[element];
+        // A tag mismatch fails at once; otherwise each class is looked up.
+        let cost = if compound.tag.is_some_and(|tag| tag != node.tag) {
+            1.0
+        } else if compound.may_match(node) {
+            let check = compound.check(node.classes.len());
+            self.matched(part, element, check)
+        } else {
+            compound.check(node.classes.len())
+        };
+        self.tries.insert((part, element), cost);
+        cost
+    }
+
+    /// The same for an element known or assumed to match `part`, `element`
+    /// itself or an unrecorded sibling of it, at `check` for the compound.
+    fn matched(&mut self, part: usize, element: usize, check: f64) -> f64 {
+        check + self.position(part, element) + self.next(part, element)
+    }
+
+    /// `matched` for an unrecorded sibling of `element`.
+    fn sibling(&mut self, part: usize, element: usize) -> f64 {
+        let classes = self.elements[element]
+            .parent
+            .map_or(0, |parent| self.elements[parent].child_classes);
+        let check = self.selector.parts[part].check(classes);
+        self.matched(part, element, check)
+    }
+
+    /// Checks made once `part` matched `element` or one of its siblings.
+    fn next(&mut self, part: usize, element: usize) -> f64 {
+        let Some(parent) = self.elements[element].parent else {
+            return 0.0;
+        };
+        if part == 0 {
+            return 0.0;
+        }
+        let siblings = self.siblings(element);
+        match self.selector.combinators[part - 1] {
+            Combinator::Descendant => self.chain(part - 1, parent),
+            Combinator::Child => self.tries(part - 1, parent),
+            Combinator::Adjacent => siblings * CSS_SCAN_COST + self.sibling(part - 1, element),
+            Combinator::Sibling => siblings * (CSS_SCAN_COST + self.sibling(part - 1, element)),
+        }
+    }
+
+    /// Tries of `part` on `element` and on each of its ancestors.
+    fn chain(&mut self, part: usize, element: usize) -> f64 {
+        let mut pending = Vec::new();
+        let mut node = Some(element);
+        let mut total = 0.0;
+        while let Some(index) = node {
+            if let Some(&sum) = self.chains.get(&(part, index)) {
+                total = sum;
+                break;
+            }
+            pending.push(index);
+            node = self.elements[index].parent;
+        }
+        for &index in pending.iter().rev() {
+            total += self.tries(part, index);
+            self.chains.insert((part, index), total);
+        }
+        total
+    }
+
+    /// Siblings stepped over to check a structural pseudo-class, which
+    /// litehtml does on the second pass once the rest of the compound matched.
+    fn position(&self, part: usize, element: usize) -> f64 {
+        if self.scans && self.selector.parts[part].pseudo {
+            self.siblings(element) * CSS_SCAN_COST
+        } else {
+            0.0
+        }
+    }
+
+    fn siblings(&self, element: usize) -> f64 {
+        self.elements[element]
+            .parent
+            .map_or(0.0, |parent| self.elements[parent].children as f64)
+    }
+}
+
+/// What a table grid costs litehtml, or what is left of the budget for one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Grid {
+    /// Cells allocated.
+    cells: u64,
+    /// Earlier rows looked through while placing cells.
+    scans: u64,
+}
+
+impl Grid {
+    fn less(self, cost: Grid) -> Grid {
+        Grid {
+            cells: self.cells - cost.cells,
+            scans: self.scans - cost.scans,
+        }
+    }
+}
+
+/// What litehtml's grid for `table` costs, or `None` past `limit`. Every row
+/// is padded to the widest; a cell's colspan adds a cell per column, and its
+/// rowspan pushes later rows' cells right, from its first column only, as
+/// litehtml places them. Each placement looks through the earlier rows.
+/// Without `spans`, every span counts as 1.
+fn grid(table: &Handle, spans: bool, limit: Grid) -> Option<Grid> {
+    let mut rows = Vec::new();
+    for child in table.children.borrow().iter() {
+        match element_name(child) {
+            Some("tr") => rows.push(child.clone()),
+            Some("thead" | "tbody" | "tfoot") => rows.extend(
+                child
+                    .children
+                    .borrow()
+                    .iter()
+                    .filter(|row| element_name(row) == Some("tr"))
+                    .cloned(),
+            ),
+            _ => {}
+        }
+    }
+    let count = rows.len() as u64;
+    let span = |cell: &Handle, name: &str| {
+        attr(cell, name)
+            .and_then(|v| span_value(&v))
+            .filter(|_| spans)
+            .unwrap_or(1) as u64
+    };
+    // For each column, the last row that a rowspan from above reaches.
+    let mut reach: Vec<u64> = Vec::new();
+    let mut width = 0;
+    let mut scans = 0u64;
+    for (row, cells) in (0u64..).zip(&rows) {
+        let mut column = 0;
+        for cell in cells.children.borrow().iter() {
+            if !matches!(element_name(cell), Some("td" | "th")) {
+                continue;
+            }
+            let start = column;
+            while reach.get(column as usize).is_some_and(|&last| last >= row) {
+                column += 1;
+            }
+            scans = scans.saturating_add((1 + column - start) * row);
+            let rowspan = span(cell, "rowspan");
+            if rowspan > 1 {
+                let at = column as usize;
+                if reach.len() <= at {
+                    reach.resize(at + 1, 0);
+                }
+                reach[at] = reach[at].max(row + rowspan - 1);
+            }
+            column += span(cell, "colspan");
+            width = width.max(column);
+            if width.saturating_mul(count) > limit.cells || scans > limit.scans {
+                return None;
+            }
+        }
+    }
+    Some(Grid {
+        cells: width * count,
+        scans,
+    })
+}
+
+/// Whether every table in a parsed document fits `MAX_TABLE_GRID` together.
+fn grids_fit(document: &Handle) -> bool {
+    let mut left = MAX_TABLE_GRID;
+    let mut stack = vec![document.clone()];
+    while let Some(node) = stack.pop() {
+        if element_name(&node) == Some("table") {
+            match grid(&node, true, left) {
+                Some(cost) => left = left.less(cost),
+                None => return false,
+            }
+        }
+        stack.extend(node.children.borrow().iter().cloned());
+    }
+    true
+}
+
+/// The escaped text of a parsed document's body, in document order.
+fn text_only(document: &Handle) -> String {
+    let mut out = String::new();
+    let mut stack = vec![document.clone()];
+    while let Some(node) = stack.pop() {
+        match &node.data {
+            NodeData::Text { contents } => escape_text(&contents.borrow(), &mut out),
+            NodeData::Element { name, .. } if &*name.local == "head" => continue,
+            _ => {}
+        }
+        stack.extend(node.children.borrow().iter().rev().cloned());
+    }
+    out
+}
+
+/// Tags that end an open paragraph when a parser reads them.
+const BLOCKS: &[&str] = &[
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "center",
+    "dd",
+    "details",
+    "div",
+    "dl",
+    "dt",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "li",
+    "main",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "summary",
+    "table",
+    "ul",
+];
+
+/// Kept elements a parser treats as special when it looks for an open `li`,
+/// `dd` or `dt` to end: the search stops at them.
+const SPECIAL: &[&str] = &[
+    "article",
+    "aside",
+    "blockquote",
+    "caption",
+    "center",
+    "colgroup",
+    "details",
+    "dl",
+    "figcaption",
+    "figure",
+    "footer",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "main",
+    "nav",
+    "ol",
+    "pre",
+    "section",
+    "summary",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+];
+
+const HEADINGS: &[&str] = &["h1", "h2", "h3", "h4", "h5", "h6"];
+
+/// Whether paragraph `p` holds, in the source, an element that ends an open
+/// paragraph when parsed. Its search stops at such elements, so each node is
+/// looked at for one paragraph at most.
+fn holds_block(p: &Handle) -> bool {
+    let mut stack: Vec<Handle> = p.children.borrow().iter().cloned().collect();
+    while let Some(node) = stack.pop() {
+        let Some(tag) = element_name(&node) else {
+            continue;
+        };
+        if BLOCKS.contains(&tag) {
+            return true;
+        }
+        if tag != "style" && !DROP_WITH_CONTENT.contains(&tag) {
+            stack.extend(node.children.borrow().iter().cloned());
+        }
+    }
+    false
+}
+
+/// Emitted ancestors a parser would end on reading certain start tags. The
+/// source parse keeps them open only across an element this walk removes,
+/// such as a `marquee` or the cell of a flattened table.
+#[derive(Clone, Copy, Default)]
+struct Open {
+    /// An `li` reachable without passing a special element but `div`,
+    /// `address` or `p`; `dl` the same for `dd` or `dt`.
+    li: bool,
+    dl: bool,
+    /// An `a` with no cell or caption since.
+    a: bool,
+    /// The parent is a heading.
+    heading: bool,
+}
+
+impl Open {
+    /// Whether a parser reading `tag` here would end an open element.
+    fn ends(&self, tag: &str) -> bool {
+        match tag {
+            "li" => self.li,
+            "dd" | "dt" => self.dl,
+            "a" => self.a,
+            _ => self.heading && HEADINGS.contains(&tag),
+        }
+    }
+
+    /// The state inside an emitted `tag` element.
+    fn inside(self, tag: &str) -> Open {
+        let mut open = Open {
+            heading: HEADINGS.contains(&tag),
+            ..self
+        };
+        if tag == "li" {
+            (open.li, open.dl) = (true, false);
+        } else if matches!(tag, "dd" | "dt") {
+            (open.li, open.dl) = (false, true);
+        } else if SPECIAL.contains(&tag) {
+            (open.li, open.dl) = (false, false);
+        }
+        if tag == "a" {
+            open.a = true;
+        } else if matches!(tag, "td" | "th" | "caption") {
+            open.a = false;
+        }
+        open
+    }
+}
+
+fn element_name(node: &Handle) -> Option<&str> {
+    match &node.data {
+        NodeData::Element { name, .. } => Some(&name.local),
+        _ => None,
+    }
+}
+
+/// A `colspan`, `rowspan` or `span` value as emitted: clamped to `MAX_SPAN`;
+/// zero or anything but a number drops the attribute.
+fn span_value(value: &str) -> Option<u32> {
+    value
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|&v| v > 0)
+        .map(|v| v.min(MAX_SPAN))
+}
+
+/// The `display` values that make an element a table part.
+const TABLE_PARTS: &[&str] = &[
+    "table-row",
+    "table-cell",
+    "table-row-group",
+    "table-header-group",
+    "table-footer-group",
+    "table-column",
+    "table-caption",
+];
+
+/// The kind of table part `tag` is by itself, as its `display` value, or "".
+fn own_table_part(tag: &str) -> &'static str {
+    match tag {
+        "tr" => "table-row",
+        "td" | "th" => "table-cell",
+        "tbody" => "table-row-group",
+        "thead" => "table-header-group",
+        "tfoot" => "table-footer-group",
+        "col" => "table-column",
+        "caption" => "table-caption",
+        _ => "",
+    }
+}
+
+/// Accepted declarations joined for output, keeping those whose table-part
+/// `display` value (if any) passes `keep`.
+fn join_declarations(
+    declarations: &[(String, Option<String>)],
+    keep: impl Fn(&Option<String>) -> bool,
+) -> String {
+    let kept: Vec<&str> = declarations
+        .iter()
+        .filter(|(_, display)| keep(display))
+        .map(|(text, _)| text.as_str())
+        .collect();
+    kept.join(";")
 }
 
 /// The alignment an element passes to its descendants: its own legacy `align`,
@@ -1346,10 +2312,11 @@ const UNITS: &[&str] = &[
 
 const COLOR_FUNCTIONS: &[&str] = &["rgb", "rgba", "hsl", "hsla"];
 
-/// Declaration-list parser that appends accepted `property:value` pairs to `out`.
+/// Declaration-list parser that appends accepted `property:value` pairs to
+/// `out`, each with its `display` value when that makes a table part.
 struct Declarations<'w, 'o> {
     walk: &'w mut Walk,
-    out: &'o mut String,
+    out: &'o mut Vec<(String, Option<String>)>,
 }
 
 impl<'i> DeclarationParser<'i> for Declarations<'_, '_> {
@@ -1367,13 +2334,18 @@ impl<'i> DeclarationParser<'i> for Declarations<'_, '_> {
             return Err(input.new_custom_error(()));
         }
         let value = value(self.walk, &property, input).map_err(|_| input.new_custom_error(()))?;
-        if value.trim().is_empty() {
+        let value = value.trim();
+        if value.is_empty() {
             return Err(input.new_custom_error(()));
         }
-        if !self.out.is_empty() {
-            self.out.push(';');
-        }
-        let _ = write!(self.out, "{property}:{}", value.trim());
+        let keyword = value
+            .split(' ')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let display =
+            (property == "display" && TABLE_PARTS.contains(&keyword.as_str())).then_some(keyword);
+        self.out.push((format!("{property}:{value}"), display));
         Ok(())
     }
 }
@@ -1568,51 +2540,62 @@ fn clamp(value: f32) -> f32 {
     }
 }
 
-/// Stylesheet parser that appends accepted rules to `out`. `nested` is set
-/// inside `@media`, where another at-rule is refused.
-struct Rules<'w, 'o> {
+/// Stylesheet parser that collects accepted rules in `Walk::rules`. `media`
+/// is set inside `@media`, where another at-rule is refused.
+struct Rules<'w> {
     walk: &'w mut Walk,
-    out: &'o mut String,
-    nested: bool,
+    media: Option<usize>,
 }
 
-impl<'i> QualifiedRuleParser<'i> for Rules<'_, '_> {
-    type Prelude = String;
+impl<'i> QualifiedRuleParser<'i> for Rules<'_> {
+    type Prelude = (String, Vec<Selector>);
     type QualifiedRule = ();
     type Error = ();
 
     fn parse_prelude<'t>(
         &mut self,
         input: &mut Parser<'i, 't>,
-    ) -> Result<String, ParseError<'i, ()>> {
-        selector(input).map_err(|_| input.new_custom_error(()))
+    ) -> Result<Self::Prelude, ParseError<'i, ()>> {
+        selector(input, &mut self.walk.names).map_err(|_| input.new_custom_error(()))
     }
 
     fn parse_block<'t>(
         &mut self,
-        prelude: String,
+        (prelude, selectors): Self::Prelude,
         _start: &ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<(), ParseError<'i, ()>> {
-        if self.walk.css_rules >= MAX_CSS_RULES {
+        if self.walk.css_rules >= MAX_CSS_RULES
+            || self.walk.css_selectors + selectors.len() > MAX_CSS_SELECTORS
+        {
             self.walk.view.limited = true;
             return Err(input.new_custom_error(()));
         }
-        let mut body = String::new();
+        let mut out = Vec::new();
         let mut decls = Declarations {
             walk: self.walk,
-            out: &mut body,
+            out: &mut out,
         };
         for _ in RuleBodyParser::new(input, &mut decls) {}
-        if !body.is_empty() {
+        if !out.is_empty() {
+            let body = join_declarations(&out, |_| true);
             self.walk.css_rules += 1;
-            let _ = write!(self.out, "{prelude}{{{body}}}");
+            self.walk.css_selectors += selectors.len();
+            self.walk.css_len += prelude.len() + body.len() + 2;
+            self.walk.rules.push(StyleRule {
+                prelude,
+                selectors,
+                plain: join_declarations(&out, Option::is_none),
+                table_display: out.into_iter().filter_map(|(_, display)| display).collect(),
+                body,
+                media: self.media,
+            });
         }
         Ok(())
     }
 }
 
-impl<'i> AtRuleParser<'i> for Rules<'_, '_> {
+impl<'i> AtRuleParser<'i> for Rules<'_> {
     type Prelude = String;
     type AtRule = ();
     type Error = ();
@@ -1624,7 +2607,7 @@ impl<'i> AtRuleParser<'i> for Rules<'_, '_> {
     ) -> Result<String, ParseError<'i, ()>> {
         // Only one level of `@media`. Every other at-rule goes, including
         // `@import` and `@font-face`, which would load remote resources.
-        if self.nested || !name.eq_ignore_ascii_case("media") {
+        if self.media.is_some() || !name.eq_ignore_ascii_case("media") {
             return Err(input.new_custom_error(()));
         }
         media_query(input).map_err(|_| input.new_custom_error(()))
@@ -1636,26 +2619,26 @@ impl<'i> AtRuleParser<'i> for Rules<'_, '_> {
         _start: &ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<(), ParseError<'i, ()>> {
-        let mut body = String::new();
+        let before = self.walk.rules.len();
         let mut rules = Rules {
+            media: Some(self.walk.media.len()),
             walk: self.walk,
-            out: &mut body,
-            nested: true,
         };
         for _ in RuleBodyParser::new(input, &mut rules) {}
-        if !body.is_empty() {
-            let _ = write!(self.out, "@media {prelude}{{{body}}}");
+        if self.walk.rules.len() > before {
+            self.walk.css_len += "@media {}".len() + prelude.len();
+            self.walk.media.push(prelude);
         }
         Ok(())
     }
 }
 
-impl<'i> DeclarationParser<'i> for Rules<'_, '_> {
+impl<'i> DeclarationParser<'i> for Rules<'_> {
     type Declaration = ();
     type Error = ();
 }
 
-impl<'i> RuleBodyItemParser<'i, (), ()> for Rules<'_, '_> {
+impl<'i> RuleBodyItemParser<'i, (), ()> for Rules<'_> {
     fn parse_declarations(&self) -> bool {
         false
     }
@@ -1672,32 +2655,261 @@ const PSEUDO_CLASSES: &[&str] = &[
     "last-of-type",
 ];
 
+/// One complex selector of a list, such as `table.x > td a`, as litehtml
+/// matches it: compound selectors from left to right and the combinators
+/// between them.
+#[derive(Default)]
+struct Selector {
+    /// As written to the output.
+    text: String,
+    parts: Vec<Compound>,
+    combinators: Vec<Combinator>,
+    /// Some part has a pseudo-class.
+    pseudo: bool,
+}
+
+impl Selector {
+    fn rightmost(&self) -> &Compound {
+        &self.parts[self.parts.len() - 1]
+    }
+}
+
+/// The parts of a compound selector that decide which elements it may
+/// match, as `Names`. Attribute selectors and pseudo-classes are left out, so
+/// it matches at least every element the real selector does.
+#[derive(Default)]
+struct Compound {
+    tag: Option<u32>,
+    id: Option<u32>,
+    /// Sorted once the compound is read.
+    classes: Vec<u32>,
+    /// The first class when it is written before any other subclass:
+    /// litehtml skips elements without it before matching.
+    first_class: Option<u32>,
+    subclasses: usize,
+    pseudo: bool,
+}
+
+impl Compound {
+    /// Whether litehtml's quick check by tag and first class lets `element`
+    /// through to matching.
+    fn tried(&self, element: &Element) -> bool {
+        self.tag.is_none_or(|tag| tag == element.tag)
+            && self
+                .first_class
+                .is_none_or(|class| element.classes.binary_search(&class).is_ok())
+    }
+
+    fn may_match(&self, element: &Element) -> bool {
+        self.tag.is_none_or(|tag| tag == element.tag)
+            && self
+                .id
+                .is_none_or(|id| element.ids.binary_search(&id).is_ok())
+            && self
+                .classes
+                .iter()
+                .all(|class| element.classes.binary_search(class).is_ok())
+    }
+
+    /// Checking this compound on an element of its tag with `classes`
+    /// classes, each of the compound's looked up in the element's list.
+    fn check(&self, classes: usize) -> f64 {
+        1.0 + (self.classes.len() * classes) as f64 * CSS_LOOKUP_COST
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Combinator {
+    Descendant,
+    Child,
+    Adjacent,
+    Sibling,
+}
+
+/// Builds `Selector`s token by token. Fails on what litehtml would not parse
+/// as a selector, such as a dangling combinator, so the estimate matches
+/// what it sees.
+struct SelectorList<'n> {
+    names: &'n mut Names,
+    done: Vec<Selector>,
+    current: Selector,
+    compound: Option<Compound>,
+    combinator: Option<Combinator>,
+    /// A `.` waiting for its class name.
+    dot: bool,
+}
+
+impl SelectorList<'_> {
+    /// End the compound being read, at whitespace, a combinator or a comma.
+    fn close(&mut self) -> Result<(), ()> {
+        if self.dot {
+            return Err(());
+        }
+        if let Some(mut compound) = self.compound.take() {
+            compound.classes.sort_unstable();
+            self.current.pseudo |= compound.pseudo;
+            self.current.parts.push(compound);
+        }
+        Ok(())
+    }
+
+    fn space(&mut self) -> Result<(), ()> {
+        self.close()?;
+        if !self.current.parts.is_empty() && self.combinator.is_none() {
+            self.combinator = Some(Combinator::Descendant);
+        }
+        Ok(())
+    }
+
+    fn combinator(&mut self, combinator: Combinator) -> Result<(), ()> {
+        self.close()?;
+        if self.current.parts.is_empty()
+            || self.combinator.is_some_and(|c| c != Combinator::Descendant)
+        {
+            return Err(());
+        }
+        self.combinator = Some(combinator);
+        Ok(())
+    }
+
+    /// The compound being read, starting one after any pending combinator.
+    fn compound(&mut self) -> Result<&mut Compound, ()> {
+        if self.dot {
+            return Err(());
+        }
+        if self.compound.is_none() {
+            if !self.current.parts.is_empty() {
+                let combinator = self.combinator.take().ok_or(())?;
+                self.current.combinators.push(combinator);
+            }
+            if self.current.parts.len() >= MAX_SELECTOR_PARTS {
+                return Err(());
+            }
+            self.compound = Some(Compound::default());
+        }
+        self.compound.as_mut().ok_or(())
+    }
+
+    /// A type selector, `*` as `None`, which must start its compound.
+    fn tag(&mut self, tag: Option<u32>) -> Result<(), ()> {
+        if self.compound.is_some() {
+            return Err(());
+        }
+        self.compound()?.tag = tag;
+        Ok(())
+    }
+
+    fn ident(&mut self, name: &str) -> Result<(), ()> {
+        let name = self.names.id(name);
+        if !self.dot {
+            return self.tag(Some(name));
+        }
+        self.dot = false;
+        let compound = self.compound()?;
+        if compound.subclasses == 0 {
+            compound.first_class = Some(name);
+        }
+        compound.subclasses += 1;
+        compound.classes.push(name);
+        Ok(())
+    }
+
+    fn id(&mut self, name: &str) -> Result<(), ()> {
+        let name = self.names.id(name);
+        self.subclass()?.id.get_or_insert(name);
+        Ok(())
+    }
+
+    fn subclass(&mut self) -> Result<&mut Compound, ()> {
+        let compound = self.compound()?;
+        compound.subclasses += 1;
+        Ok(compound)
+    }
+
+    /// End one selector of the list; `text` is how it was written.
+    fn end(&mut self, text: &str) -> Result<(), ()> {
+        self.close()?;
+        if self.current.parts.is_empty()
+            || self
+                .combinator
+                .take()
+                .is_some_and(|c| c != Combinator::Descendant)
+        {
+            return Err(());
+        }
+        self.current.text = text.trim().to_owned();
+        self.done.push(std::mem::take(&mut self.current));
+        Ok(())
+    }
+}
+
 /// Type, class, id, universal, simple attribute selectors, combinators and a
 /// few structural pseudo-classes. Anything else rejects the whole rule.
-fn selector<'i>(input: &mut Parser<'i, '_>) -> Result<String, ()> {
+/// Returns the list as written to the output and each selector in it.
+fn selector<'i>(
+    input: &mut Parser<'i, '_>,
+    names: &mut Names,
+) -> Result<(String, Vec<Selector>), ()> {
     if escaped(input) {
         return Err(());
     }
     let mut out = String::new();
+    let mut list = SelectorList {
+        names,
+        done: Vec::new(),
+        current: Selector::default(),
+        compound: None,
+        combinator: None,
+        dot: false,
+    };
+    let mut start = 0;
     loop {
         let token = match input.next_including_whitespace() {
             Ok(token) => token.clone(),
             Err(_) => break,
         };
         match token {
-            Token::WhiteSpace(_) => out.push(' '),
-            Token::Comma => out.push(','),
-            Token::Ident(_) | Token::IDHash(_) => out.push_str(&token.to_css_string()),
-            Token::Delim(c @ ('.' | '*' | '>' | '+' | '~')) => out.push(c),
+            Token::WhiteSpace(_) => {
+                out.push(' ');
+                list.space()?;
+            }
+            Token::Comma => {
+                list.end(&out[start..])?;
+                out.push(',');
+                start = out.len();
+            }
+            Token::Ident(ref name) => {
+                out.push_str(&token.to_css_string());
+                list.ident(name)?;
+            }
+            Token::IDHash(ref id) => {
+                out.push_str(&token.to_css_string());
+                list.id(id)?;
+            }
+            Token::Delim(c @ ('.' | '*' | '>' | '+' | '~')) => {
+                out.push(c);
+                match c {
+                    '.' => {
+                        list.compound()?;
+                        list.dot = true;
+                    }
+                    '*' => list.tag(None)?,
+                    '>' => list.combinator(Combinator::Child)?,
+                    '+' => list.combinator(Combinator::Adjacent)?,
+                    _ => list.combinator(Combinator::Sibling)?,
+                }
+            }
             Token::Colon => match input.next_including_whitespace() {
                 Ok(Token::Ident(p))
                     if PSEUDO_CLASSES.contains(&p.to_ascii_lowercase().as_str()) =>
                 {
                     let _ = write!(out, ":{}", p.to_ascii_lowercase());
+                    list.subclass()?.pseudo = true;
                 }
                 _ => return Err(()),
             },
             Token::SquareBracketBlock => {
+                list.subclass()?;
                 let inner = input
                     .parse_nested_block(|p| {
                         let name = p.expect_ident().map(|s| s.to_ascii_lowercase())?;
@@ -1721,12 +2933,8 @@ fn selector<'i>(input: &mut Parser<'i, '_>) -> Result<String, ()> {
             _ => return Err(()),
         }
     }
-    let out = out.trim().to_owned();
-    if out.is_empty() {
-        Err(())
-    } else {
-        Ok(out)
-    }
+    list.end(&out[start..])?;
+    Ok((out.trim().to_owned(), list.done))
 }
 
 /// `screen`, `all`, `only`, `and`, `not` and width/colour-scheme features.

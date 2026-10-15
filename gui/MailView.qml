@@ -2145,6 +2145,24 @@ Item {
                                                 Behavior on opacity { NumberAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
                                                 name: "check"; size: 11; color: Theme.accent; Layout.rightMargin: 4
                                             }
+                                            // Gmail's checks or the From header look wrong: say so before
+                                            // the person trusts the message. Red when DMARC failed.
+                                            Item {
+                                                id: senderWarning; objectName: "messageSenderWarning_" + member.modelData.id
+                                                readonly property var warnings: messageSource.senderWarnings
+                                                readonly property var check: messageSource.senderCheck || ({})
+                                                visible: member.isExpanded && warnings.length > 0
+                                                implicitWidth: 26; implicitHeight: 26
+                                                Accessible.role: Accessible.StaticText; Accessible.name: tipText
+                                                readonly property string tipText: "Check before you trust this message\n" + warnings.map(function(w) { return "• " + w.text }).join("\n")
+                                                    + (check.checked ? "\nGmail’s checks: SPF " + (check.spf || "none") + " · DKIM " + (check.dkim || "none") + " · DMARC " + (check.dmarc || "none") : "")
+                                                FmIcon {
+                                                    anchors.centerIn: parent; name: "warning"; size: 13
+                                                    color: senderWarning.warnings.some(function(w) { return w.code === "dmarc_fail" }) ? Theme.error : Theme.warn
+                                                }
+                                                HoverHandler { id: senderWarningHover }
+                                                FmToolTip { shown: senderWarningHover.hovered; text: senderWarning.tipText }
+                                            }
                                             MessageHeaderButton {
                                                 objectName: "messageFormatToggle_" + member.modelData.id
                                                 visible: member.isExpanded && messageSource.hasHtml && messageSource.canChoose
@@ -2284,6 +2302,7 @@ Item {
                                         visible: messageBody.htmlShown; Layout.fillWidth: true
                                         sourceComponent: HtmlMessageBody {
                                             message: member.modelData; account: backend.account; conversation: backend.selectedId
+                                            senderVerified: messageSource.senderVerified && !mail.spamMode && !member.modelData.spam
                                             quotes: messageBody.showQuotes
                                             addedPhrases: messageBody.quoteAdditions
                                             matchPhrases: mail.bodyPhrases

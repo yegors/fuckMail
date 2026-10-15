@@ -1,6 +1,7 @@
 //! How a received message can be unsubscribed from: its `List-Unsubscribe`
 //! header (RFC 2369), one-click `List-Unsubscribe-Post` (RFC 8058), or an
 //! unsubscribe link in the body. Pure: no I/O.
+use crate::sender_check::SenderCheck;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 
@@ -13,6 +14,8 @@ pub enum Unsubscribe {
     /// An https POST of `List-Unsubscribe=One-Click` to `url`, in the background.
     OneClick { url: String },
     /// An email to `address`, with the subject and body the header asks for.
+    /// Offered only when Gmail authenticated the address's domain for this
+    /// message, so a sender cannot have the person write to someone else.
     Mailto {
         /// One plain address, lowercased.
         address: String,
@@ -42,7 +45,8 @@ impl Unsubscribe {
 pub fn unsubscribe(message: &mail_parser::Message<'_>, plain: &str) -> Option<Unsubscribe> {
     let header = message.header_raw("List-Unsubscribe").unwrap_or("");
     let post = message.header_raw("List-Unsubscribe-Post").unwrap_or("");
-    from_headers(header, post).or_else(|| {
+    let check = crate::sender_check::check(message);
+    from_headers(header, post, &check).or_else(|| {
         let html = crate::html_view::html_part(message);
         html.and_then(html_link)
             .or_else(|| text_link(plain))
@@ -53,6 +57,7 @@ pub fn unsubscribe(message: &mail_parser::Message<'_>, plain: &str) -> Option<Un
 /// The `mailto:` entry of `List-Unsubscribe`, even when one-click is offered:
 /// the way out when a list refuses its own one-click POST.
 pub fn mailto_alternative(message: &mail_parser::Message<'_>) -> Option<Unsubscribe> {
+    let check = crate::sender_check::check(message);
     message
         .header_raw("List-Unsubscribe")
         .unwrap_or("")
@@ -62,11 +67,16 @@ pub fn mailto_alternative(message: &mail_parser::Message<'_>) -> Option<Unsubscr
         .map(|uri| uri.split_whitespace().collect::<String>())
         .filter(|uri| !uri.is_empty() && uri.len() <= MAX_URL)
         .filter_map(|uri| url::Url::parse(&uri).ok())
-        .find_map(|uri| mailto(&uri))
+        .find_map(|uri| mailto(&uri, &check))
 }
 
-/// Parse the header pair. URIs are the `<…>` entries of `List-Unsubscribe`.
-pub fn from_headers(list_unsubscribe: &str, list_unsubscribe_post: &str) -> Option<Unsubscribe> {
+/// Parse the header pair. URIs are the `<…>` entries of `List-Unsubscribe`;
+/// a `mailto:` one counts only for a domain `check` vouches for.
+pub fn from_headers(
+    list_unsubscribe: &str,
+    list_unsubscribe_post: &str,
+    check: &SenderCheck,
+) -> Option<Unsubscribe> {
     let uris: Vec<url::Url> = list_unsubscribe
         .split('<')
         .skip(1)
@@ -87,7 +97,7 @@ pub fn from_headers(list_unsubscribe: &str, list_unsubscribe_post: &str) -> Opti
             url: url.to_string(),
         });
     }
-    if let Some(mailto) = uris.iter().find_map(mailto) {
+    if let Some(mailto) = uris.iter().find_map(|uri| mailto(uri, check)) {
         return Some(mailto);
     }
     uris.iter()
@@ -95,7 +105,7 @@ pub fn from_headers(list_unsubscribe: &str, list_unsubscribe_post: &str) -> Opti
         .map(|u| Unsubscribe::Link { url: u.to_string() })
 }
 
-fn mailto(uri: &url::Url) -> Option<Unsubscribe> {
+fn mailto(uri: &url::Url, check: &SenderCheck) -> Option<Unsubscribe> {
     if uri.scheme() != "mailto" {
         return None;
     }
@@ -104,6 +114,7 @@ fn mailto(uri: &url::Url) -> Option<Unsubscribe> {
     let (local, domain) = address.split_once('@')?;
     if local.is_empty()
         || domain.is_empty()
+        || !check.vouches_for(domain)
         || address.len() > 320
         || address
             .chars()
@@ -252,6 +263,14 @@ fn text_link(plain: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Gmail authenticated list.test for the message.
+    fn vouched() -> SenderCheck {
+        SenderCheck {
+            authenticated: vec!["list.test".into()],
+            ..SenderCheck::default()
+        }
+    }
+
     fn parse(raw: &str) -> Option<Unsubscribe> {
         let message = mail_parser::MessageParser::default()
             .parse(raw.as_bytes())
@@ -265,7 +284,8 @@ mod tests {
 
     #[test]
     fn a_one_click_list_can_still_name_its_unsubscribe_address() {
-        let raw = "From: News <news@list.test>
+        let raw = "Authentication-Results: mx.google.com; dkim=pass header.d=list.test; dmarc=pass header.from=list.test
+From: News <news@list.test>
 List-Unsubscribe:
  <mailto:unsubscribe+abc@bounces.list.test?subject=unsubscribe>,
  <https://tracking.list.test/unsubscribe?msgid=abc&c=1>
@@ -298,7 +318,8 @@ Hello
         assert_eq!(
             from_headers(
                 "<mailto:leave@list.test?subject=stop>, <https://list.test/u/1?t=a>",
-                "List-Unsubscribe=One-Click"
+                "List-Unsubscribe=One-Click",
+                &vouched()
             ),
             Some(Unsubscribe::OneClick {
                 url: "https://list.test/u/1?t=a".into()
@@ -308,7 +329,8 @@ Hello
         assert_eq!(
             from_headers(
                 "<https://list.test/u/1>, <mailto:leave@list.test?subject=Stop%20it&body=please>",
-                ""
+                "",
+                &vouched()
             ),
             Some(Unsubscribe::Mailto {
                 address: "leave@list.test".into(),
@@ -318,26 +340,33 @@ Hello
         );
         // An http URI is never POSTed to.
         assert_eq!(
-            from_headers("<http://list.test/u>", "List-Unsubscribe=One-Click"),
+            from_headers(
+                "<http://list.test/u>",
+                "List-Unsubscribe=One-Click",
+                &vouched()
+            ),
             Some(Unsubscribe::Link {
                 url: "http://list.test/u".into()
             })
         );
-        assert_eq!(from_headers("", ""), None);
-        assert_eq!(from_headers("<javascript:alert(1)>", ""), None);
+        assert_eq!(from_headers("", "", &vouched()), None);
+        assert_eq!(from_headers("<javascript:alert(1)>", "", &vouched()), None);
     }
 
     #[test]
     fn mailto_defaults_its_subject_and_refuses_lists() {
         assert_eq!(
-            from_headers("<mailto:Leave@List.test>", ""),
+            from_headers("<mailto:Leave@List.test>", "", &vouched()),
             Some(Unsubscribe::Mailto {
                 address: "leave@list.test".into(),
                 subject: "unsubscribe".into(),
                 body: String::new()
             })
         );
-        assert_eq!(from_headers("<mailto:a@x.test,b@y.test>", ""), None);
+        assert_eq!(
+            from_headers("<mailto:a@x.test,b@y.test>", "", &vouched()),
+            None
+        );
     }
 
     #[test]
@@ -365,5 +394,33 @@ Hello
         );
         let none = "From: Friend <friend@home.test>\r\nSubject: Hi\r\n\r\nSee https://home.test/photos\r\n";
         assert_eq!(parse(none), None);
+    }
+
+    #[test]
+    fn mailto_goes_only_to_a_domain_gmail_authenticated() {
+        // A sender cannot have the person email someone else: the mailto
+        // entry is skipped and the page link is offered instead.
+        assert_eq!(
+            from_headers(
+                "<mailto:boss@corp.test?subject=Wire%20it&body=Send%20the%20funds>, <https://list.test/u>",
+                "",
+                &vouched()
+            ),
+            Some(Unsubscribe::Link {
+                url: "https://list.test/u".into()
+            })
+        );
+        // Spoofing the target's own domain fails DMARC, so it vouches for nothing.
+        let spoofed = "Authentication-Results: mx.google.com; spf=fail smtp.mailfrom=x@relay.test; dmarc=fail header.from=corp.test\r\nFrom: CEO <ceo@corp.test>\r\nList-Unsubscribe: <mailto:finance@corp.test?subject=Invoice>\r\n\r\nHi\r\n";
+        assert_eq!(parse(spoofed), None);
+        let message = mail_parser::MessageParser::default()
+            .parse(spoofed.as_bytes())
+            .unwrap();
+        assert_eq!(mailto_alternative(&message), None);
+        // Mail without Gmail's verdicts offers no mailto either.
+        assert_eq!(
+            parse("From: List <a@list.test>\r\nList-Unsubscribe: <mailto:leave@list.test>\r\n\r\nHi\r\n"),
+            None
+        );
     }
 }

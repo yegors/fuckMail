@@ -23,7 +23,8 @@ QVariantMap MailBackend::actionToast() const {
     toast["visible"] = !m_actionToast.isEmpty() && (progress || m_actionClock.elapsed() < m_actionToastDeadline);
     // What is left of its time on screen, for the Undo countdown line.
     toast["remaining_ms"] = m_actionToast.isEmpty() ? 0 : qMax<qint64>(0, m_actionToastDeadline - m_actionClock.elapsed());
-    toast["action_label"] = toast.value("action").toString().startsWith("undo_") ? "Undo" : toast.value("action") == "open_draft" ? "Open draft" : toast.value("action") == "calendar_activity" ? "View activity" : "";
+    toast["action_label"] = toast.value("action").toString().startsWith("undo_") ? "Undo" : toast.value("action") == "open_draft" ? "Open draft" : toast.value("action") == "calendar_activity" ? "View activity"
+        : toast.value("action") == "save_attachment" ? "Save to Downloads" : "";
     return toast;
 }
 void MailBackend::showActionToast(const QString &text, const QString &action, const QVariantMap &context, int duration, bool preserveUndo) {
@@ -59,6 +60,8 @@ void MailBackend::activateActionToast() {
         emit calendarActivityRequested();
     } else if (toast.value("action") == "open_draft") {
         openDraftInAccount(toast.value("account").toString(), toast.value("draft_id").toString());
+    } else if (toast.value("action") == "save_attachment") {
+        downloadAttachment(toast.value("account").toString(), toast.value("id").toString(), toast.value("name").toString());
     }
 }
 // A negative Undo interval sends at once. Zero still goes through the queue, so

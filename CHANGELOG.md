@@ -2,6 +2,17 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-14
+
+- A warning sign appears left of TEXT/HTML when Gmail couldn't verify who sent a message, or the sender's name or domain looks disguised. Hover it to see why.
+- "Always load images" now applies only when Gmail verifies the sender, and never in Spam.
+- Unsubscribing by email asks before sending, and only offers to write to an address Gmail confirmed belongs to the sender.
+- Attachments you open or save are marked as downloaded from the internet, so macOS and Windows check them before they run.
+- Apps, installers, scripts, shortcuts and web pages attached to mail don't open from fuckMail. Save them to Downloads and open them yourself if you trust them.
+- Attachment previews are images fuckMail re-draws itself, and videos are decoded only when you play them.
+- Emails with extreme styles or huge tables can no longer freeze the reader.
+- In some HTML emails, text after a paragraph inside bold or a link showed in the wrong order, and boxes laid out as inline blocks broke apart. Both now show as in a browser.
+
 ## 2026-10-13
 
 - Mac builds can be signed with a Developer ID and notarized by Apple. They open normally, without Open Anyway, and updates stop asking whether `fm-engine` can use the keychain.

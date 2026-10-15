@@ -1,5 +1,9 @@
 # Quality, performance and release acceptance
 
+## D210 — layout bomb bounds (Quality91)
+
+Hostile HTML must not stall the reader. Acceptance, with `fm-html-probe` on sanitised output: the selector, table, reparse and inline-split attacks in the [HTML research](../research/html-mail.md#d210--layout-bombs-2026-10-14) each parse and lay out within 300 ms and 200 MB on the reference Mac, and synthetic newsletters stay byte-identical. Tests: fm-mail `selector_explosion_is_bounded`, `table_grids_are_bounded`, `table_grids_follow_litehtml_placement`, `table_display_is_bounded`, `output_parses_back_to_the_same_tree`, `restructured_output_is_estimated_as_parsed` and `ordinary_selectors_are_kept_unchanged`; gui-html-view lays out 4,000 blocks under 120 inline boxes in under 5 s (30 s before) and checks split order and inline-blocks.
+
 ## D188 — Mail/Calendar switch route (Quality90)
 
 The native Calendar benchmark has five routes. `workspace_switch` alternates the Mail and Calendar workspace buttons, keeping the Calendar's view and date, and ends at the first frame showing the other workspace: Mail with visible conversation rows and no Calendar, or Calendar with its grid matching. Its budget is the same p95 <= 100 ms. The Month check follows each cell's own row window (on today, the rows around the current time). Mail UI135 and Calendar43. [Measurements](../research/phase-2-calendar.md#d188--mailcalendar-switch-2026-10-03).

@@ -19,8 +19,9 @@
 
 // HtmlMessageBody, MessageNotices and RemoteContentSettings against a scripted
 // service: image states, Load images, Always load images from, the
-// proxy-unavailable row, blocked hosts, link activation, cancellation and the
-// mailing-list row's unsubscribe states.
+// proxy-unavailable row, blocked hosts, link activation, cancellation, the
+// mailing-list row's unsubscribe states and its confirmation for an
+// unsubscribe email, and always-load applying only to verified senders.
 namespace {
 int failures = 0;
 void check(bool ok, const char *what) {
@@ -172,7 +173,7 @@ int main(int argc, char **argv) {
     QTemporaryDir temp;
     const auto dir = temp.filePath("HtmlTest");
     QDir().mkpath(dir);
-    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml","FmMenu.qml","FmMenuItem.qml","TextMenu.qml","TextMenuHandler.qml", "HtmlMessageBody.qml", "MessageNotices.qml", "RemoteContentSettings.qml"})
+    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml","FmMenu.qml","FmMenuItem.qml","TextMenu.qml","TextMenuHandler.qml", "FmDialog.qml", "FmConfirmDialog.qml", "HtmlMessageBody.qml", "MessageNotices.qml", "RemoteContentSettings.qml"})
         check(QFile::copy(QString(FM_GUI_SOURCE_DIR) + "/" + name, dir + "/" + name), "copy production QML");
     QFile module(dir + "/qmldir");
     check(module.open(QIODevice::WriteOnly), "module metadata");
@@ -202,6 +203,7 @@ ApplicationWindow {
     property string hovered: ""
     property var mailingList: null
     property var unsubscribe: null
+    property bool verified: true
     property real noticesWidth: 560
     property string openedInvite: ""
     function show(next) { shown = false; message = next; shown = true }
@@ -216,7 +218,7 @@ ApplicationWindow {
         Loader {
             id: loader; Layout.fillWidth: true; Layout.preferredHeight: item ? item.implicitHeight : 0; active: shown
             sourceComponent: HtmlMessageBody {
-                objectName: "body"; width: 560; message: root.message; account: "acct"; active: true
+                objectName: "body"; width: 560; message: root.message; account: "acct"; active: true; senderVerified: root.verified
                 onLinkHovered: function(href, box) { root.hovered = href + "@" + Math.round(box.width) }
                 onLinkExited: root.hovered = ""
             }
@@ -313,6 +315,19 @@ ApplicationWindow {
     check(unsubscribeText->property("text") == QString::fromUtf8("Unsubscribed from News \u00b7 it can take a few days to stop"), "the row confirms the unsubscribe");
     window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariantMap{{"method", "link"}}}});
     check(unsubscribeText->property("text") == "Unsubscribe page opened in your browser", "a link reads as opened in the browser");
+    // An unsubscribe email goes out from the person's account only once they
+    // have seen where it goes.
+    window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});
+    window->setProperty("unsubscribe", QVariantMap{{"method", "mailto"}, {"address", "leave@news.test"}});
+    check(await([&] { return unsubscribeButton->isVisible(); }), "an email unsubscribe shows its button");
+    QMetaObject::invokeMethod(unsubscribeButton, "clicked");
+    auto *mailtoConfirmation = find(window->contentItem(), "notices")->findChild<QObject *>("unsubscribeConfirmation_m1");
+    check(mailtoConfirmation && await([&] { return mailtoConfirmation->property("visible").toBool(); }), "an email unsubscribe asks first");
+    check(backend.unsubscribes.size() == 1, "nothing is sent before the person confirms");
+    check(mailtoConfirmation && mailtoConfirmation->property("message").toString().contains("leave@news.test"), "the question names the recipient");
+    if (mailtoConfirmation) QMetaObject::invokeMethod(mailtoConfirmation, "accept");
+    check(backend.unsubscribes.size() == 2 && backend.unsubscribes.value(1).toMap()["method"] == "mailto", "Send sends the unsubscribe email");
+    emit backend.unsubscribeReady("u2", {{"method", "mailto"}}, true);
     // The invitation row comes first: its time, the time it moved from, your
     // answer once given, and Yes / Maybe / No updating the same event.
     window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});
@@ -393,6 +408,15 @@ ApplicationWindow {
     const auto before = service.requests.size();
     show("m3", "other@x.test");
     check(await([&] { return ready() && service.requests.mid(before).contains("m3:1"); }), "an allowed sender's next message loads remote images");
+    // Anyone can write a From address: an allowed sender's images wait unless
+    // Gmail verified the sender, and load once the verdict comes in.
+    window->setProperty("verified", false);
+    const auto unverified = service.requests.size();
+    show("m5", "other@x.test");
+    check(await(ready) && !service.requests.mid(unverified).contains("m5:1"), "an unverified allowed sender's images stay hidden");
+    check(await([&] { return find(window->contentItem(), "htmlImageText_m5")->property("text").toString().contains("only when Gmail verifies the sender"); }), "the row says why they wait");
+    window->setProperty("verified", true);
+    check(await([&] { return service.requests.mid(unverified).contains("m5:1"); }), "the verdict loads them");
 
     // A message shown again uses the held result and has its final height on its first frame.
     const auto paper = [&] { return view()->parentItem(); };

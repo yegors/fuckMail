@@ -498,16 +498,31 @@ HtmlDocument::HtmlDocument(const QByteArray &html, qreal defaultFontPixels, cons
     m_container->defaultFont = defaultFontPixels;
     m_container->images = images;
     for (const auto &image : images) liveBytes += image.image.sizeInBytes();
-    // Blocked links read as disabled, as in the design.
+    // Blocked links read as disabled, as in the design. One marked attribute
+    // and one rule, however many links a message has: a rule per link would
+    // make litehtml walk every element's ancestors once for each of them.
+    QByteArray marked;
     std::string user;
-    for (const int id : blockedLinks) {
-        const auto selector = "a[href=\"fm-link:" + std::to_string(id) + "\"]";
-        user += selector + "," + selector + " *{color:#9aa0a6 !important;text-decoration:line-through !important}";
+    if (!blockedLinks.isEmpty()) {
+        static const QByteArray prefix = "href=\"fm-link:";
+        marked.reserve(html.size() + blockedLinks.size() * 16);
+        qsizetype from = 0;
+        for (qsizetype at = html.indexOf(prefix); at >= 0; at = html.indexOf(prefix, from)) {
+            const auto digits = at + prefix.size(), close = html.indexOf('"', digits);
+            if (close < 0) break;
+            bool numeric = false;
+            const int id = html.mid(digits, close - digits).toInt(&numeric);
+            marked.append(html.constData() + from, close + 1 - from);
+            if (numeric && blockedLinks.contains(id)) marked.append(" data-fm-blocked");
+            from = close + 1;
+        }
+        marked.append(html.constData() + from, html.size() - from);
+        user = "a[data-fm-blocked],a[data-fm-blocked] *{color:#9aa0a6 !important;text-decoration:line-through !important}";
     }
     // Preformatted text wraps rather than widening the whole message; the
     // sender's own white-space rules still win.
     static const std::string master = std::string(litehtml::master_css) + "pre,xmp,plaintext,listing{white-space:pre-wrap}";
-    m_document = litehtml::document::createFromString(html.toStdString(), m_container.get(), master, user);
+    m_document = litehtml::document::createFromString((blockedLinks.isEmpty() ? html : marked).toStdString(), m_container.get(), master, user);
     if (!m_document) return;
     walk(m_document->root(), [this](const litehtml::element::ptr &element) {
         if (isTag(element, "img"))

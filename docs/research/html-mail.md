@@ -155,3 +155,28 @@ Message copies lived in the session's temporary scratchpad and were deleted afte
 - Bulk remote images were not loaded or compared.
 - The founder's visual review, and Mac and Linux builds.
 - The full workspace `cargo test` and clippy runs.
+
+## D210 — layout bombs (2026-10-14)
+
+Two inputs passed the version 4 sanitiser unchanged and stalled litehtml, which matches descendant and sibling combinators by plain backtracking and pads every table row to the widest one. Simple combinator caps were measured and do not bound the cost (2,000 one-combinator rules over 40,000 leaves 200 deep still took over 30 s), so version 5 estimates each selector's matching work on the output tree and spends a fixed budget, and bounds table grids by the cells litehtml would allocate.
+
+Probe parse and layout (`fm-html-probe`, about 78 ms floor), before and after:
+
+| Input | Before | After |
+| --- | --- | --- |
+| 80 nested divs and `q div` × 8 | over 30 s | 79 ms |
+| 60 nested divs and `q div` × 6 | 3,040 ms | 78 ms |
+| 2,000 `qN div` rules, 40,000 leaves at depth 120 | over 30 s | 248 ms (no CSS: 205 ms) |
+| 2,000 `div{}` rules over 40,000 divs | 2,576 ms, 3.4 GB | 228 ms, 169 MB |
+| `q~div~div` over 2,000 siblings | 4,081 ms | 82 ms |
+| 3 KB colspan bomb | 195 ms, 213 MB | 81 ms, 38 MB |
+| 2,000 × 2,000 cells | 584 ms, 313 MB | 83 ms, 41 MB |
+| the same grid as `display:table-cell` divs | 778 ms, 311 MB | 91 ms, 47 MB |
+| 400 tables with colspan 1000 | 1,080 ms, 1.3 GB | 195 ms, 141 MB |
+
+A review then found that the sanitiser's output could parse back into a different tree, for example `<p>` nested through an unwrapped `marquee`, which litehtml reparses into siblings (and an 18 KB input into 200,000 formatting clones, 621 MB). The sanitiser now writes markup that parses back unchanged, and estimates selector cost on a reparse of its own output; the marquee case with `q ~ p ~ p` went from over 30 s to 97 ms. Tables are also bounded by litehtml's row scans (2×10⁷ per message): a 16,000-row table went from 443 ms to 208 ms, flattened.
+
+Blocks inside nested inline boxes were slow in litehtml itself. `div > b`×120 `> p`×4000 (34 KB) took 30.7 s and 100 inline `display` divs around 2,000 blocks 3.6 s. Profiling showed the time in `element::add_render`, where a local change swept the render list on every add; an inline box split around N blocks gets N items, so that was quadratic. Upstream's splitting is also quadratic in N. After both fixes the two inputs take 290 ms and 166 ms. On nine blocks-in-inline layouts six render byte-identical; three change as browsers render them: text after a nested block is no longer out of order, and an inline-block keeps its own blocks.
+
+Sanitising takes at most 52 ms on every input, plus about 35 ms per MB of output for the reparse. Four synthetic realistic messages (a Mailchimp-style template, an 8,500-element digest with 155 selectors, a 12-deep receipt, an 800 × 20 data table) come out byte-identical and use 3–43% of the budget. No real-mail corpus was run.
+

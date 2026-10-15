@@ -34,6 +34,11 @@ Item {
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
     readonly property bool hasHtml: !!result.body_html && !result.html_truncated
     readonly property var metadata: (result.metadata || []).filter(function(row) { return row.people.length > 0 })
+    // Gmail's verdicts on who sent received mail: from the parsed source, or
+    // carried by a message read live from Gmail.
+    readonly property var senderCheck: message.sent ? null : result.sender_check || message.sender_check || null
+    readonly property bool senderVerified: !!senderCheck && senderCheck.verified === true
+    readonly property var senderWarnings: senderCheck ? senderCheck.warnings || [] : []
     readonly property bool popupOpen: original.visible
     function adopt() {
         const prepared = message.reader_source

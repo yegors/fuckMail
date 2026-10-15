@@ -30,6 +30,7 @@
 #include <QClipboard>
 #include <QColor>
 #include <algorithm>
+#include <QImageReader>
 #include <QTest>
 #include <QtMath>
 using namespace GoogleOperationFixture;
@@ -75,6 +76,8 @@ class MailSelectionTest {
         // When set, only this thread carries laterMessages.
         QString laterThread;
         QHash<QString,QJsonArray> sourceMetadata;
+        // Gmail's verdicts the engine reports for a message, by id.
+        QHash<QString,QJsonObject> senderChecks;
         // Every draft_create request, in order.
         QList<QJsonObject> creations;
         // Core's Done group for a row: This Week from the requested weekday,
@@ -164,6 +167,18 @@ class MailSelectionTest {
                         const auto params = request["params"].toObject();
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},
                             {"metadata",sourceMetadata.value(params["id"].toString(),QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}})}};
+                        if (senderChecks.contains(params["id"].toString())) result["sender_check"] = senderChecks.value(params["id"].toString());
+                    }
+                    else if (method == "attachment" && request["params"].toObject()["preview"].toBool()) {
+                        // As the engine does: an image's preview is a PNG with its size,
+                        // never the attachment's own path.
+                        result = attachments.value(request["params"].toObject()["id"].toString());
+                        QImageReader reader(result["path"].toString());
+                        const auto format = reader.format();
+                        const auto size = reader.size();
+                        if ((format == "png" || format == "jpeg") && size.isValid()) { result["preview_path"] = result["path"]; result["width"] = size.width(); result["height"] = size.height(); }
+                        else result["preview_error"] = "unsupported";
+                        result.remove("path"); result.remove("sha256");
                     }
                     else if (method == "attachment") result = attachments.value(request["params"].toObject()["id"].toString());
                     else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}},
@@ -1054,12 +1069,25 @@ class MailSelectionTest {
         click(window,header,Qt::LeftButton);
         await([&]{auto item=find(window->contentItem(),"conversationRow_a");return item && item->isVisible();},"the date group opens again");
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
-        h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(97))},{"sent",false}}}}};
+        h.senderChecks["a-original"]=QJsonObject{{"checked",true},{"verified",false},{"spf","softfail"},{"dkim","none"},{"dmarc","fail"},{"from_domain","example.test"},
+            {"warnings",QJsonArray{QJsonObject{{"code","dmarc_fail"},{"text","Gmail could not confirm this came from example.test: it failed DMARC."}}}}};
+        h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(101))},{"sent",false}}}}};
         emit h.backend.conversationChanged();
         // Plain text until the sender is chosen for HTML; the badge chooses it for all their mail.
+        // (Its own source version, so the reader asks again and gets the verdicts.)
         await([&]{auto item=find(window->contentItem(),"messageFormatToggle_a-original");return item && item->isVisible() && item->property("text")=="TEXT";},"plain text by default once the HTML is known");
         require(shown(window->contentItem(),"messageBody_a-original")->property("text").toString().contains("Retained plain body"),"the default body is the extracted text");
         require(find(window->contentItem(),"messageFormatToggle_a-original")->property("tip").toString().endsWith("for all mail from sender@example.test"),"the badge names the sender it changes");
+        {
+            // Gmail's failed checks show as a warning left of TEXT/HTML.
+            auto *warning=find(window->contentItem(),"messageSenderWarning_a-original");
+            auto *format=find(window->contentItem(),"messageFormatToggle_a-original");
+            await([&]{return warning && warning->isVisible();},"a failed DMARC check shows the warning badge");
+            layout.restart(); while(layout.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            require(warning->mapToScene(QPointF(warning->width(),0)).x()<=format->mapToScene(QPointF(0,0)).x()+.5,"the warning sits left of TEXT/HTML");
+            const auto tip=warning->property("tipText").toString();
+            require(tip.contains("it failed DMARC") && tip.contains("SPF softfail") && tip.contains("DMARC fail"),"its tooltip lists the problem and Gmail's checks");
+        }
         // The header row lays out the badge once it shows; click where it settles.
         layout.restart(); while(layout.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageFormatToggle_a-original"),Qt::LeftButton);
@@ -1340,20 +1368,18 @@ class MailSelectionTest {
             mail->setProperty("expandedMembers",QVariantMap{});
         }
         {
-            // A video card shows its first frame as a poster, and keeps it once
-            // the decoder is released.
+            // A video card decodes nothing until it is opened: it shows a play
+            // badge, and no player exists for it.
             const auto clip=QVariantMap{{"id","clip"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","A clip."},{"sent",false},{"attachments",QVariantList{h.attachments["video"].toVariantMap()}}};
             h.backend.m_conversation={{"id","a"},{"subject","Clip"},{"revision",3},{"messages",QVariantList{clip}}}; emit h.backend.conversationChanged();
             QQuickItem *tile=nullptr;
-            await([&]{tile=find(window->contentItem(),"attachment_video");return tile && tile->property("videoDuration").toInt()>0;},"the video card reads its length");
-            await([&]{return !tile->property("posterUrl").toString().isEmpty() && !find(tile,"attachmentPoster_video");},"the first frame is kept and the decoder released");
-            layout.restart();while(layout.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
-            auto *preview=find(tile,"attachmentPreview_video"); require(preview,"the card's preview");
-            const auto frame=window->grabWindow();
-            const auto at=preview->mapToScene(QPointF(preview->width()*.18,preview->height()*.22))*window->effectiveDevicePixelRatio();
-            const QColor painted=frame.pixelColor(at.toPoint()), expected("#94659e");
-            if (qAbs(painted.red()-expected.red())>40 || qAbs(painted.green()-expected.green())>40 || qAbs(painted.blue()-expected.blue())>40) qWarning()<<"poster pixel"<<painted.name();
-            require(qAbs(painted.red()-expected.red())<=40 && qAbs(painted.green()-expected.green())<=40 && qAbs(painted.blue()-expected.blue())<=40,"the poster shows the video's first frame");
+            await([&]{tile=find(window->contentItem(),"attachment_video");return tile && tile->isVisible();},"the video card shows");
+            layout.restart();while(layout.elapsed()<400)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+            auto *play=find(tile,"attachmentPlay_video");
+            require(play && play->isVisible(),"the video card shows a play badge");
+            require(tile->property("previewUrl").toString().isEmpty() && tile->property("previewTicket").toString().isEmpty(),"the video card asks for no local copy");
+            const auto children=tile->findChildren<QObject *>();
+            require(std::none_of(children.begin(),children.end(),[](QObject *o){return QByteArray(o->metaObject()->className()).contains("MediaPlayer");}),"no media player decodes the attachment");
         }
         h.backend.m_conversation={{"id","a"},{"subject","Attachment preview"},{"revision",3},{"messages",QVariantList{QVariantMap{{"id","photo"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Image and binary attachment."},{"sent",false},{"attachments",QVariantList{h.attachments["image"].toVariantMap(),h.attachments["binary"].toVariantMap()}}}}}};
         emit h.backend.conversationChanged();
@@ -1448,19 +1474,11 @@ class MailSelectionTest {
         const auto remote=h.backend.saveAttachment("personal","binary",QUrl("https://example.test/file"));
         await([&]{return saves.contains(remote);},"remote destination rejected");require(!saves[remote].isEmpty(),"save requires local destination");
         QObject::disconnect(savedConnection);h.backend.m_account="personal";
-        // EXIF rotation must affect both dimensions and rendered image orientation.
-        const auto orientedPath=copy.filePath("portrait.jpg");QImage camera(40,20,QImage::Format_RGB32);camera.fill(Qt::red);
-        require(camera.save(orientedPath,"JPG"),"camera image fixture");
-        QFile oriented(orientedPath);require(oriented.open(QIODevice::ReadOnly),"camera JPEG opens");auto jpeg=oriented.readAll();oriented.close();
-        const auto exif=QByteArray::fromHex("45786966000049492a0008000000010012010300010000000600000000000000");
-        QByteArray segment=QByteArray::fromHex("ffe10022")+exif;jpeg.insert(2,segment);
-        require(oriented.open(QIODevice::WriteOnly|QIODevice::Truncate) && oriented.write(jpeg)==jpeg.size(),"EXIF portrait metadata written");oriented.close();
-        addAttachment("portrait",orientedPath,"image/jpeg");
         QHash<QString,QVariantMap> previews;
         const auto previewConnection=QObject::connect(&h.backend,&MailBackend::attachmentPreviewReady,[&](const auto &id,const auto &result,bool){previews[id]=result;});
-        const auto orientationTicket=h.backend.requestAttachmentPreview("personal","portrait");
-        await([&]{return previews.contains(orientationTicket);},"oriented preview returns");
-        require(previews[orientationTicket]["width"].toInt()==20 && previews[orientationTicket]["height"].toInt()==40,"EXIF 90-degree rotation transposes dimensions");
+        const auto imageTicket=h.backend.requestAttachmentPreview("personal","image");
+        await([&]{return previews.contains(imageTicket);},"image preview returns");
+        require(previews[imageTicket]["preview_url"].toUrl().toLocalFile()==h.attachments["image"]["path"].toString() && previews[imageTicket]["width"].toInt()==1600,"an image shows the engine's PNG at its size");
         h.attachments["broken-image"]=h.attachments["binary"];h.attachments["broken-image"]["id"]="broken-image";
         const auto invalidImage=h.backend.requestAttachmentPreview("personal","broken-image");
         await([&]{return previews.contains(invalidImage);},"invalid preview returns");

@@ -123,8 +123,8 @@ impl Store {
     }
 }
 
-/// Write a fetched attachment to the view cache as `<sha256>.<ext>`, returning
-/// its path and digest.
+/// Write a fetched attachment to the view cache as `<sha256>.<ext>`, marked
+/// as downloaded from the internet, returning its path and digest.
 pub fn remote_attachment_file(
     cache: &ViewCache,
     name: &str,
@@ -145,7 +145,9 @@ pub fn remote_attachment_file(
     } else {
         format!("{digest}.{extension}")
     };
-    Ok((cache.remote_file(&file, bytes)?, digest))
+    let path = cache.remote_file(&file, bytes)?;
+    crate::content::mark_downloaded(&path)?;
+    Ok((path, digest))
 }
 
 #[cfg(test)]

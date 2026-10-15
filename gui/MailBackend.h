@@ -337,11 +337,9 @@ public:
     Q_INVOKABLE void deleteForever();
     Q_INVOKABLE void emptyBin();
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
-    Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
-    // A video card's poster: `sink` is its VideoOutput's QVideoSink. Returns
-    // {url, duration}, or nothing when no frame could be kept.
-    Q_INVOKABLE QVariantMap keepVideoPoster(QObject *sink, const QString &account, const QString &id, qint64 duration);
-    Q_INVOKABLE QVariantMap videoPoster(const QString &account, const QString &id) const { return m_videoPosters.value(account + '\n' + id); }
+    // An image's engine-made PNG ({preview_url, width, height} or preview_error),
+    // or with `video` the local copy a player opens when the person asks.
+    Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id, bool video = false);
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
     Q_INVOKABLE QString downloadAttachment(const QString &account, const QString &id, const QString &name);
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
@@ -893,9 +891,6 @@ private:
     void advanceDraftAttachments();
     void queueDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId, bool joinPending);
     QHash<QString, QList<QUrl>> m_attachmentQueues;
-    // Video posters kept this run, by account and attachment, under the profile.
-    std::unique_ptr<QTemporaryDir> m_posterDirectory;
-    QHash<QString, QVariantMap> m_videoPosters;
     QHash<QString, qint64> m_attachmentQueueLifecycle;
     QSet<QString> m_attachmentQueuePaused;
     QHash<QString, QJsonObject> m_attachmentImports;

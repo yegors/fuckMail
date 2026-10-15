@@ -67,7 +67,14 @@ ColumnLayout {
     onHasInviteChanged: loadInvite()
     Timer { id: inviteReload; interval: 500; onTriggered: notices.loadInvite() }
 
+    // An unsubscribe email goes out from the person's own account, so it waits
+    // for them to see where it goes.
     function start() {
+        if (unsubscribing || unsubscribed) return
+        if (method === "mailto") { mailtoConfirmation.open(); return }
+        send()
+    }
+    function send() {
         if (unsubscribing || unsubscribed) return
         unsubscribing = true; unsubscribeError = ""
         ticket = backend.unsubscribe({id: message.id, source_version: message.source_version, method: method})
@@ -243,6 +250,8 @@ ColumnLayout {
         readonly property bool proxyFailed: !!notices.htmlBody && notices.htmlBody.proxyFailed
         readonly property bool loaded: !!notices.htmlBody && notices.htmlBody.imagesShown
         readonly property bool allowed: !!notices.htmlBody && notices.htmlBody.senderAllowed
+        // Always-load is on, but Gmail could not verify this sender (or it is Spam).
+        readonly property bool held: allowed && !notices.htmlBody.senderVerified
         readonly property int hidden: notices.htmlBody ? notices.htmlBody.hiddenCount : 0
         readonly property int total: notices.htmlBody ? notices.htmlBody.imageCount : 0
         readonly property string from: notices.sender || "the sender"
@@ -252,6 +261,7 @@ ColumnLayout {
             objectName: "htmlImageText_" + (notices.message.id || "")
             text: imageRow.proxyFailed ? "Proxy unavailable — images not loaded"
                 : imageRow.loaded ? (imageRow.allowed ? "Images from " + imageRow.from + " load automatically" : "Images loaded for this message only")
+                : imageRow.held ? imageRow.count(imageRow.hidden) + " hidden: they load automatically only when Gmail verifies the sender and it isn’t Spam"
                 : imageRow.count(imageRow.hidden) + " hidden so " + imageRow.from + " can’t tell you opened this"
         }
         NoticeButton {
@@ -284,4 +294,12 @@ ColumnLayout {
         }
     }
     Rule {}
+    FmConfirmDialog {
+        id: mailtoConfirmation; objectName: "unsubscribeConfirmation_" + (notices.message.id || "")
+        title: "Send an unsubscribe email?"
+        message: "This sends an email from your account to " + (notices.unsubscribe && notices.unsubscribe.address || "the list")
+            + ". Gmail confirmed that this address belongs to the sender."
+        actionText: "Send"; actionObjectName: "unsubscribeConfirmSend_" + (notices.message.id || "")
+        onAccepted: notices.send()
+    }
 }

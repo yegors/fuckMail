@@ -53,3 +53,11 @@ fuckMail has no servers of its own and sends no telemetry. The engine connects t
   networking.
 - No component listens on a network port, except during Google sign-in: a temporary
   listener on `127.0.0.1` receives the OAuth callback, then closes.
+- Attachments the app opens or saves are marked as downloaded from the internet, so
+  Gatekeeper (macOS) and SmartScreen and Office Protected View (Windows) check them.
+  Apps, installers, scripts, shortcuts and web pages are not opened from the app at all.
+  Attachment previews are images the engine decoded and re-encoded; videos are decoded
+  only when you play them.
+- A warning shows on received mail when Gmail's SPF, DKIM or DMARC checks fail or the
+  sender's name or domain looks disguised. Only Gmail's own topmost
+  `Authentication-Results` header is trusted.

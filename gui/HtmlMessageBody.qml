@@ -7,7 +7,8 @@ import FuckMail.Html
 // placeholders until Load images; blocked hosts never load. `failed` asks the
 // reader to show Text instead, with `failure` as its notice. The hidden-images
 // notice is MessageNotices, which uses hiddenCount, imageCount, imagesShown,
-// senderAllowed, proxyFailed, loadImages(), allowSender() and disallowSender().
+// senderAllowed, senderVerified, proxyFailed, loadImages(), allowSender() and
+// disallowSender().
 ColumnLayout {
     id: body
     objectName: "htmlMessageBody_" + (message.id || "")
@@ -30,6 +31,9 @@ ColumnLayout {
     property var imageTickets: ({})
     property bool loadRequested: false
     property bool proxyFailed: false
+    // Gmail verified the sender and the message is not in Spam. Only then does
+    // "always load images" apply, since anyone can write a From address.
+    property bool senderVerified: false
     readonly property var service: backend.htmlContent || null
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "") + (quotes ? "/quotes" : "")
     readonly property string sender: message.sender_email || ""
@@ -79,7 +83,7 @@ ColumnLayout {
     function setImage(id, value) { const next = Object.assign({}, images); next[id] = value; images = next }
     // Inline and cached images show at once; remote ones wait for Load images.
     function assign() {
-        const next = {}, allowed = loadRequested || service.imagesAllowed(account, sender)
+        const next = {}, allowed = loadRequested || (senderVerified && service.imagesAllowed(account, sender))
         for (const r of (result.resources || [])) {
             const blocked = r.host ? service.blockedBy(r.host) : ""
             if (r.kind === "insecure") next[r.id] = {state: "insecure"}
@@ -125,6 +129,8 @@ ColumnLayout {
         if (!fromCache()) Qt.callLater(load)
     }
     onActiveChanged: load()
+    // The verdict can arrive after the HTML: an allowed sender's images load then.
+    onSenderVerifiedChanged: if (senderVerified && senderAllowed && result.id && hiddenCount > 0) loadImages()
     Component.onCompleted: load()
     Component.onDestruction: if (service && message.id) service.cancelMessage(account, message.id)
 

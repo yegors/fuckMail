@@ -40,7 +40,7 @@ Popup {
         const item=items[index] || ({})
         preparingPoster=false; if (player) { player.stop(); player.source="" } preview={}; error=""
         if (isVideo(item)) mediaActive=true
-        ticket=opened && item.id ? backend.requestAttachmentPreview(account,item.id) : ""
+        ticket=opened && item.id ? backend.requestAttachmentPreview(account,item.id,isVideo(item)) : ""
     }
     function step(delta) { if (!items.length) return;index=(index+delta+items.length)%items.length }
     function togglePlayback() { if (video && player) {preparingPoster=false;posterReady.stop();playing ? player.pause() : player.play()} }
@@ -86,7 +86,7 @@ Popup {
                 Image {
                     objectName:"attachmentViewerImage"; anchors.fill:parent; visible:!viewer.video
                     source:viewer.video ? "" : viewer.preview.preview_url || ""
-                    asynchronous:true; autoTransform:true; retainWhileLoading:true; fillMode:Image.PreserveAspectFit
+                    asynchronous:true; retainWhileLoading:true; fillMode:Image.PreserveAspectFit
                     // Cover the physical display pixels, with coarse steps so a
                     // resize does not request a new decode for each pixel moved.
                     sourceSize:Qt.size(Math.ceil(frame.width*Screen.devicePixelRatio/128)*128,Math.ceil(frame.height*Screen.devicePixelRatio/128)*128)

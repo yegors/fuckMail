@@ -9,15 +9,15 @@
 #include <QSaveFile>
 #include <QCryptographicHash>
 #include <QStandardPaths>
-#include <QImageReader>
-#include <QVideoFrame>
-#include <QVideoSink>
 #include <QUuid>
 #include <QDateTime>
 #include <QImage>
 #include <QPointer>
 #include <QThreadPool>
 #include <memory>
+#if defined(Q_OS_MACOS)
+#include <sys/xattr.h>
+#endif
 
 namespace {
 QString importKey(const QString &account, const QString &draft) { return account + '\n' + draft; }
@@ -250,6 +250,24 @@ void MailBackend::startDraftAttachmentImport(const QString &key) {
 }
 
 
+// Marks a saved attachment as downloaded from the internet, as browsers do, so
+// the system checks it before anything in it runs: the quarantine flag on
+// macOS (Gatekeeper), the Internet zone on Windows (SmartScreen, Office
+// Protected View). A mark already there is kept with any approval it holds.
+static void markDownloaded(const QString &path) {
+#if defined(Q_OS_MACOS)
+    const auto file = QFile::encodeName(path);
+    if (getxattr(file.constData(), "com.apple.quarantine", nullptr, 0, 0, XATTR_NOFOLLOW) >= 0) return;
+    const auto value = QStringLiteral("0081;%1;fuckMail;").arg(QDateTime::currentSecsSinceEpoch(), 8, 16, QChar('0')).toLatin1();
+    setxattr(file.constData(), "com.apple.quarantine", value.constData(), size_t(value.size()), 0, XATTR_NOFOLLOW);
+#elif defined(Q_OS_WIN)
+    QFile zone(path + QStringLiteral(":Zone.Identifier"));
+    if (zone.open(QIODevice::WriteOnly | QIODevice::Truncate)) zone.write("[ZoneTransfer]\r\nZoneId=3\r\n");
+#else
+    Q_UNUSED(path);
+#endif
+}
+
 QUrl MailBackend::attachmentSaveLocation(const QString &name) const {
     auto filename = QFileInfo(QString(name).replace('\\', '/')).fileName();
     if (filename.isEmpty() || filename == "." || filename == "..") filename = "attachment";
@@ -261,56 +279,35 @@ void MailBackend::attachmentFile(const QString &account, const QString &id, Call
     else request("attachment", account, {{"id", id}}, std::move(callback));
 }
 
-QString MailBackend::requestAttachmentPreview(const QString &account, const QString &id) {
+QString MailBackend::requestAttachmentPreview(const QString &account, const QString &id, bool video) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    QTimer::singleShot(0, this, [this, ticket, account, id] {
-        attachmentFile(account, id, [this, ticket, account, id](auto result, bool ok) {
-            const auto path = result["path"].toString();
-            ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
-            if (ok) {
-                const auto mime = result["mime_type"].toString();
-                const auto suffix = QFileInfo(path).suffix().toLower();
-                // A file sent as a generic type is still a video by its name.
-                const bool video = QStringList{"mp4","webm","mov","m4v","mkv","avi"}.contains(suffix)
-                    && (mime.startsWith("video/") || mime.isEmpty() || mime == "application/octet-stream");
-                QImageReader reader(path);
-                const auto format = reader.format().toLower();
-                auto size = reader.size();
-                if (reader.transformation() & QImageIOHandler::TransformationRotate90) size.transpose();
-                const bool raster = QList<QByteArray>{"png","jpeg","jpg","gif","webp","bmp","ico","tiff","tif"}.contains(format);
-                if (video) {
-                    result["preview_url"] = QUrl::fromLocalFile(path).toString();
-                    result["video"] = true;
-                } else if (raster && size.isValid() && qint64(size.width()) * size.height() <= 64000000) {
-                    result["preview_url"] = QUrl::fromLocalFile(path).toString();
-                    result["width"] = size.width(); result["height"] = size.height();
-                } else result["preview_error"] = "Preview unavailable. You can still save this file.";
-            } else result = {{"message", "This attachment is not available on this machine yet."}};
+    QTimer::singleShot(0, this, [this, ticket, account, id, video] {
+        // A video plays from its local copy only once the person opens it.
+        if (video) {
+            attachmentFile(account, id, [this, ticket, account, id](auto result, bool ok) {
+                const auto path = result["path"].toString();
+                ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
+                if (ok) { result["preview_url"] = QUrl::fromLocalFile(path).toString(); result["video"] = true; }
+                else result = {{"message", "This attachment is not available on this machine yet."}};
+                emit attachmentPreviewReady(ticket, result.toVariantMap(), ok);
+            });
+            return;
+        }
+        // An image shows only the PNG the engine decoded and re-encoded, so the
+        // sender's bytes never reach Qt's own image decoders.
+        auto shown = [this, ticket, account, id](auto result, bool ok) {
+            const auto path = result["preview_path"].toString();
+            ok = ok && result["account"] == account && result["id"] == id;
+            if (ok && QDir::isAbsolutePath(path) && QFileInfo(path).isFile()) result["preview_url"] = QUrl::fromLocalFile(path).toString();
+            else if (ok) result["preview_error"] = "Preview unavailable. You can still save this file.";
+            else result = {{"message", "This attachment is not available on this machine yet."}};
             emit attachmentPreviewReady(ticket, result.toVariantMap(), ok);
-        });
+        };
+        const QJsonObject params{{"id", id}, {"preview", true}};
+        if (id.startsWith(u"remote-att:")) googleOperation("google_remote_attachment", account, params, std::move(shown));
+        else request("attachment", account, params, std::move(shown));
     });
     return ticket;
-}
-// A released player clears its output, so a video card keeps the frame its
-// decoder showed as a small JPEG for this run. A card that comes back into view
-// shows it again without decoding.
-QVariantMap MailBackend::keepVideoPoster(QObject *sink, const QString &account, const QString &id, qint64 duration) {
-    const auto *video = qobject_cast<QVideoSink *>(sink);
-    if (!video || account.isEmpty() || id.isEmpty()) return {};
-    auto image = video->videoFrame().toImage();
-    if (image.isNull()) return {};
-    if (image.width() > 960 || image.height() > 960) image = image.scaled(960, 960, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    if (!m_posterDirectory) {
-        const QDir cache(QDir(m_profile).filePath("cache"));
-        m_posterDirectory = std::make_unique<QTemporaryDir>(!m_profile.isEmpty() && QDir().mkpath(cache.path()) ? cache.filePath("video-posters-XXXXXX") : QString{});
-    }
-    if (!m_posterDirectory->isValid()) return {};
-    const auto key = account + '\n' + id;
-    const auto path = m_posterDirectory->filePath(QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex()) + ".jpg");
-    if (!image.convertToFormat(QImage::Format_RGB32).save(path, "JPEG", 88)) return {};
-    const QVariantMap poster{{"url", QUrl::fromLocalFile(path).toString()}, {"duration", duration}};
-    m_videoPosters.insert(key, poster);
-    return poster;
 }
 QString MailBackend::downloadAttachment(const QString &account, const QString &id, const QString &name) {
     const QFileInfo original(attachmentSaveLocation(name).toLocalFile());
@@ -383,6 +380,7 @@ QString MailBackend::saveAttachment(const QString &account, const QString &id, c
                 }
                 if (copy->source.atEnd()) {
                     const bool saved = copy->output.commit();
+                    if (saved) markDownloaded(copy->output.fileName());
                     finish(saved ? QString{} : "Could not finish saving. Try another location.");
                 }
             });

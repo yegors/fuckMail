@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <list>
+#include <vector>
 #include <tuple>
 #include "html.h"
 #include "types.h"
@@ -465,9 +466,8 @@ namespace litehtml
         {
             return std::make_shared<render_item>(src_el());
         }
-        std::tuple<std::shared_ptr<litehtml::render_item>, std::shared_ptr<litehtml::render_item>,
-                   std::shared_ptr<litehtml::render_item>>
-             split_inlines();
+        // fuckMail: every block box split out in one pass; see render_item.cpp.
+        std::vector<std::shared_ptr<litehtml::render_item>> split_inlines();
         bool fetch_positioned();
         void render_positioned(render_type rt = render_all);
         // returns element offset related to the containing block

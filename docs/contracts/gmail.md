@@ -1,5 +1,14 @@
 # Gmail provider
 
+## D210 — unsubscribe email to authenticated domains, remote previews and verdicts (Gmail45)
+
+- `google_unsubscribe_mail`, including its `fallback` after a refused one-click POST, sends only to a `mailto:` address in a domain Gmail authenticated for the message (Core97). Otherwise there is no email route and the reader offers the list's page link, if any.
+- `google_remote_attachment {id, preview?}`: with `preview: true` an image returns the engine's PNG as `preview_path`, `width` and `height`, cached by attachment id, or `preview_error`. Without it, the fetched file is marked as downloaded from the internet.
+- Messages read live from Gmail (Spam, Trash, server search) carry `sender_check`, as `message_source` does for stored mail.
+
+Consumers: Core97, Mail UI152.
+
+
 ## D200 — label sync yields between labels (Gmail44)
 
 - Label name sync and the first import call `google_labels_merge` repeatedly while it returns `more`, adding up `pulled` and `renamed` and yielding to other store requests between calls. All pending projections finish before label memberships are queued, as before. Cancellation is checked between calls.

@@ -393,3 +393,359 @@ fn fixed_layout_tables_share_widthless_columns() {
         );
     }
 }
+
+/// The output stylesheet's text.
+fn style(html: &str) -> &str {
+    html.split_once("<style>")
+        .and_then(|(_, rest)| rest.split_once("</style>"))
+        .map_or("", |(css, _)| css)
+}
+
+fn nested(depth: usize, inner: &str) -> String {
+    format!("{}{inner}{}", "<div>".repeat(depth), "</div>".repeat(depth))
+}
+
+#[test]
+fn ordinary_selectors_are_kept_unchanged() {
+    let css = ".a .b td{color:red} table.x > tr > td a{color:blue} div > p.e:first-child{margin:0} \
+        h1, h2 .x{font-weight:bold} ul li + li{margin-top:4px} #main td.b:last-child span{color:green} \
+        @media (max-width:600px){.a td{display:block!important}}";
+    let body = r#"<div class="a" id="main"><table class="x"><tr><td class="b"><a href="https://example.test/">link</a> <span>s</span></td>
+        <td colspan="2" rowspan="3">wide</td></tr><tr><td>c</td></tr></table>
+        <div><p class="e">first</p><p>second</p></div><ul><li>1</li><li>2</li></ul><h2><span class="x">h</span></h2></div>"#;
+    let view = sanitize(&format!("<style>{css}</style>{body}")).unwrap();
+    assert_eq!(
+        style(&view.html),
+        ".a .b td{color:red}table.x > tr > td a{color:blue}div > p.e:first-child{margin:0}\
+         h1, h2 .x{font-weight:bold}ul li + li{margin-top:4px}#main td.b:last-child span{color:green}\
+         @media (max-width:600px){.a td{display:block !important}}"
+    );
+    assert!(view
+        .html
+        .contains(r#"<td colspan="2" rowspan="3">wide</td>"#));
+    assert!(!view.limited);
+    // What litehtml would not read as a selector goes, as before.
+    for bad in ["a > > b", "> a", "a >", ". a", "a ~", "[x]div"] {
+        let view = sanitize(&format!("<style>{bad}{{color:red}}</style><p>x</p>")).unwrap();
+        assert_eq!(style(&view.html), "", "{bad}");
+    }
+    let long = vec!["div"; MAX_SELECTOR_PARTS + 1].join(" > ");
+    let view = sanitize(&format!("<style>{long}{{color:red}}</style><p>x</p>")).unwrap();
+    assert_eq!(style(&view.html), "");
+}
+
+#[test]
+fn selector_explosion_is_bounded() {
+    // litehtml retries each descendant combinator on every ancestor: without
+    // a `q` this one costs C(80, 8) checks per element, for many minutes.
+    let rule = format!("q {}{{color:red}}", ["div"; 8].join(" "));
+    let view = sanitize(&format!("<style>{rule}</style>{}", nested(80, "deep text"))).unwrap();
+    assert_eq!(style(&view.html), "");
+    assert!(view.limited && view.html.contains("deep text"));
+    // A cheap rule over many leaves, repeated: only what fits the budget stays.
+    let rules: String = (0..500).map(|i| format!("q{i} div{{color:red}}")).collect();
+    let leaves = "<div>leaf</div>".repeat(5_000);
+    let view = sanitize(&format!("<style>{rules}</style>{}", nested(100, &leaves))).unwrap();
+    let kept = style(&view.html).matches("{color:red}").count();
+    assert!((1..100).contains(&kept), "{kept} rules kept");
+    assert!(view.limited);
+    assert_eq!(view.html.matches("leaf").count(), 5_000);
+    // A general sibling chain over many siblings costs n^3; a simple rule stays.
+    let siblings = "<p>s</p>".repeat(2_000);
+    let view = sanitize(&format!(
+        "<style>q ~ p ~ p{{color:red}} p{{margin:0}}</style>{siblings}"
+    ))
+    .unwrap();
+    assert_eq!(style(&view.html), "p{margin:0}");
+    // litehtml scans an element's classes for each of a compound's.
+    let classes: Vec<String> = (0..60).map(|i| format!("c{i}")).collect();
+    let compound: String = classes[..59].iter().map(|c| format!(".{c}")).collect();
+    let rules: String = (0..200)
+        .map(|i| format!("div{compound}.z{i}{{width:1px}}"))
+        .collect();
+    let body = format!(r#"<div class="{}">x</div>"#, classes.join(" ")).repeat(5_000);
+    let view = sanitize(&format!("<style>{rules}</style>{body}")).unwrap();
+    let kept = style(&view.html).matches("{width:1px}").count();
+    assert!(kept < 20 && view.limited, "{kept} rules kept");
+    // Markup nested past the depth limit is kept as text.
+    let view = sanitize(&nested(300, "bottom")).unwrap();
+    assert!(view.limited && view.html.contains("bottom"));
+    assert_eq!(view.html.matches("<div>").count(), MAX_DEPTH);
+}
+
+#[test]
+fn table_grids_are_bounded() {
+    // One row of wide cells pads every other row to 10,000 columns with spans.
+    let bomb = format!(
+        "<table><tr>{}</tr>{}</table>",
+        r#"<td colspan="1000">x</td>"#.repeat(100),
+        "<tr><td>y</td></tr>".repeat(20)
+    );
+    let view = sanitize(&bomb).unwrap();
+    assert!(view.limited && !view.html.contains("colspan"));
+    assert!(view.html.contains("<table>"));
+    assert_eq!(view.html.matches(">x<").count(), 100);
+    // Each cell looks back through every earlier row: 8,000 rows of one
+    // cell is 32 million looks, past the budget; 4,000 is a quarter of that.
+    let column = |rows| format!("<table>{}</table>", "<tr><td>r</td></tr>".repeat(rows));
+    let view = sanitize(&column(8_000)).unwrap();
+    assert!(view.limited && !view.html.contains("<table"));
+    assert_eq!(view.html.matches(">r<").count(), 8_000);
+    let view = sanitize(&column(4_000)).unwrap();
+    assert!(!view.limited && view.html.contains("<table>"));
+    // Without spans the same padding needs real cells, so the grid goes.
+    let wide = format!(
+        "<table><tr>{}</tr>{}</table>",
+        "<td>w</td>".repeat(400),
+        "<tr></tr>".repeat(400)
+    );
+    let view = sanitize(&wide).unwrap();
+    assert!(view.limited && !view.html.contains("<table"));
+    assert_eq!(view.html.matches('w').count(), 400);
+    // The budget is shared: 9,000 cells each fit eleven times, then tables
+    // lose their spans, then their grids.
+    let table = format!(
+        r#"<table><tr><td colspan="100">t</td></tr>{}</table>"#,
+        "<tr><td>r</td></tr>".repeat(89)
+    );
+    let view = sanitize(&table.repeat(30)).unwrap();
+    assert!(view.limited);
+    assert_eq!(view.html.matches(r#"colspan="100""#).count(), 11);
+    assert_eq!(view.html.matches("<table>").count(), 11 + 11);
+    assert_eq!(view.html.matches(">r<").count(), 30 * 89);
+    // Ordinary spans stay; huge ones are clamped; spans belong on cells.
+    let view = sanitize(
+        r#"<table><colgroup><col span="3"></colgroup><tr><td colspan="5000">a</td></tr>
+        <tr><td rowspan="2">b</td><td>c</td></tr><tr><td span="4">d</td></tr></table>
+        <div colspan="9" rowspan="9" style="display:table-cell">e</div>"#,
+    )
+    .unwrap();
+    assert!(!view.limited, "{}", view.html);
+    assert!(view.html.contains(r#"<col span="3">"#));
+    assert!(view.html.contains(r#"<td colspan="100">a</td>"#));
+    assert!(view.html.contains(r#"<td rowspan="2">b</td>"#));
+    assert!(view.html.contains("<td>d</td>") && !view.html.contains("rowspan=\"9\""));
+}
+
+/// The first table of `html`, with the document that owns it.
+fn first_table(html: &str) -> (RcDom, Handle) {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut stack = vec![dom.document.clone()];
+    while let Some(node) = stack.pop() {
+        if element_name(&node) == Some("table") {
+            return (dom, node);
+        }
+        stack.extend(node.children.borrow().iter().cloned());
+    }
+    unreachable!()
+}
+
+#[test]
+fn table_grids_follow_litehtml_placement() {
+    let unlimited = Grid {
+        cells: u64::MAX,
+        scans: u64::MAX,
+    };
+    let costs = |html: &str| {
+        let (_dom, table) = first_table(html);
+        let cost = |spans| grid(&table, spans, unlimited).map(|g| (g.cells, g.scans));
+        (cost(true), cost(false))
+    };
+    // A rowspan shifts the next row's cell right, after one more look back.
+    let spanned = "<table><tr><td rowspan=2>a</td><td>b</td></tr><tr><td>c</td></tr></table>";
+    assert_eq!(costs(spanned), (Some((4, 2)), Some((4, 1))));
+    let shifted = "<table><tr><td rowspan=2>a</td></tr><tr><td>b</td></tr></table>";
+    assert_eq!(costs(shifted), (Some((4, 2)), Some((2, 1))));
+    // litehtml blocks only a spanning cell's first column below it.
+    let wide =
+        "<table><tr><td colspan=3 rowspan=2>a</td></tr><tr><td>b</td><td>c</td></tr></table>";
+    assert_eq!(costs(wide), (Some((6, 3)), Some((4, 2))));
+    // Rows of every row group count, and empty rows are padded too.
+    let groups =
+        "<table><thead><tr><th>h</th><th>h</th></tr></thead><tbody><tr></tr></tbody></table>";
+    assert_eq!(costs(groups), (Some((4, 0)), Some((4, 0))));
+    // Each cell looks back through every earlier row.
+    let column = format!("<table>{}</table>", "<tr><td>r</td></tr>".repeat(100));
+    assert_eq!(costs(&column).0, Some((100, 99 * 100 / 2)));
+    let (_dom, table) = first_table("<table><tr><td colspan=50>a</td></tr><tr></tr></table>");
+    let limit = |cells| Grid { cells, scans: 0 };
+    assert_eq!(grid(&table, true, limit(99)), None);
+    assert_eq!(grid(&table, true, limit(100)), Some(limit(100)));
+}
+
+#[test]
+fn table_display_is_bounded() {
+    // Divs made rows and cells get padded grids too: only so many keep it.
+    let cells = r#"<div style="display:table-cell">c</div>"#.repeat(300);
+    let view = sanitize(&format!(
+        r#"<div style="display:table"><div style="display:table-row">{cells}</div></div>"#
+    ))
+    .unwrap();
+    assert!(view.limited);
+    assert_eq!(
+        view.html.matches("display:table-cell").count(),
+        MAX_TABLE_DISPLAY - 1
+    );
+    assert!(view.html.contains(r#"style="display:table""#));
+    assert_eq!(view.html.matches(">c<").count(), 300);
+    // A stylesheet that could reach as many loses those values; a rule for
+    // a part's own kind keeps them.
+    let css = ".c{display:table-cell;color:red} td{display:table-cell} .few{display:table-row}";
+    let body = r#"<div class="c">c</div>"#.repeat(300);
+    let view = sanitize(&format!(
+        r#"<style>{css}</style>{body}<table><tr><td>t</td></tr></table><div class="few">f</div>"#
+    ))
+    .unwrap();
+    assert!(view.limited);
+    assert_eq!(style(&view.html), ".c{color:red}td{display:table-cell}");
+    let view = sanitize(&format!(
+        r#"<style>{css}</style>{}<div class="few">f</div>"#,
+        r#"<div class="c">c</div>"#.repeat(20)
+    ))
+    .unwrap();
+    assert!(!view.limited);
+    assert_eq!(style(&view.html), css.replace("; ", ";").replace("} ", "}"));
+    // `display:table` is not counted: litehtml wraps each run of other
+    // children in one anonymous row group, row and cell, so its grid is at
+    // most (2 rows + 1) by (2 cells + 1) of the parts that are counted.
+    let parts = r#"<span>s</span><div style="display:table-row"><div style="display:table-cell">c</div></div>"#;
+    let view = sanitize(&format!(
+        r#"<div style="display:table">{}{}</div>"#,
+        parts.repeat(150),
+        "<span>t</span>".repeat(5_000)
+    ))
+    .unwrap();
+    assert!(view.limited);
+    let counted = view.html.matches("display:table-").count();
+    assert_eq!(counted, MAX_TABLE_DISPLAY);
+    assert_eq!(view.html.matches(">t<").count(), 5_000);
+}
+
+/// Start and end tags in the order a sanitised document writes them.
+fn written_tags(html: &str) -> Vec<String> {
+    let mut tags = Vec::new();
+    for piece in html.split('<').skip(1) {
+        if piece.starts_with('!') {
+            continue;
+        }
+        let name: String = piece
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '/')
+            .collect();
+        tags.push(name);
+    }
+    tags
+}
+
+/// The same for the tree a parser builds from `html`.
+fn parsed_tags(html: &str) -> Vec<String> {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    let mut tags = Vec::new();
+    let mut stack = vec![(dom.document.clone(), false)];
+    while let Some((node, closing)) = stack.pop() {
+        let Some(name) = element_name(&node).map(str::to_owned) else {
+            stack.extend(
+                node.children
+                    .borrow()
+                    .iter()
+                    .rev()
+                    .map(|c| (c.clone(), false)),
+            );
+            continue;
+        };
+        if closing {
+            tags.push(format!("/{name}"));
+            continue;
+        }
+        tags.push(name.clone());
+        if !VOID.contains(&name.as_str()) {
+            stack.push((node.clone(), true));
+        }
+        stack.extend(
+            node.children
+                .borrow()
+                .iter()
+                .rev()
+                .map(|c| (c.clone(), false)),
+        );
+    }
+    tags
+}
+
+#[test]
+fn output_parses_back_to_the_same_tree() {
+    // Each of these keeps elements apart in the source parse only through a
+    // `marquee`, a cell of a flattened table, or quirks mode, all of which the
+    // output loses. Written as they were, a parser would close and reopen
+    // them, and re-open formatting elements for every later paragraph.
+    let deep = |open: &str, close: &str| format!("{}x{}", open.repeat(20), close.repeat(20));
+    let flattened = format!(
+        "<p><b class=\"k\"><table><tr>{}</tr>{}</table>tail</b></p>",
+        "<td><p>x</p><a href=\"https://a.test/\">a<table><tr><td><a href=\"https://b.test/\">b</a></td></tr></table></a></td>"
+            .repeat(10),
+        "<tr></tr>".repeat(20_000)
+    );
+    let inputs = [
+        deep("<p><marquee>", "</marquee></p>"),
+        deep("<li><marquee>", "</marquee></li>"),
+        deep("<dl><dd><marquee><dt>", "</dt></marquee></dd></dl>"),
+        deep(r#"<a href="https://a.test/"><marquee>"#, "</marquee></a>"),
+        deep("<h1><marquee>", "</marquee></h1>"),
+        format!(
+            "<p>{}<marquee>{}</marquee></p>",
+            r#"<b class="a"><i class="b"><u class="c">"#,
+            "<p>para</p>".repeat(50)
+        ),
+        "<p>a<table><tr><td>b<p>c</p></td></tr></table>d</p>".to_owned(),
+        flattened,
+        "<div></p><p>a</p></p><li>b<li>c</div>".to_owned(),
+        format!("{}<table><tr><td>t</td></tr></table>", "<div>".repeat(126)),
+    ];
+    for input in &inputs {
+        // Without a doctype the source is read in quirks mode, where a table
+        // may sit in a paragraph; the output always has one.
+        let view = sanitize(input).unwrap();
+        assert_eq!(
+            written_tags(&view.html),
+            parsed_tags(&view.html),
+            "{}",
+            view.html
+        );
+        assert!(!view.html.contains("<marquee"));
+    }
+    // The paragraphs that held blocks are divs; the innermost stays one.
+    let view = sanitize(&inputs[0]).unwrap();
+    assert_eq!(view.html.matches("<p>").count(), 1);
+    assert_eq!(view.html.matches("<div>").count(), 19);
+    // The reviewer's case: a sibling rule over 40 such chains. Reparsed as
+    // written before, they were 5,000 sibling paragraphs.
+    let chains = deep("<p><marquee>", "</marquee></p>").repeat(40);
+    let view = sanitize(&format!("<style>q ~ p ~ p{{color:red}}</style>{chains}")).unwrap();
+    assert_eq!(written_tags(&view.html), parsed_tags(&view.html));
+    assert!(parsed_tags(&view.html).iter().filter(|t| *t == "p").count() <= 40);
+}
+
+#[test]
+fn restructured_output_is_estimated_as_parsed() {
+    let dom = html5ever::parse_document(RcDom::default(), Default::default())
+        .one("<style>.k{color:red}</style><div><span><i>x</i></span></div>");
+    // Markup a parser reads as fewer elements than were recorded: kept, and
+    // the stylesheet is estimated on what the parser builds.
+    let mut walk = walk_document(&dom, false);
+    walk.body = r#"<p class="k">x</p>"#.to_owned();
+    walk.settle_styles();
+    assert!(walk.view.limited);
+    assert_eq!(walk.body, r#"<p class="k">x</p>"#);
+    assert_eq!(walk.css, ".k{color:red}");
+    // Markup a parser grows, here by re-opening formatting elements for
+    // every paragraph: only the text is kept.
+    let mut walk = walk_document(&dom, false);
+    walk.body = format!(
+        "<p>{}<p>a</p><p>b</p>{}</p>",
+        r#"<b class="k"><i class="k">"#, "</i></b>"
+    );
+    walk.settle_styles();
+    assert!(walk.view.limited);
+    assert_eq!(walk.body, "ab");
+    assert_eq!(walk.css, "");
+}
