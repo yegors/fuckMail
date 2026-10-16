@@ -2503,3 +2503,15 @@ The repository is public and the founder reads their own mail with the app, so t
 - **Not checked.** The Windows `Zone.Identifier` paths, whose fm-core test runs only on Windows CI. Gatekeeper's prompt when a marked file is actually opened. A real mailbox: the badge's false-positive rate on real mail is unmeasured.
 
 Core97, Gmail45, Mail UI152, Platform26, Quality91. No schema, fixture or protocol change; cached HTML views rebuild for sanitiser version 5.
+
+## D211 — subjects fold to one line instead of failing to save (2026-10-16T22:11:00Z)
+
+The founder reported a new draft with a short, ordinary-looking subject that would not save: every autosave failed with "Subject must be one line of at most 8192 bytes". The draft's last good save held only the first words; the rest was pasted and carried a line break or tab. Qt's text field draws control characters as spaces, so the subject looked fine and could not be corrected.
+
+- **Composer.** `setDraftSubject` folds what the field gives it: each run of whitespace holding a control character, or a line or paragraph separator, becomes one space, or nothing at either end, and the field shows the result. Only runs holding a break change, so spaces being typed are never trimmed mid-word.
+- **Received subjects.** The same rule applies in Core to reply and forward subjects built from received mail. On the founder's store about 200 conversations have subjects with line breaks or tabs. Replying to one failed with the same error, and a legacy reply silently lost its source routing.
+- **Not folded on save.** `draft_save` still refuses control characters, which keeps the header-injection test as it is and gives `fm` callers an explicit error rather than a quiet rewrite. The trade-off is two copies of the rule, one in Rust and one in C++; the contracts describe it once each and point at each other.
+- **Evidence.** A new fm-core test replies to and forwards a message whose encoded subject decodes to a line break and a tab, saves both drafts and a legacy reply, and checks the helper on trailing breaks, typed double spaces and U+2028. With the helper disabled it fails with the reported error. ComposerInputTest pastes the subject through the real field and checks the folded draft, the field text and the saved subject; it fails without the composer change. The fm-core suite, workspace clippy and the `build/dev` ctest suite pass, except that gui-debug-console timed out in the four-job run; it passes alone.
+- **Not checked.** The founder's open draft in the running app, which still runs the old build. Whether its unsaved subject survives the restart onto the new build is untested; pasting it again fixes it.
+
+Core98, Mail UI153. No schema, fixture or protocol change.

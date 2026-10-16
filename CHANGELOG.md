@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-16
+
+- A subject pasted with a line break or tab no longer fails to save with "Subject must be one line". Line breaks and tabs become a single space, as the field already showed.
+- Replying to or forwarding an email whose subject contains a line break no longer fails.
+
 ## 2026-10-14
 
 - A warning sign appears left of TEXT/HTML when Gmail couldn't verify who sent a message, or the sender's name or domain looks disguised. Hover it to see why.

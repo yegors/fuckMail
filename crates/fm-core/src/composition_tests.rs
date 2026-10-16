@@ -682,3 +682,54 @@ fn drafts_stored_with_bare_reply_ids_still_build() {
         Some("MW4PR15MB4377@MW4PR15MB4377.namprd15.prod.outlook.com")
     );
 }
+
+#[test]
+fn subjects_with_line_breaks_reply_and_save_on_one_line() {
+    use crate::composition::one_line_subject;
+    for (text, line) in [
+        ("Order 4417 - 0042\r\n", "Order 4417 - 0042"),
+        ("\tOrder\r\n 4417", "Order 4417"),
+        ("Two  spaces stay ", "Two  spaces stay "),
+        ("Line\u{2028}separator", "Line separator"),
+    ] {
+        assert_eq!(one_line_subject(text), line, "{text:?}");
+    }
+    // An encoded subject can decode to a line break and a tab. Replying to it
+    // used to fail with "Subject must be one line".
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let bytes = String::from_utf8(source("broken-subject", 0))
+        .unwrap()
+        .replace(
+            "Subject: Frozen source context",
+            "Subject: =?UTF-8?Q?Order_4417_-=0A=090042?=",
+        )
+        .into_bytes();
+    let (cid, mid) = ingest(&mut store, "broken-subject", bytes);
+    for (mode, prefix) in [("reply", "Re:"), ("forward", "Fwd:")] {
+        let draft = call(
+            &mut store,
+            "draft_create",
+            json!({"mode":mode,"conversation_id":cid,"source_message_id":mid,"request_id":mode}),
+        );
+        assert_eq!(draft["subject"], format!("{prefix} Order 4417 - 0042"));
+        let saved = call(
+            &mut store,
+            "draft_save",
+            json!({"draft_id":draft["draft_id"],"expected_revision":1,"request_id":format!("{mode}-save"),"body":"Thanks","subject":draft["subject"]}),
+        );
+        assert_eq!(saved["revision"], 2);
+    }
+    let legacy = call(&mut store, "draft_get", json!({"conversation_id":cid}));
+    assert!(!legacy["subject"]
+        .as_str()
+        .unwrap()
+        .chars()
+        .any(char::is_control));
+    let saved = call(
+        &mut store,
+        "draft_save",
+        json!({"conversation_id":cid,"expected_revision":0,"request_id":"legacy-save","body":"Thanks"}),
+    );
+    assert_eq!(saved["subject"], legacy["subject"]);
+}

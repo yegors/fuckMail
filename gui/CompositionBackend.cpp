@@ -334,8 +334,29 @@ void MailBackend::removeDraftRecipient(const QString &field, int index) {
     entries.removeAt(index); m_draft[field] = entries; m_draftDirty = true; m_draftStatus = "Saving…";
     emit draftChanged(); m_draftTimer.start();
 }
-void MailBackend::setDraftSubject(const QString &subject) {
-    if (draftLocked() || m_draft.isEmpty() || m_draft["subject"].toString() == subject) return;
+// A subject is one line, and Core refuses control characters in it. The field
+// draws a pasted line break or tab as a space, so each run of whitespace
+// holding one becomes one space, or nothing at either end. Typed spaces stay.
+static bool subjectBreak(QChar ch) {
+    const auto category = ch.category();
+    return category == QChar::Other_Control || category == QChar::Separator_Line || category == QChar::Separator_Paragraph;
+}
+static QString oneLineSubject(const QString &text) {
+    QString out; out.reserve(text.size());
+    for (qsizetype i = 0; i < text.size();) {
+        if (!text[i].isSpace() && !subjectBreak(text[i])) { out += text[i++]; continue; }
+        const auto start = i; bool broken = false;
+        for (; i < text.size() && (text[i].isSpace() || subjectBreak(text[i])); ++i) broken = broken || subjectBreak(text[i]);
+        if (!broken) out += text.mid(start, i - start);
+        else if (!out.isEmpty() && i < text.size()) out += ' ';
+    }
+    return out;
+}
+void MailBackend::setDraftSubject(const QString &text) {
+    const auto subject = oneLineSubject(text);
+    if (draftLocked() || m_draft.isEmpty()) return;
+    // Show the folded subject even when it matches what is already saved.
+    if (m_draft["subject"].toString() == subject) { if (subject != text) emit draftChanged(); return; }
     m_draft["subject"] = subject; m_draftDirty = true; m_draftStatus = "Saving…";
     emit draftChanged(); m_draftTimer.start();
 }

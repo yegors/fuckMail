@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D211 — one-line subject in the composer (Mail UI153)
+
+- The subject field folds what it is given the way Core folds a received subject (Core98): each run of whitespace holding a line break, tab or other control character, or U+2028/U+2029, becomes one space, or nothing at either end. Typed spaces stay. The field then shows the folded text, even when it matches what is already saved.
+- So a pasted line break, which the field draws as a space, no longer makes every save fail with "Subject must be one line of at most 8192 bytes".
+
+Consumers: `MailBackend::setDraftSubject`, `ReplyComposer`; Core98; gui-composer-input.
+
+
 ## D210 — sender warnings, verified image loading, attachment safety (Mail UI152)
 
 - **Sender warning.** An expanded received message whose `sender_check.warnings` is not empty shows a 13 px `warning` icon left of TEXT/HTML (`messageSenderWarning_<id>`), red (`Theme.error`) when one is `dmarc_fail`, else `Theme.warn`. Its tooltip: "Check before you trust this message", one "• " line per warning, then "Gmail’s checks: SPF … · DKIM … · DMARC …" when Gmail checked. Sent mail never shows it. `MessageSource` exposes `senderCheck`, `senderVerified` and `senderWarnings`, from the parsed source or a live Gmail message.

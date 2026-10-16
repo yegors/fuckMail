@@ -99,6 +99,36 @@ pub(crate) fn now() -> Result<i64> {
     .map_err(|_| err("invalid_request", "System clock cannot date a draft"))
 }
 
+/// `text` on one line: each run of whitespace holding a line break, tab or
+/// other control character becomes one space, or nothing at either end. Other
+/// spaces stay as written. Received subjects can carry such breaks, which a
+/// draft subject refuses.
+pub(crate) fn one_line_subject(text: &str) -> String {
+    let breaks = |c: char| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}');
+    let mut out = String::with_capacity(text.len());
+    let mut run = String::new();
+    let mut broken = false;
+    for c in text.chars() {
+        if c.is_whitespace() || breaks(c) {
+            broken |= breaks(c);
+            run.push(c);
+            continue;
+        }
+        if !broken {
+            out.push_str(&run);
+        } else if !out.is_empty() {
+            out.push(' ');
+        }
+        run.clear();
+        broken = false;
+        out.push(c);
+    }
+    if !broken {
+        out.push_str(&run);
+    }
+    out
+}
+
 fn subject(value: &Value) -> Result<String> {
     value
         .as_str()
@@ -370,8 +400,9 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        let title =
-            title.ok_or_else(|| err("not_found", "Conversation is outside this account"))?;
+        let title = one_line_subject(
+            &title.ok_or_else(|| err("not_found", "Conversation is outside this account"))?,
+        );
         let from: String =
             self.db
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
@@ -497,13 +528,13 @@ pub(crate) fn routing_from_source(
     if mode == "forward" {
         to.clear();
     }
-    let original_subject = parsed.subject().unwrap_or("(no subject)");
+    let original_subject = one_line_subject(parsed.subject().unwrap_or("(no subject)"));
     let prefix = if mode == "forward" { "Fwd:" } else { "Re:" };
     let title = if original_subject
         .to_lowercase()
         .starts_with(&prefix.to_lowercase())
     {
-        original_subject.to_owned()
+        original_subject.clone()
     } else {
         format!("{prefix} {original_subject}")
     };

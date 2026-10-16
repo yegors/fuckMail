@@ -478,7 +478,7 @@ impl Store {
                     m.2.clone()
                 }
             });
-            let routing = json!({"from":from,"subject":format!("Re: {title}"),"to_recipients":recipient.map(|email|vec![json!({"email":email})]).unwrap_or_default(),"cc_recipients":[],"bcc_recipients":[],"reply_to_message_id":null,"references":[],"reply_all_available":false,"source_unavailable":true});
+            let routing = json!({"from":from,"subject":format!("Re: {}",composition::one_line_subject(&title)),"to_recipients":recipient.map(|email|vec![json!({"email":email})]).unwrap_or_default(),"cc_recipients":[],"bcc_recipients":[],"reply_to_message_id":null,"references":[],"reply_all_available":false,"source_unavailable":true});
             let row = json!({"draft_id":selected,"conversation_id":selected,"mode":"reply","source_message_id":message.as_ref().map(|m|&m.0),"source_hash":message.as_ref().map(|m|&m.1),"routing_json":serde_json::to_string(&routing)?,"body":"","body_html":null,"attachments_json":"[]","revision":0,"discarded":false,"signature_text":identity.1,"from_name":identity.0,"identity_revision":identity.2,"created_at":0,"updated_at":0,"legacy_reply":true});
             (
                 self.project_composition(account, row)?,
@@ -614,7 +614,10 @@ fn prepare_after_import_metadata(
                             routing["to_recipients"] =
                                 json!([{"email":if sender==&source.from {recipient}else{sender}}]);
                         }
-                        routing["subject"] = json!(format!("Re: {}", source.title));
+                        routing["subject"] = json!(format!(
+                            "Re: {}",
+                            composition::one_line_subject(&source.title)
+                        ));
                         for (key, value) in routing.as_object().ok_or_else(invalid_proof)? {
                             draft[key] = value.clone();
                         }

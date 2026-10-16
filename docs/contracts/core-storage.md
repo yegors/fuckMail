@@ -1,5 +1,13 @@
 # Core and storage
 
+## D211 — reply and forward subjects on one line (Core98)
+
+- A reply or forward subject built from received mail (`draft_create`, a legacy reply's first save or capture) passes through `composition::one_line_subject`: each run of whitespace holding a control character (line break, tab) or U+2028/U+2029 becomes one space, or nothing at either end. Other spaces stay as written. Received subjects can decode to such breaks, which `draft_save` refuses, so replying to them used to fail with "Subject must be one line of at most 8192 bytes".
+- `draft_save` still refuses a subject with a control character.
+
+Consumers: Mail UI153, CLI. No schema, fixture or protocol change.
+
+
 ## D210 — sender verdicts, image previews, downloaded marks (Core97)
 
 - `message_source` adds `sender_check` from `fm_core::message_source::sender_check`: `{checked, verified, spf, dkim, dmarc, from_domain, warnings: [{code, text}]}`. It reads only the topmost `Authentication-Results` header, and only when its service is `mx.google.com`; mail-parser's `header_raw` returns the last copy of a header, which a sender can write, so the headers are walked in order. Comments are dropped before parsing. `verified` is DMARC `pass`, or a passing DKIM signature whose domain is the From domain or a parent or child of it. Warning codes: `dmarc_fail`; `unauthenticated` (neither SPF nor DKIM passed, when DMARC did not fail); `name_address` (the display name holds another address); `lookalike_domain` (a non-ASCII or `xn--` label in the From domain). Without Gmail's header nothing is verified and no verdict warning is given.

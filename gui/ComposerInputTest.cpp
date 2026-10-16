@@ -319,7 +319,16 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     await([&]{return lookups.size()==5;},"lookup for the longer text");
     lookups[4].peer->write(reply(lookups[4].id,{{"account","fixture-account"},{"query","ana@"},{"suggestions",QJsonArray{}}}));
     press(Qt::Key_Escape); type("");
+    // A pasted line break or tab looks like a space in the subject field; the
+    // draft saves the one line the field shows instead of failing every save.
+    auto subject=find(window->contentItem(),"draftSubject"); require(subject,"subject field");
+    const QString pasted="Order 4417 -\t0042\r\n", line="Order 4417 - 0042";
+    subject->setProperty("text",pasted); require(QMetaObject::invokeMethod(subject,"textEdited"),"real subject editing handler");
+    require(backend.m_draft["subject"]==line && subject->property("text")==line,"pasted breaks fold to one subject line");
+    subject->setProperty("text",line+"\n"); require(QMetaObject::invokeMethod(subject,"textEdited"),"subject edited again");
+    require(subject->property("text")==line,"a trailing break the draft already lacks leaves the field");
     backend.m_draftTimer.stop(); backend.saveDraft(); await([&]{return !backend.m_draftDirty && !backend.draftBusy();},"recipient edits saved");
+    require(saved["subject"]==line,"the one-line subject is what saves");
     auto composer=find(window->contentItem(),"composer");
     QMimeData mime; mime.setUrls({file("dropped-a.txt"),file("dropped-b.txt")});
     const auto position=composer->mapToScene(QPointF(200,200));
