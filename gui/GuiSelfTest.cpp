@@ -341,7 +341,7 @@ void GuiSelfTest::step() {
             bool opened = false;
             for (const auto &value : m_backend.querySummary()["done_months"].toList()) {
                 const auto key = "done:" + value.toMap()["month"].toString();
-                if (m_backend.sectionCollapsed(key) && key != u"done:week" && key != u"done:month") { m_backend.setSectionCollapsed(key, false); opened = true; }
+                if (m_backend.sectionCollapsed(key) && key != u"done:today" && key != u"done:week" && key != u"done:month") { m_backend.setSectionCollapsed(key, false); opened = true; }
             }
             if (opened) return;
         }

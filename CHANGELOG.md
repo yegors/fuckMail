@@ -4,6 +4,8 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-21
 
+- The mail list shows today's conversations under Today, above the rest of This Week.
+
 - A booby-trapped email can no longer crash or stall the engine: HTML built to be slow to parse is shown as plain text, and the reader stops any layout that takes more than 2 seconds, including after a resize or an image loads.
 - Huge background images, hundreds of floating boxes and runaway font sizes in HTML mail no longer freeze the reader or use gigabytes of memory.
 - A calendar invite with a hostile repeat rule can no longer freeze the app, and a flood of invites can't push your own recurring meetings off crowded day, week or month views. Repeats more often than daily, including several times of day, show as unsupported.

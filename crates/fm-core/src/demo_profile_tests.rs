@@ -882,7 +882,7 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             "invalid_request"
         );
     }
-    // This Week and This Month come first, then the older months. On
+    // Today, This Week and This Month come first, then the older months. On
     // Wednesday 5 August a Monday week starts on the 3rd; 1–2 August are
     // This Month, and July keeps its own group.
     for (start, first) in [("monday", 3), ("wednesday", 5), ("thursday", 30)] {
@@ -902,7 +902,9 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
                 .unwrap()
                 .with_timezone(&zone)
                 .date_naive();
-            if date >= week {
+            if date == chrono::NaiveDate::from_ymd_opt(2026, 8, 5).unwrap() {
+                "today".to_owned()
+            } else if date >= week {
                 "week".to_owned()
             } else if month_of(row) == "2026-08" {
                 "month".to_owned()
@@ -916,8 +918,9 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             .map(|g| g["month"].as_str().unwrap())
             .collect();
         let order = |key: &str| match key {
-            "week" => "9999-99".to_owned(),
-            "month" => "9999-98".to_owned(),
+            "today" => "9999-99".to_owned(),
+            "week" => "9999-98".to_owned(),
+            "month" => "9999-97".to_owned(),
             month => month.to_owned(),
         };
         let mut expected_order = keys.clone();
@@ -951,12 +954,12 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             .unwrap()
             .iter()
             .all(|r| r["group"] != "done" || group_of(r) != "week"));
-        // With open_months, older months stay folded unless listed; This
-        // Week and This Month still show.
+        // With open_months, older months stay folded unless listed;
+        // Today, This Week and This Month still show.
         let older: Vec<&str> = keys
             .iter()
             .copied()
-            .filter(|k| *k != "week" && *k != "month")
+            .filter(|k| *k != "today" && *k != "week" && *k != "month")
             .collect();
         assert!(!older.is_empty(), "{start}");
         let mut opened = recent.clone();
@@ -974,7 +977,7 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             .collect();
         let expected: std::collections::BTreeSet<String> = counted
             .keys()
-            .filter(|k| matches!(k.as_str(), "week" | "month") || *k == older[0])
+            .filter(|k| matches!(k.as_str(), "today" | "week" | "month") || *k == older[0])
             .cloned()
             .collect();
         assert_eq!(shown, expected, "{start}");
@@ -995,11 +998,68 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
             "invalid_request"
         );
     }
+    // Toronto's fall-back day is 25 hours long. Today includes both local
+    // midnights correctly, is paged once, and folds separately from the week.
+    for (conversation, at) in done.iter().zip([
+        "2026-11-01T03:59:59Z",
+        "2026-11-01T04:00:00Z",
+        "2026-11-02T04:59:59Z",
+    ]) {
+        store
+            .db
+            .execute(
+                "UPDATE messages SET sent_at=?3 WHERE account=?1 AND conversation_id=?2",
+                params![ACCOUNT, conversation, at],
+            )
+            .unwrap();
+    }
+    let mut today = request.clone();
+    today["done_week_start"] = json!("sunday");
+    today["today"] = json!("2026-11-01");
+    today["open_months"] = json!([]);
+    today["collapsed_groups"] = json!(["review", "held"]);
+    today["limit"] = json!(1);
+    let first = store
+        .handle("conversations", Some(ACCOUNT), today.clone())
+        .unwrap();
+    assert_eq!(first["done_months"][0], json!({"month":"today","count":2}));
+    assert!(!first["done_months"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|g| g["month"] == "week"));
+    assert_eq!(first["expanded_conversation_count"], 2);
+    assert_eq!(first["conversations"][0]["id"], done[2]);
+    let mut next = today.clone();
+    next["cursor"] = first["next_cursor"].clone();
+    let next = store.handle("conversations", Some(ACCOUNT), next).unwrap();
+    assert_eq!(next["conversations"][0]["id"], done[1]);
+    assert!(next["next_cursor"].is_null());
+    let mut folded = today.clone();
+    folded["collapsed_months"] = json!(["today"]);
+    let folded = store
+        .handle("conversations", Some(ACCOUNT), folded)
+        .unwrap();
+    assert_eq!(folded["done_months"], first["done_months"]);
+    assert_eq!(folded["expanded_conversation_count"], 0);
+    assert!(folded["conversations"].as_array().unwrap().is_empty());
+    today["today"] = json!("2026-11-02");
+    let tomorrow = store.handle("conversations", Some(ACCOUNT), today).unwrap();
+    assert_eq!(
+        tomorrow["done_months"][0],
+        json!({"month":"week","count":2})
+    );
+    assert!(!tomorrow["done_months"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|g| g["month"] == "today"));
+    assert_eq!(tomorrow["expanded_conversation_count"], 2);
     // Each month's state is saved with the account's view, as are recent searches.
-    let saved = store.handle("view_save", Some(ACCOUNT), json!({"view":{"collapsedSections":["review","done:week","done:2026-08"],"openSections":["done:2026-07","done:undated"],"recentSearches":["from:maya","subject:board deck"]},"expected_revision":0,"request_id":"sections"})).unwrap();
+    let saved = store.handle("view_save", Some(ACCOUNT), json!({"view":{"collapsedSections":["review","done:today","done:week","done:2026-08"],"openSections":["done:2026-07","done:undated"],"recentSearches":["from:maya","subject:board deck"]},"expected_revision":0,"request_id":"sections"})).unwrap();
     assert_eq!(
         saved["view"]["collapsedSections"],
-        json!(["review", "done:week", "done:2026-08"])
+        json!(["review", "done:today", "done:week", "done:2026-08"])
     );
     assert_eq!(
         saved["view"]["openSections"],
@@ -1007,6 +1067,7 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
     );
     for bad in [
         json!({"collapsedSections":["done:2026-8"]}),
+        json!({"openSections":["done:today"]}),
         json!({"openSections":["done:week"]}),
         json!({"openSections":["review"]}),
         json!({"recentSearches":["a","b","c","d","e","f","g"]}),

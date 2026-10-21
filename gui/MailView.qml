@@ -352,7 +352,7 @@ Item {
     }
     function groupOf(row) { return dateGroups && row ? dateGrouping.of[row.id] || dateGroup(row) : row ? row.section || row.display_group || row.group || "done" : "done" }
     function groupTitle(group) {
-        const fixed = {review:"To review",held:"Delayed",done:"Done","done:week":"This Week","done:month":"This Month","done:undated":"Undated"}[group]
+        const fixed = {review:"To review",held:"Delayed",done:"Done","done:today":"Today","done:week":"This Week","done:month":"This Month","done:undated":"Undated"}[group]
         if (fixed) return fixed
         // A Done month; the year appears only outside the current year.
         if (group.indexOf("done:") === 0) {
@@ -362,7 +362,7 @@ Item {
         return group
     }
     // Inbox sections in list order with their counts, from the backend: To
-    // review and Delayed (while browsing, even when empty), This Week, This
+    // review and Delayed (while browsing, even when empty), Today, This Week, This
     // Month, then one per older month. The open conversation kept in To review
     // counts there, not in the section Core counts it in.
     readonly property var inboxSections: backend.folder === "inbox" ? backend.inboxSections : []
@@ -371,7 +371,7 @@ Item {
     function groupKey(group) { return backend.account + "/" + backend.folder + "/" + group }
     // Inbox sections keep their collapsed state in the account's saved view.
     // Older Done months start collapsed; only the opened ones are listed.
-    function olderMonth(group) { return group.indexOf("done:") === 0 && group !== "done:week" && group !== "done:month" }
+    function olderMonth(group) { return group.indexOf("done:") === 0 && group !== "done:today" && group !== "done:week" && group !== "done:month" }
     // Read from the backend once per change, not once per header.
     readonly property var sectionFolds: ({collapsed: backend.collapsedGroups, open: backend.openSections, all: backend.allSectionsOpen})
     function groupCollapsed(group) {

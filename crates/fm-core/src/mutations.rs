@@ -601,7 +601,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             ));
         }
     }
-    // Collapsed Inbox sections: review, held, This Week, This Month or a
+    // Collapsed Inbox sections: review, held, Today, This Week, This Month or a
     // Done month.
     if let Some(value) = view.get("collapsedSections") {
         let valid = value.as_array().is_some_and(|rows| {
@@ -611,6 +611,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
                         s == "review"
                             || s == "held"
                             || s == "done:undated"
+                            || s == "done:today"
                             || s == "done:week"
                             || s == "done:month"
                             || s.strip_prefix("done:").is_some_and(|month| {
@@ -628,7 +629,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
         if !valid {
             return Err(err(
                 "invalid_request",
-                "collapsedSections names review, held, done:week, done:month or done:YYYY-MM",
+                "collapsedSections names review, held, done:today, done:week, done:month or done:YYYY-MM",
             ));
         }
     }

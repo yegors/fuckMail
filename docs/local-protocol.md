@@ -242,7 +242,7 @@ Source: [`queries.rs`](../crates/fm-core/src/queries.rs), grammar in [`search_qu
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `conversations` | yes | The list. Filters: `query`, `field`, `folder` (`inbox`, `received`, `sent`, `trash`, `all`), `category`, `sender`, `exact_sender`, `exact_person`, `kind`, `status`, `has_attachment`, `after`/`before` (UTC dates), `grouped` and group/month collapsing. Paging: `limit`, `offset` or `cursor`, `live_paging`. Rows carry `message_ids` and `revision`. |
+| `conversations` | yes | The list. Filters: `query`, `field`, `folder` (`inbox`, `received`, `sent`, `trash`, `all`), `category`, `sender`, `exact_sender`, `exact_person`, `kind`, `status`, `has_attachment`, `after`/`before` (UTC dates), `grouped` and group/month collapsing. With `month_zone`, `done_week_start` and `today`, Done counts use `today`, `week`, `month`, then older months. Paging: `limit`, `offset` or `cursor`, `live_paging`. Rows carry `message_ids` and `revision`. |
 | `conversation` | yes | Messages of `id` with text, flags, attachments, `source_version`. A pure read: opening marks nothing read. |
 | `sender_summary` | yes | `email` → count and three recent conversations with that person. |
 | `search_senders` | yes | People for search autocomplete: `query`, `folder`, `role`, `limit` (≤10). |

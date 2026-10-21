@@ -1,5 +1,16 @@
 # Quality, performance and release acceptance
 
+## D214 — Today grouping (Quality94)
+
+Core101 and Mail UI155; live0/demo3 fixtures unchanged.
+
+- Core's `done_months_count_in_the_client_zone_and_collapse_independently` checks Today ahead of the remaining week, distinct counts, local midnight on a 25-hour daylight-saving day, two-page delivery without duplicates, folding Today, saved folds and the next day's regrouping. Legacy month-only queries and configurable week starts remain covered.
+- Native `gui-mail-selection` checks the rendered Today label above This Week, distinct counts, folding through the header without hiding the rest of the week, persistence, week-start changes, midnight regrouping and removal of an empty Today section.
+
+Validation: all 33 Core demo-profile/query tests pass (77.22 s on WSL), as do strict workspace Clippy and formatting. The Windows release build, `gui-mail-selection` (93.92 s) and `gui-integration` (72.82 s) pass. Repository hygiene and diff checks pass.
+
+Evidence: [mail list research](../research/prototype-september-23.md#d214--today-in-the-mail-list-2026-10-21).
+
 ## D213 — audit regressions (Quality93)
 
 Core100 and Calendar48; MIME fixture1 and demo fixture3 unchanged.

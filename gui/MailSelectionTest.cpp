@@ -83,13 +83,14 @@ class MailSelectionTest {
         QHash<QString,QJsonObject> senderChecks;
         // Every draft_create request, in order.
         QList<QJsonObject> creations;
-        // Core's Done group for a row: This Week from the requested weekday,
+        // Core's Done group for a row: Today, then This Week from the requested weekday,
         // the rest of this month, then its month. Row times here are midday UTC.
         static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
             static const QStringList days{"monday","tuesday","wednesday","thursday","friday","saturday","sunday"};
             const auto today = QDate::fromString(params["today"].toString(), Qt::ISODate);
             const auto day = QDate::fromString(row.value("latest_at").toString().left(10), Qt::ISODate);
             const auto start = days.indexOf(params["done_week_start"].toString());
+            if (today.isValid() && day == today) return "today";
             if (today.isValid() && start >= 0 && day >= today.addDays(-((today.dayOfWeek() - 1 - start + 7) % 7))) return "week";
             if (today.isValid() && day.year() == today.year() && day.month() == today.month()) return "month";
             return row.value("latest_at").toString().left(7);
@@ -100,7 +101,7 @@ class MailSelectionTest {
             for (const auto &value : rows) {
                 const auto row = value.toMap();
                 const auto month = doneGroup(row, params);
-                const bool older = month != "week" && month != "month";
+                const bool older = month != "today" && month != "week" && month != "month";
                 if (filterCollapsed && row.value("group") == "done"
                     && (months.contains(month) || (params.contains("open_months") && older && !open.contains(month)))) continue;
                 shown.append(QJsonObject::fromVariantMap(row));
@@ -3029,7 +3030,7 @@ public:
     }
     static void memoryChecks(){readerMemorySharing();controls();}
     static void refreshChecks(){scopedRefreshes();mutations();undoActions();remoteMail();reviewTransitions();}
-    // Done is This Week, This Month, then older months. Older months start
+    // Done is Today, This Week, This Month, then older months. Older months start
     // folded and build no rows; each choice is remembered with the view, and
     // the week follows its setting.
     static void doneGroups() {
@@ -3040,20 +3041,39 @@ public:
             return QVariant(QVariantMap{{"id",id},{"subject","Thread "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at",at},
                 {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
                 {"group",group},{"kind","people"},{"unread",group=="review"},{"starred",false}}); };
-        h.rows = {make("r","review","2026-10-14T12:00:00Z"), make("w","done","2026-10-13T12:00:00Z"), make("m","done","2026-10-02T12:00:00Z"),
+        h.rows = {make("r","review","2026-10-14T12:00:00Z"), make("t","done","2026-10-14T12:00:00Z"), make("w","done","2026-10-13T12:00:00Z"), make("m","done","2026-10-02T12:00:00Z"),
             make("s","done","2026-09-10T12:00:00Z"), make("o","done","2025-12-01T12:00:00Z")};
-        h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0},{"done",4}}},{"done_months",QJsonArray{
-            QJsonObject{{"month","week"},{"count",1}},QJsonObject{{"month","month"},{"count",1}},QJsonObject{{"month","2026-09"},{"count",1}},QJsonObject{{"month","2025-12"},{"count",1}}}}};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0},{"done",5}}},{"done_months",QJsonArray{
+            QJsonObject{{"month","today"},{"count",1}},QJsonObject{{"month","week"},{"count",1}},QJsonObject{{"month","month"},{"count",1}},QJsonObject{{"month","2026-09"},{"count",1}},QJsonObject{{"month","2025-12"},{"count",1}}}}};
         const auto ids=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["id"].toString()); return out; };
         const auto sections=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["section"].toString()); return out; };
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Today.qml")));
+        require(!qml.rootObjects().isEmpty(),"Today MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"Today window exposed");
         h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
         await([&]{return !h.backend.m_loading;},"the Inbox loads");
         require(h.lastQuery["done_week_start"]=="monday" && h.lastQuery["today"]=="2026-10-14" && h.lastQuery["open_months"].toArray()==QJsonArray{},"the list asks for Monday weeks with every older month folded");
-        require(ids()==QStringList{"r","w","m"} && sections()==QStringList{"review","done:week","done:month"},"This Week and This Month show; older months build no rows");
-        require(!h.backend.sectionCollapsed("done:week") && !h.backend.sectionCollapsed("done:month") && h.backend.sectionCollapsed("done:2026-09") && h.backend.sectionCollapsed("done:undated"),"older months start folded");
+        require(ids()==QStringList{"r","t","w","m"} && sections()==QStringList{"review","done:today","done:week","done:month"},"Today, This Week and This Month show; older months build no rows");
+        require(!h.backend.sectionCollapsed("done:today") && !h.backend.sectionCollapsed("done:week") && !h.backend.sectionCollapsed("done:month") && h.backend.sectionCollapsed("done:2026-09") && h.backend.sectionCollapsed("done:undated"),"older months start folded");
+        await([&]{return find(window->contentItem(),"mailGroupTitle_done:today") && find(window->contentItem(),"mailGroupTitle_done:week");},"both date headers are rendered");
+        auto *todayHeader=find(window->contentItem(),"mailGroup_done:today");
+        auto *weekHeader=find(window->contentItem(),"mailGroup_done:week");
+        require(find(window->contentItem(),"mailGroupTitle_done:today")->property("text")=="Today", "the new header says Today");
+        require(todayHeader->mapToScene({0,0}).y()<weekHeader->mapToScene({0,0}).y(),"Today appears above This Week");
+        for (const auto &key : {"today", "week"}) require(find(window->contentItem(),QString("mailGroupCount_done:")+key)->property("text").toString()=="1","Today and This Week have separate counts");
+        QMetaObject::invokeMethod(todayHeader,"clicked");
+        await([&]{return !h.backend.m_loading && !ids().contains("t");},"Today folds through its header");
+        require(ids().contains("w") && h.lastQuery["collapsed_months"].toArray()==QJsonArray{"today"},"folding Today leaves This Week visible");
+        require(h.backend.m_views["personal"].toMap()["collapsedSections"].toStringList()==QStringList{"done:today"},"the Today fold is saved");
+        QMetaObject::invokeMethod(todayHeader,"clicked");
+        await([&]{return !h.backend.m_loading && ids().contains("t");},"Today opens again");
         h.backend.setSectionCollapsed("done:2026-09",false);
         await([&]{return !h.backend.m_loading && ids().contains("s");},"opening a month loads its rows");
-        require(ids()==QStringList{"r","w","m","s"} && h.lastQuery["open_months"].toArray()==QJsonArray{"2026-09"},"only the opened month joins the list");
+        require(ids()==QStringList{"r","t","w","m","s"} && h.lastQuery["open_months"].toArray()==QJsonArray{"2026-09"},"only the opened month joins the list");
         require(h.backend.m_views["personal"].toMap()["openSections"].toStringList()==QStringList{"done:2026-09"},"the opened month is remembered");
         h.backend.setSectionCollapsed("done:week",true);
         await([&]{return !h.backend.m_loading && !ids().contains("w");},"folding This Week");
@@ -3061,9 +3081,21 @@ public:
         h.backend.setSectionCollapsed("done:week",false);
         await([&]{return !h.backend.m_loading && ids().contains("w");},"This Week opens again");
         // A Wednesday week starts today, so Tuesday's thread is This Month.
+        h.summary["done_months"]=QJsonArray{QJsonObject{{"month","today"},{"count",1}},QJsonObject{{"month","month"},{"count",2}},
+            QJsonObject{{"month","2026-09"},{"count",1}},QJsonObject{{"month","2025-12"},{"count",1}}};
         h.backend.m_preferences["mail_week_start"]="wednesday"; h.backend.refreshDoneSections();
         await([&]{return !h.backend.m_loading && h.lastQuery["done_week_start"]=="wednesday";},"the week start reaches the list");
-        require(sections()==QStringList{"review","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
+        require(sections()==QStringList{"review","done:today","done:month","done:month","done:2026-09"},"rows regroup by the chosen weekday");
+        h.backend.m_mailToday=QDate(2026,10,15);
+        auto groups=h.summary["done_months"].toArray(); groups.removeAt(0);
+        groups.prepend(QJsonObject{{"month","week"},{"count",1}}); h.summary["done_months"]=groups;
+        h.backend.refreshDoneSections();
+        await([&]{return !h.backend.m_loading && h.lastQuery["today"]=="2026-10-15";},"the new date reaches Core");
+        require(sections()==QStringList{"review","done:week","done:month","done:month","done:2026-09"},"yesterday's Today row moves into This Week");
+        await([&]{auto *title=find(window->contentItem(),"mailGroupTitle_done:today");return !title || !title->isVisible();},"an empty Today section disappears");
+        const MailBackend::DoneSections boundary{QTimeZone("America/Toronto"),QDate(2026,11,1),QDate(2026,11,1),"sunday"};
+        require(boundary.of("2026-11-01T03:59:59Z")=="done:2026-10" && boundary.of("2026-11-01T04:00:00Z")=="done:today"
+            && boundary.of("2026-11-02T04:59:59Z")=="done:today" && boundary.of("2026-11-02T05:00:00Z")=="done:week", "Today follows local midnight across the 25-hour daylight-saving day");
     }
     static void run(){longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };

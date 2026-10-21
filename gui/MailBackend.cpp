@@ -42,13 +42,14 @@ bool quietDiagnosticRead(const QString &method) {
 // A message source can carry up to ~1 MB of raw text that only the source
 // dialog shows. Readers and their caches keep the rest.
 QJsonObject withoutRaw(QJsonObject source) { source.remove(QStringLiteral("raw")); return source; }
-// Inbox sections in list order: To review, Delayed, This Week, This Month,
+// Inbox sections in list order: To review, Delayed, Today, This Week, This Month,
 // then older months newest first and undated last.
 QString sectionOrder(const QString &key) {
     if (key == u"review") return QStringLiteral("0");
     if (key == u"held") return QStringLiteral("1");
-    if (key == u"done:week") return QStringLiteral("200000000");
-    if (key == u"done:month") return QStringLiteral("200000001");
+    if (key == u"done:today") return QStringLiteral("200000000");
+    if (key == u"done:week") return QStringLiteral("200000001");
+    if (key == u"done:month") return QStringLiteral("200000002");
     static const QRegularExpression month(QStringLiteral(R"(^done:(\d{4})-(\d{2})$)"));
     const auto match = month.match(key);
     if (!match.hasMatch()) return QStringLiteral("3");
@@ -526,11 +527,11 @@ bool MailBackend::publishAccounts(QVariantList accounts) {
     return false;
 }
 
-// Inbox sections: review, held, This Week, This Month and one per older Done
-// month. The first four fold when collapsed; older months start folded and
+// Inbox sections: review, held, Today, This Week, This Month and one per older Done
+// month. The first five fold when collapsed; older months start folded and
 // open when chosen. Both lists are kept in the account's saved view.
 static bool fixedSection(const QString &section) {
-    return section == u"review" || section == u"held" || section == u"done:week" || section == u"done:month";
+    return section == u"review" || section == u"held" || section == u"done:today" || section == u"done:week" || section == u"done:month";
 }
 static bool olderSection(const QString &section) {
     if (section == u"done:undated") return true;
@@ -709,6 +710,7 @@ QString MailBackend::DoneSections::of(const QString &latest) const {
     const auto at = QDateTime::fromString(latest, Qt::ISODate);
     if (!at.isValid()) return QStringLiteral("done:undated");
     const auto day = at.toTimeZone(zone).date();
+    if (day == today) return QStringLiteral("done:today");
     if (day >= week) return QStringLiteral("done:week");
     if (day.year() == today.year() && day.month() == today.month()) return QStringLiteral("done:month");
     return u"done:" + day.toString(u"yyyy-MM");
@@ -719,7 +721,7 @@ MailBackend::DoneSections MailBackend::doneSections() const {
     const auto start = std::max<qsizetype>(0, weekdays.indexOf(m_preferences.value("mail_week_start").toString()));
     return {zone, today.addDays(-((today.dayOfWeek() - 1 - start + 7) % 7)), today, weekdays[start]};
 }
-// This Week and This Month move with the date and the chosen weekday.
+// Today, This Week and This Month move with the date and the chosen weekday.
 void MailBackend::refreshDoneSections() {
     if (m_folder != u"inbox" || m_account.isEmpty()) return;
     if (publishConversations(m_conversations)) emit conversationsChanged();
@@ -782,7 +784,7 @@ void MailBackend::prefetchSection(const QString &section) {
     // Every other section collapsed, so the page holds only this one's rows.
     // Older months stay folded unless this is one of them.
     QStringList others, open;
-    for (const char *fixed : {"review", "held", "done:week", "done:month"})
+    for (const char *fixed : {"review", "held", "done:today", "done:week", "done:month"})
         if (section != QLatin1String(fixed)) others << QString::fromLatin1(fixed);
     if (!section.startsWith(u"done:")) others << QStringLiteral("done");
     else if (olderSection(section)) open << section;
@@ -1092,7 +1094,7 @@ QJsonObject MailBackend::listParams(const QStringList &collapsed, const QStringL
     params["grouped"] = view.folder != "sent";
     for (auto it = view.filters.cbegin(); it != view.filters.cend(); ++it) params[it.key()] = QJsonValue::fromVariant(it.value());
     if (view.folder == "inbox") {
-        // Done is shown by week and month in this computer's zone, like row times.
+        // Done is shown by today, week and month in this computer's zone, like row times.
         const auto done = doneSections();
         params["month_zone"] = mailMonthZone();
         params["done_week_start"] = done.weekStart;

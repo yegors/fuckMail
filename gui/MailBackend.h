@@ -93,7 +93,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
     // Collapsed Inbox sections, saved per account: review, held or done:YYYY-MM.
-    // Folded Inbox sections: To review, Delayed, This Week and This Month when
+    // Folded Inbox sections: To review, Delayed, Today, This Week and This Month when
     // listed in collapsedGroups; older Done months unless listed in openSections.
     Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
     Q_PROPERTY(QStringList openSections READ openSections NOTIFY queryChanged)
@@ -923,7 +923,7 @@ private:
     QSet<QString> m_sectionPrefetches;
     void setSections(const QStringList &collapsed, const QStringList &open);
     void applyCollapsedSections(const QStringList &previousCollapsed, const QStringList &previousOpen);
-    // Where Done rows fall: This Week from the chosen weekday, the rest of this
+    // Where Done rows fall: Today, This Week from the chosen weekday, the rest of this
     // month, then one section per older month, in the zone Core counts them in.
     struct DoneSections {
         QTimeZone zone;

@@ -1,5 +1,13 @@
 # Core and storage
 
+## D214 — Today in Done date groups (Core101)
+
+- With `month_zone`, `done_week_start` and `today`, `conversations` assigns the `today` Done key before testing `week` and `month`. Membership compares local calendar dates, including daylight-saving days, using the conversation's latest message.
+- `done_months` orders `today`, `week`, `month`, older months and `undated`; Today is excluded from the week count. `collapsed_months` accepts `today`; folding it removes its rows from paging and expanded counts while preserving full group counts. `open_months: []` leaves Today expanded.
+- `view_save.collapsedSections` accepts `done:today`. It is a fixed date section, so it is not an `openSections` older-month key. Existing query parameters already include the date in the page/cache scope.
+
+Consumers: Mail UI155, `conversations` callers and saved account views. Schema, live0/demo3 fixtures and protocol1 unchanged.
+
 ## D213 — foreign-content parsing and calendar output priority (Core100)
 
 - The HTML cost guard follows `font` tags with a `color`, `face` or `size` attribute out of SVG or MathML, including empty and valueless attributes. Following HTML tags do not gain foreign-content self-closing behavior. Over-budget input uses the existing limited text view.

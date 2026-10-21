@@ -1463,7 +1463,7 @@ impl Store {
                 2
             }
         };
-        // Done is presented by week and month in the client's zone. Counts
+        // Done is presented by today, week and month in the client's zone. Counts
         // cover the whole filtered set; a collapsed group's rows are left out
         // of paging. Each row's group is worked out once.
         let folds = !collapsed.is_empty() || !collapsed_months.is_empty() || open_months.is_some();
@@ -1477,7 +1477,10 @@ impl Store {
                 fold = fold
                     || collapsed_months.contains(key.as_str())
                     || open_months.as_ref().is_some_and(|open| {
-                        key != THIS_WEEK && key != THIS_MONTH && !open.contains(key.as_str())
+                        key != TODAY
+                            && key != THIS_WEEK
+                            && key != THIS_MONTH
+                            && !open.contains(key.as_str())
                     });
                 *done_months.entry(key).or_default() += 1;
             }
@@ -1647,14 +1650,15 @@ impl Store {
             let (others, other_names) = self.conversation_others(account, cid, &sender_email)?;
             out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&snippet_phrases),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
         }
-        // Newest month first; conversations without a date sort last.
-        // This Week, This Month, then newest month first; undated last.
+        // Today, This Week, This Month, then newest month first; undated last.
         let done_months = month_zone.map(|_| {
-            let [week, month, undated] =
-                [THIS_WEEK, THIS_MONTH, UNDATED].map(|key| done_months.remove(key));
+            let [today, week, month, undated] =
+                [TODAY, THIS_WEEK, THIS_MONTH, UNDATED].map(|key| done_months.remove(key));
             let group = |key: &str, count| json!({"month":key,"count":count});
-            week.map(|count| group(THIS_WEEK, count))
+            today
+                .map(|count| group(TODAY, count))
                 .into_iter()
+                .chain(week.map(|count| group(THIS_WEEK, count)))
                 .chain(month.map(|count| group(THIS_MONTH, count)))
                 .chain(
                     done_months
@@ -1975,13 +1979,16 @@ fn canonical_email(email: &str) -> Result<String> {
 /// Done conversations whose latest message has no usable date.
 const UNDATED: &str = "undated";
 
-/// Done conversations from the first day of the current week on.
+/// Done conversations whose latest message falls on the client's current date.
+const TODAY: &str = "today";
+/// The remaining Done conversations from the first day of the current week on.
 const THIS_WEEK: &str = "week";
 /// The rest of the current month's Done conversations.
 const THIS_MONTH: &str = "month";
 
-/// Where This Week and This Month begin, in the client's zone.
+/// Today's date and where This Week and This Month begin, in the client's zone.
 struct RecentDone {
+    today: chrono::NaiveDate,
     week: chrono::NaiveDate,
     month: String,
 }
@@ -2056,6 +2063,7 @@ fn recent_done(p: &Value, zoned: bool) -> Result<Option<RecentDone>> {
     use chrono::Datelike;
     let back = (today.weekday().num_days_from_monday() + 7 - start.num_days_from_monday()) % 7;
     Ok(Some(RecentDone {
+        today,
         week: today - chrono::Duration::days(back.into()),
         month: today.format("%Y-%m").to_string(),
     }))
@@ -2071,7 +2079,7 @@ fn local_date(zone: fm_calendar::Tz, julian_day: f64) -> Option<chrono::NaiveDat
         .map(|at| at.with_timezone(&zone).date_naive())
 }
 
-/// The Done group of a Julian day in `zone`: `week` and `month` when `recent`
+/// The Done group of a Julian day in `zone`: `today`, `week` and `month` when `recent`
 /// is given, otherwise its `YYYY-MM`, or `undated`.
 fn done_key(zone: fm_calendar::Tz, julian_day: f64, recent: Option<&RecentDone>) -> String {
     let Some(date) = local_date(zone, julian_day) else {
@@ -2079,6 +2087,7 @@ fn done_key(zone: fm_calendar::Tz, julian_day: f64, recent: Option<&RecentDone>)
     };
     let month = date.format("%Y-%m").to_string();
     match recent {
+        Some(recent) if date == recent.today => TODAY.into(),
         Some(recent) if date >= recent.week => THIS_WEEK.into(),
         Some(recent) if month == recent.month => THIS_MONTH.into(),
         _ => month,
@@ -2087,6 +2096,7 @@ fn done_key(zone: fm_calendar::Tz, julian_day: f64, recent: Option<&RecentDone>)
 
 fn valid_month(month: &str) -> bool {
     month == UNDATED
+        || month == TODAY
         || month == THIS_WEEK
         || month == THIS_MONTH
         || (month.len() == 7

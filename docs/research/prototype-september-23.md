@@ -605,3 +605,11 @@ Not verified:
 - the overlap row for a day outside the loaded window (it shows nothing);
 - hover brightening outside `FmButton`, `FmSegmented` and the console's new-lines pill;
 - account drag-reordering, which the export shows without a note (not built).
+
+## D214 — Today in the mail list (2026-10-21)
+
+The existing Inbox date grouping is shared by Core's counts/paging and the native list's headers/folds. Today is now the first date group, using the latest conversation message's date in the mail list's local zone, with the remaining current-week rows kept in This Week. Review and Delayed are unchanged. The new section uses the existing date-header appearance and saved collapse state.
+
+On WSL, the extended `done_months_count_in_the_client_zone_and_collapse_independently` regression passes in 3.48 s including demo3 setup. Its Toronto boundary case includes 04:00 UTC on November 1 through 04:59:59 UTC on November 2 in the same local Today, verifies both conversations across one-row pages without duplication, folds them while retaining the count, and moves them to This Week on November 2. All 33 Core demo-profile and query tests pass in 77.22 s; strict workspace Clippy passes. No fixture or schema change.
+
+The Windows release build passes. `gui-mail-selection` passes in 93.92 s, including the actual Today header text, position above This Week, distinct counts, header clicks, saved fold state and midnight regrouping. `gui-integration` passes in 72.82 s against the real engine on a disposable demo profile. Formatting, repository hygiene and diff checks pass. Native macOS/Linux GUI checks were not run for this change; no real mailbox was used.

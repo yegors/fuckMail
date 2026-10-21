@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D214 — Today above This Week (Mail UI155)
+
+- Inbox date sections start with `done:today` ("Today"), followed by `done:week` ("This Week") for the remaining week. A conversation belongs to Today when its latest message falls on the current date in the same local time zone used for mail row times.
+- Today uses the existing date-header style, its own count and saved fold state, and starts expanded. Empty date sections are omitted. Midnight and week-start changes regroup rows through the existing refresh path.
+- To review and Delayed retain their existing rules and placement. Older month sections retain their folding behavior.
+
+Consumers: `MailBackend`, `MailView`, native mail selection test and GUI self-test; Core101. Demo fixture3 and schema unchanged.
+
 ## D212 — unsubscribe email always confirmed, attachment allowlist, bounded reader (Mail UI154)
 
 - **Unsubscribe by email.** The confirmation (`unsubscribeConfirmation_<id>`) names the address, the subject and up to 400 characters of the text, and says Gmail verified the sender's domain and the address belongs to it. When a one-click POST is refused with `unsubscribe_by_email`, the reader opens the same confirmation, prefixed "The list did not accept the one-click unsubscribe." Send sends `google_unsubscribe_mail` with `address` and `fallback: true`; Cancel sends nothing and says so. Nothing is sent automatically. Replaces D210's automatic fallback.

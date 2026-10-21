@@ -2543,3 +2543,15 @@ The pre-commit audit found two gaps in D212, and the founder requested surgical 
 - **Verification.** The full WSL Rust workspace suite passes (924 passed, zero failed, nine existing opt-in tests ignored), as do strict workspace Clippy, formatting, repository hygiene and diff checks. The Windows release rebuild and all four affected GUI tests pass (108.11 s). Native macOS/Linux GUI builds, packaging and live Gmail unsubscribe were not rerun.
 
 Core100, Calendar48, Quality93. MIME fixture1, demo fixture3, schema and protocol unchanged. Sanitizer version6 remains the unreleased version introduced by D212. Measurements are in the owning HTML and Calendar research records; generated logs remain outside Git.
+
+## D214 — Today before This Week in the mail list (2026-10-21T21:59:40Z)
+
+The founder requested a Today section above This Week, leaving the rest of the week's mail in This Week.
+
+- Done conversations are assigned to Today by their latest message's local calendar date. This uses the existing mail time zone and refreshes at midnight; it is not a rolling 24-hour window. To review and Delayed keep their current precedence.
+- Core supplies disjoint counts and excludes folded Today rows before paging. The GUI uses the existing date-header style and stores `done:today` alongside the other fixed section folds. Today starts expanded and disappears when empty.
+- Existing Core and native list regressions now exercise the split, paging, saved folds, week-start changes and daylight-saving boundaries. Measured results belong in the mail-list research and quality contract.
+
+- **Verification.** All 33 Core demo-profile/query tests, strict workspace Clippy and formatting pass. The Windows release build, native mail-selection test and whole-app GUI integration pass; repository hygiene and diff checks pass. The test data is synthetic.
+
+Core101, Mail UI155, Quality94. Schema, live0/demo3 fixtures and protocol1 unchanged.
