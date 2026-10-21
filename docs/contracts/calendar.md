@@ -1,5 +1,19 @@
 # Calendar, feeds and reminders
 
+## D213 — keep priority through the occurrence limit (Calendar48)
+
+- Core100 preserves the existing response rank through the per-calendar 1,000-occurrence limit, as well as the 128-series limit. Expanding an early-sorting unanswered invitation cannot consume the output budget before an already admitted accepted series.
+- Limited results still report incomplete coverage. Events retained in the result keep their chronological presentation order.
+
+Consumers: Core100 calendar projection, combined Calendar, legacy calendar query and reminder reads. No fixture or protocol change.
+
+## D212 — bounded recurrence expansion (Calendar47)
+
+- A rule is refused as `unsupported_rule` when its parsed frequency is hourly, minutely or secondly, in any spelling, or when it has more than one time of day (BYHOUR × BYMINUTE × BYSECOND over 1). These events show as unsupported.
+- The vendored rrule charges every period, including those before the shown dates, against a budget of 400,000 candidates per set; past it the expansion is `limit_exceeded` instead of running on. A set passes on a rule's limited flag. Daily series started in 1970 still expand in about 2 ms.
+- When more than 128 series compete for the view, the user's own, accepted and tentative series are kept first; unanswered and declined invitations go first (Core99).
+
+Consumers: `fm_calendar::expand`, vendored rrule (FUCKMAIL-PATCH.md), Core99.
 
 
 ## D205 — moving through dates slides (Calendar46)

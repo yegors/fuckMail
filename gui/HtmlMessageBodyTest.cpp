@@ -318,16 +318,41 @@ ApplicationWindow {
     // An unsubscribe email goes out from the person's account only once they
     // have seen where it goes.
     window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});
-    window->setProperty("unsubscribe", QVariantMap{{"method", "mailto"}, {"address", "leave@news.test"}});
+    window->setProperty("unsubscribe", QVariantMap{{"method", "mailto"}, {"address", "leave@news.test"}, {"subject", "stop"}, {"body", ""}});
     check(await([&] { return unsubscribeButton->isVisible(); }), "an email unsubscribe shows its button");
     QMetaObject::invokeMethod(unsubscribeButton, "clicked");
     auto *mailtoConfirmation = find(window->contentItem(), "notices")->findChild<QObject *>("unsubscribeConfirmation_m1");
     check(mailtoConfirmation && await([&] { return mailtoConfirmation->property("visible").toBool(); }), "an email unsubscribe asks first");
     check(backend.unsubscribes.size() == 1, "nothing is sent before the person confirms");
     check(mailtoConfirmation && mailtoConfirmation->property("message").toString().contains("leave@news.test"), "the question names the recipient");
+    check(mailtoConfirmation && mailtoConfirmation->property("message").toString().contains("Subject: stop"), "the question shows the subject");
     if (mailtoConfirmation) QMetaObject::invokeMethod(mailtoConfirmation, "accept");
-    check(backend.unsubscribes.size() == 2 && backend.unsubscribes.value(1).toMap()["method"] == "mailto", "Send sends the unsubscribe email");
+    check(backend.unsubscribes.size() == 2 && backend.unsubscribes.value(1).toMap()["method"] == "mailto"
+          && backend.unsubscribes.value(1).toMap()["address"] == "leave@news.test" && !backend.unsubscribes.value(1).toMap()["fallback"].toBool(),
+          "Send sends the unsubscribe email to the address shown");
     emit backend.unsubscribeReady("u2", {{"method", "mailto"}}, true);
+    // A list that refuses its one-click POST gets its email only once the
+    // person has seen where it goes and what it says.
+    window->setProperty("unsubscribe", QVariantMap{{"method", "one_click"}, {"url", "https://news.test/u"},
+        {"mailto", QVariantMap{{"address", "unsubscribe@news.test"}, {"subject", "Leave list 7"}, {"body", "Remove me please"}}}});
+    QMetaObject::invokeMethod(unsubscribeButton, "clicked");
+    check(backend.unsubscribes.size() == 3 && backend.unsubscribes.value(2).toMap()["method"] == "one_click", "one-click posts without asking");
+    emit backend.unsubscribeReady("u3", {{"code", "unsubscribe_by_email"}, {"message", "The list did not accept the one-click unsubscribe"}}, false);
+    check(mailtoConfirmation && await([&] { return mailtoConfirmation->property("visible").toBool(); }), "a refused one-click asks before emailing");
+    check(backend.unsubscribes.size() == 3, "no email is sent before the person confirms");
+    const auto fallbackQuestion = mailtoConfirmation ? mailtoConfirmation->property("message").toString() : QString();
+    check(fallbackQuestion.contains("did not accept") && fallbackQuestion.contains("unsubscribe@news.test")
+          && fallbackQuestion.contains("Leave list 7") && fallbackQuestion.contains("Remove me please"), "the question names the recipient, subject and text");
+    if (mailtoConfirmation) QMetaObject::invokeMethod(mailtoConfirmation, "reject");
+    check(await([&] { return !mailtoConfirmation->property("visible").toBool(); }) && backend.unsubscribes.size() == 3, "Cancel sends nothing");
+    QMetaObject::invokeMethod(unsubscribeButton, "clicked");
+    emit backend.unsubscribeReady("u4", {{"code", "unsubscribe_by_email"}}, false);
+    check(mailtoConfirmation && await([&] { return mailtoConfirmation->property("visible").toBool(); }), "a second refusal asks again");
+    if (mailtoConfirmation) QMetaObject::invokeMethod(mailtoConfirmation, "accept");
+    check(backend.unsubscribes.size() == 5 && backend.unsubscribes.value(4).toMap()["method"] == "mailto"
+          && backend.unsubscribes.value(4).toMap()["address"] == "unsubscribe@news.test" && backend.unsubscribes.value(4).toMap()["fallback"].toBool(),
+          "Send emails the confirmed address in place of the refused one-click");
+    emit backend.unsubscribeReady("u5", {{"method", "mailto"}}, true);
     // The invitation row comes first: its time, the time it moved from, your
     // answer once given, and Yes / Maybe / No updating the same event.
     window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});

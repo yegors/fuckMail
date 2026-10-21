@@ -2795,7 +2795,7 @@ Item {
     function showAttachment(attachment) {
         const media=[]
         for(const message of members) for(const item of message.attachments || []) {
-            if(item.state === "available" && (/^(image|video)\//i.test(item.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|mp4|webm|mov|m4v|mkv|avi)$/i.test(item.name || ""))) media.push(item)
+            if(item.state === "available" && (/^image\//i.test(item.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(item.name || "") || mediaViewer.isVideo(item))) media.push(item)
         }
         const index=media.findIndex(item=>item.id===attachment.id)
         if(index>=0)mediaViewer.show(backend.account,media,index)

@@ -397,7 +397,7 @@ Only the engine fetches remote content. Received HTML is sanitised, with images 
 | `message_image` | yes | `resource` N as a PNG `path` and a `state`; `cached_only` stays offline. |
 | `sender_avatar` | — | Picture for `address` + `kind` (Gravatar by hashed address, or the domain icon) as a PNG `path`. |
 | `message_unsubscribe` | yes | For `id` + `source_version`: an RFC 8058 one-click POST now, or a `link` for the browser. |
-| `google_unsubscribe_mail` | yes | Unsubscribe by sending the list's mailto message through Gmail: `id`, `source_version`, `fallback`. **live, session** |
+| `google_unsubscribe_mail` | yes | Unsubscribe by sending the list's mailto message through Gmail: `id`, `source_version`, `address` (the address the person confirmed; refused unless it is the one the message would go to), `fallback`. **live, session** |
 | `link_host_summary` | yes | Messages in all accounts linking to `host`. |
 | `link_pattern_counts` | — | Message counts for blocklist `patterns`. |
 | `remote_proxy_test` | — | Test the proxy: `{ok, ms}` or `{ok: false, reason}`. |

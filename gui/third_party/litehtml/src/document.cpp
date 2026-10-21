@@ -553,11 +553,22 @@ namespace litehtml
             } else
             {
                 ++m_render_generation;
-                ret = m_root_render->render(0_px, 0_px, cb_context, nullptr).natural_width;
-                if(m_root_render->fetch_positioned())
+                // fuckMail: hostile layouts (thousands of floats) are
+                // superlinear; past the deadline the render unwinds and is
+                // reported as timed out.
+                m_render_timed_out = false;
+                try
                 {
-                    m_fixed_boxes.clear();
-                    m_root_render->render_positioned(rt);
+                    ret = m_root_render->render(0_px, 0_px, cb_context, nullptr).natural_width;
+                    if(m_root_render->fetch_positioned())
+                    {
+                        m_fixed_boxes.clear();
+                        m_root_render->render_positioned(rt);
+                    }
+                } catch(const render_timeout&)
+                {
+                    m_render_timed_out = true;
+                    return 0_px;
                 }
                 m_size.width  = 0;
                 m_size.height = 0;
@@ -565,6 +576,15 @@ namespace litehtml
             }
         }
         return ret;
+    }
+
+    void document::check_render_deadline() const
+    {
+        if(m_render_deadline != std::chrono::steady_clock::time_point::max() &&
+           std::chrono::steady_clock::now() > m_render_deadline)
+        {
+            throw render_timeout();
+        }
     }
 
     void document::draw(uint_ptr hdc, pixel_t x, pixel_t y, const position* clip)

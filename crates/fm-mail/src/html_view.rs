@@ -14,7 +14,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// Bump when output or manifest meaning changes, so cached copies are rebuilt.
-pub const SANITIZER_VERSION: u32 = 5;
+pub const SANITIZER_VERSION: u32 = 6;
 /// Largest HTML input [`sanitize`] accepts, in bytes (4 MiB).
 pub const MAX_HTML_BYTES: usize = 4 * 1024 * 1024;
 // Bounds on sender-controlled input. Past most of them the excess is dropped
@@ -48,6 +48,15 @@ const MAX_TABLE_GRID: Grid = Grid {
 /// Elements CSS may turn into a kind of table part other than their own, such
 /// as a `<div>` made a row or a cell. Those grids are padded the same way.
 const MAX_TABLE_DISPLAY: usize = 200;
+/// Elements that may float. litehtml places each float against every earlier
+/// one in its block, so 15,000 floated words took 21 s to lay out; a
+/// newsletter floats a few dozen at most. Past this, `float` declarations and
+/// floating `align` values are dropped.
+const MAX_FLOATS: usize = 200;
+/// Largest `background-size` or `background` length in pixels and in
+/// font-relative units, which can reach the 200px font size.
+const MAX_BACKGROUND_PX: f32 = 4_000.0;
+const MAX_BACKGROUND_EM: f32 = 20.0;
 /// Compound selectors in one complex selector, such as `a > b c` (three).
 const MAX_SELECTOR_PARTS: usize = 12;
 /// What litehtml may spend matching the sender's stylesheet, in units of one
@@ -219,6 +228,8 @@ pub fn part_content_id(part: &mail_parser::MessagePart<'_>) -> Option<String> {
 }
 
 /// Rebuild `html` for display. Returns `None` when the input exceeds the size limit.
+/// HTML built to make parsing slow, such as thousands of nested elements,
+/// becomes its text alone, with `limited` set.
 pub fn sanitize(html: &str) -> Option<HtmlView> {
     rebuild(html, false)
 }
@@ -233,6 +244,9 @@ pub fn sanitize_with_quotes(html: &str) -> Option<HtmlView> {
 fn rebuild(html: &str, keep_quotes: bool) -> Option<HtmlView> {
     if html.len() > MAX_HTML_BYTES {
         return None;
+    }
+    if !crate::html_cost::parses_cheaply(html) {
+        return Some(text_view(html));
     }
     // Parse with the HTML5 algorithm, as a browser would, then rebuild from
     // the tree: nothing from the source text is copied through unparsed.
@@ -262,6 +276,23 @@ fn rebuild(html: &str, keep_quotes: bool) -> Option<HtmlView> {
     Some(walk.view)
 }
 
+/// `html`'s text alone, line by line, without parsing it as a document.
+fn text_view(html: &str) -> HtmlView {
+    let mut out = String::from("<!DOCTYPE html><html><head></head><body>");
+    for (index, line) in crate::html_cost::strip_tags(html).lines().enumerate() {
+        if index > 0 {
+            out.push_str("<br>");
+        }
+        escape_text(line, &mut out);
+    }
+    out.push_str("</body></html>");
+    HtmlView {
+        html: out,
+        limited: true,
+        ..HtmlView::default()
+    }
+}
+
 fn walk_document(dom: &RcDom, keep_quotes: bool) -> Walk {
     let mut walk = Walk {
         view: HtmlView::default(),
@@ -279,6 +310,7 @@ fn walk_document(dom: &RcDom, keep_quotes: bool) -> Walk {
         spanless: Vec::new(),
         open: Open::default(),
         table_display: 0,
+        floats: 0,
         stopped: false,
         keep_quotes,
         body_attrs: String::new(),
@@ -482,6 +514,8 @@ struct Walk {
     open: Open,
     /// Elements whose inline style makes them another kind of table part.
     table_display: usize,
+    /// Elements whose inline style or `align` makes them float.
+    floats: usize,
     /// Set at the node limit or an Outlook reply header; the rest is skipped.
     stopped: bool,
     keep_quotes: bool,
@@ -641,9 +675,8 @@ struct StyleRule {
     prelude: String,
     selectors: Vec<Selector>,
     body: String,
-    /// `body` without the `display` values that make table parts, and those values.
-    plain: String,
-    table_display: Vec<String>,
+    /// The accepted declarations `body` joins.
+    declarations: Vec<Declaration>,
     /// Index in `Walk::media` of the enclosing `@media` block.
     media: Option<usize>,
 }
@@ -1074,7 +1107,9 @@ impl Walk {
         for name in ["alt", "title", "align", "border"] {
             if let Some(value) = attr(node, name) {
                 if let Some(value) = self.attribute_value("img", name, &value) {
-                    let _ = write!(attrs, " {name}=\"{value}\"");
+                    if self.align_allowed("img", name, &value) {
+                        let _ = write!(attrs, " {name}=\"{value}\"");
+                    }
                 }
             }
         }
@@ -1198,7 +1233,9 @@ impl Walk {
                 }
                 _ => {
                     if let Some(value) = self.attribute_value(tag, &name, value) {
-                        let _ = write!(out, " {name}=\"{value}\"");
+                        if self.align_allowed(tag, &name, &value) {
+                            let _ = write!(out, " {name}=\"{value}\"");
+                        }
                     }
                 }
             }
@@ -1313,13 +1350,14 @@ impl Walk {
             out: &mut out,
         };
         for _ in RuleBodyParser::new(&mut parser, &mut decls) {}
-        let foreign = |display: &Option<String>| {
-            display
+        let foreign = |declaration: &Declaration| {
+            declaration
+                .display
                 .as_deref()
                 .is_some_and(|display| display != own_table_part(tag))
         };
         let mut keep = true;
-        if out.iter().any(|(_, display)| foreign(display)) {
+        if out.iter().any(foreign) {
             keep = self.table_display < MAX_TABLE_DISPLAY;
             if keep {
                 self.table_display += 1;
@@ -1327,7 +1365,29 @@ impl Walk {
                 self.view.limited = true;
             }
         }
-        join_declarations(&out, |display| keep || !foreign(display))
+        let keep_float = !out.iter().any(|d| d.float) || self.may_float();
+        join_declarations(&out, |d| (keep || !foreign(d)) && (keep_float || !d.float))
+    }
+
+    /// Count one more floating element. False, marking the view limited, once
+    /// `MAX_FLOATS` elements already float.
+    fn may_float(&mut self) -> bool {
+        if self.floats < MAX_FLOATS {
+            self.floats += 1;
+            true
+        } else {
+            self.view.limited = true;
+            false
+        }
+    }
+
+    /// Whether a kept `align` attribute may stay: litehtml floats left- and
+    /// right-aligned images and tables, which count toward `MAX_FLOATS`.
+    fn align_allowed(&mut self, tag: &str, name: &str, value: &str) -> bool {
+        let floats = name == "align"
+            && matches!(tag, "img" | "table")
+            && matches!(value.to_ascii_lowercase().as_str(), "left" | "right");
+        !floats || self.may_float()
     }
 
     /// Collect a `<style>` element's accepted rules for the output stylesheet.
@@ -1405,37 +1465,38 @@ impl Walk {
                 rule.prelude = texts.join(",");
             }
         }
-        // Count the elements a table-part `display` could make another kind of
-        // part, assuming each selector matches wherever its rightmost compound
-        // does, and note the rules that could.
-        let mut reached = std::collections::HashSet::new();
-        let mut foreign = vec![false; self.rules.len()];
-        let limit = MAX_TABLE_DISPLAY.saturating_sub(self.table_display);
-        for (rule, foreign) in self.rules.iter().zip(&mut foreign) {
-            if rule.table_display.is_empty() {
-                continue;
-            }
-            for selector in &rule.selectors {
-                let right = selector.rightmost();
-                for &at in index.tried(selector).1 {
-                    let element = &elements[at];
-                    let other = |display: &String| display != element.part;
-                    if right.may_match(element) && rule.table_display.iter().any(other) {
-                        *foreign = true;
-                        if reached.len() <= limit {
-                            reached.insert(at);
-                        }
-                    }
-                }
-            }
-        }
-        let strip = reached.len() > limit;
-        self.view.limited |= trimmed || strip;
+        // Elements a table-part `display` could make another kind of part, and
+        // elements a `float` could float, with the rules that could do either.
+        let (foreign, strip) = reach(
+            &self.rules,
+            elements,
+            &index,
+            MAX_TABLE_DISPLAY.saturating_sub(self.table_display),
+            |declaration, element| {
+                declaration
+                    .display
+                    .as_ref()
+                    .is_some_and(|display| display != element.part)
+            },
+        );
+        let (floating, strip_floats) = reach(
+            &self.rules,
+            elements,
+            &index,
+            MAX_FLOATS.saturating_sub(self.floats),
+            |declaration, _| declaration.float,
+        );
+        self.view.limited |= trimmed || strip || strip_floats;
         let mut css = String::with_capacity(self.css_len);
         let mut open: Option<usize> = None;
-        for (rule, &foreign) in self.rules.iter().zip(&foreign) {
-            let body = if strip && foreign {
-                &rule.plain
+        for ((rule, &foreign), &floating) in self.rules.iter().zip(&foreign).zip(&floating) {
+            let (strip, strip_floats) = (strip && foreign, strip_floats && floating);
+            let stripped;
+            let body = if strip || strip_floats {
+                stripped = join_declarations(&rule.declarations, |d| {
+                    !(strip && d.display.is_some() || strip_floats && d.float)
+                });
+                &stripped
             } else {
                 &rule.body
             };
@@ -1458,6 +1519,43 @@ impl Walk {
         }
         self.css = css;
     }
+}
+
+/// For each rule, whether one of its declarations could apply `affects` to
+/// an element, assuming each selector matches wherever its rightmost compound
+/// does; and whether more than `limit` elements could be affected.
+fn reach(
+    rules: &[StyleRule],
+    elements: &[Element],
+    index: &ElementIndex,
+    limit: usize,
+    affects: impl Fn(&Declaration, &Element) -> bool,
+) -> (Vec<bool>, bool) {
+    let mut reached = std::collections::HashSet::new();
+    let mut flagged = vec![false; rules.len()];
+    for (rule, flagged) in rules.iter().zip(&mut flagged) {
+        if !rule
+            .declarations
+            .iter()
+            .any(|d| d.display.is_some() || d.float)
+        {
+            continue;
+        }
+        for selector in &rule.selectors {
+            let right = selector.rightmost();
+            for &at in index.tried(selector).1 {
+                let element = &elements[at];
+                if right.may_match(element) && rule.declarations.iter().any(|d| affects(d, element))
+                {
+                    *flagged = true;
+                    if reached.len() <= limit {
+                        reached.insert(at);
+                    }
+                }
+            }
+        }
+    }
+    (flagged, reached.len() > limit)
 }
 
 /// Output elements by tag and by class name.
@@ -1995,16 +2093,21 @@ fn own_table_part(tag: &str) -> &'static str {
     }
 }
 
-/// Accepted declarations joined for output, keeping those whose table-part
-/// `display` value (if any) passes `keep`.
-fn join_declarations(
-    declarations: &[(String, Option<String>)],
-    keep: impl Fn(&Option<String>) -> bool,
-) -> String {
+/// One accepted `property:value` declaration, as written to the output.
+struct Declaration {
+    text: String,
+    /// The `display` value, when it makes a table part.
+    display: Option<String>,
+    /// Whether it is a `float` other than `none`.
+    float: bool,
+}
+
+/// Accepted declarations joined for output, keeping those that pass `keep`.
+fn join_declarations(declarations: &[Declaration], keep: impl Fn(&Declaration) -> bool) -> String {
     let kept: Vec<&str> = declarations
         .iter()
-        .filter(|(_, display)| keep(display))
-        .map(|(text, _)| text.as_str())
+        .filter(|d| keep(d))
+        .map(|d| d.text.as_str())
         .collect();
     kept.join(";")
 }
@@ -2312,11 +2415,10 @@ const UNITS: &[&str] = &[
 
 const COLOR_FUNCTIONS: &[&str] = &["rgb", "rgba", "hsl", "hsla"];
 
-/// Declaration-list parser that appends accepted `property:value` pairs to
-/// `out`, each with its `display` value when that makes a table part.
+/// Declaration-list parser that appends accepted declarations to `out`.
 struct Declarations<'w, 'o> {
     walk: &'w mut Walk,
-    out: &'o mut Vec<(String, Option<String>)>,
+    out: &'o mut Vec<Declaration>,
 }
 
 impl<'i> DeclarationParser<'i> for Declarations<'_, '_> {
@@ -2343,9 +2445,14 @@ impl<'i> DeclarationParser<'i> for Declarations<'_, '_> {
             .next()
             .unwrap_or_default()
             .to_ascii_lowercase();
+        let float = property == "float" && keyword != "none";
         let display =
             (property == "display" && TABLE_PARTS.contains(&keyword.as_str())).then_some(keyword);
-        self.out.push((format!("{property}:{value}"), display));
+        self.out.push(Declaration {
+            text: format!("{property}:{value}"),
+            display,
+            float,
+        });
         Ok(())
     }
 }
@@ -2445,11 +2552,18 @@ fn value<'i>(walk: &mut Walk, property: &str, input: &mut Parser<'i, '_>) -> Res
                 if !UNITS.contains(&unit.as_str()) {
                     return Err(());
                 }
-                // Clamp lengths so hostile values cannot blow up layout work.
-                let limit = if property == "font-size" || property == "font" {
-                    200.0
-                } else {
-                    10_000.0
+                // Clamp lengths so hostile values cannot blow up layout work,
+                // or the size a background image is painted at.
+                let limit = match property {
+                    "font-size" | "font" => 200.0,
+                    "background" | "background-size" => {
+                        if matches!(unit.as_str(), "em" | "rem" | "ex" | "ch") {
+                            MAX_BACKGROUND_EM
+                        } else {
+                            MAX_BACKGROUND_PX
+                        }
+                    }
+                    _ => 10_000.0,
                 };
                 let _ = write!(out, "{}{unit}", clamp(value).clamp(-limit, limit));
             }
@@ -2585,8 +2699,7 @@ impl<'i> QualifiedRuleParser<'i> for Rules<'_> {
             self.walk.rules.push(StyleRule {
                 prelude,
                 selectors,
-                plain: join_declarations(&out, Option::is_none),
-                table_display: out.into_iter().filter_map(|(_, display)| display).collect(),
+                declarations: out,
                 body,
                 media: self.media,
             });

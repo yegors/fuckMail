@@ -10,6 +10,7 @@
 #include <QSizeF>
 #include <QString>
 #include <QVector>
+#include <chrono>
 #include <memory>
 
 class QPainter;
@@ -76,7 +77,9 @@ public:
     /// Lays out at `width`; the result is at least that wide.
     /// Content wider than `width`, such as a fixed-width table, makes the
     /// result wider. Must run before snapshot() or paint().
-    QSizeF layout(qreal width);
+    /// A layout still running at `deadline` stops: it returns an invalid size
+    /// and the document becomes invalid.
+    QSizeF layout(qreal width, std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max());
     /// Records text runs and link boxes of the current layout.
     HtmlSnapshot snapshot();
     /// Draws the part of the document that intersects `clip` (document CSS

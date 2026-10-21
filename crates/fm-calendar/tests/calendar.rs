@@ -382,6 +382,139 @@ fn unsupported_rules_zones_and_unbounded_ranges_are_explicit_errors() {
     assert_eq!(event.recurrence, ["RRULE:FREQ=SECONDLY"]);
 }
 
+fn every(limit: u8) -> String {
+    (0..limit)
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn timed_series(start: &str, rule: &str) -> Event {
+    event(
+        json!({"id":"long","etag":"v1","start":{"dateTime":start,"timeZone":"UTC"},"end":{"dateTime":start,"timeZone":"UTC"},"recurrence":[rule]}),
+    )
+}
+
+#[test]
+fn sub_daily_rules_are_refused_in_any_spelling() {
+    let per_second = format!(
+        "RRULE:FREQ=DAILY;BYHOUR={};BYMINUTE={};BYSECOND={}",
+        every(24),
+        every(60),
+        every(60)
+    );
+    for rule in [
+        "RRULE:FREQ=secondly",
+        "RRULE:freq=Hourly",
+        "RRULE:INTERVAL=1;FREQ=MINUTELY",
+        "RRULE:FREQ=WEEKLY;BYMINUTE=0,30",
+        "RRULE:FREQ=YEARLY;BYSECOND=0,1",
+        "RRULE:FREQ=MONTHLY;BYHOUR=9,17",
+        &per_second,
+    ] {
+        for start in ["1970-01-01T00:00:00Z", "2020-01-01T00:00:00Z"] {
+            let series = timed_series(start, rule);
+            let began = std::time::Instant::now();
+            let refused = expand(
+                &series,
+                &[],
+                window("2026-03-01T00:00:00Z", "2026-04-10T00:00:00Z"),
+                Access::Owner,
+            )
+            .unwrap_err();
+            assert_eq!(refused.code, "unsupported_rule", "{rule}");
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(1),
+                "{rule}"
+            );
+        }
+    }
+}
+
+#[test]
+fn old_series_stay_bounded_and_common_rules_still_expand() {
+    let window = window("2026-03-01T00:00:00Z", "2026-04-10T00:00:00Z");
+    for (start, rule, count) in [
+        ("1990-01-01T09:00:00Z", "RRULE:FREQ=DAILY", 40),
+        ("1970-01-01T09:00:00Z", "RRULE:FREQ=DAILY;BYHOUR=9", 40),
+        (
+            "1970-01-05T09:00:00Z",
+            "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+            29,
+        ),
+        (
+            "1970-01-15T09:00:00Z",
+            "RRULE:FREQ=MONTHLY;BYMONTHDAY=15",
+            1,
+        ),
+        (
+            "1970-01-05T09:00:00Z",
+            "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+            1,
+        ),
+        ("1950-03-20T09:00:00Z", "RRULE:FREQ=YEARLY", 1),
+    ] {
+        let began = std::time::Instant::now();
+        let items = expand(&timed_series(start, rule), &[], window, Access::Owner).unwrap();
+        assert_eq!(items.len(), count, "{rule}");
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(2),
+            "{rule}"
+        );
+    }
+    // A series begun in year 1 would need hundreds of thousands of skipped
+    // days; it fails as over the limit instead of stalling.
+    let began = std::time::Instant::now();
+    let ancient = timed_series("0001-01-01T09:00:00Z", "RRULE:FREQ=DAILY");
+    assert_eq!(
+        expand(&ancient, &[], window, Access::Owner)
+            .unwrap_err()
+            .code,
+        "limit_exceeded"
+    );
+    assert!(began.elapsed() < std::time::Duration::from_secs(2));
+    // Extra RRULE lines share that limit rather than multiplying it.
+    let mut ancient = ancient;
+    ancient.recurrence = (1..=8)
+        .map(|interval| format!("RRULE:FREQ=DAILY;INTERVAL={interval}"))
+        .collect();
+    let began = std::time::Instant::now();
+    assert_eq!(
+        expand(&ancient, &[], window, Access::Owner)
+            .unwrap_err()
+            .code,
+        "limit_exceeded"
+    );
+    assert!(began.elapsed() < std::time::Duration::from_secs(2));
+}
+
+#[test]
+fn the_recurrence_engine_caps_work_before_the_window() {
+    // Bypass the sub-daily guard to check the engine's own lifetime budget.
+    let per_second = format!(
+        "RRULE:FREQ=DAILY;BYHOUR={};BYMINUTE={};BYSECOND={}",
+        every(24),
+        every(60),
+        every(60)
+    );
+    for start in ["19700101T000000Z", "00010101T000000Z", "20200101T000000Z"] {
+        for rule in [per_second.as_str(), "RRULE:FREQ=SECONDLY"] {
+            let set: rrule::RRuleSet = format!("DTSTART:{start}\n{rule}").parse().unwrap();
+            let began = std::time::Instant::now();
+            let result = set
+                .after(utc("2026-03-01T00:00:00Z").with_timezone(&rrule::Tz::UTC))
+                .before(utc("2026-04-10T00:00:00Z").with_timezone(&rrule::Tz::UTC))
+                .all(MAX_OCCURRENCES);
+            assert!(result.limited, "{start} {rule}");
+            assert!(result.dates.is_empty(), "{start} {rule}");
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(2),
+                "{start} {rule}"
+            );
+        }
+    }
+}
+
 #[test]
 fn edits_rsvp_and_following_have_one_notification_owner_and_revision_guards() {
     let mut source = weekly("2026-03-01T09:00:00-05:00", "2026-03-01T10:00:00-05:00").source;

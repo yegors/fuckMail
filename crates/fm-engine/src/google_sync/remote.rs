@@ -277,15 +277,20 @@ pub(crate) async fn attachment(ctx: &SyncContext, params: Value) -> Result<Value
     .map_err(|_| failure("engine_stopped", "Remote attachment reading stopped"))?
 }
 
-/// `{id, source_version}` of a stored message whose list unsubscribes by
-/// email: send that email from this account, once, and remember it.
+/// `{id, source_version, address}` of a stored message whose list
+/// unsubscribes by email: send that email from this account, once, and
+/// remember it. `address` is the recipient the person was shown and
+/// confirmed; nothing is sent to any other.
 pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, mut params: Value) -> Result<Value> {
     require_mail_write(ctx).await?;
+    let fields = params.as_object_mut();
+    let (fallback, confirmed) = match fields {
+        Some(fields) => (fields.remove("fallback"), fields.remove("address")),
+        None => (None, None),
+    };
     // `fallback`: the list refused its one-click POST; use its address instead.
-    let fallback = params
-        .as_object_mut()
-        .and_then(|fields| fields.remove("fallback"))
-        .is_some_and(|value| value == true);
+    let fallback = fallback.is_some_and(|value| value == true);
+    let confirmed = confirmed.and_then(|value| value.as_str().map(str::to_owned));
     let account = ctx.account.as_str().to_owned();
     let plan = ctx
         .core_call(move |store| store.unsubscribe_begin(&account, &params))
@@ -304,11 +309,15 @@ pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, mut params: Value) -> Re
     })
     .await
     .map_err(|_| failure("engine_stopped", "Unsubscribe stopped"))?;
+    let found = found?;
+    if matches!(found, Unsubscribe::Mailto { .. }) {
+        fm_core::unsubscribe::check_confirmed(&found, confirmed.as_deref())?;
+    }
     let Unsubscribe::Mailto {
         address,
         subject,
         body,
-    } = found?
+    } = found
     else {
         return Err(failure(
             "invalid_request",

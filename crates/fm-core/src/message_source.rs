@@ -107,8 +107,14 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         .body_text(0)
         .map(|t| t.into_owned())
         .unwrap_or_default();
-    let unsubscribe =
-        crate::unsubscribe::describe(fm_mail::unsubscribe::unsubscribe(&parsed, &plain).as_ref());
+    let found = fm_mail::unsubscribe::unsubscribe(&parsed, &plain);
+    let alternative = matches!(
+        found,
+        Some(fm_mail::unsubscribe::Unsubscribe::OneClick { .. })
+    )
+    .then(|| fm_mail::unsubscribe::mailto_alternative(&parsed))
+    .flatten();
+    let unsubscribe = crate::unsubscribe::describe(found.as_ref(), alternative.as_ref());
     let sender_check = sender_check(&parsed);
     // Readers ask message_invite only for mail with a usable calendar part.
     let has_invite = crate::message_invite::message_calendar(&parsed).is_some();

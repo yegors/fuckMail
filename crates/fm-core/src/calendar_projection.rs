@@ -75,6 +75,7 @@ impl Store {
             .date_naive()
             .to_string();
         let mut ids = BTreeSet::new();
+        let mut master_order = Vec::new();
         let mut incomplete = false;
         // A series whose single RRULE ended (UNTIL) before the window cannot
         // reach it, so it does not spend the series budget. Two days' margin
@@ -85,15 +86,24 @@ impl Store {
         // Three candidate queries: timed events by UTC milliseconds, all-day
         // events by calendar-zone date, and recurring masters. Each asks for one
         // row past its budget so an overflow is detected, not silently dropped.
+        // Masters are ranked as in `series_rank`, then by first-seen order, so
+        // a flood of unanswered invites with low event IDs (which senders may
+        // choose) cannot push the user's own series out of the budget.
         for sql in [
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_timed_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_ms>?3 AND i.start_ms<?4 ORDER BY i.end_ms,i.event_id LIMIT 2049",
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_dates_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_date>?3 AND i.start_date<?4 ORDER BY i.end_date,i.event_id LIMIT 2049",
-            "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_masters JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.recurring=1 AND i.series_id IS NULL AND COALESCE(i.start_ms<?3,i.start_date<?4,1) AND NOT (instr(json_extract(v.json,'$.recurrence'),'UNTIL=')>0 AND instr(json_extract(v.json,'$.recurrence'),'RDATE')=0 AND length(json_extract(v.json,'$.recurrence'))-length(replace(json_extract(v.json,'$.recurrence'),'RRULE:',''))=6 AND COALESCE(i.end_ms-i.start_ms,(julianday(i.end_date)-julianday(i.start_date))*86400000,86400001)<=86400000 AND substr(json_extract(v.json,'$.recurrence'),instr(json_extract(v.json,'$.recurrence'),'UNTIL=')+6,8)<?5) ORDER BY i.event_id LIMIT 129",
+            "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_masters JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.recurring=1 AND i.series_id IS NULL AND COALESCE(i.start_ms<?3,i.start_date<?4,1) AND NOT (instr(json_extract(v.json,'$.recurrence'),'UNTIL=')>0 AND instr(json_extract(v.json,'$.recurrence'),'RDATE')=0 AND length(json_extract(v.json,'$.recurrence'))-length(replace(json_extract(v.json,'$.recurrence'),'RRULE:',''))=6 AND COALESCE(i.end_ms-i.start_ms,(julianday(i.end_date)-julianday(i.start_date))*86400000,86400001)<=86400000 AND substr(json_extract(v.json,'$.recurrence'),instr(json_extract(v.json,'$.recurrence'),'UNTIL=')+6,8)<?5) ORDER BY CASE WHEN json_extract(v.json,'$.organizer.self')=1 THEN 0 ELSE COALESCE((SELECT CASE json_extract(a.value,'$.responseStatus') WHEN 'accepted' THEN 0 WHEN 'tentative' THEN 0 WHEN 'declined' THEN 2 ELSE 1 END FROM json_each(v.json,'$.attendees') a WHERE json_extract(a.value,'$.self')=1 LIMIT 1),0) END,(SELECT s.rowid FROM calendar_sources s WHERE s.account=i.account AND s.calendar_id=i.calendar_id AND s.event_id=i.event_id),i.event_id LIMIT 129",
         ] {
             let mut statement=self.db.prepare(sql)?;
             let (third,fourth):(rusqlite::types::Value,rusqlite::types::Value)=if sql.contains("end_date") {(from_date.clone().into(),to_date.clone().into())}else{(from.into(),to.into())};
             let mut rows=if sql.contains("i.recurring=1") {statement.query(params![account,calendar,to,to_date,ended_before])?}else{statement.query(params![account,calendar,third,fourth])?};
-            let mut count=0;while let Some(row)=rows.next()?{count+=1;if ids.len()<SOURCE_BUDGET {ids.insert(row.get::<_,String>(0)?);}else{incomplete=true;}}
+            let mut count=0;
+            while let Some(row)=rows.next()?{
+                count+=1;
+                let id=row.get::<_,String>(0)?;
+                if sql.contains("i.recurring=1"){master_order.push(id.clone());}
+                if ids.len()<SOURCE_BUDGET {ids.insert(id);}else{incomplete=true;}
+            }
             if count>if sql.contains("i.recurring=1"){SERIES_BUDGET}else{SOURCE_BUDGET}{incomplete=true;}
         }
         let mut events = BTreeMap::<String, Event>::new();
@@ -136,11 +146,34 @@ impl Store {
                 &mut incomplete,
             )?;
         }
-        let masters = events
+        // The series budget goes to the best-ranked series, in the masters
+        // query's order; parents recovered through a moved exception follow
+        // within their rank. Stable sorting preserves event-id order for ties.
+        let priority = |event: &Event| {
+            let position = master_order
+                .iter()
+                .position(|id| *id == event.key.event)
+                .unwrap_or(usize::MAX);
+            (series_rank(&event.source), position)
+        };
+        let mut ranked = events
             .values()
-            .filter(|v| !v.cancelled && !v.recurrence.is_empty() && v.series_id.is_none())
-            .map(|v| v.key.event.clone())
+            .filter(|v| !v.recurrence.is_empty())
+            .collect::<Vec<_>>();
+        ranked.sort_by_cached_key(|event| priority(event));
+        if ranked.len() > SERIES_BUDGET {
+            incomplete = true;
+        }
+        let allowed_series = ranked
+            .iter()
             .take(SERIES_BUDGET)
+            .map(|v| v.key.event.clone())
+            .collect::<BTreeSet<_>>();
+        let masters = ranked
+            .iter()
+            .take(SERIES_BUDGET)
+            .filter(|v| !v.cancelled && v.series_id.is_none())
+            .map(|v| v.key.event.clone())
             .collect::<Vec<_>>();
         for master in &masters {
             let remaining = SOURCE_BUDGET.saturating_sub(events.len());
@@ -194,8 +227,11 @@ impl Store {
             }
         }
         let mut output = Vec::new();
-        let mut series_count = 0;
-        for event in events.values() {
+        // Keep the same priority at the occurrence cap, including single
+        // events. Otherwise low-id invitations can still fill the view first.
+        let mut ordered = events.values().collect::<Vec<_>>();
+        ordered.sort_by_cached_key(|event| priority(event));
+        for event in ordered {
             if blocked_series.contains(&event.key.event)
                 || event
                     .series_id
@@ -213,12 +249,8 @@ impl Store {
             {
                 continue;
             }
-            if !event.recurrence.is_empty() {
-                series_count += 1;
-                if series_count > SERIES_BUDGET {
-                    incomplete = true;
-                    continue;
-                }
+            if !event.recurrence.is_empty() && !allowed_series.contains(&event.key.event) {
+                continue;
             }
             match fm_calendar::project_event_in_window(
                 event,
@@ -479,5 +511,25 @@ impl Store {
             }
         }
         Ok((output, true))
+    }
+}
+
+/// Orders recurring series for the series budget: 0 for series the user
+/// organized, accepted or tentatively accepted, or that has no invitation for
+/// the user; 1 for unanswered invitations; 2 for declined ones. Google sets
+/// the `self` flags, so a sender cannot claim the user's rank. The masters
+/// query computes the same rank in SQL.
+fn series_rank(source: &Value) -> u8 {
+    if source["organizer"]["self"] == true {
+        return 0;
+    }
+    let response = source["attendees"]
+        .as_array()
+        .and_then(|attendees| attendees.iter().find(|a| a["self"] == true))
+        .map(|attendee| attendee["responseStatus"].as_str().unwrap_or(""));
+    match response {
+        None | Some("accepted" | "tentative") => 0,
+        Some("declined") => 2,
+        Some(_) => 1,
     }
 }

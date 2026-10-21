@@ -1,5 +1,11 @@
 # CLI and external agent interface
 
+## D212 — terminal-safe text output (CLI64)
+
+- Human output (not `--json`) passes mail, calendar and engine text through one filter: C0 controls, DEL, C1 controls and bidi overrides/isolates (U+202A–U+202E, U+2066–U+2069) become U+FFFD. Single-line fields turn line breaks and tabs into a space; bodies keep `\n` and tabs and turn CRLF into `\n`. The pretty-JSON fallback and error lines are filtered too. `--json` output is unchanged.
+- `fm mail unsubscribe` passes the address it read from the message source as `address` (Gmail46).
+
+
 ## D199 — thread summary (CLI63)
 
 `fm --account ID assist thread CONVERSATION [--json]` summarizes the whole conversation with the local model (Local assistance32). Without `--account` it exits 2 before opening storage. It polls the job, Ctrl-C cancels it, and it prints the summary, adding "(Partial: older messages were shortened or left out.)" when that applies. `--json` prints the final `assist_job` reply; a failed job exits with its error code.

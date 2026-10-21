@@ -13,7 +13,10 @@
 #include <QDateTime>
 #include <QImage>
 #include <QPointer>
+#include <QRegularExpression>
+#include <QSet>
 #include <QThreadPool>
+#include <algorithm>
 #include <memory>
 #if defined(Q_OS_MACOS)
 #include <sys/xattr.h>
@@ -268,10 +271,70 @@ static void markDownloaded(const QString &path) {
 #endif
 }
 
+// Mirrors the engine's export-name rules but keeps the sender's readable name:
+// no folders, no leading dot (a hidden startup file such as .bash_profile), no
+// control, bidi or other invisible characters (which can show "exe.pdf" for a
+// program), none of \ / : * ? " < > | (a colon names an NTFS stream), no
+// trailing dot or space, no Windows device name, and a length that leaves room
+// for " (2)" within the 255 bytes file systems allow.
+QString MailBackend::safeDownloadName(const QString &name) {
+    static const QString forbidden = QStringLiteral("\\/:*?\"<>|");
+    const auto base = name.mid(std::max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
+    QString clean;
+    for (const char32_t code : base.toUcs4()) {
+        const auto category = QChar::category(code);
+        const bool unsafe = category == QChar::Other_Control || category == QChar::Other_Format || category == QChar::Other_Surrogate
+            || category == QChar::Separator_Line || category == QChar::Separator_Paragraph || (code < 0x80 && forbidden.contains(QChar(char16_t(code))));
+        clean += unsafe ? QStringLiteral("_") : QString::fromUcs4(&code, 1);
+    }
+    const auto trim = [](QString &text) {
+        while (!text.isEmpty() && (text.back() == '.' || text.back().isSpace())) text.chop(1);
+    };
+    while (!clean.isEmpty() && (clean.front() == '.' || clean.front().isSpace())) clean.remove(0, 1);
+    trim(clean);
+    // Keep a short ordinary extension whole and shorten the part before it.
+    const auto dot = clean.lastIndexOf('.');
+    QString extension = dot > 0 ? clean.mid(dot) : QString();
+    const bool ordinary = extension.size() >= 2 && extension.size() <= 17
+        && std::all_of(extension.begin() + 1, extension.end(), [](QChar c) { return c.unicode() < 0x80 && c.isLetterOrNumber(); });
+    if (!ordinary) extension.clear();
+    QString stem;
+    qsizetype bytes = extension.size();
+    for (const char32_t code : clean.left(clean.size() - extension.size()).toUcs4()) {
+        const auto character = QString::fromUcs4(&code, 1);
+        bytes += character.toUtf8().size();
+        if (bytes > 200) break;
+        stem += character;
+    }
+    trim(stem);
+    if (stem.isEmpty()) stem = "attachment";
+    // Windows opens a device, not a file, for these names with any extension.
+    static const QRegularExpression device(QStringLiteral("^(CON|PRN|AUX|NUL|CONIN\\$|CONOUT\\$|COM[0-9¹²³]|LPT[0-9¹²³])$"),
+                                           QRegularExpression::CaseInsensitiveOption);
+    if (device.match(stem.section('.', 0, 0).trimmed()).hasMatch()) stem.prepend('_');
+    return stem + extension;
+}
+// Downloads, unless it is set to the home folder itself, where a saved file
+// would sit beside the shell's and desktop's startup files: then ~/Downloads.
 QUrl MailBackend::attachmentSaveLocation(const QString &name) const {
-    auto filename = QFileInfo(QString(name).replace('\\', '/')).fileName();
-    if (filename.isEmpty() || filename == "." || filename == "..") filename = "attachment";
-    return QUrl::fromLocalFile(QDir(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)).filePath(filename));
+    const QDir home(QDir::homePath());
+    QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const auto canonical = QDir(downloads).canonicalPath();
+    if (downloads.isEmpty() || QDir::cleanPath(QDir(downloads).absolutePath()) == QDir::cleanPath(home.absolutePath())
+        || (!canonical.isEmpty() && canonical == home.canonicalPath()))
+        downloads = home.filePath("Downloads");
+    return QUrl::fromLocalFile(QDir(downloads).filePath(safeDownloadName(name)));
+}
+bool MailBackend::playableVideo(const QString &path) {
+    // The media backend picks its demuxer from the bytes, not the name, so a
+    // playlist or any other format renamed .mp4 would reach it otherwise.
+    static const QSet<QString> isoMedia{"mp4", "m4v", "mov"}, matroska{"mkv", "webm"};
+    const auto suffix = QFileInfo(path).suffix().toLower();
+    QFile file(path);
+    if ((!isoMedia.contains(suffix) && !matroska.contains(suffix)) || !file.open(QIODevice::ReadOnly)) return false;
+    const auto head = file.read(12);
+    if (isoMedia.contains(suffix)) return head.size() == 12 && head.mid(4, 4) == "ftyp";
+    return head.startsWith("\x1a\x45\xdf\xa3");
 }
 // A stored attachment's local copy, or a remote thread's attachment fetched from the server.
 void MailBackend::attachmentFile(const QString &account, const QString &id, Callback callback) {
@@ -282,12 +345,14 @@ void MailBackend::attachmentFile(const QString &account, const QString &id, Call
 QString MailBackend::requestAttachmentPreview(const QString &account, const QString &id, bool video) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
     QTimer::singleShot(0, this, [this, ticket, account, id, video] {
-        // A video plays from its local copy only once the person opens it.
+        // A video plays from its local copy only once the person opens it, and
+        // only an MP4, QuickTime, Matroska or WebM file.
         if (video) {
             attachmentFile(account, id, [this, ticket, account, id](auto result, bool ok) {
                 const auto path = result["path"].toString();
                 ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
-                if (ok) { result["preview_url"] = QUrl::fromLocalFile(path).toString(); result["video"] = true; }
+                if (ok && playableVideo(path)) { result["preview_url"] = QUrl::fromLocalFile(path).toString(); result["video"] = true; }
+                else if (ok) { result = {{"account", account}, {"id", id}, {"message", "Preview unavailable. You can still save this file."}}; ok = false; }
                 else result = {{"message", "This attachment is not available on this machine yet."}};
                 emit attachmentPreviewReady(ticket, result.toVariantMap(), ok);
             });

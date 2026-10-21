@@ -14,8 +14,9 @@ pub enum Unsubscribe {
     /// An https POST of `List-Unsubscribe=One-Click` to `url`, in the background.
     OneClick { url: String },
     /// An email to `address`, with the subject and body the header asks for.
-    /// Offered only when Gmail authenticated the address's domain for this
-    /// message, so a sender cannot have the person write to someone else.
+    /// Offered only when Gmail verified the sender and the address is theirs
+    /// (see [`SenderCheck::owns_address`]), so a sender cannot have the
+    /// person write to someone else.
     Mailto {
         /// One plain address, lowercased.
         address: String,
@@ -71,7 +72,7 @@ pub fn mailto_alternative(message: &mail_parser::Message<'_>) -> Option<Unsubscr
 }
 
 /// Parse the header pair. URIs are the `<…>` entries of `List-Unsubscribe`;
-/// a `mailto:` one counts only for a domain `check` vouches for.
+/// a `mailto:` one counts only for an address `check` says the sender owns.
 pub fn from_headers(
     list_unsubscribe: &str,
     list_unsubscribe_post: &str,
@@ -114,7 +115,7 @@ fn mailto(uri: &url::Url, check: &SenderCheck) -> Option<Unsubscribe> {
     let (local, domain) = address.split_once('@')?;
     if local.is_empty()
         || domain.is_empty()
-        || !check.vouches_for(domain)
+        || !check.owns_address(&address)
         || address.len() > 320
         || address
             .chars()
@@ -179,64 +180,72 @@ fn web_link(href: &str) -> Option<String> {
 
 /// The last `<a href>` whose text or address names unsubscribing; footers put it last.
 fn html_link(html: &str) -> Option<String> {
-    if html.len() > crate::html_view::MAX_HTML_BYTES {
+    if html.len() > crate::html_view::MAX_HTML_BYTES || !crate::html_cost::parses_cheaply(html) {
         return None;
     }
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+    link_in(&dom.document)
+}
+
+/// [`html_link`] over a parsed document, in document order and without
+/// recursion, so deep nesting cannot exhaust the stack.
+fn link_in(document: &Handle) -> Option<String> {
     let mut found = None;
     let mut nodes = 0;
-    anchors(&dom.document, &mut found, &mut nodes);
+    let mut stack = vec![document.clone()];
+    while let Some(node) = stack.pop() {
+        nodes += 1;
+        if nodes > MAX_NODES {
+            break;
+        }
+        if let NodeData::Element { name, attrs, .. } = &node.data {
+            if name.local.as_ref().eq_ignore_ascii_case("a") {
+                let href = attrs
+                    .borrow()
+                    .iter()
+                    .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("href"))
+                    .map(|a| a.value.to_string());
+                if let Some(url) = href.as_deref().and_then(web_link) {
+                    let text = text_of(&node, &mut nodes);
+                    if names_unsubscribe(&text) || names_unsubscribe(&url) {
+                        found = Some(url);
+                    }
+                }
+                continue;
+            }
+        }
+        stack.extend(node.children.borrow().iter().rev().cloned());
+    }
     found
 }
 
-fn anchors(node: &Handle, found: &mut Option<String>, nodes: &mut usize) {
-    *nodes += 1;
-    if *nodes > MAX_NODES {
-        return;
-    }
-    if let NodeData::Element { name, attrs, .. } = &node.data {
-        if name.local.as_ref().eq_ignore_ascii_case("a") {
-            let href = attrs
-                .borrow()
-                .iter()
-                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("href"))
-                .map(|a| a.value.to_string());
-            if let Some(url) = href.as_deref().and_then(web_link) {
-                let mut text = String::new();
-                text_of(node, &mut text);
-                if names_unsubscribe(&text) || names_unsubscribe(&url) {
-                    *found = Some(url);
+/// An anchor's label, its text and image alt text in order, to about 512
+/// bytes. Visited nodes count towards `nodes`.
+fn text_of(anchor: &Handle, nodes: &mut usize) -> String {
+    let mut out = String::new();
+    let mut stack = vec![anchor.clone()];
+    while let Some(node) = stack.pop() {
+        *nodes += 1;
+        if out.len() > 512 || *nodes > MAX_NODES {
+            break;
+        }
+        match &node.data {
+            NodeData::Text { contents } => out.push_str(&contents.borrow()),
+            NodeData::Element { attrs, .. } => {
+                // An image button's alt text counts as its label.
+                if let Some(alt) = attrs
+                    .borrow()
+                    .iter()
+                    .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("alt"))
+                {
+                    out.push_str(&alt.value);
                 }
             }
-            return;
+            _ => {}
         }
+        stack.extend(node.children.borrow().iter().rev().cloned());
     }
-    for child in node.children.borrow().iter() {
-        anchors(child, found, nodes);
-    }
-}
-
-fn text_of(node: &Handle, out: &mut String) {
-    if out.len() > 512 {
-        return;
-    }
-    match &node.data {
-        NodeData::Text { contents } => out.push_str(&contents.borrow()),
-        NodeData::Element { attrs, .. } => {
-            // An image button's alt text counts as its label.
-            if let Some(alt) = attrs
-                .borrow()
-                .iter()
-                .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("alt"))
-            {
-                out.push_str(&alt.value);
-            }
-        }
-        _ => {}
-    }
-    for child in node.children.borrow().iter() {
-        text_of(child, out);
-    }
+    out
 }
 
 /// A plain-text URL on a line that names unsubscribing, or that names it itself.
@@ -263,10 +272,13 @@ fn text_link(plain: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// Gmail authenticated list.test for the message.
+    /// Gmail verified news@list.test as the sender.
     fn vouched() -> SenderCheck {
         SenderCheck {
-            authenticated: vec!["list.test".into()],
+            checked: true,
+            verified: true,
+            from_address: "news@list.test".into(),
+            from_domain: "list.test".into(),
             ..SenderCheck::default()
         }
     }
@@ -422,5 +434,79 @@ Hello
             parse("From: List <a@list.test>\r\nList-Unsubscribe: <mailto:leave@list.test>\r\n\r\nHi\r\n"),
             None
         );
+    }
+
+    #[test]
+    fn mailto_goes_only_to_the_verified_senders_own_domain() {
+        let from = |from: &str, auth: &str, target: &str| {
+            parse(&format!(
+                "Authentication-Results: mx.google.com; {auth}\r\nFrom: {from}\r\nList-Unsubscribe: <mailto:{target}?subject=Hi&body=Wire%20the%20funds>\r\n\r\nHi\r\n"
+            ))
+        };
+        let gmail = "dkim=pass header.d=gmail.com; spf=pass smtp.mailfrom=attacker@gmail.com; dmarc=pass header.from=gmail.com";
+        // Any Gmail user is authenticated as gmail.com: that does not make
+        // another gmail.com mailbox theirs.
+        assert_eq!(
+            from("<attacker@gmail.com>", gmail, "victim@gmail.com"),
+            None
+        );
+        assert_eq!(
+            from("<attacker@gmail.com>", gmail, "attacker@gmail.com").map(|u| u.method()),
+            Some("mailto")
+        );
+        let shop = "dkim=pass header.d=shop.example; spf=pass smtp.mailfrom=bounce@esp.example; dmarc=pass header.from=shop.example";
+        // The ESP that sent it and a parent domain are someone else.
+        assert_eq!(from("<news@shop.example>", shop, "boss@esp.example"), None);
+        assert_eq!(
+            from("<news@mail.shop.example>", shop, "boss@shop.example"),
+            None
+        );
+        assert_eq!(
+            from("<news@shop.example>", shop, "leave@lists.shop.example").map(|u| u.method()),
+            Some("mailto")
+        );
+        // An SPF pass alone does not verify the From domain.
+        assert_eq!(
+            from(
+                "<news@shop.example>",
+                "spf=pass smtp.mailfrom=bounce@shop.example",
+                "leave@shop.example"
+            ),
+            None
+        );
+    }
+
+    /// Runs `f` on a thread with a 2 MiB stack, as tokio's blocking pool does.
+    fn on_small_stack(f: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(f)
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn deep_nesting_cannot_exhaust_the_stack() {
+        on_small_stack(|| {
+            let parse_html = |html: &str| {
+                html5ever::parse_document(RcDom::default(), Default::default()).one(html)
+            };
+            // The walk itself, over trees far too deep to recurse through.
+            let deep = parse_html(&format!("{}x", "<span>".repeat(20_000)));
+            assert_eq!(link_in(&deep.document), None);
+            // The cell's marker keeps parsing the spans inside the link linear.
+            let label = format!(
+                "<a href=\"https://e.test/u\"><table><td>{}Unsubscribe</a>",
+                "<span>".repeat(100_000)
+            );
+            assert_eq!(link_in(&parse_html(&label).document), None);
+            // A whole HTML-only message without List-Unsubscribe.
+            let raw = format!(
+                "From: News <news@shop.test>\r\nSubject: Sale\r\nContent-Type: text/html\r\n\r\n{}x",
+                "<span>".repeat(20_000)
+            );
+            assert_eq!(parse(&raw), None);
+        });
     }
 }

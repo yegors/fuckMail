@@ -21,6 +21,19 @@
 namespace {
 std::atomic<qint64> liveBytes{0};
 constexpr qreal chipHeight = 24, chipMaxWidth = 240, chipMinWidth = 96;
+// Largest font and document size passed on. litehtml keeps computed font
+// sizes within the font bound; the document bound keeps a hostile layout's
+// size finite and small enough for the int tile and pixel arithmetic of
+// the view, far beyond any real message.
+constexpr float maxFontPixels = 1000;
+constexpr qreal maxDocumentPixels = 4'000'000;
+// Largest scaled copy of a background tile, in pixels (16 MB).
+constexpr qint64 maxTilePixels = 4'000'000;
+
+QSizeF clampedSize(const QSizeF &size) {
+    const auto bound = [](qreal value) { return std::isfinite(value) ? std::clamp(value, qreal(0), maxDocumentPixels) : maxDocumentPixels; };
+    return QSizeF(bound(size.width()), bound(size.height()));
+}
 
 int prefixedId(const char *value, const char *prefix) {
     if (!value) return 0;
@@ -228,8 +241,12 @@ public:
     // document's lifetime and releases it through delete_font().
     litehtml::uint_ptr create_font(const litehtml::font_description &description, const litehtml::document *,
                                    litehtml::font_metrics *fm) override {
+        // litehtml bounds computed sizes, but a non-finite or huge size must
+        // never reach qRound or the font engine.
+        const float raw = float(description.size);
+        const float size = std::isfinite(raw) ? std::clamp(raw, 1.0f, maxFontPixels) : maxFontPixels;
         QFont font(resolveFamily(description.family));
-        font.setPixelSize(std::max(1, qRound(float(description.size))));
+        font.setPixelSize(qRound(size));
         font.setWeight(QFont::Weight(std::clamp(description.weight, 100, 900)));
         font.setItalic(description.style == litehtml::font_style_italic);
         font.setUnderline(description.decoration_line & litehtml::text_decoration_line_underline);
@@ -238,15 +255,15 @@ public:
         auto *handle = new Font{font, QFontMetricsF(font)};
         if (fm) {
             const auto &m = handle->metrics;
-            fm->font_size = description.size;
+            fm->font_size = size;
             fm->ascent = float(m.ascent()); fm->descent = float(m.descent());
             fm->height = float(m.ascent() + m.descent());
             fm->x_height = float(m.xHeight());
             fm->ch_width = float(m.horizontalAdvance(QLatin1Char('0')));
             // Spaces are drawn so copied text keeps them.
             fm->draw_spaces = true;
-            fm->sub_shift = float(description.size) / 5;
-            fm->super_shift = float(description.size) / 3;
+            fm->sub_shift = size / 5;
+            fm->super_shift = size / 3;
         }
         return reinterpret_cast<litehtml::uint_ptr>(handle);
     }
@@ -320,10 +337,20 @@ public:
             painter.setRenderHint(QPainter::SmoothPixmapTransform);
             if (element || layer.repeat == litehtml::background_repeat_no_repeat) painter.drawImage(origin, found->image);
             else if (origin.width() >= 1 && origin.height() >= 1) {
-                const auto scaled = found->image.size() == origin.size().toSize() ? found->image
-                    : found->image.scaled(origin.size().toSize(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                QBrush brush(scaled);
-                brush.setTransform(QTransform::fromTranslate(origin.x(), origin.y()));
+                // Tiles are scaled once to their size, unless that size is
+                // huge: the sender's background-size can be tens of thousands
+                // of pixels, so the brush then scales the original as it fills.
+                const QImage &image = found->image;
+                const QSize tile = origin.size().toSize();
+                QBrush brush;
+                if (qint64(tile.width()) * tile.height() <= maxTilePixels) {
+                    brush.setTextureImage(image.size() == tile ? image : image.scaled(tile, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+                    brush.setTransform(QTransform::fromTranslate(origin.x(), origin.y()));
+                } else {
+                    brush.setTextureImage(image);
+                    brush.setTransform(QTransform::fromTranslate(origin.x(), origin.y())
+                                           .scale(origin.width() / image.width(), origin.height() / image.height()));
+                }
                 QRectF area = rect(layer.clip_box);
                 if (layer.repeat == litehtml::background_repeat_repeat_x) area = QRectF(area.left(), origin.top(), area.width(), origin.height());
                 else if (layer.repeat == litehtml::background_repeat_repeat_y) area = QRectF(origin.left(), area.top(), origin.width(), area.height());
@@ -546,19 +573,22 @@ bool HtmlDocument::setImage(int id, const HtmlImage &image) {
     return m_container->imageElements.contains(id) && m_container->imageSize(id) != before;
 }
 
-QSizeF HtmlDocument::layout(qreal width) {
+QSizeF HtmlDocument::layout(qreal width, std::chrono::steady_clock::time_point deadline) {
     if (!valid()) return {};
     m_container->width = width;
     // Width-dependent media queries must see the new width before render().
     m_document->media_changed();
+    m_document->set_render_deadline(deadline);
     m_document->render(float(width));
-    return QSizeF(std::max<qreal>(width, float(m_document->width())), float(m_document->height()));
+    // A layout cut short leaves litehtml's boxes half placed; drop it.
+    if (m_document->render_timed_out()) { m_document.reset(); return {}; }
+    return clampedSize(QSizeF(std::max<qreal>(width, float(m_document->width())), float(m_document->height())));
 }
 
 HtmlSnapshot HtmlDocument::snapshot() {
     HtmlSnapshot result;
     if (!valid()) return result;
-    result.size = QSizeF(float(m_document->width()), float(m_document->height()));
+    result.size = clampedSize(QSizeF(float(m_document->width()), float(m_document->height())));
     // A record-mode pass over the whole document collects the text runs in
     // paint order; the clip stack is reset around it in case a previous pass
     // ended unbalanced.

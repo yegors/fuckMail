@@ -34,7 +34,14 @@ NotificationPresenter::NotificationPresenter(MailBackend *backend, QObject *pare
         // once there is something to show, so the app has no tray presence
         // until then. The 10 s timeout is a hint that some platforms ignore.
         if (!QSystemTrayIcon::isSystemTrayAvailable() || !QSystemTrayIcon::supportsMessages()) return;
-        m_tray.show(); m_tray.showMessage(title, body, QSystemTrayIcon::Information, 10000);
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+        const auto shown = body;
+#else
+        // Freedesktop notification servers read markup in the body, and the
+        // body is a sender's subject: escape it so tags show as text.
+        const auto shown = body.toHtmlEscaped();
+#endif
+        m_tray.show(); m_tray.showMessage(title, shown, QSystemTrayIcon::Information, 10000);
     });
     connect(backend, &MailBackend::shutdownReady, &m_tray, &QSystemTrayIcon::hide);
 }

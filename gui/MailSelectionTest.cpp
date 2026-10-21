@@ -30,6 +30,7 @@
 #include <QClipboard>
 #include <QColor>
 #include <algorithm>
+#include <cstring>
 #include <QImageReader>
 #include <QTest>
 #include <QtMath>
@@ -52,6 +53,8 @@ class MailSelectionTest {
         QList<QJsonObject> assistStarts;
         QHash<QString,QJsonObject> attachments;
         QList<QJsonObject> remoteSearches;
+        QList<QJsonObject> unsubscribeMails;
+        bool refuseOneClick = false;
         QVariantList rows;
         QJsonObject summary; // Core's section counts, merged into list replies
         // Like Core, leave collapsed Done months out of list replies; while
@@ -191,8 +194,9 @@ class MailSelectionTest {
                         QJsonObject{{"id","remote-m1"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-04T09:00:00Z"},{"text","First"},{"remote",true},{"source_available",false},{"source_version",""},{"attachments",QJsonArray{}},{"sent",false}},
                         QJsonObject{{"id","remote-m2"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-05T09:00:00Z"},{"text","Invoice attached"},{"body_html","<p><b>Invoice</b> attached</p>"},{"remote",true},{"source_available",false},{"source_version",""},{"sent",false},
                             {"attachments",QJsonArray{QJsonObject{{"id","remote-att:m2:0"},{"name","invoice.pdf"},{"mime_type","application/pdf"},{"size",4},{"state","remote"}}}}}}}};
+                    else if (method == "message_unsubscribe" && refuseOneClick) { peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",request["id"]},{"ok",false},{"error",QJsonObject{{"code","unsubscribe_by_email"},{"message","The list did not accept the one-click unsubscribe"}}}}).toJson(QJsonDocument::Compact)+'\n'); return true; }
                     else if (method == "message_unsubscribe") { result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; }
-                    else if (method == "google_unsubscribe_mail") { result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","mailto"},{"at","2026-09-25T10:00:00Z"}}; }
+                    else if (method == "google_unsubscribe_mail") { unsubscribeMails.append(request["params"].toObject()); result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","mailto"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
                     else if (method == "view_save") {
                         const auto params = request["params"].toObject(); viewSaves.append(params);
@@ -1331,21 +1335,32 @@ class MailSelectionTest {
             h.attachments[id]={{"account","personal"},{"id",id},{"name",QFileInfo(path).fileName()},{"mime_type",mime},{"state","available"},{"path",path},{"size",bytes.size()},{"sha256",QString::fromLatin1(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex())}};
         };
         addAttachment("image",pngPath,"image/png");addAttachment("binary",binaryPath,"application/octet-stream");
-        // A real, self-contained Motion JPEG AVI exercises the installed media decoder.
-        const auto aviLe=[](quint32 n){QByteArray b;for(int i=0;i<4;++i)b.append(char((n>>(8*i))&255));return b;};
-        const auto aviChunk=[&](const QByteArray &tag,const QByteArray &payload){return tag+aviLe(quint32(payload.size()))+payload+(payload.size()%2 ? QByteArray(1,'\0') : QByteArray{});};
-        const auto aviWords=[&](std::initializer_list<quint32> values){QByteArray b;for(auto value:values)b+=aviLe(value);return b;};
+        // A real, self-contained Motion JPEG Matroska file exercises the installed media decoder.
+        const auto ebml=[](quint64 id,const QByteArray &payload){
+            QByteArray out;for(int shift=24;shift>=0;shift-=8)if(id>>shift || shift==0)out.append(char((id>>shift)&255));
+            out.append(char(1));for(int shift=48;shift>=0;shift-=8)out.append(char((quint64(payload.size())>>shift)&255));
+            return out+payload;
+        };
+        const auto ebmlUint=[&](quint64 id,quint64 value){QByteArray b;do{b.prepend(char(value&255));value>>=8;}while(value);return ebml(id,b);};
         QImage videoFrame(80,48,QImage::Format_RGB32);videoFrame.fill(QColor("#94659e"));QByteArray videoJpeg;QBuffer jpegBuffer(&videoJpeg);jpegBuffer.open(QIODevice::WriteOnly);require(videoFrame.save(&jpegBuffer,"JPEG"),"video JPEG frame");
-        const auto avih=aviWords({50000,0,0,0,60,0,1,quint32(videoJpeg.size()),80,48,0,0,0,0});
-        const auto strh=QByteArray("vidsMJPG")+aviWords({0,0,0,1,20,0,60,quint32(videoJpeg.size()),0xffffffff,0,0,(48u<<16)|80u});
-        const auto strf=aviWords({40,80,48,(24u<<16)|1u})+QByteArray("MJPG")+aviWords({quint32(videoJpeg.size()),0,0,0,0});
-        const auto aviHeader=aviChunk("LIST",QByteArray("hdrl")+aviChunk("avih",avih)+aviChunk("LIST",QByteArray("strl")+aviChunk("strh",strh)+aviChunk("strf",strf)));
-        QByteArray aviFrames("movi");for(int i=0;i<60;++i)aviFrames+=aviChunk("00dc",videoJpeg);
-        const auto avi=aviChunk("RIFF",QByteArray("AVI ")+aviHeader+aviChunk("LIST",aviFrames));
-        const auto videoPath=copy.filePath("motion.avi");QFile videoFile(videoPath);require(videoFile.open(QIODevice::WriteOnly) && videoFile.write(avi)==avi.size(),"synthetic video written");videoFile.close();
-        addAttachment("video",videoPath,"video/x-msvideo");
-        const auto secondVideoPath=copy.filePath("second motion.avi");require(QFile::copy(videoPath,secondVideoPath),"second synthetic video");
-        addAttachment("video2",secondVideoPath,"video/x-msvideo");
+        const float durationMs=3000;quint32 durationBits;std::memcpy(&durationBits,&durationMs,4);
+        QByteArray duration;for(int shift=24;shift>=0;shift-=8)duration.append(char((durationBits>>shift)&255));
+        QByteArray cluster=ebmlUint(0xE7,0);
+        for(int i=0;i<60;++i)cluster+=ebml(0xA3,QByteArray("\x81")+char(((i*50)>>8)&255)+char((i*50)&255)+char(0x80)+videoJpeg);
+        const auto mkv=ebml(0x1A45DFA3,ebmlUint(0x4286,1)+ebmlUint(0x42F7,1)+ebmlUint(0x42F2,4)+ebmlUint(0x42F3,8)+ebml(0x4282,"matroska")+ebmlUint(0x4287,4)+ebmlUint(0x4285,2))
+            +ebml(0x18538067,ebml(0x1549A966,ebmlUint(0x2AD7B1,1000000)+ebml(0x4489,duration)+ebml(0x4D80,"synthetic")+ebml(0x5741,"synthetic"))
+                +ebml(0x1654AE6B,ebml(0xAE,ebmlUint(0xD7,1)+ebmlUint(0x73C5,1)+ebmlUint(0x83,1)+ebml(0x86,"V_MJPEG")+ebmlUint(0x9C,0)+ebmlUint(0x23E383,50000000)+ebml(0xE0,ebmlUint(0xB0,80)+ebmlUint(0xBA,48))))
+                +ebml(0x1F43B675,cluster));
+        const auto videoPath=copy.filePath("motion.mkv");QFile videoFile(videoPath);require(videoFile.open(QIODevice::WriteOnly) && videoFile.write(mkv)==mkv.size(),"synthetic video written");videoFile.close();
+        addAttachment("video",videoPath,"video/x-matroska");
+        const auto secondVideoPath=copy.filePath("second motion.mkv");require(QFile::copy(videoPath,secondVideoPath),"second synthetic video");
+        addAttachment("video2",secondVideoPath,"video/x-matroska");
+        // A playlist renamed .mp4: the media backend would pick its demuxer
+        // from these bytes and could fetch remote segments.
+        const auto playlistPath=copy.filePath("clip.mp4");QFile playlist(playlistPath);
+        const QByteArray playlistBytes("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nhttps://media.example.test/segment.ts\n#EXT-X-ENDLIST\n");
+        require(playlist.open(QIODevice::WriteOnly) && playlist.write(playlistBytes)==playlistBytes.size(),"synthetic playlist written");playlist.close();
+        addAttachment("playlist",playlistPath,"video/mp4");
         {
             // A card first laid out below the reader loads once a change above it
             // brings it on screen, with no scrolling: here the long message folds.
@@ -1431,9 +1446,13 @@ class MailSelectionTest {
         QMetaObject::invokeMethod(viewer,"show",Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,media),Q_ARG(QVariant,0));
         auto player=viewer->findChild<QObject *>("attachmentMediaPlayer");auto audio=viewer->findChild<QObject *>("attachmentAudio");
         require(player && audio,"actual video player and audio controls exist");
-        await([&]{return player->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool();},"real video decoder loads a paused first frame");
-        require(viewer->property("error").toString().isEmpty() && qAbs(viewer->property("ratio").toDouble()-80.0/48)<.01,"decoded video has correct aspect ratio");
+        const auto previewUrl=[&]{return viewer->property("preview").toMap().value("preview_url").toString();};
+        await([&]{return !previewUrl().isEmpty();},"the video's local copy is ready");
+        layout.restart();while(layout.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        require(player->property("source").toUrl().isEmpty() && player->property("duration").toInt()==0,"nothing decodes the video before Play");
+        require(viewer->findChild<QQuickItem *>("attachmentViewerPlay")->isVisible(),"a still placeholder offers Play");
         QMetaObject::invokeMethod(viewer,"togglePlayback");await([&]{return player->property("position").toInt()>100;},"video playback advances");
+        require(viewer->property("error").toString().isEmpty() && qAbs(viewer->property("ratio").toDouble()-80.0/48)<.01,"decoded video has correct aspect ratio");
         QMetaObject::invokeMethod(viewer,"togglePlayback");require(player->property("playbackState").toInt()==2,"video pauses");
         player->setProperty("position",1500);require(player->property("position").toInt()>=1500,"video seek updates position");
         audio->setProperty("muted",true);require(audio->property("muted").toBool(),"video audio can mute");
@@ -1447,15 +1466,24 @@ class MailSelectionTest {
             QMetaObject::invokeMethod(viewer,"show",Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,videos),Q_ARG(QVariant,0));
             // The viewer's own player: a closed viewing's one may linger until deleted.
             const auto current=[&]{return viewer->property("player").value<QObject *>();};
-            await([&]{auto *first=current();return first && first->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool();},"the first video loads");
+            await([&]{return current() && !previewUrl().isEmpty();},"the first video is ready");
             QMetaObject::invokeMethod(viewer,"togglePlayback");await([&]{return current()->property("position").toInt()>100;},"the first video plays");
             QKeyEvent right(QEvent::KeyPress,Qt::Key_Right,Qt::NoModifier);QCoreApplication::sendEvent(window,&right);
             await([&]{return viewer->property("index").toInt()==1;},"Right moves to the next video");
-            await([&]{auto *next=current();return !viewer->property("error").toString().isEmpty() || (next && next->property("source").toUrl().fileName()=="second motion.avi" && next->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool());},"the next video loads");
+            await([&]{return !viewer->property("error").toString().isEmpty() || QUrl(previewUrl()).fileName()=="second motion.mkv";},"the next video is ready");
             if(!viewer->property("error").toString().isEmpty()) qWarning()<<"viewer error"<<viewer->property("error");
             require(viewer->property("error").toString().isEmpty(),"the next video has no error");
+            require(current()->property("source").toUrl().isEmpty(),"the next video waits for Play");
             QMetaObject::invokeMethod(viewer,"togglePlayback");
-            await([&]{return current()->property("position").toInt()>100;},"the next video plays");
+            await([&]{return current()->property("source").toUrl().fileName()=="second motion.mkv" && current()->property("position").toInt()>100;},"the next video plays");
+            QMetaObject::invokeMethod(viewer,"close");
+            await([&]{return !viewer->property("visible").toBool();},"the viewer closes again");
+            // Bytes that are not an MP4 or Matroska video never reach the player,
+            // whatever the name and type the sender gave them.
+            QMetaObject::invokeMethod(viewer,"show",Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,QVariant(QVariantList{h.attachments["playlist"].toVariantMap()})),Q_ARG(QVariant,0));
+            await([&]{return !viewer->property("error").toString().isEmpty();},"a disguised video shows that no preview is available");
+            QMetaObject::invokeMethod(viewer,"togglePlayback");
+            require(previewUrl().isEmpty() && (!current() || current()->property("source").toUrl().isEmpty()),"a disguised video is not handed to the player");
             QMetaObject::invokeMethod(viewer,"close");
         }
         QHash<QString,QString> saves;
@@ -1483,6 +1511,12 @@ class MailSelectionTest {
         const auto invalidImage=h.backend.requestAttachmentPreview("personal","broken-image");
         await([&]{return previews.contains(invalidImage);},"invalid preview returns");
         require(previews[invalidImage]["preview_url"].toString().isEmpty() && !previews[invalidImage]["preview_error"].toString().isEmpty(),"non-image bytes cannot become a preview");
+        const auto playlistTicket=h.backend.requestAttachmentPreview("personal","playlist",true);
+        await([&]{return previews.contains(playlistTicket);},"disguised video preview returns");
+        require(previews[playlistTicket]["preview_url"].toString().isEmpty() && !previews[playlistTicket]["message"].toString().isEmpty(),"a playlist named .mp4 is not offered to the player");
+        const auto videoTicket=h.backend.requestAttachmentPreview("personal","video",true);
+        await([&]{return previews.contains(videoTicket);},"video preview returns");
+        require(previews[videoTicket]["preview_url"].toUrl().toLocalFile()==h.attachments["video"]["path"].toString(),"a real Matroska video is offered to the player");
         QObject::disconnect(previewConnection);
         // One shared cursor, viewport paging, edge/range selection and collapsed-group skipping.
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
@@ -1814,9 +1848,21 @@ public:
         require(accepted && h.methods.contains("message_unsubscribe") && !h.methods.contains("google_unsubscribe_mail"),"one-click goes to the engine's background POST");
         require(h.backend.conversation().value("mailing_list").toMap().value("unsubscribed").toMap().value("method")=="one_click","the reader remembers the unsubscribe");
         replied=false;
-        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","mailto"}});
+        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","mailto"},{"address","leave@example.test"}});
         await([&]{return replied;},"mailto unsubscribe answers");
         require(h.methods.contains("google_unsubscribe_mail"),"a mailto list is unsubscribed by email through Google");
+        require(h.unsubscribeMails.size()==1 && h.unsubscribeMails[0]["address"]=="leave@example.test" && !h.unsubscribeMails[0].contains("fallback"),"the email names the confirmed address");
+        // A refused one-click is reported to the reader, which asks before
+        // any email goes out; the backend never sends one on its own.
+        h.refuseOneClick=true; replied=false; QString code;
+        QObject::connect(&h.backend,&MailBackend::unsubscribeReady,[&](auto,const QVariantMap &result,bool){code=result.value("code").toString();});
+        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","one_click"}});
+        await([&]{return replied;},"a refused one-click answers");
+        require(!accepted && code=="unsubscribe_by_email" && h.unsubscribeMails.size()==1,"a refused one-click sends no email by itself");
+        replied=false;
+        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","mailto"},{"address","leave@example.test"},{"fallback",true}});
+        await([&]{return replied;},"the confirmed fallback email answers");
+        require(h.unsubscribeMails.size()==2 && h.unsubscribeMails[1]["fallback"]==true && h.unsubscribeMails[1]["address"]=="leave@example.test","the confirmed fallback email is sent as one");
     }
     // Years of Done mail with most months folded: a clicked month header stays
     // put while it opens and closes, however late sync lets the refresh land.

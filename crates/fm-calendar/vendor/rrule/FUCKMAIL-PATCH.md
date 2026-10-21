@@ -1,4 +1,4 @@
-# Pinned rrule 0.14.0 with one recurrence correction
+# Pinned rrule 0.14.0 with a recurrence correction and a work bound
 
 Source: crates.io `rrule` 0.14.0, upstream commit `3843456f739d399cfbeff81288c36a66e8e38b83` (`rrule/` in [rust-rrule](https://github.com/fmeringdal/rust-rrule/tree/3843456f739d399cfbeff81288c36a66e8e38b83)). The original registry crate source/examples/manifest/README are retained. The upstream MIT license is included from the same commit; this vendored copy uses its MIT licensing option.
 
@@ -7,6 +7,10 @@ The functional patch is in `src/iter/utils.rs`, `add_time_to_date`. Upstream fal
 The patch uses the timezone's earliest valid local result. Nonexistent candidates return `None` before the iterator decrements count. Ambiguous candidates use their first occurrence. No second recurrence engine or application-side count correction is introduced.
 
 The independent regression in `../../tests/calendar.rs`, `non_existent_dst_wall_time_is_skipped_without_consuming_count`, requires March 7 07:30Z, March 9 06:30Z and March 10 06:30Z for `DTSTART` March 7 02:30 Toronto with `FREQ=DAILY;COUNT=3`. Keep this test when replacing the fork with an upstream release. The existing spring/fall, RDATE/EXDATE, monthly and exception tests protect nearby behavior.
+
+The second functional patch bounds the work of a limited iterator (`RRuleSet::all`). Upstream generates every candidate from `DTSTART`; `after` only filters, and `MAX_ITER_LOOP` only counts empty rounds within one call. A series started decades ago, or a daily rule with `BYHOUR`/`BYMINUTE`/`BYSECOND` lists that yields one candidate per second, could therefore run for minutes or hours before reaching a display window. `src/iter/rrule_iter.rs` now charges each period one unit plus its candidate count (`dayset` x `timeset`) before generating it, including candidates later filtered out, and stops with `was_limited` once `MAX_ITER_WORK` (400,000, in `src/iter/mod.rs`) is spent. `src/iter/rruleset_iter.rs` splits that budget across a set's rules, so extra RRULE lines cannot multiply it, and reports a rule iterator's `was_limited` to the set; upstream dropped it, which made a limited result look complete. A daily rule from 1900 to 2100 needs about 146,000 units. In a release build an exhausted budget costs about 25 ms. Unlimited iteration (`all_unchecked`, plain `Iterator`) is unchanged. Each change is marked `fuckMail patch` in the source.
+
+The regressions in `../../tests/calendar.rs`, `the_recurrence_engine_caps_work_before_the_window` and `old_series_stay_bounded_and_common_rules_still_expand`, call the vendored set directly with per-second rules from 0001, 1970 and 2020, and check that old daily, weekday, monthly and yearly series still expand.
 
 Nonfunctional adjustments remove the now-unused midnight-duration helper and its unused re-export, and suppress upstream missing-documentation warnings that were previously capped for the registry dependency. First-party lints remain enabled. The root workspace excludes this vendored package from first-party package selection.
 

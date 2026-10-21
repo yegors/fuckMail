@@ -624,6 +624,14 @@ private:
     QVariantMap keepUnsubscribe(QVariantMap data) const;
     void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void attachmentFile(const QString &account, const QString &id, Callback callback);
+    // Whether an attachment's local copy and its sender-given name both have a
+    // type that opens in an ordinary viewer (documents, pictures, audio, video).
+    static bool opensInViewer(const QString &path, const QString &name);
+    // A sender-given attachment name made safe to create in Downloads.
+    static QString safeDownloadName(const QString &name);
+    // Whether a local file is an MP4/QuickTime or Matroska/WebM video by both
+    // its extension and its first bytes, so only those reach the media player.
+    static bool playableVideo(const QString &path);
     void cancelGoogleOperations(bool notify = true);
     void cancelGoogleProviderOperations(const QString &account);
     void pollGoogleSync();

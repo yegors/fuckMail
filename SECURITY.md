@@ -38,7 +38,8 @@ fuckMail has no servers of its own and sends no telemetry. The engine connects t
   - Google's public site-icon service, with the root domain of automated senders;
   - Gravatar, with a SHA-256 hash of a person's address, for their public profile photo;
 - a mailing list's one-click unsubscribe URL, only when you choose Unsubscribe (mailto
-  unsubscribes are sent through Gmail);
+  unsubscribes are sent through Gmail, only after you confirm the address, subject and
+  text, and only to the verified sender's own domain);
 - `www.gstatic.com/generate_204`, only when you test an image proxy you configured;
 - a local model server such as Ollama, only if you enable local AI. It must be on this
   machine (`localhost` with an explicit port).
@@ -50,14 +51,20 @@ fuckMail has no servers of its own and sends no telemetry. The engine connects t
   macOS and Linux through socket permissions and a peer-credential check.
 - Received HTML is rebuilt by the engine's sanitizer, which drops scripts and
   trackers, before the GUI renders it with litehtml. litehtml has no scripting or
-  networking.
+  networking. HTML built to be slow to parse is shown as plain text, and a layout that
+  takes more than 2 seconds is stopped.
 - No component listens on a network port, except during Google sign-in: a temporary
   listener on `127.0.0.1` receives the OAuth callback, then closes.
 - Attachments the app opens or saves are marked as downloaded from the internet, so
   Gatekeeper (macOS) and SmartScreen and Office Protected View (Windows) check them.
-  Apps, installers, scripts, shortcuts and web pages are not opened from the app at all.
-  Attachment previews are images the engine decoded and re-encoded; videos are decoded
-  only when you play them.
+  Only documents, pictures, audio, video and zip files open from the app, judged by both
+  the sender's file name and the saved copy; anything else must be saved and opened by
+  you. Downloaded names lose leading dots, invisible and right-to-left characters, and
+  Windows device names. Attachment previews are images the engine decoded and
+  re-encoded. Videos decode only when you press Play, and only MP4, QuickTime, Matroska
+  and WebM files, checked by their first bytes, reach the in-app player.
 - A warning shows on received mail when Gmail's SPF, DKIM or DMARC checks fail or the
   sender's name or domain looks disguised. Only Gmail's own topmost
-  `Authentication-Results` header is trusted.
+  `Authentication-Results` header is trusted; quoted values in it can't add results,
+  and conflicting results count as failures.
+- `fm` replaces terminal control characters in mail and calendar text before printing it.

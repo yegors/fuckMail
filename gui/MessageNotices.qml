@@ -11,7 +11,9 @@ ColumnLayout {
     property var message: ({})
     // The conversation's mailing_list, given only for its latest received message.
     property var mailingList: null
-    // How this message unsubscribes ({method, url?, address?}), from its source.
+    // How this message unsubscribes ({method, url?, address?, subject?, body?,
+    // mailto?}), from its source. One-click carries the list's email as
+    // `mailto` ({address, subject, body}) for when the list refuses the POST.
     property var unsubscribe: null
     // The HTML reader while HTML shows; it owns the images.
     property Item htmlBody: null
@@ -21,6 +23,9 @@ ColumnLayout {
     readonly property string sender: message.sender_name || message.sender_email || ""
     readonly property var unsubscribed: mailingList ? mailingList.unsubscribed || null : null
     readonly property string method: unsubscribe ? unsubscribe.method || "" : ""
+    // The email an unsubscribe would send, and whether it replaces a refused one-click.
+    readonly property var unsubscribeEmail: !unsubscribe ? null : method === "mailto" ? unsubscribe : unsubscribe.mailto || null
+    property bool emailFallback: false
     readonly property bool showList: !!mailingList && method.length > 0
     readonly property bool showImages: !!htmlBody && htmlBody.shown && (htmlBody.hiddenCount > 0 || htmlBody.proxyFailed || htmlBody.imagesShown)
     // Whether the message carries a calendar invitation (from its source).
@@ -68,19 +73,21 @@ ColumnLayout {
     Timer { id: inviteReload; interval: 500; onTriggered: notices.loadInvite() }
 
     // An unsubscribe email goes out from the person's own account, so it waits
-    // for them to see where it goes.
+    // for them to see where it goes, and what it says.
     function start() {
         if (unsubscribing || unsubscribed) return
-        if (method === "mailto") { mailtoConfirmation.open(); return }
-        send()
+        if (method === "mailto") { emailFallback = false; mailtoConfirmation.open(); return }
+        send(false)
     }
-    function send() {
+    function send(byEmail) {
         if (unsubscribing || unsubscribed) return
         unsubscribing = true; unsubscribeError = ""
-        ticket = backend.unsubscribe({id: message.id, source_version: message.source_version, method: method})
+        const request = {id: message.id, source_version: message.source_version, method: byEmail ? "mailto" : method}
+        if (byEmail) { request.address = unsubscribeEmail.address; request.fallback = emailFallback }
+        ticket = backend.unsubscribe(request)
     }
     onMessageChanged: {
-        unsubscribing = false; unsubscribeError = ""; ticket = ""
+        unsubscribing = false; unsubscribeError = ""; ticket = ""; emailFallback = false
         invite = null; inviteTicket = ""; pendingAnswer = ""; answerRequest = ""; answerError = ""; loadInvite()
     }
     Connections {
@@ -88,6 +95,10 @@ ColumnLayout {
         function onUnsubscribeReady(ticket, result, ok) {
             if (ticket !== notices.ticket) return
             notices.ticket = ""; notices.unsubscribing = false
+            // The list refused one-click but takes an email: ask before sending it.
+            if (!ok && result.code === "unsubscribe_by_email" && notices.unsubscribeEmail && notices.unsubscribeEmail.address) {
+                notices.emailFallback = true; mailtoConfirmation.open(); return
+            }
             if (!ok) notices.unsubscribeError = result.message || "Could not unsubscribe. Try again later."
         }
     }
@@ -296,10 +307,16 @@ ColumnLayout {
     Rule {}
     FmConfirmDialog {
         id: mailtoConfirmation; objectName: "unsubscribeConfirmation_" + (notices.message.id || "")
+        readonly property var email: notices.unsubscribeEmail || ({})
+        readonly property string body: (email.body || "").trim()
         title: "Send an unsubscribe email?"
-        message: "This sends an email from your account to " + (notices.unsubscribe && notices.unsubscribe.address || "the list")
-            + ". Gmail confirmed that this address belongs to the sender."
+        message: (notices.emailFallback ? "The list did not accept the one-click unsubscribe. " : "")
+            + "This sends an email from your account to " + (email.address || "the list")
+            + ". Gmail verified the sender's domain, and this address belongs to it."
+            + "\n\nSubject: " + (email.subject || "unsubscribe")
+            + "\nMessage: " + (body.length > 400 ? body.slice(0, 400) + "\u2026" : body || "unsubscribe")
         actionText: "Send"; actionObjectName: "unsubscribeConfirmSend_" + (notices.message.id || "")
-        onAccepted: notices.send()
+        onAccepted: notices.send(true)
+        onRejected: if (notices.emailFallback) notices.unsubscribeError = "The list did not accept the one-click unsubscribe. Nothing was sent."
     }
 }

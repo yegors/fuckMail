@@ -19,7 +19,7 @@ Rectangle {
     // per-screen size avoids decoding again on every divider/window resize.
     readonly property size thumbnailSize: Qt.size(Math.ceil(400 * Screen.devicePixelRatio), Math.ceil(250 * Screen.devicePixelRatio))
     readonly property bool isImage: /^image\//i.test(attachment.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(attachment.name || "")
-    readonly property bool isVideo: /^video\//i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(attachment.name || "")
+    readonly property bool isVideo: /^video\/(mp4|webm|quicktime|x-matroska|x-m4v)$/i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv)$/i.test(attachment.name || "")
     readonly property bool popupOpen: false
     readonly property string extension: (attachment.name || "").split(".").pop().toUpperCase()
     readonly property color fileTint: extension === "PDF" ? Theme.error : ["DOC","DOCX","XLS","XLSX","CSV","PPT","PPTX"].indexOf(extension)>=0 ? Theme.ai : ["ZIP","RAR","7Z","TAR","GZ"].indexOf(extension)>=0 ? Theme.accent : Theme.muted

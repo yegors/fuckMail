@@ -92,6 +92,7 @@ fn extract(
     let text = html
         .into_iter()
         .map(|html| {
+            let html = bounded(html);
             // Drop quote bodies before conversion, so HTML-only quotations
             // do not become indistinguishable from new unquoted prose. A
             // forward keeps its blockquotes: they are the forwarded content.
@@ -106,7 +107,7 @@ fn extract(
                     .rm_clean_content_tags(&["blockquote"])
                     .add_tags(&["blockquote"]);
             }
-            let text = html_to_text(&cleaner.clean(html).to_string());
+            let text = clean_text(&cleaner, html);
             if contribution {
                 // With the quotes already gone, no `>` lines follow an
                 // attribution. The flag makes the text pass skip only the
@@ -127,7 +128,28 @@ fn extract(
 /// Readable text from HTML source, as HTML-only mail is read: scripts, styles
 /// and other active content dropped, markup removed. Performs no I/O.
 pub fn html_source_text(html: &str) -> String {
-    html_to_text(&cleaner().clean(html).to_string())
+    clean_text(&cleaner(), bounded(html))
+}
+
+/// Most HTML read for text, in bytes (1 MiB); the rest is left out.
+const MAX_TEXT_HTML_BYTES: usize = 1024 * 1024;
+
+/// `html` cut to `MAX_TEXT_HTML_BYTES` at a character boundary.
+fn bounded(html: &str) -> &str {
+    let mut end = html.len().min(MAX_TEXT_HTML_BYTES);
+    while !html.is_char_boundary(end) {
+        end -= 1;
+    }
+    &html[..end]
+}
+
+/// Text through `cleaner`, or without structure when the HTML is built to
+/// make parsing slow.
+fn clean_text(cleaner: &Builder<'_>, html: &str) -> String {
+    if !crate::html_cost::parses_cheaply(html) {
+        return crate::html_cost::strip_tags(html);
+    }
+    html_to_text(&cleaner.clean(html).to_string())
 }
 
 /// Structure-only allowlist for text extraction. Scripts, styles, embedded
@@ -223,5 +245,21 @@ mod tests {
             extract_incoming_text(raw.as_bytes()).unwrap().trim(),
             "Real HTML part"
         );
+    }
+
+    #[test]
+    fn hostile_html_is_read_quickly_and_long_html_is_cut() {
+        let start = std::time::Instant::now();
+        let nested = format!("<p>Hello</p>{}", "<div>".repeat(100_000));
+        assert_eq!(contribution("text/html", &nested).trim(), "Hello");
+        let took = start.elapsed();
+        assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+        let long = format!(
+            "<p>Start</p><p>{}</p><p>Past the cut</p>",
+            "word ".repeat(300_000)
+        );
+        let text = contribution("text/html", &long);
+        assert!(text.starts_with("Start") && text.contains("word"));
+        assert!(!text.contains("Past the cut"));
     }
 }

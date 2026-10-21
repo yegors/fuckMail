@@ -1333,6 +1333,39 @@ async fn two_owner_lifecycle(disconnect: bool) {
 #[tokio::test]
 async fn remote_inventory_refresh_is_bounded_owned_and_does_not_restart_for_an_additional_owner() {
     let h = RuntimeHarness::new();
+    // Start with the one-time label import complete. Its legitimate refresh
+    // wakes every worker and can otherwise race the owner-join assertions.
+    let account = h.account.clone();
+    h.core
+        .call(move |store| {
+            let labels = fm_core::google_labels::prepare_google_labels(
+                serde_json::from_value(json!({"labels":[]})).unwrap(),
+            )?;
+            let binding = store
+                .google_account_bindings()?
+                .into_iter()
+                .find(|binding| binding.account == account)
+                .unwrap();
+            let revision = store.google_labels(&account, &json!({}))?["catalog_revision"]
+                .as_i64()
+                .unwrap();
+            let lease = store
+                .google_labels_begin(
+                    &account,
+                    binding.connection_generation,
+                    revision,
+                    &labels.manifest(),
+                )?
+                .unwrap();
+            store.google_labels_publish(&lease, 1_000)?;
+            assert_eq!(
+                store.google_labels_initial_import(&account)?.unwrap()["more"],
+                false
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
     let account = h.account.clone();
     let cached = h
         .core

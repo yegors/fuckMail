@@ -2,7 +2,9 @@
 //! warning signs a reader should see. Gmail records SPF, DKIM and DMARC
 //! verdicts in the `Authentication-Results` header it adds on arrival; only
 //! the topmost one, from `mx.google.com`, is trusted, because a sender can
-//! write their own further down. Pure transform: no I/O.
+//! write their own further down. Values inside it such as the envelope
+//! address are sender-chosen, so quoted strings never split a verdict and a
+//! method reported both ways counts as failed. Pure transform: no I/O.
 use mail_parser::Message;
 
 /// The authentication service whose verdicts are trusted.
@@ -24,8 +26,11 @@ pub struct SenderCheck {
     /// Gmail recorded verdicts on this message. Without them nothing is
     /// verified and no verdict warning is given.
     pub checked: bool,
-    /// The From domain passed DMARC, or a passing DKIM signature belongs to it.
+    /// The From domain passed DMARC, or a passing DKIM signature belongs to
+    /// it and DMARC did not fail.
     pub verified: bool,
+    /// Lowercase From address; empty when there is none.
+    pub from_address: String,
     /// Lowercase domain of the From address; empty when there is none.
     pub from_domain: String,
     /// Domains Gmail authenticated: passing DKIM signers, the envelope
@@ -41,14 +46,65 @@ pub struct SenderCheck {
 }
 
 impl SenderCheck {
-    /// Whether `domain` belongs to a domain Gmail authenticated for this
-    /// message: the same domain, or one a subdomain of the other.
-    pub fn vouches_for(&self, domain: &str) -> bool {
-        let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
-        self.authenticated
-            .iter()
-            .any(|known| aligned(known, &domain))
+    /// Whether mail to `address` stays with the verified sender, so the
+    /// reader may write to it for them: the From domain is verified, and
+    /// `address` is on that domain or one of its subdomains. At a shared
+    /// mailbox provider, where anyone can hold an address, only the From
+    /// address itself qualifies.
+    pub fn owns_address(&self, address: &str) -> bool {
+        let address = address.trim().to_ascii_lowercase();
+        let Some((local, domain)) = address.rsplit_once('@') else {
+            return false;
+        };
+        let domain = domain.trim_end_matches('.');
+        if !self.verified || local.is_empty() || self.from_domain.is_empty() {
+            return false;
+        }
+        if shared_provider(&self.from_domain) {
+            return address == self.from_address;
+        }
+        domain == self.from_domain
+            || domain
+                .strip_suffix(self.from_domain.as_str())
+                .is_some_and(|sub| sub.len() > 1 && sub.ends_with('.'))
     }
+}
+
+/// Mailbox providers whose addresses belong to anyone who signs up, matched
+/// by name under any country suffix, or exactly.
+const SHARED_NAMES: [&str; 9] = [
+    "gmail",
+    "googlemail",
+    "outlook",
+    "hotmail",
+    "live",
+    "yahoo",
+    "ymail",
+    "gmx",
+    "yandex",
+];
+const SHARED_DOMAINS: [&str; 10] = [
+    "msn.com",
+    "icloud.com",
+    "me.com",
+    "mac.com",
+    "aol.com",
+    "proton.me",
+    "protonmail.com",
+    "pm.me",
+    "mail.ru",
+    "zoho.com",
+];
+
+fn shared_provider(domain: &str) -> bool {
+    if SHARED_DOMAINS.contains(&domain) {
+        return true;
+    }
+    // `gmail.com`, `hotmail.co.uk`, `gmx.net`: the name and a one- or
+    // two-label suffix.
+    domain.split_once('.').is_some_and(|(name, suffix)| {
+        SHARED_NAMES.contains(&name) && suffix.split('.').count() <= 2
+    })
 }
 
 /// Reads Gmail's verdicts and the From header of `message`.
@@ -65,6 +121,7 @@ pub fn check(message: &Message<'_>) -> SenderCheck {
         .map(|(_, domain)| domain.trim_end_matches('.').to_owned())
         .unwrap_or_default();
     let mut check = SenderCheck {
+        from_address: address.clone(),
         from_domain,
         ..SenderCheck::default()
     };
@@ -102,19 +159,60 @@ struct Verdict {
 }
 
 /// The verdicts of an `Authentication-Results` value written by Gmail, or
-/// `None` when another service wrote it.
+/// `None` when another service wrote it. A value whose quotes or comments
+/// never close cannot be split safely, so it yields no verdicts at all.
 fn gmail_verdicts(raw: &str) -> Option<Vec<Verdict>> {
-    let text = without_comments(raw);
-    let mut parts = text.split(';');
-    let service = parts.next()?.split_whitespace().next()?;
+    let service = raw
+        .split(|c: char| c == ';' || c == '(' || c.is_whitespace())
+        .find(|token| !token.is_empty())?;
     if !service.eq_ignore_ascii_case(GMAIL) {
         return None;
     }
-    Some(parts.filter_map(verdict).collect())
+    let Some(text) = without_comments(raw) else {
+        return Some(Vec::new());
+    };
+    let parts = split_unquoted(&text, |c| c == ';');
+    Some(
+        parts
+            .iter()
+            .skip(1)
+            .filter_map(|part| verdict(part))
+            .collect(),
+    )
+}
+
+/// Splits `text` where `at` matches outside a quoted string (RFC 8601 values
+/// may be quoted, and a quoted envelope address may hold `;` or spaces).
+/// Empty pieces are dropped.
+fn split_unquoted(text: &str, at: impl Fn(char) -> bool) -> Vec<String> {
+    let mut pieces = Vec::new();
+    let mut piece = String::new();
+    let (mut quoted, mut escaped) = (false, false);
+    for c in text.chars() {
+        if escaped {
+            escaped = false;
+        } else if quoted && c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            quoted = !quoted;
+        } else if !quoted && at(c) {
+            if !piece.trim().is_empty() {
+                pieces.push(std::mem::take(&mut piece));
+            }
+            piece.clear();
+            continue;
+        }
+        piece.push(c);
+    }
+    if !piece.trim().is_empty() {
+        pieces.push(piece);
+    }
+    pieces
 }
 
 fn verdict(part: &str) -> Option<Verdict> {
-    let mut tokens = part.split_whitespace();
+    let tokens = split_unquoted(part, char::is_whitespace);
+    let mut tokens = tokens.iter();
     let (method, result) = tokens.next()?.split_once('=')?;
     // A method may carry a version, as in `dkim/1`.
     let method = method.split('/').next().unwrap_or("").to_ascii_lowercase();
@@ -143,8 +241,9 @@ fn verdict(part: &str) -> Option<Verdict> {
 }
 
 /// Drops parenthesised comments, which may hold sender-chosen text such as
-/// an envelope address, while keeping quoted strings as written.
-fn without_comments(raw: &str) -> String {
+/// an envelope address, while keeping quoted strings as written. `None` when
+/// a quoted string or comment is left open.
+fn without_comments(raw: &str) -> Option<String> {
     let mut out = String::with_capacity(raw.len());
     let (mut depth, mut quoted, mut escaped) = (0usize, false, false);
     for c in raw.chars() {
@@ -173,47 +272,64 @@ fn without_comments(raw: &str) -> String {
             _ => {}
         }
     }
-    out
+    (depth == 0 && !quoted && !escaped).then_some(out)
 }
 
+/// Folds the verdicts into `check`, failing closed: a method reported more
+/// than once with different results (DKIM: for the same signing domain)
+/// takes its first non-passing result, and a pass names no domain unless it
+/// came with one. A DMARC pass counts only for the From domain.
 fn apply(check: &mut SenderCheck, verdicts: &[Verdict]) {
-    let mut dkim_first = None;
-    for verdict in verdicts {
-        let passed = verdict.result == "pass";
-        match verdict.method.as_str() {
-            "spf" if check.spf.is_empty() => {
-                check.spf = verdict.result.clone();
-                if passed && !verdict.domain.is_empty() {
-                    check.authenticated.push(verdict.domain.clone());
-                }
-            }
-            "dkim" => {
-                dkim_first.get_or_insert_with(|| verdict.result.clone());
-                if passed {
-                    check.dkim = "pass".into();
-                    if !verdict.domain.is_empty() {
-                        if aligned(&verdict.domain, &check.from_domain) {
-                            check.verified = true;
-                        }
-                        check.authenticated.push(verdict.domain.clone());
-                    }
-                }
-            }
-            "dmarc" if check.dmarc.is_empty() => {
-                check.dmarc = verdict.result.clone();
-                if passed && !check.from_domain.is_empty() {
-                    check.verified = true;
-                    check.authenticated.push(check.from_domain.clone());
-                }
-            }
-            _ => {}
+    let of = |method: &'static str| verdicts.iter().filter(move |v| v.method == method);
+
+    check.spf = combined(of("spf"));
+    if check.spf == "pass" {
+        for verdict in of("spf").filter(|v| !v.domain.is_empty()) {
+            check.authenticated.push(verdict.domain.clone());
+        }
+    }
+
+    let mut dkim_aligned = false;
+    for verdict in of("dkim").filter(|v| v.result == "pass" && !v.domain.is_empty()) {
+        let domain = &verdict.domain;
+        if combined(of("dkim").filter(|v| &v.domain == domain)) == "pass" {
+            dkim_aligned |= aligned(domain, &check.from_domain);
+            check.dkim = "pass".into();
+            check.authenticated.push(domain.clone());
         }
     }
     if check.dkim.is_empty() {
-        check.dkim = dkim_first.unwrap_or_default();
+        check.dkim = of("dkim")
+            .find(|v| v.result != "pass")
+            .map(|v| v.result.clone())
+            .unwrap_or_default();
     }
+
+    // Gmail names the From domain in its DMARC verdict; a pass for any other
+    // domain, or for none, is not about this sender.
+    let from = check.from_domain.clone();
+    check.dmarc = combined(
+        of("dmarc").filter(|v| v.result != "pass" || (!from.is_empty() && v.domain == from)),
+    );
+    if check.dmarc == "pass" {
+        check.authenticated.push(from);
+    }
+    check.verified = check.dmarc == "pass" || (dkim_aligned && check.dmarc != "fail");
     check.authenticated.sort();
     check.authenticated.dedup();
+}
+
+/// One result for several reports of a method: the first that is not a
+/// pass, else `pass`, else empty.
+fn combined<'a>(verdicts: impl Iterator<Item = &'a Verdict>) -> String {
+    let mut result = String::new();
+    for verdict in verdicts {
+        if verdict.result != "pass" {
+            return verdict.result.clone();
+        }
+        result = verdict.result.clone();
+    }
+    result
 }
 
 fn warn(check: &mut SenderCheck, name: &str, address: &str) {
@@ -328,8 +444,17 @@ Hi\r
             result.authenticated,
             ["mail.esp.example", "news.shop.example", "shop.example"]
         );
-        assert!(result.vouches_for("list.shop.example") && result.vouches_for("esp.example"));
-        assert!(!result.vouches_for("example") && !result.vouches_for("corp.example"));
+        assert!(
+            result.owns_address("leave@list.shop.example")
+                && result.owns_address("hello@shop.example")
+        );
+        // The envelope sender's ESP and a parent domain are not the sender.
+        assert!(
+            !result.owns_address("leave@mail.esp.example") && !result.owns_address("a@example")
+        );
+        assert!(
+            !result.owns_address("a@corp.example") && !result.owns_address("a@evilshop.example")
+        );
         assert!(result.warnings.is_empty());
     }
 
@@ -346,7 +471,7 @@ Hi\r
         );
         assert!(result.checked && !result.verified);
         assert_eq!(result.dmarc, "fail");
-        assert!(!result.vouches_for("bank.example"));
+        assert!(!result.owns_address("alerts@bank.example"));
         assert_eq!(result.warnings[0].code, "dmarc_fail");
         assert!(result.warnings[0].text.contains("bank.example"));
     }
@@ -387,6 +512,124 @@ Hi\r
 ",
         );
         assert!(plain.verified && plain.warnings.is_empty());
+    }
+
+    /// Gmail's verdicts for mail from `bank.example` that fails DMARC, with
+    /// `envelope` written as the envelope sender.
+    fn spoofed_bank(envelope: &str) -> SenderCheck {
+        checked(&format!(
+            "Authentication-Results: mx.google.com; spf=pass (google.com: domain of x@evil.example designates 192.0.2.1 as permitted sender) {envelope}; dmarc=fail (p=NONE sp=NONE dis=NONE) header.from=bank.example\r
+From: Bank <alerts@bank.example>\r
+\r
+Hi\r
+"
+        ))
+    }
+
+    #[test]
+    fn verdicts_hidden_in_the_envelope_address_are_not_gmails() {
+        let baseline = spoofed_bank("smtp.mailfrom=x@evil.example");
+        assert!(!baseline.verified && baseline.dmarc == "fail");
+        assert_eq!(baseline.warnings[0].code, "dmarc_fail");
+        // A quoted local part may hold `;` and spaces; it is one value.
+        let quoted = spoofed_bank(r#"smtp.mailfrom="x; dmarc=pass x"@evil.example"#);
+        assert_eq!(quoted, baseline);
+        let signed = spoofed_bank(
+            r#"smtp.mailfrom="x; dkim=pass header.d=bank.example; dmarc=pass header.from=bank.example"@evil.example"#,
+        );
+        assert_eq!(signed, baseline);
+        // Unquoted, a split-off pass names no From domain or conflicts with
+        // Gmail's own fail; either way the fail stands.
+        for envelope in [
+            "smtp.helo=evil.example;dmarc=pass",
+            "smtp.helo=evil.example;dmarc=pass header.from=bank.example",
+            "smtp.helo=evil.example;dkim=pass",
+        ] {
+            let result = spoofed_bank(envelope);
+            assert!(!result.verified && result.dmarc == "fail", "{envelope}");
+            assert_eq!(result.warnings[0].code, "dmarc_fail", "{envelope}");
+            assert!(!result.owns_address("alerts@bank.example"), "{envelope}");
+        }
+        // A quote left open could hide Gmail's verdicts: nothing is trusted.
+        let open = spoofed_bank(r#"smtp.mailfrom=x"@evil.example"#);
+        assert!(open.checked && !open.verified && open.authenticated.is_empty());
+        assert_eq!(open.warnings[0].code, "unauthenticated");
+    }
+
+    #[test]
+    fn a_method_reported_both_ways_fails() {
+        let result = checked(
+            "Authentication-Results: mx.google.com; dmarc=pass header.from=bank.example; dkim=pass header.d=bank.example; dkim=fail header.d=bank.example; spf=pass smtp.mailfrom=bank.example; spf=softfail smtp.mailfrom=bank.example; dmarc=fail header.from=bank.example\r
+From: Bank <alerts@bank.example>\r
+\r
+Hi\r
+",
+        );
+        assert_eq!(
+            (
+                result.spf.as_str(),
+                result.dkim.as_str(),
+                result.dmarc.as_str()
+            ),
+            ("softfail", "fail", "fail")
+        );
+        assert!(!result.verified && result.authenticated.is_empty());
+        // A DMARC pass for another domain says nothing about this sender.
+        let other = checked(
+            "Authentication-Results: mx.google.com; dmarc=pass header.from=evil.example\r
+From: Bank <alerts@bank.example>\r
+\r
+Hi\r
+",
+        );
+        assert!(!other.verified && other.dmarc.is_empty());
+    }
+
+    #[test]
+    fn a_dmarc_fail_is_never_verified() {
+        // DKIM signed by the From domain, yet DMARC failed: not verified.
+        let result = checked(
+            "Authentication-Results: mx.google.com; dkim=pass header.d=mail.bank.example; dmarc=fail header.from=bank.example\r
+From: Bank <alerts@bank.example>\r
+\r
+Hi\r
+",
+        );
+        assert!(!result.verified);
+        assert_eq!(result.warnings[0].code, "dmarc_fail");
+    }
+
+    #[test]
+    fn only_the_sender_owns_an_address_at_a_shared_provider() {
+        // Anyone can sign mail as gmail.com; only the From address is theirs.
+        let result = checked(
+            "Authentication-Results: mx.google.com; dkim=pass header.d=gmail.com; spf=pass smtp.mailfrom=someone@gmail.com; dmarc=pass header.from=gmail.com\r
+From: Someone <someone@gmail.com>\r
+\r
+Hi\r
+",
+        );
+        assert!(result.verified);
+        assert!(result.owns_address("Someone@Gmail.com"));
+        assert!(
+            !result.owns_address("victim@gmail.com") && !result.owns_address("a@mail.gmail.com")
+        );
+        for domain in [
+            "hotmail.co.uk",
+            "gmx.net",
+            "yandex.ru",
+            "icloud.com",
+            "proton.me",
+        ] {
+            assert!(shared_provider(domain), "{domain}");
+        }
+        for domain in [
+            "shop.example",
+            "gmail.shop.example.test",
+            "mailbox.org.example",
+        ] {
+            assert!(!shared_provider(domain), "{domain}");
+        }
     }
 
     #[test]

@@ -1,5 +1,17 @@
 # Mail UI, reader and human composer
 
+## D212 — unsubscribe email always confirmed, attachment allowlist, bounded reader (Mail UI154)
+
+- **Unsubscribe by email.** The confirmation (`unsubscribeConfirmation_<id>`) names the address, the subject and up to 400 characters of the text, and says Gmail verified the sender's domain and the address belongs to it. When a one-click POST is refused with `unsubscribe_by_email`, the reader opens the same confirmation, prefixed "The list did not accept the one-click unsubscribe." Send sends `google_unsubscribe_mail` with `address` and `fallback: true`; Cancel sends nothing and says so. Nothing is sent automatically. Replaces D210's automatic fallback.
+- **Opening attachments.** `MailBackend::opensInViewer(path, name)` is an allowlist: both the export's and the sender's extension must be a document (pdf, doc/docx, xls/xlsx, ppt/pptx, odt/ods/odp, rtf, pages/numbers/key), plain text (txt, csv, tsv, md, log), picture, audio, video or zip. Anything else, including no extension and macro-enabled Office files, shows "fuckMail opens only documents, pictures, audio and video. Save this .x file and open it yourself only if you trust it: it could run a program or show a fake sign-in page." with Save to Downloads. Replaces D210's blocklist.
+- **Download names.** `MailBackend::safeDownloadName` keeps the readable name but takes the last path part, replaces control, format and bidi characters and `\ / : * ? " < > |` with `_`, drops leading dots and spaces and trailing dots and spaces, keeps an ASCII extension of at most 16 characters, caps the name at 200 UTF-8 bytes and prefixes `_` to Windows device names. A Downloads location equal to the home folder becomes `~/Downloads`.
+- **Video.** Only mp4/m4v/mov starting with an `ftyp` box and mkv/webm starting with the EBML magic reach the viewer's player (`MailBackend::playableVideo`), and only once Play is pressed; until then the frame is a still placeholder. Other video types open through the allowlist in the system player.
+- **HTML layout budget.** Every layout of a message, including relayouts after a width change or an image load, gets 2 s; past it litehtml stops and the reader falls back to Text with "This message's HTML took too long to lay out." Large repeating backgrounds are painted through a scaled brush, never a scaled copy over 4 MP, and font sizes are clamped to 1000 px.
+- **Notifications.** On Linux the notification body (a subject) is HTML-escaped, since freedesktop servers read markup.
+
+Consumers: `MessageNotices`, `RemoteMailBackend`, `MailBackend`, `AttachmentTile`, `AttachmentViewer`, `MailView`, `FmHtmlView`, `HtmlDocument`, `NotificationPresenter`; Core99, Gmail46; gui-html-message-body, gui-mail-selection, gui-attachments, gui-html-view.
+
+
 ## D211 — one-line subject in the composer (Mail UI153)
 
 - The subject field folds what it is given the way Core folds a received subject (Core98): each run of whitespace holding a line break, tab or other control character, or U+2028/U+2029, becomes one space, or nothing at either end. Typed spaces stay. The field then shows the folded text, even when it matches what is already saved.

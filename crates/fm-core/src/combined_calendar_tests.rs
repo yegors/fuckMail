@@ -382,3 +382,46 @@ fn public_operation_history_prioritizes_pending_and_pages_through_all_records() 
         "invalid_request"
     );
 }
+
+#[test]
+fn unanswered_invite_flood_cannot_evict_the_users_own_series() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(temp.path()).unwrap();
+    let tx = store.db.unchecked_transaction().unwrap();
+    // Never-ending invitations with event IDs chosen to sort first, stored
+    // before the user's meeting so first-seen order does not help it either.
+    for index in 0..130 {
+        let source = json!({"id":format!("00000{index:03}"),"etag":"v1","summary":"Flood","organizer":{"email":"sender@example.test"},"attendees":[{"email":"sender@example.test","organizer":true,"responseStatus":"accepted"},{"email":"me@example.test","self":true,"responseStatus":"needsAction"}],"start":{"dateTime":"2026-12-01T08:00:00-05:00","timeZone":"America/Toronto"},"end":{"dateTime":"2026-12-01T08:30:00-05:00","timeZone":"America/Toronto"},"recurrence":["RRULE:FREQ=DAILY"]});
+        tx.execute(
+            "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES('personal','primary',?1,?2)",
+            params![source["id"].as_str().unwrap(), source.to_string()],
+        )
+        .unwrap();
+    }
+    let meeting = json!({"id":"zzz-standup","etag":"v1","summary":"Team standup","organizer":{"email":"lead@example.test"},"attendees":[{"email":"lead@example.test","organizer":true,"responseStatus":"accepted"},{"email":"me@example.test","self":true,"responseStatus":"accepted"}],"start":{"dateTime":"2026-12-03T10:00:00-05:00","timeZone":"America/Toronto"},"end":{"dateTime":"2026-12-03T10:15:00-05:00","timeZone":"America/Toronto"},"recurrence":["RRULE:FREQ=WEEKLY"]});
+    tx.execute(
+        "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES('personal','primary','zzz-standup',?1)",
+        [meeting.to_string()],
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    for (to, meetings) in [("2026-12-11", 1), ("2026-12-17", 1), ("2027-01-10", 5)] {
+        let result = store
+            .calendar_combined(&json!({"from":"2026-12-10","to":to,"calendars":[{"account":"personal","calendar_id":"primary"}]}))
+            .unwrap();
+        let events = result["events"].as_array().unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|row| row["event_id"] == "zzz-standup")
+                .count(),
+            meetings,
+            "accepted meetings through {to} must survive both series and occurrence limits"
+        );
+        assert!(events.len() <= 1000);
+        if to == "2027-01-10" {
+            assert_eq!(events.len(), 1000);
+        }
+        assert_eq!(result["coverage"]["complete"], false);
+    }
+}

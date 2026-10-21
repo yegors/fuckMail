@@ -6,6 +6,7 @@
 //!
 //! Everything here is a pure transform: no network, file reads, database or
 //! model calls.
+mod html_cost;
 mod html_text;
 pub mod html_view;
 pub mod image_view;

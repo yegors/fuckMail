@@ -7,6 +7,7 @@
 #include "master_css.h"
 #include "types.h"
 
+#include <chrono>
 #include <functional>
 #include <vector>
 
@@ -14,6 +15,11 @@ using GumboOutput = struct GumboInternalOutput;
 
 namespace litehtml
 {
+    // fuckMail: thrown inside render() past the deadline, caught by document::render().
+    struct render_timeout
+    {
+    };
+
     struct css_text
     {
         using vector = std::vector<css_text>;
@@ -76,11 +82,21 @@ namespace litehtml
         bool                                    m_finalized = false;
         // fuckMail: counts full renders; render_item::measure caches last only one render.
         uint64_t                                m_render_generation = 0;
+        // fuckMail: render() gives up at this deadline and sets m_render_timed_out.
+        std::chrono::steady_clock::time_point   m_render_deadline = std::chrono::steady_clock::time_point::max();
+        bool                                    m_render_timed_out = false;
 
       public:
         document(document_container* objContainer);
         virtual ~document();
         uint64_t render_generation() const { return m_render_generation; }
+        // fuckMail: a deadline for render(). Past it render() stops early and
+        // render_timed_out() is true: the layout is incomplete and the
+        // document should be discarded.
+        void set_render_deadline(std::chrono::steady_clock::time_point deadline) { m_render_deadline = deadline; }
+        bool render_timed_out() const { return m_render_timed_out; }
+        // Throws render_timeout once the deadline has passed.
+        void check_render_deadline() const;
 
         document_container* container() const
         {

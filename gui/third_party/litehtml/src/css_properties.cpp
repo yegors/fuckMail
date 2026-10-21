@@ -1,6 +1,7 @@
 #include "html.h"
 #include "css_properties.h"
 #include <cmath>
+#include <algorithm>
 #include "document.h"
 #include "html_tag.h"
 #include "document_container.h"
@@ -396,6 +397,10 @@ void litehtml::css_properties::compute_font(const html_tag* el, const document::
         }
     }
 
+    // fuckMail: nested em and percentage sizes multiply, so twenty levels can
+    // reach infinity; keep every computed size finite and at most 1000px.
+    const float raw_size = static_cast<float>(font_size);
+    font_size            = std::isfinite(raw_size) ? std::clamp(raw_size, 0.0f, 1000.0f) : 1000.0f;
     m_font_size = static_cast<float>(font_size);
 
     // initialize font

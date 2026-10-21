@@ -1,5 +1,22 @@
 # Core and storage
 
+## D213 — foreign-content parsing and calendar output priority (Core100)
+
+- The HTML cost guard follows `font` tags with a `color`, `face` or `size` attribute out of SVG or MathML, including empty and valueless attributes. Following HTML tags do not gain foreign-content self-closing behavior. Over-budget input uses the existing limited text view.
+- Within one calendar projection, the response rank and master order used to admit 128 recurring series also decide which events spend the 1,000-occurrence output budget. This includes single events. Final presentation still sorts by time and truncated coverage remains incomplete (Calendar48).
+
+Consumers: `fm_mail` sanitizer, text extraction and unsubscribe link scan; Core calendar projection, combined Calendar and legacy calendar query. MIME fixture1, demo fixture3, schema and protocol unchanged; sanitizer version6.
+
+## D212 — bounded HTML parsing, ranked calendar series, confirmed unsubscribe (Core99)
+
+- **HTML parse cost.** Before any HTML parse, `fm_mail` estimates the parser's work in one linear pass (open elements over 512, attributes per tag over 512, or more than 10 million estimated steps fail it). Failing HTML becomes a text-only view with `limited` set: no links, images or resources. Text extraction for search, previews and the reader copy reads at most the first 1 MiB of HTML and strips tags linearly when the estimate fails. The unsubscribe link scan walks the tree without recursion. Sanitiser version 6 (also caps floats at 200 and background sizes at 4000 px / 20 em) rebuilds cached views.
+- **Sender check.** Gmail's `Authentication-Results` is split respecting quoted strings; an unclosed quote or comment trusts nothing. A method reported more than once takes its first non-pass result; a DMARC pass counts only for the From domain; `verified` is false whenever DMARC fails. `SenderCheck::owns_address` replaces `vouches_for` for unsubscribe (Gmail46).
+- **Unsubscribe.** The reader's unsubscribe data for an email carries `address`, `subject` and `body`; a one-click entry carries `mailto: {address, subject, body}` or null. `check_confirmed` refuses an email whose confirmed address differs.
+- **Calendar series budget.** The 128-series projection keeps series by rank, then first-seen order, then event id: rank 0 when the user organizes, accepted or said tentative, or has no invitation; rank 1 unanswered invitations; rank 2 declined. Event ids a sender chooses no longer decide which series show (Calendar47).
+
+Consumers: Mail UI154, Gmail46, Calendar47, CLI64. No schema, fixture or protocol-version change.
+
+
 ## D211 — reply and forward subjects on one line (Core98)
 
 - A reply or forward subject built from received mail (`draft_create`, a legacy reply's first save or capture) passes through `composition::one_line_subject`: each run of whitespace holding a control character (line break, tab) or U+2028/U+2029 becomes one space, or nothing at either end. Other spaces stay as written. Received subjects can decode to such breaks, which `draft_save` refuses, so replying to them used to fail with "Subject must be one line of at most 8192 bytes".

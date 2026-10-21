@@ -1,5 +1,25 @@
 # Quality, performance and release acceptance
 
+## D213 — audit regressions (Quality93)
+
+Core100 and Calendar48; MIME fixture1 and demo fixture3 unchanged.
+
+- `foreign_font_breakouts_are_bounded` covers SVG and MathML, all three breakout attributes, uppercase names, quoted, empty, valueless and slash-separated forms followed by 50,000 self-closing-looking tags. Each attack must yield a limited view with readable text, no resources or links, and complete sanitizer, text and unsubscribe scans within 2 s. Fonts without these attributes remain below the cost bound. The new test fails before the guard fix and passes afterward (0.28 s for all cases on WSL, debug).
+- `unanswered_invite_flood_cannot_evict_the_users_own_series` checks day, week and month windows. The month fills the 1,000-row limit but retains all five accepted weekly meetings; the unfixed projection retains zero. Incomplete coverage stays explicit.
+- `remote_inventory_refresh_is_bounded_owned_and_does_not_restart_for_an_additional_owner` completes the fixture's initial label import before starting sync. Its separate refresh signal previously raced the ownership assertion. The unchanged generation, bounded HTTP, coalesced explicit refresh and final-owner shutdown assertions remain; the corrected test passes 20 consecutive runs (2.10 s total).
+
+Validation on the final sources: `cargo test --workspace --locked -- --test-threads=4` passes on WSL with 924 passed, zero failed and nine existing opt-in tests ignored. Strict workspace Clippy, `cargo fmt --all --check`, repository hygiene and diff whitespace checks pass. The Windows release rebuild passes, followed by all four affected GUI tests (`gui-attachments`, `gui-mail-selection`, `gui-html-view`, `gui-html-message-body`) in 108.11 s. Native macOS/Linux GUI builds, packaging and a live Gmail unsubscribe remain unverified in this follow-up.
+
+Measurements: [HTML](../research/html-mail.md#d213--foreign-font-breakout-2026-10-21), [Calendar](../research/calendar.md#d213--priority-at-the-output-limit-2026-10-21).
+
+## D212 — hostile mail and invite bounds (Quality92)
+
+Acceptance: each hostile input below finishes within 2 s in debug tests and stays `limited` or refused, while ordinary mail and series are unchanged.
+- fm-mail `deep_nesting_cannot_exhaust_the_stack` (20,000 nested spans and a link over 100,000 spans on a 2 MiB stack), `hostile_html_is_read_as_text_quickly`, `real_world_mail_stays_far_below_the_bound`, `hostile_html_is_read_quickly_and_long_html_is_cut`, `floats_are_bounded`, `background_sizes_are_bounded`, and the sender-check and unsubscribe repros (`verdicts_hidden_in_the_envelope_address_are_not_gmails`, `a_method_reported_both_ways_fails`, `a_dmarc_fail_is_never_verified`, `only_the_sender_owns_an_address_at_a_shared_provider`, `mailto_goes_only_to_the_verified_senders_own_domain`).
+- fm-calendar `sub_daily_rules_are_refused_in_any_spelling`, `old_series_stay_bounded_and_common_rules_still_expand`, `the_recurrence_engine_caps_work_before_the_window`; fm-core `unanswered_invite_flood_cannot_evict_the_users_own_series`, `an_unsubscribe_email_is_described_and_needs_its_address_confirmed`.
+- gui-html-view: 40,000 px and 200 em backgrounds paint in under 2 s, nested percentage fonts stay finite, 15,000 floats stop at their deadline and the next message still lays out. gui-attachments and gui-mail-selection cover the allowlist, download names and the refused fake video; gui-html-message-body the confirmed fallback; fm-cli the terminal filter.
+
+
 ## D210 — layout bomb bounds (Quality91)
 
 Hostile HTML must not stall the reader. Acceptance, with `fm-html-probe` on sanitised output: the selector, table, reparse and inline-split attacks in the [HTML research](../research/html-mail.md#d210--layout-bombs-2026-10-14) each parse and lay out within 300 ms and 200 MB on the reference Mac, and synthetic newsletters stay byte-identical. Tests: fm-mail `selector_explosion_is_bounded`, `table_grids_are_bounded`, `table_grids_follow_litehtml_placement`, `table_display_is_bounded`, `output_parses_back_to_the_same_tree`, `restructured_output_is_estimated_as_parsed` and `ordinary_selectors_are_kept_unchanged`; gui-html-view lays out 4,000 blocks under 120 inline boxes in under 5 s (30 s before) and checks split order and inline-blocks.

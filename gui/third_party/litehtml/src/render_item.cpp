@@ -31,6 +31,8 @@ litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
                                                        const containing_block_context& containing_block_size,
                                                        formatting_context* fmt_ctx, bool second_pass)
 {
+    // fuckMail: every box checks the document's render deadline.
+    src_el()->get_document()->check_render_deadline();
     calc_outlines(containing_block_size.width);
 
     m_pos.clear();

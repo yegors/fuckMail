@@ -9,8 +9,12 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 // the stack.
 const MAX_DEPTH: usize = 256;
 
-/// The readable text of `html`.
+/// The readable text of `html`. HTML built to make parsing slow is read
+/// without its structure.
 pub(crate) fn html_to_text(html: &str) -> String {
+    if !crate::html_cost::parses_cheaply(html) {
+        return crate::html_cost::strip_tags(html);
+    }
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut text = Text::default();
     text.children(&dom.document, 0);

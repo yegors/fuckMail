@@ -180,3 +180,9 @@ Blocks inside nested inline boxes were slow in litehtml itself. `div > b`×120 `
 
 Sanitising takes at most 52 ms on every input, plus about 35 ms per MB of output for the reparse. Four synthetic realistic messages (a Mailchimp-style template, an 8,500-element digest with 155 selectors, a 12-deep receipt, an 800 × 20 data table) come out byte-identical and use 3–43% of the budget. No real-mail corpus was run.
 
+
+## D213 — foreign font breakout (2026-10-21)
+
+The pre-commit audit found that the new parser-cost estimate treated `<svg><font color=red>` as foreign content. html5ever 0.39's foreign-content branch instead leaves SVG/MathML when `font` has any `color`, `face` or `size` attribute. Subsequent `<g/>` tags nest as HTML rather than closing themselves. At 50,000 tags (about 200 KB), both sanitizer and source-text probes exceeded an 8 s timeout on WSL in debug builds.
+
+The guard now records those attribute names, independently of their values. `cargo test -p fm-mail --locked foreign_font_breakouts_are_bounded` fails on the first SVG/color case without the fix. With it, ten hostile cases plus six non-breakout controls pass in 0.28 s total. Hostile cases retain an ordinary text prefix, expose no links or resources, and each complete the guard, sanitizer, source-text and unsubscribe link scan within the 2 s acceptance bound. This is synthetic coverage of the discovered parser mismatch, not proof against every possible HTML shape. MIME fixture revision1 is unchanged.

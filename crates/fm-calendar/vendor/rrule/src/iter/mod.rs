@@ -23,3 +23,9 @@ pub use rruleset_iter::RRuleSetIter;
 /// If after X number of iterations it still has not found an event,
 /// we can assume it will not find an event.
 static MAX_ITER_LOOP: u32 = 100_000;
+
+/// fuckMail patch: total candidate work one limited set iterator may spend
+/// over its lifetime, split across its rules, counting candidates before
+/// `after` and outside `before`. A daily rule from 1900 to 2100 needs about
+/// 146,000.
+static MAX_ITER_WORK: u64 = 400_000;

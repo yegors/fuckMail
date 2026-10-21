@@ -14,7 +14,7 @@
 //! pending writes.
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, TimeZone, Utc};
-use rrule::{RRuleSet, Tz as RuleTz};
+use rrule::{Frequency, RRuleSet, Tz as RuleTz};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -656,16 +656,6 @@ pub fn expand(
                     "Only separate RRULE, RDATE and EXDATE properties are supported",
                 ));
             }
-            if rule.starts_with("RRULE:")
-                && ["FREQ=SECONDLY", "FREQ=MINUTELY", "FREQ=HOURLY"]
-                    .iter()
-                    .any(|freq| rule.contains(freq))
-            {
-                return Err(error(
-                    "unsupported_rule",
-                    "Sub-daily recurrence requires a separately bounded implementation",
-                ));
-            }
         }
         let mut recurrence = event.recurrence.clone();
         if matches!(start, EventTime::Date { .. }) {
@@ -701,6 +691,22 @@ pub fn expand(
                 format!("Recurrence cannot be represented faithfully: {e}"),
             )
         })?;
+        // Judge frequency on the parsed rule, which ignores case and part
+        // order. BYHOUR/BYMINUTE/BYSECOND lists make even a daily or yearly
+        // rule recur within the day (up to every second), so more than one
+        // time of day counts as sub-daily too.
+        if rules.get_rrule().iter().any(|rule| {
+            matches!(
+                rule.get_freq(),
+                Frequency::Hourly | Frequency::Minutely | Frequency::Secondly
+            ) || rule.get_by_hour().len() * rule.get_by_minute().len() * rule.get_by_second().len()
+                > 1
+        }) {
+            return Err(error(
+                "unsupported_rule",
+                "Sub-daily recurrence requires a separately bounded implementation",
+            ));
+        }
         let duration = end.utc(window.calendar_zone)? - start.utc(window.calendar_zone)?;
         // Include starts before the window whose duration overlaps its first instant.
         // The extra day is margin for all-day starts, whose UTC-midnight carrier

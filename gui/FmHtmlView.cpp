@@ -23,6 +23,7 @@
 #include <QtQml/qqml.h>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 
 namespace {
@@ -36,8 +37,13 @@ constexpr qint64 imageBudget = 24ll * 1024 * 1024;
 // Largest html_path file read.
 constexpr qint64 maxHtmlBytes = 4ll * 1024 * 1024;
 // A build (read, decode, parse and first layout) slower than this fails, and
-// the message falls back to Text.
+// the message falls back to Text; so does a later layout, which is stopped
+// at this limit so one message cannot hold the shared worker.
 constexpr qint64 layoutLimitMs = 2000;
+// When a layout started now must stop; past it the message falls back to Text.
+std::chrono::steady_clock::time_point layoutDeadline() {
+    return std::chrono::steady_clock::now() + std::chrono::milliseconds(layoutLimitMs);
+}
 // The smallest scale a too-wide layout is shrunk to before it clips.
 constexpr qreal minimumScale = 0.5;
 std::atomic<qint64> liveTileBytes{0};
@@ -128,15 +134,16 @@ struct LayoutResult {
 };
 
 // Wider fixed layouts scale to fit, down to half size; beyond that they clip.
-LayoutResult layoutAt(HtmlDocument &document, qreal width) {
+LayoutResult layoutAt(HtmlDocument &document, qreal width, std::chrono::steady_clock::time_point deadline) {
     LayoutResult result;
-    QSizeF size = document.layout(width);
+    QSizeF size = document.layout(width, deadline);
     qreal scale = 1;
     if (size.width() > width + 0.5) {
         scale = std::max(minimumScale, width / size.width());
-        size = document.layout(std::floor(width / scale));
+        size = document.layout(std::floor(width / scale), deadline);
     }
     result.ok = size.height() >= 0;
+    if (!result.ok) result.failure = "This message's HTML took too long to lay out.";
     result.size = size;
     result.scale = scale;
     result.snapshot = document.snapshot();
@@ -234,7 +241,7 @@ void FmHtmlView::applyImages() {
             relayout = state->document->setImage(it.key(), image) || relayout;
         }
         result.ok = true;
-        if (relayout && width > 0) result = layoutAt(*state->document, width);
+        if (relayout && width > 0) result = layoutAt(*state->document, width, layoutDeadline());
         return result;
     }, [this, generation, key](LayoutResult result) {
         if (generation != m_generation) return;
@@ -378,6 +385,7 @@ void FmHtmlView::rebuild() {
     // once it is built within the time limit.
     runOnPool<LayoutResult>(this, [state, html, path, width, font, blocked, images, paths]() mutable {
         QElapsedTimer timer; timer.start();
+        const auto deadline = layoutDeadline();
         LayoutResult result;
         QByteArray source = html;
         if (source.isEmpty() && !path.isEmpty()) {
@@ -392,8 +400,8 @@ void FmHtmlView::rebuild() {
         }
         auto document = std::make_unique<HtmlDocument>(source, font, blocked, images);
         if (!document->valid()) { result.failure = "This message's HTML could not be laid out."; return result; }
-        result = layoutAt(*document, width);
-        if (timer.elapsed() > layoutLimitMs) { result.ok = false; result.failure = "This message's HTML took too long to lay out."; return result; }
+        result = layoutAt(*document, width, deadline);
+        if (!result.ok || timer.elapsed() > layoutLimitMs) { result.ok = false; result.failure = "This message's HTML took too long to lay out."; return result; }
         QMutexLocker lock(&state->mutex);
         state->document = std::move(document);
         return result;
@@ -418,7 +426,7 @@ void FmHtmlView::relayout() {
         const size_t key = layoutKey(width, m_appliedImages);
         runOnPool<LayoutResult>(this, [state, width] {
             QMutexLocker lock(&state->mutex);
-            return state->document ? layoutAt(*state->document, width) : LayoutResult{};
+            return state->document ? layoutAt(*state->document, width, layoutDeadline()) : LayoutResult{};
         }, [this, generation, key](LayoutResult result) {
             applyLayout(result.ok, result.failure, result.size, result.scale, std::move(result.snapshot), generation, key);
         });

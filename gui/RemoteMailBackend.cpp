@@ -121,8 +121,14 @@ QString MailBackend::unsubscribe(const QVariantMap &message) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const auto account = m_account, conversation = m_conversation.value("id").toString();
     // {id, source_version, method}: the method the reader read from the message's source.
+    // An email also names the address the person confirmed, and `fallback`
+    // when it replaces a one-click POST the list refused.
     const auto how = message.value("method").toString();
-    const QJsonObject params{{"id", message.value("id").toString()}, {"source_version", message.value("source_version").toString()}};
+    QJsonObject params{{"id", message.value("id").toString()}, {"source_version", message.value("source_version").toString()}};
+    if (how == u"mailto") {
+        params["address"] = message.value("address").toString();
+        if (message.value("fallback").toBool()) params["fallback"] = true;
+    }
     const QString method = how == u"mailto" ? "google_unsubscribe_mail" : "message_unsubscribe";
     QTimer::singleShot(0, this, [this, ticket, account, conversation, params, method] {
         const auto finish = [this, ticket, account, conversation](const QJsonObject &result, bool ok) {
@@ -135,16 +141,9 @@ QString MailBackend::unsubscribe(const QVariantMap &message) {
             }
             emit unsubscribeReady(ticket, result.toVariantMap(), ok);
         };
-        googleOperation(method, account, params, [this, account, params, finish](auto result, bool ok) {
-            // The list refused its one-click POST but takes an unsubscribe
-            // email: send that instead, as part of the same Unsubscribe.
-            if (!ok && result["code"].toString() == u"unsubscribe_by_email") {
-                auto fallback = params; fallback["fallback"] = true;
-                googleOperation("google_unsubscribe_mail", account, fallback, [finish](auto mailed, bool sent) { finish(mailed, sent); });
-                return;
-            }
-            finish(result, ok);
-        });
+        // A refused one-click POST answers `unsubscribe_by_email`; the reader
+        // then asks before sending the list's unsubscribe email.
+        googleOperation(method, account, params, finish);
     });
     return ticket;
 }

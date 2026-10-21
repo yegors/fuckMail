@@ -2150,25 +2150,25 @@ void MailBackend::saveDraft() {
     });
 }
 
-// Types that run code, install software or change settings when opened, and
-// pages that open in a browser, where a fake sign-in form is the usual trick.
-// Apple Mail and Outlook hold these back too; the person saves them instead.
-static bool opensAsProgram(const QString &suffix) {
+// Only types that open in an ordinary document, picture, audio or video viewer
+// are opened. Anything else, including a file with no extension or a type not
+// listed, may run code, install software, change settings or show a fake
+// sign-in page in a browser, so the person saves it instead, as Apple Mail and
+// Outlook ask. Macro-enabled Office types are left out; a zip opens as a
+// folder whose contents keep the downloaded-file mark on Windows and macOS.
+bool MailBackend::opensInViewer(const QString &path, const QString &name) {
     static const QSet<QString> types{
-        // macOS
-        "app", "command", "tool", "terminal", "scpt", "scptd", "applescript", "workflow", "action", "shortcut",
-        "pkg", "mpkg", "dmg", "fileloc", "inetloc", "webloc", "prefpane", "mobileconfig", "configprofile", "osax",
-        // Windows
-        "exe", "com", "scr", "pif", "bat", "cmd", "ps1", "psm1", "vb", "vbs", "vbe", "js", "jse", "ws", "wsf", "wsh",
-        "hta", "msi", "msp", "msix", "appx", "appxbundle", "appinstaller", "msc", "lnk", "url", "reg", "scf", "cpl",
-        "inf", "iso", "img", "vhd", "vhdx", "library-ms", "search-ms", "settingcontent-ms", "application", "appref-ms",
-        "gadget", "chm", "dll", "sys", "ocx",
-        // Linux and anywhere
-        "desktop", "sh", "bash", "zsh", "csh", "ksh", "run", "appimage", "deb", "rpm", "flatpakref", "snap", "jar",
-        "jnlp", "py", "pyw", "pl", "rb", "php",
-        // Pages that open in the browser
-        "html", "htm", "xhtml", "shtml", "mht", "mhtml", "svg", "svgz"};
-    return types.contains(suffix.toLower());
+        // Documents
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "pages", "numbers", "key",
+        // Plain text
+        "txt", "csv", "tsv", "md", "log",
+        // Pictures
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif", "avif",
+        // Audio and video
+        "mp3", "m4a", "aac", "wav", "flac", "ogg", "oga", "opus", "mp4", "m4v", "mov", "webm", "mkv", "avi",
+        // Archives
+        "zip"};
+    return types.contains(QFileInfo(path).suffix().toLower()) && types.contains(QFileInfo(name).suffix().toLower());
 }
 
 void MailBackend::openAttachment(const QString &id) {
@@ -2177,10 +2177,10 @@ void MailBackend::openAttachment(const QString &id) {
         const auto path = result["path"].toString();
         if (path.isEmpty()) { fail("This attachment has no complete, verified local copy (" + result["state"].toString("unavailable") + ")."); return; }
         const auto name = result["name"].toString();
-        const auto suffix = QFileInfo(path).suffix(), named = QFileInfo(name).suffix();
-        if (opensAsProgram(suffix) || opensAsProgram(named)) {
-            const auto type = (suffix.isEmpty() ? named : suffix).toLower();
-            showActionToast("fuckMail doesn't open ." + type + " files: they can run programs or show fake sign-in pages. Save it and open it yourself only if you trust it.",
+        if (!opensInViewer(path, name)) {
+            const auto type = QFileInfo(name).suffix().toLower();
+            showActionToast("fuckMail opens only documents, pictures, audio and video. Save this " + (type.isEmpty() ? QString() : "." + type + " ")
+                                + "file and open it yourself only if you trust it: it could run a program or show a fake sign-in page.",
                             "save_attachment", {{"account", m_account}, {"id", id}, {"name", name}}, 9000);
             return;
         }

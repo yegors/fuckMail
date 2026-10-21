@@ -44,6 +44,14 @@ Each is marked `fuckMail:` in the source. Reapply them when updating.
   blocks (30 s for a 34 KB message).
 - **Height-only images** (`render_image.cpp`): an image sized by its height alone
   stays within its column, keeping its shape.
+- **Render deadline** (`document.h/.cpp`, `render_item.cpp`, `formatting_context.cpp`):
+  `document::set_render_deadline` bounds `render()`. Each box and each placed
+  float checks it; past it a `render_timeout` unwinds to `document::render`,
+  which reports `render_timed_out()` and the document is discarded. Float
+  placement scans every earlier float, so 15,000 floats took 21 s.
+- **Font size bound** (`css_properties.cpp`): a computed font size is kept
+  finite and at most 1000px; nested em and percentage sizes otherwise
+  multiply to infinity.
 
 The app's container (`gui/HtmlDocument.cpp`) also adds break points inside long
 runs without spaces and makes `pre` wrap by default; those are not litehtml edits.

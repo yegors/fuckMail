@@ -21,33 +21,38 @@ Popup {
     property string ticket: ""
     property var preview: ({})
     property string error: ""
-    property bool preparingPoster:false
     // The player and its video output are created for the first video shown in
     // a viewing and released on close, so images and startup never load the
-    // media backend.
+    // media backend. A video's file reaches the player, and is decoded, only
+    // when the person presses Play; until then the frame shows a still placeholder.
     property bool mediaActive: false
     readonly property var player: playerLoader.item
     readonly property var audio: player ? player.audioOutput : null
     readonly property bool playing: !!player && player.playbackState === MediaPlayer.PlayingState
     readonly property var attachment: items[index] || ({})
     readonly property bool video: isVideo(attachment)
-    function isVideo(item) { return /^video\//i.test(item.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(item.name || "") }
+    // Only the formats the viewer plays; other videos open in the system's player.
+    function isVideo(item) { return /^video\/(mp4|webm|quicktime|x-matroska|x-m4v)$/i.test(item.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv)$/i.test(item.name || "") }
     readonly property real ratio: video ? (videoLoader.item && videoLoader.item.sourceRect.width > 0 && videoLoader.item.sourceRect.height > 0 ? videoLoader.item.sourceRect.width/videoLoader.item.sourceRect.height : 16/9) : preview.width && preview.height ? preview.width/preview.height : 4/3
     function show(accountId,media,at) { account=accountId;items=media;index=at;open();load() }
     function load() {
         // Read the item itself: from onIndexChanged, the `attachment` and
         // `video` bindings may still describe the previous one.
         const item=items[index] || ({})
-        preparingPoster=false; if (player) { player.stop(); player.source="" } preview={}; error=""
+        if (player) { player.stop(); player.source="" } preview={}; error=""
         if (isVideo(item)) mediaActive=true
         ticket=opened && item.id ? backend.requestAttachmentPreview(account,item.id,isVideo(item)) : ""
     }
     function step(delta) { if (!items.length) return;index=(index+delta+items.length)%items.length }
-    function togglePlayback() { if (video && player) {preparingPoster=false;posterReady.stop();playing ? player.pause() : player.play()} }
+    function togglePlayback() {
+        if (!video || !player || !preview.preview_url) return
+        if (!player.source.toString()) player.source=preview.preview_url
+        playing ? player.pause() : player.play()
+    }
     function clock(ms) { const s=Math.max(0,Math.floor(ms/1000));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0") }
     function size(bytes) { return bytes >= 1048576 ? (bytes/1048576).toFixed(1)+" MB" : bytes >= 1024 ? Math.ceil(bytes/1024)+" KB" : bytes+" B" }
     onIndexChanged: if (opened) load()
-    onClosed: { preparingPoster=false; posterReady.stop(); if (player) { player.stop(); player.source="" } mediaActive=false; ticket=""; preview={}; items=[] }
+    onClosed: { if (player) { player.stop(); player.source="" } mediaActive=false; ticket=""; preview={}; items=[] }
     Connections {
         target: backend
         function onAccountChanged() { viewer.close() }
@@ -59,7 +64,6 @@ Popup {
             // An error left by the previous item's player no longer applies.
             viewer.error=""
             viewer.preview=result
-            if (viewer.isVideo(item)) {viewer.preparingPoster=true; viewer.mediaActive=true; viewer.player.source=result.preview_url}
         }
     }
     background: Rectangle { color: "#e80e0f11" }
@@ -95,7 +99,7 @@ Popup {
                 MouseArea { anchors.fill:parent; hoverEnabled:true; onClicked:viewer.togglePlayback() }
                 HoverHandler { id: mediaHover }
                 FmButton {
-                    anchors.centerIn:parent; visible:viewer.video && !viewer.playing && !viewer.error.length
+                    objectName:"attachmentViewerPlay"; anchors.centerIn:parent; visible:viewer.video && !viewer.playing && !viewer.error.length && !!viewer.preview.preview_url
                     implicitWidth:64; implicitHeight:64; iconName:"play"; iconSize:22; foreground:"#e9eaec"
                     background:Rectangle { radius:32; color:"#b00e0f11";border.color:"#60e9eaec" }
                     onClicked:viewer.togglePlayback()
@@ -133,10 +137,8 @@ Popup {
     Loader {
         id: playerLoader; active: viewer.mediaActive
         sourceComponent: MediaPlayer { objectName:"attachmentMediaPlayer";videoOutput:videoLoader.item;audioOutput:AudioOutput {objectName:"attachmentAudio"}
-            onMediaStatusChanged: if (mediaStatus===MediaPlayer.LoadedMedia && viewer.preparingPoster) {audioOutput.muted=true;play();posterReady.start()}
             // Clearing the source between items is not a failure to show.
-            onErrorOccurred:{if (!source.toString()) return;viewer.preparingPoster=false;viewer.error=errorString}
+            onErrorOccurred:{if (!source.toString()) return;viewer.error=errorString}
         }
     }
-    Timer {id:posterReady;interval:100;onTriggered:{if(viewer.preparingPoster && viewer.player) {viewer.preparingPoster=false;viewer.player.pause();viewer.player.position=0;viewer.audio.muted=false}}}
 }

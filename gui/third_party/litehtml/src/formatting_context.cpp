@@ -2,9 +2,12 @@
 #include "types.h"
 #include <optional>
 #include "formatting_context.h"
+#include "document.h"
 
 void litehtml::formatting_context::add_float(const std::shared_ptr<render_item>& el, pixel_t min_width, int context)
 {
+    // fuckMail: placing a float scans every earlier one, so check the deadline.
+    el->src_el()->get_document()->check_render_deadline();
     floated_box fb;
     fb.pos.x        = el->left() + m_current_left;
     fb.pos.y        = el->top() + m_current_top;

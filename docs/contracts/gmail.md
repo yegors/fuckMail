@@ -1,5 +1,13 @@
 # Gmail provider
 
+## D212 — unsubscribe email needs a confirmed address at the sender's own domain (Gmail46)
+
+- `google_unsubscribe_mail` requires `address`, the address the person confirmed, and refuses unless it equals the address the message's unsubscribe would go to (Core99). The GUI sends it only from its confirmation, including the `fallback` after a refused one-click POST.
+- A `mailto:` address is an unsubscribe route only when Gmail verified the From domain (DMARC pass, or a passing DKIM signature aligned with From) and the address is on the From domain or a subdomain of it. At shared mailbox providers (Gmail, Outlook/Hotmail/Live, Yahoo, iCloud, AOL, Proton, GMX, Yandex, Mail.ru, Zoho) it must be the From address itself. Replaces D210's "any authenticated domain".
+
+Consumers: Core99, Mail UI154, CLI64.
+
+
 ## D210 — unsubscribe email to authenticated domains, remote previews and verdicts (Gmail45)
 
 - `google_unsubscribe_mail`, including its `fallback` after a refused one-click POST, sends only to a `mailto:` address in a domain Gmail authenticated for the message (Core97). Otherwise there is no email route and the reader offers the list's page link, if any.

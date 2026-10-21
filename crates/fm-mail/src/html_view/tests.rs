@@ -621,6 +621,79 @@ fn table_display_is_bounded() {
     assert_eq!(view.html.matches(">t<").count(), 5_000);
 }
 
+#[test]
+fn floats_are_bounded() {
+    // litehtml places floats in time superlinear in their number: a
+    // stylesheet floating 15,000 words took 21 s to lay out.
+    let words = "<b>a</b>".repeat(15_000);
+    let view = sanitize(&format!(
+        "<style>b{{float:left;color:red}} .few{{float:right}}</style>{words}<div class=few>f</div>"
+    ))
+    .unwrap();
+    assert!(view.limited);
+    // As with table parts, every floating rule loses its floats together.
+    assert_eq!(style(&view.html), "b{color:red}");
+    assert_eq!(view.html.matches(">a<").count(), 15_000);
+    // Inline floats and floating `align` count together, in document order.
+    let inline = r#"<div style="float:left;color:red">d</div>"#.repeat(150);
+    let images = r#"<img src="https://example.test/i.png" width="9" height="9" align="right">"#;
+    let tables = r#"<table align="left"><tr><td>t</td></tr></table>"#.repeat(100);
+    let view = sanitize(&format!("{inline}{}{tables}", images.repeat(10))).unwrap();
+    assert!(view.limited);
+    assert_eq!(view.html.matches("float:left").count(), 150);
+    assert_eq!(view.html.matches(r#"align="right""#).count(), 10);
+    assert_eq!(
+        view.html.matches(r#"align="left""#).count(),
+        MAX_FLOATS - 160
+    );
+    assert_eq!(view.html.matches("color:red").count(), 150);
+    assert_eq!(view.html.matches(">t<").count(), 100);
+    // A stylesheet reaching the floats left over is stripped too.
+    let view = sanitize(&format!(
+        "<style>.c{{float:left}}</style>{}{}",
+        r#"<div style="float:left">d</div>"#.repeat(150),
+        r#"<p class="c">c</p>"#.repeat(60)
+    ))
+    .unwrap();
+    assert!(view.limited);
+    assert_eq!(style(&view.html), "");
+    // A newsletter's columns, `float:none` and centred tables are untouched.
+    let css = ".col{float:left;width:50%} .stack{float:none} img{float:right}";
+    let body = r#"<div class="col">c</div>"#.repeat(40)
+        + &r#"<p class="stack">s</p>"#.repeat(500)
+        + &r#"<table align="center"><tr><td>t</td></tr></table>"#.repeat(300);
+    let view = sanitize(&format!("<style>{css}</style>{body}")).unwrap();
+    assert!(!view.limited);
+    assert_eq!(style(&view.html), css.replace("; ", ";").replace("} ", "}"));
+    assert_eq!(view.html.matches(r#"align="center""#).count(), 300);
+}
+
+#[test]
+fn background_sizes_are_bounded() {
+    // A tiled background is painted at its size; huge sizes cost gigabytes.
+    let view = sanitize(
+        r#"<div style="background:url(cid:a@example.test);background-size:10000px 10000px">a</div><p style="font-size:200px;background-size:200em 3rem;background-position:9000px 0">b</p><i style="background:url(cid:a@example.test) 0 0/50000px auto;width:9000px">c</i>"#,
+    )
+    .unwrap();
+    assert!(
+        view.html.contains("background-size:4000px 4000px"),
+        "{}",
+        view.html
+    );
+    assert!(
+        view.html.contains("background-size:20em 3rem"),
+        "{}",
+        view.html
+    );
+    assert!(
+        view.html.contains("background-position:9000px 0"),
+        "{}",
+        view.html
+    );
+    assert!(view.html.contains("0 0/4000px auto"), "{}", view.html);
+    assert!(view.html.contains("width:9000px"), "{}", view.html);
+}
+
 /// Start and end tags in the order a sanitised document writes them.
 fn written_tags(html: &str) -> Vec<String> {
     let mut tags = Vec::new();

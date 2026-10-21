@@ -2,6 +2,20 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-21
+
+- A booby-trapped email can no longer crash or stall the engine: HTML built to be slow to parse is shown as plain text, and the reader stops any layout that takes more than 2 seconds, including after a resize or an image loads.
+- Huge background images, hundreds of floating boxes and runaway font sizes in HTML mail no longer freeze the reader or use gigabytes of memory.
+- A calendar invite with a hostile repeat rule can no longer freeze the app, and a flood of invites can't push your own recurring meetings off crowded day, week or month views. Repeats more often than daily, including several times of day, show as unsupported.
+- Unsubscribe never sends an email without asking. When a list refuses one-click unsubscribe and offers an email instead, fuckMail shows the address, subject and text first.
+- An unsubscribe email can only go to the verified sender's own domain; at Gmail, Outlook and other shared providers, only to the sender's own address. Some newsletters now offer their web page instead.
+- A forged result hidden in a message's headers can no longer make a spoofed sender look verified, and a message that fails DMARC is never treated as verified.
+- Only documents, pictures, audio, video and zip files open from fuckMail. Anything else, including unknown types, files without an extension and macro-enabled Office files, must be saved and opened yourself.
+- Downloaded attachments get a clean name: no hidden leading dot, no invisible or right-to-left characters, no Windows device names. If Downloads is set to your home folder, they go to `~/Downloads`.
+- Videos are checked by their first bytes and decode only when you press Play. Only MP4, QuickTime, Matroska and WebM play in the viewer; other videos open in your system player.
+- `fm` replaces terminal control characters in mail and calendar text, so a message can't rewrite your terminal or clipboard.
+- Linux notifications show a subject's tags as text instead of rendering them.
+
 ## 2026-10-16
 
 - A subject pasted with a line break or tab no longer fails to save with "Subject must be one line". Line breaks and tabs become a single space, as the field already showed.

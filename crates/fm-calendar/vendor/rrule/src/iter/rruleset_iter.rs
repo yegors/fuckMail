@@ -1,7 +1,7 @@
 use chrono::DateTime;
 
 use super::rrule_iter::WasLimited;
-use super::{rrule_iter::RRuleIter, MAX_ITER_LOOP};
+use super::{rrule_iter::RRuleIter, MAX_ITER_LOOP, MAX_ITER_WORK};
 use crate::RRuleSet;
 use crate::{RRuleError, Tz};
 use std::collections::BTreeSet;
@@ -62,9 +62,11 @@ impl RRuleSetIter {
         exdates: &mut BTreeSet<i64>,
         limited: bool,
     ) -> (Option<DateTime<Tz>>, bool) {
+        // fuckMail patch: report a rule iterator stopped by its limits so the
+        // set's result is marked limited instead of looking complete.
         let mut date = match rrule_iter.next() {
             Some(d) => d,
-            None => return (None, false),
+            None => return (None, rrule_iter.was_limited()),
         };
         let mut loop_counter: u32 = 0;
         while Self::is_date_excluded(&date, exrules, exdates) {
@@ -83,7 +85,7 @@ impl RRuleSetIter {
 
             date = match rrule_iter.next() {
                 Some(d) => d,
-                None => return (None, false),
+                None => return (None, rrule_iter.was_limited()),
             };
         }
 
@@ -207,21 +209,21 @@ impl IntoIterator for &RRuleSet {
             .sort_by(|d1, d2| d2.partial_cmp(d1).expect("Could not order dates correctly"));
 
         let limited = self.limited;
+        // fuckMail patch: split one work budget across the set's rules so
+        // extra RRULE lines cannot multiply the bounded work.
+        let rules = (self.rrule.len() + self.exrule.len()).max(1) as u64;
+        let budgeted = |rrule: &crate::RRule| {
+            let mut iter = rrule.iter_with_ctx(self.dt_start, limited);
+            iter.work_budget = MAX_ITER_WORK / rules;
+            iter
+        };
 
         RRuleSetIter {
             queue: HashMap::new(),
             limited,
-            rrule_iters: self
-                .rrule
-                .iter()
-                .map(|rrule| rrule.iter_with_ctx(self.dt_start, limited))
-                .collect(),
+            rrule_iters: self.rrule.iter().map(budgeted).collect(),
             rdates: rdates_sorted,
-            exrules: self
-                .exrule
-                .iter()
-                .map(|exrule| exrule.iter_with_ctx(self.dt_start, limited))
-                .collect(),
+            exrules: self.exrule.iter().map(budgeted).collect(),
             exdates: self.exdate.iter().map(DateTime::timestamp).collect(),
             was_limited: false,
         }

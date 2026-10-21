@@ -1,6 +1,6 @@
 use super::counter_date::DateTimeIter;
 use super::utils::add_time_to_date;
-use super::{build_pos_list, utils::date_from_ordinal, IterInfo, MAX_ITER_LOOP};
+use super::{build_pos_list, utils::date_from_ordinal, IterInfo, MAX_ITER_LOOP, MAX_ITER_WORK};
 use crate::core::{get_hour, get_minute, get_second};
 use crate::{Frequency, RRule, Tz};
 use chrono::NaiveTime;
@@ -25,6 +25,11 @@ pub(crate) struct RRuleIter {
     pub(crate) limited: bool,
     /// If the iterator has been stopped by the iterator limits.
     pub(crate) was_limited: bool,
+    /// fuckMail patch: candidate work spent over the iterator's lifetime,
+    /// including candidates later dropped by `after`/`before` filtering.
+    pub(crate) work: u64,
+    /// fuckMail patch: lifetime work allowed; a set shares one budget.
+    pub(crate) work_budget: u64,
 }
 
 impl RRuleIter {
@@ -47,6 +52,8 @@ impl RRuleIter {
             count,
             limited,
             was_limited: false,
+            work: 0,
+            work_budget: MAX_ITER_WORK,
         }
     }
 
@@ -122,6 +129,22 @@ impl RRuleIter {
                 self.counter_date.month,
                 self.counter_date.day,
             );
+
+            // fuckMail patch: `MAX_ITER_LOOP` only counts empty rounds within
+            // one call, and `after` filters without skipping, so every
+            // candidate from DTSTART to the window costs work. Charge each
+            // period's candidates before generating them and stop for good
+            // once the lifetime budget is spent.
+            if self.limited {
+                let candidates = (dayset.len() as u64).saturating_mul(self.timeset.len() as u64);
+                self.work = self.work.saturating_add(1).saturating_add(candidates);
+                if self.work > self.work_budget {
+                    self.finished = true;
+                    self.was_limited = true;
+                    log::warn!("Reached max iteration work (`{}`).", self.work_budget);
+                    return true;
+                }
+            }
 
             let tz = self.dt_start.timezone();
 

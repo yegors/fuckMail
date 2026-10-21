@@ -283,6 +283,26 @@ void GuiCompositionSelfTest::step() {
         m_originalFolder=m_backend.folder(); m_originalQuery=m_backend.query(); m_originalCategory=m_backend.category();
         m_originalFocus=m_window->activeFocusItem(); m_originalWorkspace=m_window->property("workspace").toString(); m_originalSettings=m_window->property("settingsOpen").toBool();
         m_window->setProperty("settingsOpen",false); m_window->setProperty("workspace","mail");
+        if (m_attachmentsOnly) {
+            // A received attachment opens only as a document, picture, audio or
+            // video, by both its local copy's and its sender-given extension.
+            const QString exported="C:/profile/exports/attachment-file-0123456789ab";
+            const QList<std::pair<QString,QString>> refused{{exported+".pyz","invoice.pyz"},{exported,"invoice"},{exported+".pdf","invoice.pdf.exe"},
+                {exported+".exe","invoice.pdf"},{exported+".docm","budget.docm"},{exported+".website","pin.website"},{exported+".xht","page.xht"},{exported+".pdf","invoice.pdf "}};
+            for (const auto &[path,name]: refused) if (MailBackend::opensInViewer(path,name)) { finish("A received "+name+" would open directly instead of being saved."); return; }
+            for (const auto &type: {"pdf","docx","PNG","txt","mp4","zip"})
+                if (!MailBackend::opensInViewer(exported+"."+type,QString("report.")+type)) { finish(QString("A received .")+type+" no longer opens in its viewer."); return; }
+            // A Downloads name never hides, names a device or stream, or reverses its text.
+            const QList<std::pair<QString,QString>> names{{".bash_profile","bash_profile"},{QStringLiteral("invoice\u202Efdp.exe"),"invoice_fdp.exe"},{"CON.txt","_CON.txt"},
+                {"com1","_com1"},{"a:b.txt","a_b.txt"},{"report.pdf.","report.pdf"},{"notes. ","notes"},{"..\\..\\x/../.xsessionrc","xsessionrc"},
+                {"a\tb<c>|\"d?*.txt","a_b_c___d__.txt"},{"","attachment"},{"...","attachment"},{QStringLiteral("R\u00e9sum\u00e9 2026.pdf"),QStringLiteral("R\u00e9sum\u00e9 2026.pdf")}};
+            for (const auto &[name,expected]: names)
+                if (MailBackend::safeDownloadName(name)!=expected) { finish("Download name for "+name+" became "+MailBackend::safeDownloadName(name)+", not "+expected+"."); return; }
+            const auto longName=MailBackend::safeDownloadName(QString(300,QChar(0x00e9))+".pdf");
+            if (longName.toUtf8().size()>200 || !longName.endsWith(".pdf")) { finish("A long download name was not shortened before its extension."); return; }
+            const auto location=QFileInfo(m_backend.attachmentSaveLocation(".profile").toLocalFile());
+            if (location.fileName()!="profile" || QDir(location.absolutePath())==QDir(QDir::homePath())) { finish("A download could land in the home folder as a hidden startup file."); return; }
+        }
         m_backend.selectAccount("windscribe"); m_backend.setFolder("inbox"); m_backend.setQuery(""); m_backend.setCategory(""); m_backend.applyFilters({}); m_stage=m_attachmentsOnly?70:1; break;
     case 1:
         if (!saved() || !click("newMessageButton")) return; m_stage=2; break;

@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QImage>
+#include <QPainter>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
@@ -14,6 +15,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 
@@ -165,6 +168,62 @@ Flickable {
         check(timer.elapsed() < 5000, "4,000 blocks under 120 inline boxes lay out quickly");
     }
 
+    // Tiled backgrounds repeat at their background-size. A huge size is
+    // scaled as it is painted, never as a copy (40,000 px square is 6.4 GB).
+    {
+        QImage pair(2, 1, QImage::Format_ARGB32_Premultiplied);
+        pair.setPixelColor(0, 0, Qt::red); pair.setPixelColor(1, 0, Qt::blue);
+        HtmlImage ready; ready.state = HtmlImage::Ready; ready.image = pair; ready.size = pair.size();
+        HtmlImage plain = ready; plain.image = QImage(1, 1, QImage::Format_ARGB32_Premultiplied); plain.image.fill(Qt::red); plain.size = {1, 1};
+        const auto paint = [](HtmlDocument &document, int width) {
+            QImage canvas(width, 640, QImage::Format_ARGB32_Premultiplied);
+            canvas.fill(Qt::white);
+            QPainter painter(&canvas);
+            document.paint(painter, QRectF(0, 0, width, 640));
+            return canvas;
+        };
+        const auto at = [](const QImage &image, int x, int y, QColor c) { return countNear(image, QRect(x, y, 1, 1), c, 40) == 1; };
+        HtmlDocument tiles("<body style=\"margin:0\"><div style=\"height:40px;background:url(fm-res:1);background-size:20px 10px\"></div>", 16, {}, {{1, ready}});
+        tiles.layout(480);
+        const auto tiled = paint(tiles, 480);
+        check(at(tiled, 5, 3, Qt::red) && at(tiled, 15, 3, Qt::blue) && at(tiled, 25, 13, Qt::red) && at(tiled, 35, 33, Qt::blue),
+              "a tiled background repeats at its background-size");
+        // 3,000 px tiles from an offset origin take the scaling brush.
+        HtmlDocument wide("<body style=\"margin:0\"><div style=\"margin-left:100px;height:600px;background:url(fm-res:1);background-size:3000px 3000px\"></div>", 16, {}, {{1, ready}});
+        wide.layout(3200);
+        const auto large = paint(wide, 3200);
+        check(at(large, 850, 50, Qt::red) && at(large, 2350, 50, Qt::blue) && at(large, 50, 50, Qt::white),
+              "a large tile is scaled and placed by the brush");
+        QElapsedTimer timer; timer.start();
+        HtmlDocument huge("<body style=\"margin:0\"><div style=\"height:300px;background:url(fm-res:2);background-size:40000px 40000px\"></div>"
+                          "<div style=\"font-size:200px;height:300px;background:url(fm-res:2);background-size:200em 200em\"></div>",
+                          16, {}, {{2, plain}});
+        huge.layout(480);
+        const auto big = paint(huge, 480);
+        check(timer.elapsed() < 2000 && countNear(big, QRect(0, 0, 480, 600), Qt::red, 10) > 280000,
+              "a 40,000 px background tile paints quickly");
+    }
+
+    // Nested relative font sizes stay finite.
+    {
+        HtmlDocument fonts(QByteArray("<span style=\"font-size:200%\">").repeated(40) + "deep text" + QByteArray("</span>").repeated(40), 16, {}, {});
+        const auto size = fonts.layout(480);
+        check(std::isfinite(size.width()) && std::isfinite(size.height()) && size.height() > 0 && size.height() <= 4'000'000
+                  && fonts.snapshot().text.contains("deep"),
+              "forty nested doubled font sizes lay out at a bounded size");
+    }
+
+    // Thousands of floats stop at the layout deadline instead of holding the
+    // shared worker for half a minute.
+    {
+        const QByteArray floats = "<style>b{float:left}</style>" + QByteArray("<b>a</b>").repeated(15000);
+        QElapsedTimer timer; timer.start();
+        HtmlDocument document(floats, 16, {}, {});
+        const auto size = document.layout(480, std::chrono::steady_clock::now() + std::chrono::milliseconds(500));
+        check(timer.elapsed() < 3000, "a layout past its deadline stops");
+        check(size.isValid() == document.valid(), "a stopped layout leaves no document");
+    }
+
     // Links: hover and click by id; blocked links stay clickable only through QML's check.
     QSignalSpy activated(view, &FmHtmlView::linkActivated);
     const auto linkBox = view->linkRects(1).first().toRectF();
@@ -274,6 +333,16 @@ Flickable {
     }
     check(scrolled, "scrolling through the message paints each new position");
     check(view->debugState()["tiles"].toInt() <= 4 && FmHtmlView::tileBytes() <= 32ll * 1024 * 1024, "tiles stay within the budget after scrolling");
+
+    // A message whose layout runs past the limit falls back, and the next
+    // message still lays out.
+    {
+        QElapsedTimer timer; timer.start();
+        view->setContent(content("<style>b{float:left}</style>" + QString("<b>a</b>").repeated(15000)));
+        check(await([&] { return view->status() != "loading"; }, 15000) && timer.elapsed() < 6000, "hostile floats finish within the layout limit");
+        view->setContent(content("<p>After the floats</p>"));
+        check(await(ready) && view->text().contains("After the floats"), "the next message lays out");
+    }
 
     // Unreadable HTML falls back.
     view->setContent({{"html_path", dir.filePath("missing.html")}, {"resources", QVariantList{}}});

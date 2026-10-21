@@ -1933,7 +1933,11 @@ fn cli_main() {
         if args.json {
             let _ = writeln!(io::stdout(), "{}", e.json_reply());
         } else {
-            eprintln!("fm: {}: {}", e.code, e.message);
+            eprintln!(
+                "fm: {}: {}",
+                terminal_line(&e.code),
+                terminal_line(&e.message)
+            );
         }
         // Stable exit codes for scripts: 2 invalid input, 3 authentication or
         // permission, 4 stale revision or cursor, 5 missing or unavailable
@@ -2883,7 +2887,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     (command, args.json, saved["output"]["summary"].as_str())
                 {
                     let mut out = io::stdout().lock();
-                    let written = writeln!(out, "{summary}").and_then(|()| {
+                    let written = writeln!(out, "{}", terminal_text(summary)).and_then(|()| {
                         if saved["partial"] == true {
                             writeln!(out, "(Partial: older messages were shortened or left out.)")
                         } else {
@@ -3129,6 +3133,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 let source = result(client.call("message_source", scope, params.clone()).await?)?;
                 match source["unsubscribe"]["method"].as_str() {
                     Some("mailto") => {
+                        // The person asked for this message's unsubscribe
+                        // email; the engine sends only to the address read here.
+                        let mut params = params;
+                        params["address"] = source["unsubscribe"]["address"].clone();
                         client.call("google_unsubscribe_mail", scope, params).await?
                     }
                     Some(_) => client.call("message_unsubscribe", scope, params).await?,
@@ -3783,26 +3791,33 @@ async fn message_images(
 /// JSON of the `result`. A closed stdout is either ignored or returned as
 /// `broken_pipe`, which `main` treats as a quiet exit.
 fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
-    let mut out = io::stdout().lock();
+    match write_reply(&mut io::stdout().lock(), args.json, reply) {
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        other => other.map_err(Failure::from),
+    }
+}
+
+/// Writes one reply as `emit` describes. Text output passes every string
+/// through `terminal_line` or `terminal_text`, because subjects, names and
+/// bodies come from whoever sent the mail. `--json` output is left exactly as
+/// serde writes it; its string escaping already keeps control bytes inert.
+fn write_reply(out: &mut impl Write, json: bool, reply: &Value) -> io::Result<()> {
     let result = &reply["result"];
-    let write = if args.json {
+    let line = |value: &Value| terminal_line(value.as_str().unwrap_or("")).into_owned();
+    if json {
         writeln!(out, "{reply}")
     } else if result["configured"].is_boolean() && result["accounts"].is_array() {
         // Sync status also has an `accounts` array; print it whole rather than
         // as an account list.
-        writeln!(
-            out,
-            "{}",
-            serde_json::to_string_pretty(result).unwrap_or_else(|_| "{}".into())
-        )
+        write_pretty(out, result)
     } else if let Some(accounts) = result["accounts"].as_array() {
         for a in accounts {
             writeln!(
                 out,
                 "{}  {} <{}>  {} unread · {} starred",
-                a["id"].as_str().unwrap_or(""),
-                a["name"].as_str().unwrap_or(""),
-                a["email"].as_str().unwrap_or(""),
+                line(&a["id"]),
+                line(&a["name"]),
+                line(&a["email"]),
                 a["unread_count"],
                 a["starred_count"]
             )?;
@@ -3813,11 +3828,11 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
             writeln!(
                 out,
                 "{}  {}{}  {} · {}",
-                row["id"].as_str().unwrap_or(""),
+                line(&row["id"]),
                 if row["unread"] == true { "●" } else { " " },
                 if row["starred"] == true { "★" } else { " " },
-                row["subject"].as_str().unwrap_or(""),
-                row["sender_name"].as_str().unwrap_or("")
+                line(&row["subject"]),
+                line(&row["sender_name"])
             )?;
         }
         if !result["next_offset"].is_null() {
@@ -3825,43 +3840,97 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
         }
         Ok(())
     } else if let Some(messages) = result["messages"].as_array() {
-        writeln!(out, "{}\n", result["subject"].as_str().unwrap_or(""))?;
+        writeln!(out, "{}\n", line(&result["subject"]))?;
         for msg in messages {
             writeln!(
                 out,
                 "{} <{}> · {}\n{}\n",
-                msg["sender_name"].as_str().unwrap_or(""),
-                msg["sender_email"].as_str().unwrap_or(""),
-                msg["sent_at"].as_str().unwrap_or(""),
-                msg["text"].as_str().unwrap_or("")
+                line(&msg["sender_name"]),
+                line(&msg["sender_email"]),
+                line(&msg["sent_at"]),
+                terminal_text(msg["text"].as_str().unwrap_or(""))
             )?;
         }
         if let Some(delivery) = result["delivery"].as_object() {
             writeln!(
                 out,
                 "Google delivery: {} · request {}",
-                delivery
-                    .get("state")
-                    .and_then(Value::as_str)
-                    .unwrap_or("pending"),
-                delivery
-                    .get("request_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
+                terminal_line(
+                    delivery
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .unwrap_or("pending")
+                ),
+                terminal_line(
+                    delivery
+                        .get("request_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                )
             )?;
         }
         Ok(())
     } else {
-        writeln!(
-            out,
-            "{}",
-            serde_json::to_string_pretty(result).unwrap_or_else(|_| "{}".into())
-        )
-    };
-    match write {
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
-        other => other.map_err(Failure::from),
+        write_pretty(out, result)
     }
+}
+
+/// Pretty-prints JSON for people. serde escapes C0 controls in strings but
+/// writes DEL, C1 controls and bidi overrides as they are, so the text still
+/// goes through `terminal_text`.
+fn write_pretty(out: &mut impl Write, value: &Value) -> io::Result<()> {
+    let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".into());
+    writeln!(out, "{}", terminal_text(&pretty))
+}
+
+/// What replaces a character a terminal could act on.
+const TERMINAL_REPLACEMENT: char = '\u{FFFD}';
+
+/// Characters a terminal or pager may treat as commands rather than text: C0
+/// controls (escape sequences start with ESC), DEL, C1 controls (U+009B and
+/// U+009D start CSI and OSC sequences on their own) and the bidi embeddings,
+/// overrides and isolates that reorder what follows them. Letters of every
+/// script, emoji and the plain LRM/RLM marks are text and stay.
+fn terminal_unsafe(c: char) -> bool {
+    matches!(c, '\0'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Text that may span lines, such as a message body, made safe to print:
+/// keeps newlines and tabs, turns CRLF into a newline and replaces every
+/// other `terminal_unsafe` character, including a lone carriage return that
+/// could overwrite the line it is on.
+fn terminal_text(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(terminal_unsafe) {
+        return text.into();
+    }
+    let mut chars = text.chars().peekable();
+    let mut safe = String::with_capacity(text.len());
+    while let Some(c) = chars.next() {
+        match c {
+            '\n' | '\t' => safe.push(c),
+            '\r' if chars.peek() == Some(&'\n') => {}
+            c if terminal_unsafe(c) => safe.push(TERMINAL_REPLACEMENT),
+            c => safe.push(c),
+        }
+    }
+    safe.into()
+}
+
+/// A one-line field, such as a subject or name, made safe to print: line
+/// breaks and tabs become spaces so the field can't forge another line, and
+/// other `terminal_unsafe` characters are replaced.
+fn terminal_line(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains(terminal_unsafe) {
+        return text.into();
+    }
+    text.chars()
+        .map(|c| match c {
+            '\n' | '\r' | '\t' => ' ',
+            c if terminal_unsafe(c) => TERMINAL_REPLACEMENT,
+            c => c,
+        })
+        .collect::<String>()
+        .into()
 }
 
 #[cfg(test)]
@@ -4398,5 +4467,71 @@ mod tests {
                 "{tail:?}"
             );
         }
+    }
+
+    fn human(reply: &Value) -> String {
+        let mut out = Vec::new();
+        write_reply(&mut out, false, reply).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn human_output_neutralizes_terminal_controls_from_mail() {
+        // An encoded subject that decodes to an OSC 52 clipboard write.
+        let osc52 = "Hi\u{1b}]52;c;ZWNobyBoaQ==\u{7}";
+        let list = ok(json!({"conversations": [{
+            "id": "c1", "unread": true, "starred": false,
+            "subject": format!("{osc52}\r\nforged line"),
+            "sender_name": "\u{202e}gpj.exe Ada Example",
+        }]}));
+        let text = human(&list);
+        assert!(!text.contains('\u{1b}') && !text.contains('\u{7}'));
+        assert!(!text.contains('\u{202e}'), "{text:?}");
+        assert!(text.contains("Hi\u{FFFD}]52;c;ZWNobyBoaQ==\u{FFFD}  forged line"));
+        assert!(text.contains("\u{FFFD}gpj.exe Ada Example"));
+        assert_eq!(text.lines().count(), 1, "{text:?}");
+
+        let conversation = ok(json!({"subject": "Plan", "messages": [{
+            "sender_name": "Bea \u{9b}2J", "sender_email": "bea@example.test",
+            "sent_at": "2026-10-01",
+            "text": "Line one\r\n\u{1b}[2J\u{1b}[Hfake\rover\twritten\nend\u{7f}",
+        }]}));
+        let text = human(&conversation);
+        assert!(text.contains("Bea \u{FFFD}2J <bea@example.test>"));
+        assert!(
+            text.contains("Line one\n\u{FFFD}[2J\u{FFFD}[Hfake\u{FFFD}over\twritten\nend\u{FFFD}")
+        );
+        assert!(
+            !text.contains(['\u{1b}', '\u{9b}', '\r', '\u{7f}']),
+            "{text:?}"
+        );
+
+        // Other replies print as pretty JSON, where C1 and bidi pass serde.
+        let other = ok(json!({"name": "a\u{9d}8;;x\u{9c}\u{2066}b\u{7f}"}));
+        let text = human(&other);
+        assert!(
+            text.contains("a\u{FFFD}8;;x\u{FFFD}\u{FFFD}b\u{FFFD}"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn human_output_keeps_ordinary_unicode_and_json_stays_exact() {
+        let plain = "Café 東京 🎉 שלום مرحبا \u{200f}Zoë\u{200e}";
+        assert_eq!(terminal_line(plain), plain);
+        assert_eq!(
+            terminal_text(&format!("{plain}\n\tok")),
+            format!("{plain}\n\tok")
+        );
+        let reply = ok(json!({"conversations": [{
+            "id": "c1", "subject": format!("{plain} \u{1b}]52;c;eA==\u{7}\u{9b}\u{202e}"),
+            "sender_name": plain,
+        }]}));
+        assert!(human(&reply).ends_with(&format!(
+            "  {plain} \u{FFFD}]52;c;eA==\u{FFFD}\u{FFFD}\u{FFFD} · {plain}\n"
+        )));
+        let mut out = Vec::new();
+        write_reply(&mut out, true, &reply).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), format!("{reply}\n"));
     }
 }

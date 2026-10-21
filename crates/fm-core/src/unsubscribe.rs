@@ -138,12 +138,45 @@ pub fn resolve(plan: &UnsubscribePlan) -> Result<Unsubscribe> {
         .ok_or_else(|| err("not_found", "This message has no way to unsubscribe"))
 }
 
-/// The reader's description of `unsubscribe`, or null.
-pub(crate) fn describe(found: Option<&Unsubscribe>) -> Value {
+/// An unsubscribe email goes out only to the address the person was shown
+/// and agreed to: `confirmed` must name the address `found` writes to.
+pub fn check_confirmed(found: &Unsubscribe, confirmed: Option<&str>) -> Result<()> {
+    match (found, confirmed) {
+        (Unsubscribe::Mailto { address, .. }, Some(confirmed))
+            if confirmed.trim().eq_ignore_ascii_case(address) =>
+        {
+            Ok(())
+        }
+        _ => Err(err(
+            "invalid_request",
+            "Confirm the unsubscribe email's address before it is sent",
+        )),
+    }
+}
+
+/// The reader's description of `unsubscribe`, or null. An email shows its
+/// `address`, `subject` and `body` for the person to confirm; one-click
+/// carries the list's email as `mailto` (or null), asked about only if the
+/// list refuses the POST.
+pub(crate) fn describe(found: Option<&Unsubscribe>, alternative: Option<&Unsubscribe>) -> Value {
+    let email = |found: Option<&Unsubscribe>| match found {
+        Some(Unsubscribe::Mailto {
+            address,
+            subject,
+            body,
+        }) => json!({"address":address,"subject":subject,"body":body}),
+        _ => Value::Null,
+    };
     match found {
         None => Value::Null,
-        Some(Unsubscribe::OneClick { url }) => json!({"method":"one_click","url":url}),
-        Some(Unsubscribe::Mailto { address, .. }) => json!({"method":"mailto","address":address}),
+        Some(Unsubscribe::OneClick { url }) => {
+            json!({"method":"one_click","url":url,"mailto":email(alternative)})
+        }
+        Some(mailto @ Unsubscribe::Mailto { .. }) => {
+            let mut described = email(Some(mailto));
+            described["method"] = "mailto".into();
+            described
+        }
         Some(Unsubscribe::Link { url }) => json!({"method":"link","url":url}),
     }
 }
@@ -181,6 +214,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read["unsubscribe"]["method"], "one_click");
+        // The source has no Gmail verdicts, so its list address is not offered.
+        assert!(read["unsubscribe"]["mailto"].is_null());
         let plan = store.unsubscribe_begin(&account, &request).unwrap();
         assert_eq!(
             resolve(&plan).unwrap(),
@@ -201,5 +236,34 @@ mod tests {
         assert!(store
             .unsubscribe_begin(&account, &json!({"id":mid,"source_version":"stale"}))
             .is_err());
+    }
+
+    #[test]
+    fn an_unsubscribe_email_is_described_and_needs_its_address_confirmed() {
+        let email = Unsubscribe::Mailto {
+            address: "leave@list.test".into(),
+            subject: "stop".into(),
+            body: "please".into(),
+        };
+        assert_eq!(
+            describe(Some(&email), None),
+            json!({"method":"mailto","address":"leave@list.test","subject":"stop","body":"please"})
+        );
+        let one_click = Unsubscribe::OneClick {
+            url: "https://list.test/u".into(),
+        };
+        assert_eq!(
+            describe(Some(&one_click), Some(&email))["mailto"]["address"],
+            "leave@list.test"
+        );
+        assert!(check_confirmed(&email, Some("Leave@List.test")).is_ok());
+        // Nothing confirmed, another address, or not an email: refused.
+        for confirmed in [None, Some(""), Some("boss@list.test")] {
+            assert_eq!(
+                check_confirmed(&email, confirmed).unwrap_err().code,
+                "invalid_request"
+            );
+        }
+        assert!(check_confirmed(&one_click, Some("leave@list.test")).is_err());
     }
 }
