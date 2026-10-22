@@ -425,7 +425,7 @@ void GuiCompositionSelfTest::step() {
         if (m_mode==2) {
             // A new forward starts with blank lines and the account signature, then the quote.
             const auto signature=m_backend.currentAccount()["signature_text"].toString();
-            const auto opening=signature.trimmed().isEmpty() ? QString() : "\n\n"+signature+"\n\n";
+            const auto opening=signature.trimmed().isEmpty() ? QStringLiteral("\n\n") : "\n\n"+signature+"\n\n";
             const auto full=draft["body"].toString();
             if (!full.startsWith(opening)) { finish("Forward did not start with the account signature as plain text."); return; }
             const auto quote=full.mid(opening.size());

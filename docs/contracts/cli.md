@@ -1,5 +1,10 @@
 # CLI and external agent interface
 
+## D216 — forward format (CLI65)
+
+- `fm draft create --mode forward --forward-format html|text` passes `forward_format` (Core103). Without it a forward quotes the original's text, as before.
+
+
 ## D212 — terminal-safe text output (CLI64)
 
 - Human output (not `--json`) passes mail, calendar and engine text through one filter: C0 controls, DEL, C1 controls and bidi overrides/isolates (U+202A–U+202E, U+2066–U+2069) become U+FFFD. Single-line fields turn line breaks and tabs into a space; bodies keep `\n` and tabs and turn CRLF into `\n`. The pretty-JSON fallback and error lines are filtered too. `--json` output is unchanged.

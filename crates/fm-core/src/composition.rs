@@ -9,6 +9,8 @@ use std::{collections::HashSet, io::Read};
 /// text counts toward it.
 pub(crate) const MAX_BODY: usize = 256 * 1024;
 const MAX_SUBJECT: usize = 8192;
+/// The largest original an HTML forward sends; a bigger one forwards as text.
+const MAX_HTML: usize = fm_mail::MAX_BODY_BYTES / 2;
 
 /// Builds the MIME composition request and sender identity for a projected
 /// draft, as capture, Google draft upload and send all need.
@@ -41,6 +43,7 @@ pub(crate) fn compose_request(
             subject: draft["subject"].as_str().unwrap_or("").into(),
             body_text: draft["body"].as_str().unwrap_or("").into(),
             body_html: draft["body_html"].as_str().map(str::to_owned),
+            forwarded_html: None,
             message_id,
             reply_to_message_id: draft["reply_to_message_id"].as_str().map(bracketed),
             references: serde_json::from_value::<Vec<String>>(draft["references"].clone())?
@@ -62,6 +65,190 @@ pub(crate) fn compose_request(
             signature_html: None,
         },
     ))
+}
+
+/// [`compose_request`] for a draft whose attachments were read off the
+/// writer. An HTML forward also gets its original from `blobs`: its HTML
+/// after the author's (whose text becomes HTML when it has no formatting),
+/// its quoted text after theirs in the plain alternative, and the inline
+/// images it shows among `attachments`, as many as the 25 MiB total allows.
+pub(crate) fn compose_prepared(
+    blobs: &crate::content::BlobStore,
+    account: &str,
+    draft: &Value,
+    message_id: String,
+    timestamp_secs: u64,
+    attachments: &mut Vec<fm_mail::StagedAttachment>,
+) -> Result<(fm_mail::ComposeRequest, fm_mail::AccountIdentity)> {
+    let (mut request, identity) = compose_request(account, draft, message_id, timestamp_secs)?;
+    if let Some(forward) = forwarded_original(blobs, account, draft)? {
+        if request.body_html.is_none() {
+            request.body_html = Some(escape_html(&request.body_text).replace('\n', "<br>"));
+        }
+        request.body_text = if request.body_text.trim().is_empty() {
+            forward.text
+        } else {
+            format!("{}\n\n{}", request.body_text, forward.text)
+        };
+        request.forwarded_html = Some(forward.html);
+        let mut total: usize = attachments.iter().map(|part| part.bytes.len()).sum();
+        for part in forward.inline {
+            if total + part.bytes.len() <= fm_mail::MAX_ATTACHMENT_BYTES && attachments.len() < 50 {
+                total += part.bytes.len();
+                attachments.push(part);
+            }
+        }
+    }
+    Ok((request, identity))
+}
+
+/// What an HTML forward sends after the author's words.
+struct ForwardedOriginal {
+    /// The original's HTML under a forwarded-message header.
+    html: String,
+    /// The same header and the original's text quoted, for the plain part.
+    text: String,
+    /// The parts its HTML shows through `cid:` links.
+    inline: Vec<fm_mail::StagedAttachment>,
+}
+
+/// Reads the original of an HTML forward from its verified source; `None`
+/// for every other draft. Fails with `content_unavailable` when the source
+/// is missing or no longer has HTML within [`MAX_HTML`].
+fn forwarded_original(
+    blobs: &crate::content::BlobStore,
+    account: &str,
+    draft: &Value,
+) -> Result<Option<ForwardedOriginal>> {
+    if draft["mode"] != "forward" || draft["forward_html"] != true {
+        return Ok(None);
+    }
+    let unavailable = || {
+        err(
+            "content_unavailable",
+            "The forwarded message's HTML is unavailable",
+        )
+    };
+    let bytes = crate::local_content::read_source(
+        blobs,
+        draft["source_hash"].as_str().ok_or_else(unavailable)?,
+    )?;
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&bytes)
+        .ok_or_else(unavailable)?;
+    let html = fm_mail::html_view::html_part(&parsed)
+        .filter(|html| html.len() <= MAX_HTML)
+        .ok_or_else(unavailable)?;
+    let (author, date, subject) = forward_header(&parsed);
+    let html = format!(
+        "<br><div class=\"gmail_quote\"><div class=\"gmail_attr\">---------- Forwarded message ----------<br>From: {}<br>Date: {}<br>Subject: {}<br></div><br>{}</div>",
+        escape_html(&author),
+        escape_html(&date),
+        escape_html(&subject),
+        document_body(html)
+    );
+    let mut text = forward_quote(&parsed, &parsed.body_text(0).unwrap_or_default());
+    if text.len() > MAX_BODY {
+        let mut end = MAX_BODY;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    // Content-IDs keep their own case: the HTML refers to them as written.
+    let shown = fm_mail::html_view::inline_content_ids(&parsed);
+    let mut seen = HashSet::new();
+    let mut inline = Vec::new();
+    for part in &parsed.parts {
+        use mail_parser::MimeHeaders;
+        let Some(id) = part.content_id() else {
+            continue;
+        };
+        let id = id.trim().trim_start_matches('<').trim_end_matches('>');
+        if !fm_mail::bare_id(id)
+            || !shown.contains(&id.to_ascii_lowercase())
+            || !seen.insert(id.to_ascii_lowercase())
+        {
+            continue;
+        }
+        let content_type = part
+            .content_type()
+            .map(|t| format!("{}/{}", t.ctype(), t.subtype().unwrap_or("octet-stream")))
+            .filter(|t| !t.chars().any(char::is_control))
+            .unwrap_or_else(|| "application/octet-stream".into());
+        let filename = part
+            .attachment_name()
+            .filter(|name| !name.is_empty() && !name.chars().any(char::is_control))
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("inline-{}", inline.len() + 1));
+        let bytes = part.contents().to_vec();
+        inline.push(fm_mail::StagedAttachment {
+            account_id: account.into(),
+            filename,
+            content_type,
+            sha256: format!("{:x}", Sha256::digest(&bytes)),
+            bytes,
+            content_id: Some(id.into()),
+        });
+    }
+    Ok(Some(ForwardedOriginal { html, text, inline }))
+}
+
+/// The original's sender addresses, RFC 3339 date and one-line subject, as a
+/// forward's header names them.
+fn forward_header(parsed: &mail_parser::Message<'_>) -> (String, String, String) {
+    let author = parsed
+        .from()
+        .map(|from| {
+            from.iter()
+                .filter_map(|address| address.address())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let date = parsed.date().map(|d| d.to_rfc3339()).unwrap_or_default();
+    let subject = one_line_subject(parsed.subject().unwrap_or("(no subject)"));
+    (author, date, subject)
+}
+
+/// A forward's quoted text: the forwarded-message header, then `body` line by
+/// line with `> `.
+fn forward_quote(parsed: &mail_parser::Message<'_>, body: &str) -> String {
+    let (author, date, subject) = forward_header(parsed);
+    let quoted = body
+        .lines()
+        .map(|line| format!("> {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("---------- Forwarded message ----------\nFrom: {author}\nDate: {date}\nSubject: {subject}\n\n{quoted}")
+}
+
+/// What of an HTML document goes inside another message: its `<style>`
+/// blocks, then the content of `<body>`, or the whole text without one.
+fn document_body(html: &str) -> String {
+    let lower = html.to_ascii_lowercase();
+    let Some(open) = lower.find("<body") else {
+        return html.to_owned();
+    };
+    let start = lower[open..]
+        .find('>')
+        .map_or(html.len(), |end| open + end + 1);
+    let end = lower
+        .rfind("</body")
+        .filter(|end| *end >= start)
+        .unwrap_or(html.len());
+    let mut styles = String::new();
+    let mut rest = 0;
+    while let Some(found) = lower[rest..open].find("<style") {
+        let from = rest + found;
+        let Some(close) = lower[from..open].find("</style>") else {
+            break;
+        };
+        let to = from + close + "</style>".len();
+        styles.push_str(&html[from..to]);
+        rest = to;
+    }
+    format!("{styles}{}", &html[start..end])
 }
 
 /// A Message-ID in angle brackets. Drafts mirrored from Gmail by earlier
@@ -201,10 +388,15 @@ pub(crate) fn validate_routing(routing: &Value) -> Result<()> {
 
 /// The account signature is ordinary draft text the author can edit or delete.
 /// A new draft starts with two empty lines for the author, then the signature,
-/// then any forwarded text. Nothing is added to it when the message is sent.
+/// then any forwarded text. Without a signature or forwarded text it is empty.
+/// Nothing is added to it when the message is sent.
 pub(crate) fn signed_body(body: &str, signature: &str) -> String {
     if signature.trim().is_empty() {
-        body.to_owned()
+        if body.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{body}")
+        }
     } else if body.is_empty() {
         format!("\n\n{signature}")
     } else {
@@ -418,7 +610,8 @@ impl Store {
             ));
         }
         if let Some((mid, hash, sender, to)) = message {
-            if let Ok((mut routing, body)) = self.source_routing(account, cid, &mid, "reply") {
+            if let Ok((mut routing, body)) = self.source_routing(account, cid, &mid, "reply", false)
+            {
                 // A reply goes where the source says (Reply-To, else From);
                 // the stored sender stands in only when it names nobody.
                 if routing["to_recipients"]
@@ -453,6 +646,7 @@ impl Store {
         cid: &str,
         mid: &str,
         mode: &str,
+        forward_html: bool,
     ) -> Result<(Value, String)> {
         let source:Option<(String,String)>=self.db.query_row("SELECT source_hash,body FROM messages WHERE account=?1 AND conversation_id=?2 AND id=?3",
             params![account,id(cid)?,id(mid)?],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
@@ -468,7 +662,7 @@ impl Store {
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
                     r.get(0)
                 })?;
-        routing_from_source(&bytes, &from, mode, &body)
+        routing_from_source(&bytes, &from, mode, &body, forward_html)
     }
 }
 
@@ -480,14 +674,18 @@ impl Store {
 /// other To recipients and keeps Cc. The account's own address and duplicates
 /// are dropped, case-insensitively. A forward has no recipients, keeps a
 /// reply's threading and quotes `body`, the stored text, line by line with
-/// `> `. The subject gains `Re:` or `Fwd:` unless it already starts with it.
-/// `references` holds the source's own References; composing appends its
-/// Message-ID from `reply_to_message_id`.
+/// `> `. With `forward_html`, a forward of a message that has HTML quotes
+/// nothing and records `forward_html`; the original is sent after the
+/// author's words (see [`forwarded_original`]). The subject gains `Re:` or
+/// `Fwd:` unless it already starts with it. `references` holds the source's
+/// own References; composing appends its Message-ID from
+/// `reply_to_message_id`.
 pub(crate) fn routing_from_source(
     bytes: &[u8],
     from: &str,
     mode: &str,
     body: &str,
+    forward_html: bool,
 ) -> Result<(Value, String)> {
     let parsed = mail_parser::MessageParser::default()
         .parse(bytes)
@@ -548,18 +746,18 @@ pub(crate) fn routing_from_source(
     if references.len() > 100 {
         return Err(err("limit_exceeded", "Reply source exceeds 100 references"));
     }
-    let routing = json!({"from":from,"subject":title,"to_recipients":to,"cc_recipients":cc,"bcc_recipients":[],
+    let mut routing = json!({"from":from,"subject":title,"to_recipients":to,"cc_recipients":cc,"bcc_recipients":[],
             "reply_to_message_id":parsed.message_id().map(|v|format!("<{v}>")),
             "references":references,"reply_all_available":reply_all_available,"source_unavailable":false});
+    let html_forward = mode == "forward"
+        && forward_html
+        && fm_mail::html_view::html_part(&parsed).is_some_and(|html| html.len() <= MAX_HTML);
+    if html_forward {
+        routing["forward_html"] = json!(true);
+    }
     validate_routing(&routing)?;
-    let quoted = if mode == "forward" {
-        let author = addresses(parsed.from())
-            .into_iter()
-            .map(|r| r["email"].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let date = parsed.date().map(|d| d.to_rfc3339()).unwrap_or_default();
-        format!("---------- Forwarded message ----------\nFrom: {author}\nDate: {date}\nSubject: {original_subject}\n\n{}",body.lines().map(|line|format!("> {line}")).collect::<Vec<_>>().join("\n"))
+    let quoted = if mode == "forward" && !html_forward {
+        forward_quote(&parsed, body)
     } else {
         String::new()
     };
@@ -614,6 +812,18 @@ impl Store {
         if !["new", "reply", "reply_all", "forward"].contains(&mode) {
             return Err(err("invalid_request", "Unknown composition mode"));
         }
+        // A forward keeps the original's HTML when it was read that way.
+        let forward_html = match p.get("forward_format") {
+            None => false,
+            Some(format) if format == "html" => true,
+            Some(format) if format == "text" => false,
+            Some(_) => {
+                return Err(err(
+                    "invalid_request",
+                    "forward_format must be html or text",
+                ))
+            }
+        };
         let (cid, mid, hash, routing, body) = if mode == "new" {
             if p.get("conversation_id").is_some() || p.get("source_message_id").is_some() {
                 return Err(err(
@@ -636,7 +846,7 @@ impl Store {
         } else {
             let cid = string(p, "conversation_id")?;
             let mid = string(p, "source_message_id")?;
-            let (routing, body) = self.source_routing(account, cid, mid, mode)?;
+            let (routing, body) = self.source_routing(account, cid, mid, mode, forward_html)?;
             let hash: String = self.db.query_row(
                 "SELECT source_hash FROM messages WHERE account=?1 AND id=?2",
                 params![account, mid],
@@ -806,6 +1016,9 @@ impl Store {
             if let Some(value) = p.get(key) {
                 routing[key] = value.clone();
             }
+        }
+        if draft["forward_html"] == true {
+            routing["forward_html"] = json!(true);
         }
         validate_routing(&routing)?;
         // Whether this save changes anything the author wrote. An unchanged

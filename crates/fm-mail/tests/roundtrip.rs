@@ -27,6 +27,7 @@ fn draft() -> ComposeRequest {
         body_text: "Hi Éléna,\n\nThe café budget is €42. 日本語 — спасибо.\n> Original question\n"
             .into(),
         body_html: None,
+        forwarded_html: None,
         message_id: "<local-draft-1@example.test>".into(),
         reply_to_message_id: Some("<parent@example.test>".into()),
         references: vec!["<root@example.test>".into()],

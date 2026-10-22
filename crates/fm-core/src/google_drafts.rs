@@ -1583,7 +1583,7 @@ pub fn prepare_google_draft(
 ) -> Result<PreparedGoogleDraft> {
     let plan = plan.0;
     cancelled(cancel)?;
-    let parts = plan.retained.prepare(cancel)?;
+    let mut parts = plan.retained.prepare(cancel)?;
     let created = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| invalid())?
@@ -1594,11 +1594,13 @@ pub fn prepare_google_draft(
         "{:x}",
         Sha256::digest(format!("{}\0{}", plan.scope.account, request_id(&plan.params)?).as_bytes())
     );
-    let (request, identity) = composition::compose_request(
+    let (request, identity) = composition::compose_prepared(
+        &plan.retained.blobs,
         &plan.scope.account,
         plan.retained.draft(),
         format!("<draft-{digest}@fuckmail.invalid>"),
         created,
+        &mut parts,
     )?;
     let built = fm_mail::build_draft_mail(&request, &identity, &parts).map_err(|error| {
         err(

@@ -81,6 +81,18 @@ QString MailBackend::threadReplySource() const {
     }
     return members.isEmpty() ? QString{} : members.last().toMap().value("id").toString();
 }
+// A forward goes as the original was being read: HTML when the reader shows
+// this sender's mail as HTML (html_senders), else text. Core forwards as text
+// when the message has no HTML to send.
+bool MailBackend::forwardsAsHtml(const QString &messageId) const {
+    const auto members = m_conversation.value("messages").toList();
+    const auto member = std::find_if(members.cbegin(), members.cend(), [&](const auto &value) { return value.toMap().value("id") == messageId; });
+    if (member == members.cend()) return false;
+    const auto sender = member->toMap().value("sender_email").toString().trimmed().toLower();
+    const auto senders = m_preferences.value("html_senders").toList();
+    return !sender.isEmpty() && std::any_of(senders.cbegin(), senders.cend(), [&](const auto &value) {
+        const auto entry = value.toMap(); return entry.value("account") == m_account && entry.value("email") == sender; });
+}
 void MailBackend::writeToSender(const QString &email, const QString &name) {
     const auto address = email.trimmed();
     if (address.isEmpty() || !validFilterSender(address)) return;
@@ -129,6 +141,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
         || m_draftCreation["mode"].toString() != mode || m_draftCreation["source_message_id"].toString() != source || m_draftCreationEmail != email) {
         m_draftCreation = mutation(); m_draftCreation["mode"] = mode;
         if (mode != "new") { m_draftCreation["conversation_id"] = m_selected; m_draftCreation["source_message_id"] = source; }
+        if (mode == "forward" && forwardsAsHtml(source)) m_draftCreation["forward_format"] = "html";
         m_draftCreationAccount = m_account;
         m_draftCreationEmail = email;
     }

@@ -137,11 +137,18 @@ static void run() {
     await([&]{return hello;},"cached hello");
     QList<Held> imports, lookups;
     int saves=0;
+    QJsonObject created;
     fixture.customRequest = [&](QLocalSocket *peer,const QJsonObject &request) {
         const auto method=request["method"].toString(), id=request["id"].toString();
         const auto params=request["params"].toObject();
         if (method=="draft_attachment_import") { imports.append({peer,id,params}); return true; }
         if (method=="recipient_suggestions") { lookups.append({peer,id,params}); return true; }
+        if (method=="draft_create") {
+            created=params;
+            auto draft=initialDraft("draft-forward"); draft["mode"]="forward"; draft["body"]=""; draft["subject"]="Fwd: Quarterly numbers";
+            draft["conversation_id"]=params["conversation_id"]; draft["source_message_id"]=params["source_message_id"]; draft["forward_html"]=params["forward_format"]=="html";
+            peer->write(reply(id,draft)); return true;
+        }
         if (method=="draft_save") {
             require(params["expected_revision"]==saved["revision"],"save follows import revision");
             for (const auto key : {"body","body_html","subject","signature_text","to_recipients","cc_recipients","bcc_recipients","attachment_ids"}) saved[key]=params[key];
@@ -212,7 +219,11 @@ import QtQuick.Controls
 import ComposerTest 1.0
 ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
  function appearance(theme, size) { Theme.themeId=theme; Theme.textSize=size }
- ReplyComposer { objectName: "composer"; width: parent.width - 40; x: 20; anchors.top: parent.top; anchors.topMargin: 20 }
+ property string contactEvent: ""
+ ReplyComposer { objectName: "composer"; width: parent.width - 40; x: 20; anchors.top: parent.top; anchors.topMargin: 20
+  onContactHovered: function(email, name, anchor) { contactEvent = "hover " + email + " " + anchor.objectName }
+  onContactLeft: function(anchor) { contactEvent = "leave " + anchor.objectName }
+  onContactShown: function(email, name, anchor) { contactEvent = "show " + email + " " + anchor.objectName } }
 })QML",QUrl::fromLocalFile(copy.filePath("Harness.qml")));
     require(!qml.rootObjects().isEmpty(),"composer loads");
     auto window=qobject_cast<QQuickWindow*>(qml.rootObjects().first()); require(window,"window");
@@ -327,6 +338,23 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     require(backend.m_draft["subject"]==line && subject->property("text")==line,"pasted breaks fold to one subject line");
     subject->setProperty("text",line+"\n"); require(QMetaObject::invokeMethod(subject,"textEdited"),"subject edited again");
     require(subject->property("text")==line,"a trailing break the draft already lacks leaves the field");
+    {
+        // A recipient chip's name opens the contact card as names elsewhere
+        // do: hovering asks for it, a click shows it at once.
+        const QString chipName="draftRecipientChip_to_recipients_0";
+        auto chip=find(window->contentItem(),chipName); require(chip && chip->isVisible(),"recipient chip shown");
+        const auto email=backend.m_draft["to_recipients"].toList().value(0).toMap()["email"].toString();
+        auto contactEvent=[&]{return window->property("contactEvent").toString();};
+        const auto onName=chip->mapToScene(QPointF(10,chip->height()/2)), away=window->contentItem()->mapToScene(QPointF(5,window->height()-5));
+        auto pointer=[&](QEvent::Type type,QPointF at,Qt::MouseButton button,Qt::MouseButtons buttons){
+            QMouseEvent event(type,at,window->mapToGlobal(at.toPoint()),button,buttons,Qt::NoModifier); QCoreApplication::sendEvent(window,&event);};
+        pointer(QEvent::MouseMove,onName,Qt::NoButton,Qt::NoButton);
+        await([&]{return contactEvent()=="hover "+email+" "+chipName;},"hovering a recipient asks for its contact card");
+        pointer(QEvent::MouseButtonPress,onName,Qt::LeftButton,Qt::LeftButton); pointer(QEvent::MouseButtonRelease,onName,Qt::LeftButton,Qt::NoButton);
+        await([&]{return contactEvent()=="show "+email+" "+chipName;},"clicking a recipient shows its contact card");
+        pointer(QEvent::MouseMove,away,Qt::NoButton,Qt::NoButton);
+        await([&]{return contactEvent()=="leave "+chipName;},"leaving a recipient lets its card close");
+    }
     backend.m_draftTimer.stop(); backend.saveDraft(); await([&]{return !backend.m_draftDirty && !backend.draftBusy();},"recipient edits saved");
     require(saved["subject"]==line,"the one-line subject is what saves");
     auto composer=find(window->contentItem(),"composer");
@@ -465,7 +493,39 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     if(!rangeWarnings.isEmpty()) { qWarning()<<rangeWarnings.mid(0,4); require(false,"spelling underlines never reach past the text"); }
     spelling->setSpellChecker(nullptr);
     formatting(window, body, spelling);
+    {
+        // A new forward opens at its top, where the two empty lines wait for
+        // the author, not scrolled to the end of the forwarded text.
+        QStringList quoted; for (int i=0;i<80;++i) quoted<<"> Forwarded line "+QString::number(i);
+        body->setProperty("cursorPosition",0);
+        spelling->load("\n\n---------- Forwarded message ----------\nFrom: author@example.test\n\n"+quoted.join('\n'),{});
+        body->forceActiveFocus();
+        QElapsedTimer settled; settled.start(); while(settled.elapsed()<200) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        auto flick=bodyScroll->property("contentItem").value<QQuickItem*>();
+        require(body->property("cursorPosition").toInt()==0,"a loaded forward puts the cursor before the forwarded text");
+        require(flick && flick->property("contentY").toReal()<=1,"a loaded forward shows its top");
+    }
     spelling->load(bodyBefore,{});
+    {
+        // A forward goes as that sender's mail is read: HTML here. The
+        // original then shows in the message area, under the space for the
+        // author's words, as a plain forward's quote does.
+        backend.m_conversation=QVariantMap{{"id","thread-fixture"},{"messages",QVariantList{QVariantMap{{"id","message-html"},
+            {"sender_email","News@Example.test"},{"sender_name","News Desk"},{"subject","Quarterly numbers"},{"sent_at","2026-10-22T22:05:06Z"}}}}};
+        backend.m_selected="thread-fixture";
+        backend.m_preferences["html_senders"]=QVariantList{QVariantMap{{"account","fixture-account"},{"email","news@example.test"}}};
+        backend.m_draftDirty=false; backend.m_draftTimer.stop();
+        backend.beginDraftFrom("forward","message-html");
+        await([&]{return !created.isEmpty() && backend.m_draft["draft_id"]=="draft-forward";},"forward created");
+        require(created["forward_format"]=="html" && created["source_message_id"]=="message-html","an HTML reader's forward asks for HTML");
+        auto editor=find(window->contentItem(),"replyComposer"), original=find(window->contentItem(),"forwardedOriginal"), header=find(window->contentItem(),"forwardedOriginalHeader");
+        await([&]{return original && original->isVisible();},"the forwarded original shows in the message area");
+        require(original->parentItem()==editor,"the original is part of the message area");
+        require(header && header->property("text").toString()=="---------- Forwarded message ----------\nFrom: News@Example.test\nDate: 2026-10-22T22:05:06Z\nSubject: Quarterly numbers","the original is headed as a plain forward is");
+        require(editor->property("text").toString().isEmpty() || editor->property("length").toInt()==0,"the author's words stay apart from it");
+        require(original->y() > editor->property("topPadding").toReal() && editor->implicitHeight() >= original->y()+original->height(),"the message area makes room for it under the author's words");
+        backend.m_preferences["html_senders"]=QVariantList{}; created={};
+    }
     require(!warnings,"production QML has no warnings");
     qInfo()<<"Composer input passed: serial files, in-flight edits, exact uncertain replay, navigation, close protection, cached suggestions, keyboard routing, native multi-file drop and spelling";
 }

@@ -278,6 +278,10 @@ void ReplyDocument::load(const QString &body, const QString &value) {
         if (start != end) QMetaObject::invokeMethod(m_editor, "select", Q_ARG(int, position == start ? end : start), Q_ARG(int, position == start ? start : end));
         else m_editor->setProperty("cursorPosition", position);
     }
+    // New words open at their start, where a reply or forward leaves room to
+    // write. Inserting them leaves the editor's cursor after them, and the
+    // body would scroll to the end of the forwarded text.
+    else if (m_editor) m_editor->setProperty("cursorPosition", 0);
     m_loading = false;
 }
 void ReplyDocument::format(const QString &kind) {

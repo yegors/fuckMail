@@ -2,6 +2,12 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-22
+
+- Forwarding a message you read as HTML sends it as received, layout and images included, below what you write. The message area shows it under your words, read-only. Messages you read as text still forward as quoted text.
+- Hover a recipient in To, Cc or Bcc to see their contact card, with their address, as you can for names in the reader. Click to open it at once.
+- A forward opens at its top with two empty lines above the forwarded message, even without a signature, so you can start typing straight away.
+
 ## 2026-10-21
 
 - The mail list shows today's conversations under Today, above the rest of This Week.

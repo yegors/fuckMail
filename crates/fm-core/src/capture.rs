@@ -298,7 +298,7 @@ impl Store {
             &parameters,
             None,
             Some(&draft),
-            &attachments,
+            attachments,
         )?;
         let record = proof.record;
         let hash = record.operation.mime_sha256.clone();
@@ -461,7 +461,7 @@ pub(crate) fn prepare_capture_content(
     params: &Value,
     existing: Option<CaptureRecord>,
     draft: Option<&Value>,
-    attachments: &[StagedAttachment],
+    mut attachments: Vec<StagedAttachment>,
 ) -> Result<PreparedCapture> {
     let record = if let Some(record) = existing {
         record
@@ -485,14 +485,16 @@ pub(crate) fn prepare_capture_content(
             "{:x}",
             Sha256::digest(format!("{account}\0{}", request.request_id).as_bytes())
         );
-        let (compose_request, identity) = crate::composition::compose_request(
+        let (compose_request, identity) = crate::composition::compose_prepared(
+            blobs,
             account,
             draft,
             format!("<capture-{digest}@fuckmail.invalid>"),
             created_at,
+            &mut attachments,
         )?;
         let composed =
-            fm_mail::build_mail(&compose_request, &identity, attachments).map_err(|_| {
+            fm_mail::build_mail(&compose_request, &identity, &attachments).map_err(|_| {
                 err(
                     "invalid_draft",
                     "Draft headers or content cannot form a bounded MIME message",

@@ -343,6 +343,7 @@ pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, mut params: Value) -> Re
             body
         },
         body_html: None,
+        forwarded_html: None,
         message_id: format!(
             "<unsubscribe-{}@fuckmail.invalid>",
             &fm_ipc::random_token()[..32]

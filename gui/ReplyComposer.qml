@@ -14,6 +14,10 @@ Item {
     // Recent mail with the first recipient opens its thread; the message stays in Drafts.
     signal recentOpened(string conversationId)
     signal allMailWith(string email)
+    // A recipient chip asks for the contact card; MailView owns it.
+    signal contactHovered(string email, string name, Item anchor)
+    signal contactLeft(Item anchor)
+    signal contactShown(string email, string name, Item anchor)
     property bool loading: false
     property bool ccOpen: false
     property bool bccOpen: false
@@ -92,9 +96,24 @@ Item {
         if (backend.syntheticProfile) return {text: "Kept here as a draft · nothing is delivered", tone: Theme.inkAlpha(.45)}
         return {text: "Kept as a draft until it sends", tone: Theme.inkAlpha(.45)}
     }
+    // An HTML forward sends the original below the author's words, as it
+    // was received. It shows there in the message area, read-only, through
+    // the view MailView supplies.
+    readonly property bool forwardsOriginal: mode === "forward" && backend.draft.forward_html === true
+    readonly property var forwardedMessage: {
+        const id = backend.draft.source_message_id || ""
+        for (const message of (backend.conversation.messages || [])) if (message.id === id) return message
+        return null
+    }
+    property Component forwardedView: null
     implicitHeight: Math.max(minimumHeight, composer.implicitHeight) + (recent.visible ? recent.implicitHeight + 28 : 0)
     Accessible.name: draftTitle
-    Component.onCompleted: { syncDraft(); if (mode === "new") backend.loadRecentWith(firstRecipient ? firstRecipient.email : "") }
+    Component.onCompleted: {
+        syncDraft(); if (mode === "new") backend.loadRecentWith(firstRecipient ? firstRecipient.email : "")
+        for (const field of [toField, ccField, bccField]) {
+            field.contactHovered.connect(root.contactHovered); field.contactLeft.connect(root.contactLeft); field.contactShown.connect(root.contactShown)
+        }
+    }
     Connections {
         target: backend
         // MailView closes the reply when it is discarded; Reply may reopen it.
@@ -251,12 +270,12 @@ Item {
                 id: composerScroll
                 objectName: "replyBodyScroll"
                 onHeightChanged: Qt.callLater(root.measureChrome)
-                ScrollBar.vertical: FmScrollBar { policy: bodyEditor.contentHeight + 24 > composerScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+                ScrollBar.vertical: FmScrollBar { policy: bodyEditor.implicitHeight > composerScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                 Layout.fillWidth: true; Layout.fillHeight: true
                 // The body grows with its text; past the cap it scrolls inside.
                 Layout.minimumHeight: root.mode === "new" ? 96 : 140
                 Layout.preferredHeight: Math.max(Layout.minimumHeight, Math.min(Math.max(400, (root.minimumHeight || 560) - 200),
-                    root.availableHeight > 0 ? root.availableHeight - root.chromeHeight : Infinity, bodyEditor.contentHeight + 24))
+                    root.availableHeight > 0 ? root.availableHeight - root.chromeHeight : Infinity, bodyEditor.implicitHeight))
                 contentWidth: availableWidth
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -279,7 +298,7 @@ Item {
                     selectedTextColor: Theme.selectedText
                     font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) }
                     background: null
-                    padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 16; bottomPadding: 8
+                    padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 16; bottomPadding: forwarded.visible ? forwarded.height + 28 : 8
                     Accessible.name: root.draftTitle+" body"
                     // ⌘B, ⌘I and ⌘U style the selection or what is typed next;
                     // ⌘⇧8 and ⌘⇧7 make bulleted and numbered lists.
@@ -322,6 +341,31 @@ Item {
                                 startX: 1; startY: 1.5
                                 PathLine { x: misspelling.width - 1; y: 1.5 }
                             }
+                        }
+                    }
+                    // An HTML forward's original sits in the editor's bottom
+                    // padding, under the author's words, so the message area
+                    // scrolls through both. It is shown, not edited.
+                    Column {
+                        id: forwarded
+                        objectName: "forwardedOriginal"
+                        visible: root.forwardsOriginal
+                        y: bodyEditor.topPadding + bodyEditor.contentHeight + 20; width: bodyEditor.width
+                        spacing: 12
+                        Text {
+                            objectName: "forwardedOriginalHeader"
+                            width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            text: "---------- Forwarded message ----------\n" + (root.forwardedMessage
+                                ? "From: " + (root.forwardedMessage.sender_email || "") + "\nDate: " + (root.forwardedMessage.sent_at || "")
+                                    + "\nSubject: " + (Theme.oneLine(root.forwardedMessage.subject) || "(no subject)")
+                                : "It is sent as received. Open the conversation it came from to see it here.")
+                            color: Theme.inkAlpha(.7); font: bodyEditor.font
+                        }
+                        Loader {
+                            objectName: "forwardedOriginalView"
+                            width: parent.width
+                            active: forwarded.visible && !!root.forwardedMessage && root.forwardedView !== null
+                            sourceComponent: root.forwardedView
                         }
                     }
                     // Pasting keeps the draft's own formatting: text comes in plain.

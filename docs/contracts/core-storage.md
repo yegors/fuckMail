@@ -1,5 +1,21 @@
 # Core and storage
 
+## D216 — HTML forwards send the original as received (Core103)
+
+- `draft_create` takes an optional `forward_format`, `html` or `text` (the default); anything else is `invalid_request`. With `html`, a forward of a message that has an HTML part (`fm_mail::html_view::html_part`, at most 512 KiB) records `forward_html: true` with its routing and quotes nothing: the body is the author's (the signature, if any). A message without such HTML forwards as text, as before. Saves keep `forward_html`; it is projected with the draft.
+- `composition::compose_prepared` builds the MIME for sending, Gmail draft upload and capture. For an HTML forward it reads the verified source again and adds, after the author's HTML (their text becomes HTML when they used no formatting): a `gmail_quote` block with the forwarded-message header (From, Date, Subject) and the original's `<style>` blocks and `<body>` content, unchanged. The plain alternative gets the same header and the original's text quoted with `> `, cut at 256 KiB. The inline parts its HTML shows through `cid:` go along with their own Content-IDs, as many as the 25 MiB and 50-file limits allow. A source that no longer has that HTML fails with `content_unavailable`.
+- `fm_mail::ComposeRequest` adds `forwarded_html`: sent after the sanitised authored HTML and signature, outside the authored-HTML allowlist, and refused (`ForwardedWithoutHtml`) without `body_html`. `fm_mail::bare_id` is public.
+
+Consumers: Mail UI157, CLI65, Gmail send and draft upload. No schema, fixture or protocol-version change; `forward_html` lives in the draft's routing JSON.
+
+
+## D215 — forwards open with room to write (Core102)
+
+- `draft_create` in `forward` mode starts the body with two empty lines even when the account has no signature: `"\n\n"` + forwarded text, or `"\n\n"` + signature + `"\n\n"` + forwarded text as before. Before, an unsigned forward began with the "---------- Forwarded message ----------" line, leaving nowhere to type above it. A new message or reply without a signature still starts empty.
+
+Consumers: Mail UI156, CLI `draft create`. No schema, fixture or protocol change.
+
+
 ## D214 — Today in Done date groups (Core101)
 
 - With `month_zone`, `done_week_start` and `today`, `conversations` assigns the `today` Done key before testing `week` and `month`. Membership compares local calendar dates, including daylight-saving days, using the conversation's latest message.

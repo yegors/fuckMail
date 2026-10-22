@@ -1268,6 +1268,10 @@ enum Draft {
         /// Message to reply to or forward.
         #[arg(long)]
         source_message_id: Option<String>,
+        /// A forward sends the original as received when it has HTML, below
+        /// your words, instead of quoting its text in the body.
+        #[arg(long, value_parser=["html","text"])]
+        forward_format: Option<String>,
         /// Unique ID for this draft; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
@@ -3310,9 +3314,13 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 mode,
                 conversation_id,
                 source_message_id,
+                forward_format,
                 request_id,
             } => {
                 let mut params = json!({"mode":mode,"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)});
+                if let Some(format) = forward_format {
+                    params["forward_format"] = json!(format);
+                }
                 if let Some(cid) = conversation_id {
                     params["conversation_id"] = json!(cid);
                 }

@@ -2555,6 +2555,12 @@ Item {
                             onDismissed: mail.setReplyOpen(false)
                             onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
                             onAllMailWith: function(email) { if (email) backend.query = email }
+                            onContactHovered: function(email, name, anchor) { senderCard.hoverSender(email, name, anchor) }
+                            onContactLeft: function(anchor) { senderCard.leaveSender(anchor) }
+                            onContactShown: function(email, name, anchor) { senderCard.showSender(email, name, anchor) }
+                            forwardedView: Component {
+                                HtmlMessageBody { message: reply.forwardedMessage || ({}); account: backend.account; conversation: backend.selectedId; active: reply.visible }
+                            }
                         }
                     }
                     Column {
@@ -2802,7 +2808,9 @@ Item {
     }
     Connections { target: backend; function onMailSelectionRestored(rows) { mail.selectionRows=rows; if(rows.length) { mail.selectionAnchor=rows[0].id; mail.selectionCursor=rows[rows.length-1].id } } }
     HoverHandler { enabled: senderCard.opened; onPointChanged: senderCard.trackPointer(point.scenePosition) }
-    SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { backend.openConversation(id) } }
+    // Opened from a recipient in a new message, the card's thread leaves the
+    // composer first, as the composer's own recent rows do.
+    SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) } }
     LinkCard { id: linkCard }
     // Plain-text links read without "https://www." in ink with an underline,
     // and blocked ones are struck through; the content service owns the block

@@ -603,7 +603,7 @@ fn prepare_after_import_metadata(
                 // source_unavailable fallback; capture still refuses it.
                 if let Ok(bytes) = read_source(&plan.blobs, hash) {
                     if let Ok((mut routing, _)) =
-                        composition::routing_from_source(&bytes, &source.from, "reply", "")
+                        composition::routing_from_source(&bytes, &source.from, "reply", "", false)
                     {
                         // Reply-To (else From) as the source names it; the
                         // stored sender only when it names nobody.
@@ -728,7 +728,7 @@ fn prepare_after_import_metadata(
             &plan.params,
             plan.capture.clone(),
             draft.as_ref(),
-            &parts,
+            parts,
         )?)
     } else {
         None

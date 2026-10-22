@@ -892,6 +892,7 @@ private:
     // one that isn't a forward you sent, so a reply never goes to whoever the
     // message was forwarded to.
     QString threadReplySource() const;
+    bool forwardsAsHtml(const QString &messageId) const;
     bool commitRecipientInputs();
     QString attachmentImportKey() const;
     bool attachmentImportPending() const;

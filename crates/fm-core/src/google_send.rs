@@ -908,7 +908,7 @@ pub fn prepare_google_send(
 ) -> Result<PreparedGoogleSend> {
     cancelled(cancel)?;
     let plan = plan.0;
-    let parts = plan.retained.prepare(cancel)?;
+    let mut parts = plan.retained.prepare(cancel)?;
     // Unlike drafts, each preparation gets a unique Message-ID (the time is
     // mixed in); once frozen, reconciliation searches Sent for exactly it.
     let (created_at, nanos) = now()?;
@@ -924,11 +924,13 @@ pub fn prepare_google_send(
         )
     );
     let message_id = format!("<send-{digest}@fuckmail.invalid>");
-    let (request, identity) = composition::compose_request(
+    let (request, identity) = composition::compose_prepared(
+        &plan.retained.blobs,
         &plan.scope.account,
         plan.retained.draft(),
         message_id.clone(),
         created_at,
+        &mut parts,
     )?;
     google_drafts::same_from(&identity.from.email, &plan.scope.primary_email)?;
     let built = fm_mail::build_mail(&request, &identity, &parts).map_err(|error| {

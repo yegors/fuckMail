@@ -733,3 +733,150 @@ fn subjects_with_line_breaks_reply_and_save_on_one_line() {
     );
     assert_eq!(saved["subject"], legacy["subject"]);
 }
+
+#[test]
+fn forwards_open_with_two_empty_lines_above_the_quote() {
+    use crate::composition::signed_body;
+    assert_eq!(signed_body("", ""), "");
+    assert_eq!(signed_body("Quote", ""), "\n\nQuote");
+    assert_eq!(signed_body("", "Sig"), "\n\nSig");
+    assert_eq!(signed_body("Quote", "Sig"), "\n\nSig\n\nQuote");
+    // Without a signature the forwarded text used to be the first line, so
+    // there was nowhere to type above it.
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    call(
+        &mut store,
+        "account_update",
+        json!({"name":"Owner","signature_text":"","expected_revision":0,"request_id":"no-signature"}),
+    );
+    let (cid, mid) = ingest(
+        &mut store,
+        "unsigned-forward",
+        source("unsigned-forward", 0),
+    );
+    let forward = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"forward","conversation_id":cid,"source_message_id":mid,"request_id":"unsigned-forward"}),
+    );
+    assert!(forward["body"]
+        .as_str()
+        .unwrap()
+        .starts_with("\n\n---------- Forwarded message ----------\n"));
+    let reply = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"reply","conversation_id":cid,"source_message_id":mid,"request_id":"unsigned-reply"}),
+    );
+    assert_eq!(reply["body"], "");
+}
+
+fn html_source(remote: &str) -> Vec<u8> {
+    let plain = String::from_utf8(source(remote, 0)).unwrap();
+    plain.replace(
+        "Content-Type: text/plain; charset=utf-8\r\n\r\nOriginal retained text",
+        "Content-Type: multipart/alternative; boundary=alt\r\n\r\n--alt\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nPlain words of the original\r\n--alt\r\nContent-Type: multipart/related; boundary=rel\r\n\r\n--rel\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<html><head><style>.brand{color:#0a6}</style></head><body><h1 class=\"brand\">Quarterly numbers</h1><img src=\"cid:Logo.Part@fixture.example\"></body></html>\r\n--rel\r\nContent-Type: image/png\r\nContent-ID: <Logo.Part@fixture.example>\r\nContent-Disposition: inline; filename=logo.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n--rel--\r\n--alt--\r\nTrailing",
+    )
+    .into_bytes()
+}
+
+#[test]
+fn html_forwards_send_the_original_as_received() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    call(
+        &mut store,
+        "account_update",
+        json!({"name":"Owner","signature_text":"","expected_revision":0,"request_id":"no-signature"}),
+    );
+    let (cid, mid) = ingest(&mut store, "html-original", html_source("html-original"));
+    let create = |store: &mut Store, request: &str, format: Value| {
+        let mut p = json!({"mode":"forward","conversation_id":cid,"source_message_id":mid,"request_id":request});
+        if !format.is_null() {
+            p["forward_format"] = format;
+        }
+        store.handle("draft_create", Some(ACCOUNT), p)
+    };
+    assert_eq!(
+        create(&mut store, "bad-format", json!("rtf"))
+            .unwrap_err()
+            .code,
+        "invalid_request"
+    );
+    // Text, the default, quotes the original in the editable body.
+    let text = create(&mut store, "text-forward", Value::Null).unwrap();
+    assert!(text["forward_html"].is_null());
+    assert!(text["body"]
+        .as_str()
+        .unwrap()
+        .contains("> Plain words of the original"));
+    // HTML leaves the body to the author; the original follows on sending.
+    let forward = create(&mut store, "html-forward", json!("html")).unwrap();
+    assert_eq!(forward["forward_html"], true);
+    assert_eq!(forward["body"], "");
+    let saved = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":forward["draft_id"],"expected_revision":1,"request_id":"html-save","body":"See below.","to_recipients":[{"email":"reader@fixture.example"}]}),
+    );
+    assert_eq!(
+        saved["forward_html"], true,
+        "a save keeps the forward's format"
+    );
+    let mut parts = Vec::new();
+    let (request, identity) = crate::composition::compose_prepared(
+        &store.google_blob_store(),
+        ACCOUNT,
+        &saved,
+        "<html-forward@fixture.example>".into(),
+        1_791_241_000,
+        &mut parts,
+    )
+    .unwrap();
+    assert_eq!(parts.len(), 1, "the inline logo travels with the HTML");
+    assert_eq!(
+        parts[0].content_id.as_deref(),
+        Some("Logo.Part@fixture.example")
+    );
+    let built = fm_mail::build_mail(&request, &identity, &parts).unwrap();
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&built.raw)
+        .unwrap();
+    let html = parsed.body_html(0).unwrap();
+    let author = html.find("See below.").unwrap();
+    let header = html
+        .find("---------- Forwarded message ----------")
+        .unwrap();
+    assert!(author < header);
+    assert!(html
+        .contains("<style>.brand{color:#0a6}</style><h1 class=\"brand\">Quarterly numbers</h1>"));
+    assert!(html.contains("src=\"cid:Logo.Part@fixture.example\""));
+    assert!(
+        !html.contains("<body"),
+        "the original's document wrapper is not nested"
+    );
+    let plain = parsed.body_text(0).unwrap();
+    assert!(plain.starts_with("See below.\n\n---------- Forwarded message ----------"));
+    assert!(plain.contains("> Plain words of the original"));
+    let logo = parsed
+        .parts
+        .iter()
+        .find(|part| {
+            mail_parser::MimeHeaders::content_id(*part) == Some("Logo.Part@fixture.example")
+        })
+        .expect("inline part keeps its Content-ID");
+    assert_eq!(logo.contents(), b"\x89PNG\r\n\x1a\n");
+    // A message without HTML forwards as text even when HTML was asked for.
+    let (plain_cid, plain_mid) = ingest(&mut store, "plain-original", source("plain-original", 0));
+    let fallback = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"forward","conversation_id":plain_cid,"source_message_id":plain_mid,"request_id":"plain-forward","forward_format":"html"}),
+    );
+    assert!(fallback["forward_html"].is_null());
+    assert!(fallback["body"]
+        .as_str()
+        .unwrap()
+        .contains("> Original retained text"));
+}

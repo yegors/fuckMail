@@ -80,6 +80,10 @@ pub struct ComposeRequest {
     pub body_text: String,
     /// Optional authored rich-text export, kept separate from the source plain text.
     pub body_html: Option<String>,
+    /// A forwarded message's HTML, sent after the authored HTML and signature
+    /// exactly as given: the authored-HTML allowlist does not apply. Needs
+    /// `body_html`; its inline images are attachments with a `content_id`.
+    pub forwarded_html: Option<String>,
     /// RFC Message-ID with angle brackets, generated once and persisted with send intent.
     pub message_id: String,
     /// Message-ID being answered. It becomes `In-Reply-To` and is appended to
@@ -134,6 +138,8 @@ pub enum ComposeError {
     /// A Content-ID is not a bare token, or an inline part has no HTML body to show it.
     InvalidContentId,
     DuplicateContentId,
+    /// `forwarded_html` was given without `body_html` to follow.
+    ForwardedWithoutHtml,
     /// [`build_mail`] needs at least one recipient; [`build_draft_mail`] does not.
     NoRecipients,
     /// Attachment bytes no longer match their recorded checksum.
@@ -160,6 +166,9 @@ impl std::fmt::Display for ComposeError {
             Self::InvalidContentType => f.write_str("an attachment's file type is not valid"),
             Self::InvalidContentId | Self::DuplicateContentId => {
                 f.write_str("an inline image reference is not valid")
+            }
+            Self::ForwardedWithoutHtml => {
+                f.write_str("a forwarded HTML message needs an HTML body before it")
             }
             Self::NoRecipients => f.write_str("it has no recipients"),
             Self::AttachmentNotVerified => {
@@ -230,11 +239,15 @@ fn build_authored_mail(
     for text in [&request.body_text, &identity.signature_text]
         .into_iter()
         .chain(request.body_html.iter())
+        .chain(request.forwarded_html.iter())
         .chain(identity.signature_html.iter())
     {
         if text.len() > MAX_BODY_BYTES {
             return Err(ComposeError::LimitExceeded("authored body"));
         }
+    }
+    if request.forwarded_html.is_some() && request.body_html.is_none() {
+        return Err(ComposeError::ForwardedWithoutHtml);
     }
     let mut total_bytes: usize = 0;
     let mut cids = BTreeSet::new();
@@ -320,11 +333,15 @@ fn build_authored_mail(
         };
         let safe = sanitize_authored_html(&joined, cids);
         sanitized = safe != joined;
+        let html = match &request.forwarded_html {
+            Some(forwarded) => format!("{safe}{forwarded}"),
+            None => safe,
+        };
         // multipart/alternative: the plain text first, then the HTML together
         // with the inline images it references, in a multipart/related.
         let mut related = MultiPart::related()
             .boundary(format!("fm-related-{boundary_key}"))
-            .singlepart(text_part(safe.into_bytes(), ContentType::TEXT_HTML));
+            .singlepart(text_part(html.into_bytes(), ContentType::TEXT_HTML));
         for attachment in attachments.iter().filter(|part| part.content_id.is_some()) {
             related = related.singlepart(attachment_part(attachment)?);
         }
@@ -547,7 +564,9 @@ fn message_id(value: &str) -> Result<(), ComposeError> {
 /// A Message-ID or Content-ID without its angle brackets: RFC 5322 atext,
 /// dots and `@`. Gmail's own IDs use `=` and `_`, so replies must accept
 /// every atext character; spaces, quotes, brackets and controls stay out.
-fn bare_id(value: &str) -> bool {
+/// Whether `value` is a Content-ID the builder accepts: a bare token without
+/// angle brackets, at most 255 bytes.
+pub fn bare_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && value

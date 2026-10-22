@@ -1,6 +1,7 @@
-// A To / Cc / Bcc row in ReplyComposer: recipient chips from backend.draft
-// plus a text entry with address suggestions from backend.recipientSuggestions(),
-// each showing how much mail went to and came from that address.
+// A To / Cc / Bcc row in ReplyComposer: recipient chips from backend.draft,
+// whose names open the contact card, plus a text entry with address
+// suggestions from backend.recipientSuggestions(), each showing how much mail
+// went to and came from that address.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,6 +13,11 @@ Item {
     property bool showLinks: false
     signal ccRequested()
     signal bccRequested()
+    // A chip's name opens the contact card as names do elsewhere: after a
+    // hover dwell, or at once on a click. MailView owns the card.
+    signal contactHovered(string email, string name, Item anchor)
+    signal contactLeft(Item anchor)
+    signal contactShown(string email, string name, Item anchor)
     readonly property var recipients: backend.draft[fieldName] || []
     property string identity: backend.account + "/" + (backend.activeDraftId || backend.selectedId)
     readonly property bool popupOpen: suggestions.opened
@@ -99,10 +105,17 @@ Item {
         Repeater {
             model: field.recipients
             Rectangle {
+                id: chip
                 required property var modelData
                 required property int index
-                height: 24; width: Math.min(recipientName.implicitWidth+31,chips.width); radius: 5; color: "transparent"; border.color: Theme.controlBorder
+                objectName: "draftRecipientChip_"+field.fieldName+"_"+index
+                height: 24; width: Math.min(recipientName.implicitWidth+31,chips.width); radius: 5; color: nameHover.hovered ? Theme.bg4 : "transparent"; border.color: Theme.controlBorder
                 Text { id: recipientName; anchors.left: parent.left; anchors.leftMargin: 9; anchors.right: removeRecipient.left; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter; text: modelData.name || modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                Item {
+                    anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.right: removeRecipient.left
+                    HoverHandler { id: nameHover; cursorShape: Qt.PointingHandCursor; onHoveredChanged: hovered ? field.contactHovered(chip.modelData.email, chip.modelData.name || "", chip) : field.contactLeft(chip) }
+                    TapHandler { onTapped: field.contactShown(chip.modelData.email, chip.modelData.name || "", chip) }
+                }
                 FmButton { id: removeRecipient; anchors.right: parent.right; anchors.rightMargin: 3; anchors.verticalCenter: parent.verticalCenter; implicitWidth: 16; implicitHeight: 18; leftPadding: 2; rightPadding: 2; iconName: "close"; iconSize: 9; tip: "Remove "+modelData.email; enabled: !backend.draftLocked; onClicked: backend.removeDraftRecipient(field.fieldName,index) }
             }
         }

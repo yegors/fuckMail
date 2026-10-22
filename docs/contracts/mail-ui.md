@@ -1,5 +1,24 @@
 # Mail UI, reader and human composer
 
+## D216 — forwards keep the format being read (Mail UI157)
+
+- Forward asks Core for `forward_format: "html"` when the reader shows the source's sender as HTML (`html_senders` for this account), whichever way the forward starts. Core forwards as text when the message has no HTML (Core103).
+- An HTML forward's body holds only the author's words. Below them in the message area, `forwardedOriginal` shows the original read-only: the same header a plain forward quotes ("---------- Forwarded message ----------", From, Date, Subject) in 70% ink, then the original through the `HtmlMessageBody` MailView supplies as `ReplyComposer.forwardedView`. It sits in the editor's bottom padding, so the message area scrolls through both and the editor keeps following its cursor. A draft reopened away from its conversation says it is sent as received and to open that conversation to see it.
+
+Consumers: `MailBackend::forwardsAsHtml`, `ReplyComposer`, `MailView`, `HtmlMessageBody`; Core103; gui-composer-input.
+
+
+## D215 — contact card from composer recipients (Mail UI156)
+
+- A recipient chip's name in To, Cc and Bcc (`draftRecipientChip_<field>_<index>`) opens the contact card as names do in the reader: after the card's hover dwell, or at once on a click. The remove button is not part of it. The name area shows the pointing cursor and the `bg4` hover fill, as a sender pill does.
+- `RecipientField` emits `contactHovered(email, name, anchor)`, `contactLeft(anchor)` and `contactShown(email, name, anchor)`; `ReplyComposer` re-emits them and `MailView` passes them to `SenderCard.hoverSender`, `leaveSender` and `showSender`.
+- A conversation opened from the card goes through `leaveComposerFor`, so a new message leaves the composer first, as the composer's own recent rows do.
+- A forward without a signature opens with two empty lines above the forwarded text (Core102).
+- `ReplyDocument::load` puts the cursor at the start whenever it replaces the words, so a new reply or forward opens at its top. Before, the cursor stayed after the inserted text and the body scrolled to the end of the forwarded message.
+
+Consumers: `RecipientField`, `ReplyComposer`, `MailView`, `SenderCard`; Core102; gui-composer-input, GUI composition self-test.
+
+
 ## D214 — Today above This Week (Mail UI155)
 
 - Inbox date sections start with `done:today` ("Today"), followed by `done:week` ("This Week") for the remaining week. A conversation belongs to Today when its latest message falls on the current date in the same local time zone used for mail row times.
