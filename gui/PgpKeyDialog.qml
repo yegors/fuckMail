@@ -9,7 +9,8 @@ import QtQuick.Layouts
 FmDialog {
     id: dialog
     objectName: "pgpKeyDialog"
-    signal created(string fingerprint)
+    // `key` is the new key's description, as in the key list.
+    signal created(var key)
     property var account: null
     property int algorithm: 0
     property int lifetime: 2
@@ -39,7 +40,7 @@ FmDialog {
             dialog.ticket = ""
             if (!ok) { dialog.error = result.message || "The key wasn't created."; return }
             dialog.close()
-            dialog.created(result.fingerprint)
+            dialog.created(result.key)
         }
     }
     contentItem: ColumnLayout {
@@ -70,12 +71,8 @@ FmDialog {
         }
         Text { objectName: "pgpKeyError"; visible: dialog.error.length > 0; text: dialog.error; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.error; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
     }
-    footer: RowLayout {
-        spacing: 6
-        Item { Layout.fillWidth: true }
-        FmButton { text: "Cancel"; outlined: true; implicitHeight: 32; enabled: !dialog.working; onClicked: dialog.close() }
-        FmButton { objectName: "pgpKeyCreate"; text: dialog.working ? "Creating…" : "Create key"; prominent: true; implicitHeight: 32; enabled: !!dialog.account && !dialog.working && backend.connected; onClicked: dialog.create() }
-        Item { Layout.preferredWidth: 16 }
+    footer: FmDialogFooter {
+        FmDialogFooter.Button { text: "Cancel"; enabled: !dialog.working; onClicked: dialog.close() }
+        FmDialogFooter.Button { objectName: "pgpKeyCreate"; primary: true; text: dialog.working ? "Creating…" : "Create key"; enabled: !!dialog.account && !dialog.working && backend.connected; onClicked: dialog.create() }
     }
-    bottomPadding: 18
 }

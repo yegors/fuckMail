@@ -313,8 +313,9 @@ void GuiSettingsSelfTest::step() {
         if (!click("settingsPage_General")) return;
         ++m_stage; break;
     // Settings → Encryption: create a key for Windscribe through the dialog,
-    // check the backup passphrase rules, make encryption the default, and
-    // read the result back through the CLI and the account card.
+    // check the backup passphrase rules and the save dialog it leads to, make
+    // encryption the default, and read the result back through the CLI and
+    // the account card.
     case 50:
         if (!click("settingsPage_Encryption")) return;
         ++m_stage; break;
@@ -340,14 +341,34 @@ void GuiSettingsSelfTest::step() {
         if (!type("pgpBackupPassphrase", "too short") || !type("pgpBackupRepeat", "too short") || item("pgpBackupSave")->isEnabled()) { finish("A short backup passphrase was accepted."); return; }
         if (!type("pgpBackupPassphrase", "a long enough passphrase") || !type("pgpBackupRepeat", "a different passphrase") || item("pgpBackupSave")->isEnabled()) { finish("Mismatched backup passphrases were accepted."); return; }
         if (!type("pgpBackupRepeat", "a long enough passphrase") || !item("pgpBackupSave")->isEnabled()) { finish("A strong, repeated backup passphrase was refused."); return; }
-        // The save dialog is the system's; leave without saving.
-        if (!click("pgpBackupCancel")) { finish("The backup dialog has no Cancel."); return; }
+        // It names the key just made, even if the key list hadn't caught up
+        // when it opened.
+        const auto backup = m_window->findChild<QObject *>("pgpBackupDialog");
+        if (!backup || backup->property("key").toMap().value("fingerprint").toString() != m_pgpFingerprint) { finish("The backup dialog did not hold the new key."); return; }
+        // Qt's own save dialog stands in for the system's, so the test can
+        // read and close it.
+        const auto save = m_window->findChild<QObject *>("pgpSaveDialog");
+        if (!save || !save->setProperty("options", "DontUseNativeDialog")) { finish("Encryption settings have no save dialog."); return; }
+        if (!click("pgpBackupSave")) { finish("The backup dialog has no Save."); return; }
         ++m_stage; break;
     }
-    case 54:
-        if (item("pgpBackupPassphrase") || !click("pgpEncryptDefault_windscribe")) return;
+    case 54: {
+        const auto save = m_window->findChild<QObject *>("pgpSaveDialog");
+        if (item("pgpBackupPassphrase") || !save || !save->property("visible").toBool()) return;
+        const auto file = save->property("selectedFile").toUrl().toLocalFile();
+        if (!file.endsWith("/" + m_pgpFingerprint.right(8) + "-secret.asc")) { finish("The backup was not offered as <key ID>-secret.asc: " + file); return; }
+        // The dialog has its own window; closing it hands activation back,
+        // as the system does for its own.
+        QMetaObject::invokeMethod(save, "reject");
+        m_window->requestActivate();
         ++m_stage; break;
+    }
     case 55: {
+        const auto save = m_window->findChild<QObject *>("pgpSaveDialog");
+        if ((save && save->property("visible").toBool()) || !m_window->isActive() || !click("pgpEncryptDefault_windscribe")) return;
+        ++m_stage; break;
+    }
+    case 56: {
         const auto choice = m_backend.pgpKeys()->property("accounts").toMap().value("windscribe").toMap();
         if (!choice["encrypt_by_default"].toBool() || !choice["sign_by_default"].toBool()) return;
         ++m_stage;
@@ -364,10 +385,10 @@ void GuiSettingsSelfTest::step() {
         });
         break;
     }
-    case 56:
+    case 57:
         if (!click("settingsPage_Accounts")) return;
         ++m_stage; break;
-    case 57: {
+    case 58: {
         const auto row = item("accountPgp_windscribe");
         if (!row) return;
         const auto text = row->property("text").toString();

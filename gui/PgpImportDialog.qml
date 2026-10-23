@@ -67,7 +67,8 @@ FmDialog {
                 TextMenuHandler {}
                 enabled: !dialog.working
                 placeholderText: "-----BEGIN PGP PUBLIC KEY BLOCK-----"; placeholderTextColor: Theme.faint
-                padding: 10; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11)
+                // Armor's runs of dashes stay plain dashes, not the mono font's ligatures.
+                padding: 10; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11); font.features: {"calt": 0, "liga": 0}
                 textFormat: TextEdit.PlainText; wrapMode: TextEdit.WrapAnywhere; selectByMouse: true
                 background: Rectangle { color: Theme.canvas; radius: 5; border.color: pasted.activeFocus ? Theme.focusBorder : Theme.line2 }
                 onTextChanged: { dialog.protectedKey = null; dialog.error = "" }
@@ -86,12 +87,8 @@ FmDialog {
         }
         Text { objectName: "pgpImportError"; visible: dialog.error.length > 0; text: dialog.error; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.error; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
     }
-    footer: RowLayout {
-        spacing: 6
-        Item { Layout.fillWidth: true }
-        FmButton { text: "Cancel"; outlined: true; implicitHeight: 32; enabled: !dialog.working; onClicked: { passphrase.text = ""; dialog.close() } }
-        FmButton { objectName: "pgpImportRun"; text: dialog.working ? "Importing…" : "Import"; prominent: true; implicitHeight: 32; enabled: backend.connected && !dialog.working && (dialog.file.toString().length > 0 || pasted.text.trim().length > 0) && (!dialog.protectedKey || passphrase.text.length > 0); onClicked: dialog.run() }
-        Item { Layout.preferredWidth: 16 }
+    footer: FmDialogFooter {
+        FmDialogFooter.Button { text: "Cancel"; enabled: !dialog.working; onClicked: { passphrase.text = ""; dialog.close() } }
+        FmDialogFooter.Button { objectName: "pgpImportRun"; primary: true; text: dialog.working ? "Importing…" : "Import"; enabled: backend.connected && !dialog.working && (dialog.file.toString().length > 0 || pasted.text.trim().length > 0) && (!dialog.protectedKey || passphrase.text.length > 0); onClicked: dialog.run() }
     }
-    bottomPadding: 18
 }

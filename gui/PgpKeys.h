@@ -67,6 +67,11 @@ public:
     Q_INVOKABLE QString checkRecipients(const QString &account, const QStringList &addresses);
     /// A fingerprint in groups of four, as people compare them.
     Q_INVOKABLE QString grouped(const QString &fingerprint) const;
+    /// Where the save dialog starts: the folder last saved to, else Documents.
+    Q_INVOKABLE QUrl exportFolder() const;
+    /// The suggested file for exporting `key` as `kind` (public, secret or
+    /// revocation): its short key ID and the kind, in exportFolder().
+    Q_INVOKABLE QUrl exportFile(const QVariantMap &key, const QString &kind) const;
 signals:
     void changed();
     void busyChanged();
@@ -87,6 +92,7 @@ private:
     QVariantList m_keys;
     QVariantMap m_accounts;
     QString m_busy;
+    QString m_exportFolder;
     bool m_loading = true;
     int m_serial = 0;
     int m_refreshGeneration = 0;

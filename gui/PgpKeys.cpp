@@ -4,9 +4,12 @@
 #include "GoogleOperation.h"
 #include "HtmlContent.h"
 #include "MailBackend.h"
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QSaveFile>
+#include <QStandardPaths>
 #include <QUuid>
 
 // MailBackend owns one instance, created when QML first asks for it.
@@ -127,6 +130,7 @@ QString PgpKeys::exportKey(const QString &fingerprint, const QString &kind, cons
                     reply = {{"code", "storage_error"}, {"message", "The key couldn't be saved there."}};
                 } else {
                     reply["path"] = destination.toLocalFile();
+                    m_exportFolder = QFileInfo(destination.toLocalFile()).absolutePath();
                 }
             } else {
                 m_backend->copyText(QString::fromUtf8(armored));
@@ -157,6 +161,18 @@ QString PgpKeys::checkRecipients(const QString &account, const QStringList &addr
         emit recipientsReady(ticket, result.toVariantMap(), ok);
     });
     return ticket;
+}
+
+QUrl PgpKeys::exportFolder() const {
+    const auto folder = m_exportFolder.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) : m_exportFolder;
+    return QUrl::fromLocalFile(folder);
+}
+
+QUrl PgpKeys::exportFile(const QVariantMap &key, const QString &kind) const {
+    // The short key ID people quote: the last eight digits of the key ID.
+    auto id = key.value("key_id").toString();
+    if (id.isEmpty()) id = key.value("fingerprint").toString().right(16);
+    return QUrl::fromLocalFile(QDir(exportFolder().toLocalFile()).filePath(id.right(8) + "-" + kind + ".asc"));
 }
 
 QString PgpKeys::grouped(const QString &fingerprint) const {

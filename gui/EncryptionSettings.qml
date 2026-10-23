@@ -39,7 +39,8 @@ ColumnLayout {
     // Saves an export to a file the person picks; `kind` is public, secret or revocation.
     function saveKey(key, kind, passphrase) {
         pendingSave = {fingerprint: key.fingerprint, kind: kind, passphrase: passphrase || ""}
-        saveDialog.currentFile = saveDialog.currentFolder + "/" + key.key_id.slice(8) + "-" + kind + ".asc"
+        saveDialog.currentFolder = page.keyring.exportFolder()
+        saveDialog.selectedFile = page.keyring.exportFile(key, kind)
         saveDialog.open()
     }
     Connections {
@@ -62,6 +63,7 @@ ColumnLayout {
     }
     FileDialog {
         id: saveDialog
+        objectName: "pgpSaveDialog"
         fileMode: FileDialog.SaveFile
         defaultSuffix: "asc"
         nameFilters: ["OpenPGP key (*.asc)", "All files (*)"]
@@ -71,7 +73,7 @@ ColumnLayout {
         }
         onRejected: page.pendingSave = null
     }
-    PgpKeyDialog { id: createDialog; onCreated: function(fingerprint) { page.say("Key created. Back it up now, so you can still read your encrypted mail if this computer is lost."); backupDialog.show(page.keyring.key(fingerprint)) } }
+    PgpKeyDialog { id: createDialog; onCreated: function(key) { page.say("Key created. Back it up now, so you can still read your encrypted mail if this computer is lost."); backupDialog.show(key) } }
     PgpImportDialog { id: importDialog }
     PgpBackupDialog { id: backupDialog; onChosen: function(key, passphrase) { page.saveKey(key, "secret", passphrase) } }
     FmDialog {
@@ -88,14 +90,10 @@ ColumnLayout {
             Text { Layout.fillWidth: true; wrapMode: Text.Wrap; text: "From today. People who already have your public key need the updated one; save it again and send it to them."; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             FmSegmented { objectName: "pgpExpiryChoice"; model: ["1 year", "2 years", "3 years", "5 years", "Never"]; currentIndex: expiryDialog.choice; onActivated: function(index) { expiryDialog.choice = index } }
         }
-        footer: RowLayout {
-            spacing: 6
-            Item { Layout.fillWidth: true }
-            FmButton { text: "Cancel"; outlined: true; implicitHeight: 32; onClicked: expiryDialog.close() }
-            FmButton { objectName: "pgpExpirySave"; text: "Save"; prominent: true; implicitHeight: 32; onClicked: { page.keyring.setExpiry(expiryDialog.key.fingerprint, expiryDialog.days[expiryDialog.choice]); expiryDialog.close() } }
-            Item { Layout.preferredWidth: 16 }
+        footer: FmDialogFooter {
+            FmDialogFooter.Button { text: "Cancel"; onClicked: expiryDialog.close() }
+            FmDialogFooter.Button { objectName: "pgpExpirySave"; primary: true; text: "Save"; onClicked: { page.keyring.setExpiry(expiryDialog.key.fingerprint, expiryDialog.days[expiryDialog.choice]); expiryDialog.close() } }
         }
-        bottomPadding: 18
     }
     FmConfirmDialog {
         id: deleteDialog
