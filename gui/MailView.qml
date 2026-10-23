@@ -1801,7 +1801,8 @@ Item {
                                                     color: Theme.inkAlpha(.72); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText
                                                 }
                                                 FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:10; color:Theme.ai; Layout.rightMargin: 6 }
-                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet); maximumLineCount: 1; color: row.outgoingScope ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
+                                                FmIcon { objectName:"encryptedPreviewIcon_"+groupedRow.modelData.id; visible:groupedRow.modelData.pgp === "encrypted"; name:"lock"; size:10; color:Theme.inkAlpha(.45); Layout.rightMargin: 6 }
+                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + (Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet) || (groupedRow.modelData.pgp === "encrypted" ? "Encrypted message" : "")); maximumLineCount: 1; color: row.outgoingScope ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
                                                     MatchMarks { objectName: "mailPreviewMatch_" + groupedRow.modelData.id; phrases: mail.bodyPhrases }
                                                 }
                                             }
@@ -2006,7 +2007,9 @@ Item {
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
                                 readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen || attachmentPopupOpen()
                                 readonly property bool isLast: index === mail.members.length - 1
-                                readonly property int attachmentCount: (modelData.attachments || []).length
+                                // An encrypted message's files are known only once it is decrypted.
+                                readonly property var attachmentList: messageSource.decryptedAttachments || modelData.attachments || []
+                                readonly property int attachmentCount: attachmentList.length
                                 function attachmentPopupOpen() {
                                     for (let i = 0; i < attachmentRepeater.count; ++i) {
                                         const tile = attachmentRepeater.itemAt(i)
@@ -2122,7 +2125,7 @@ Item {
                                         Text {
                                             objectName: "messageInlineDetail_" + member.modelData.id
                                             visible: !member.isExpanded
-                                            text: (member.modelData.text || "").replace(/\s+/g," ")
+                                            text: (member.modelData.text || "").replace(/\s+/g," ") || (member.modelData.pgp === "encrypted" ? "Encrypted message" : "")
                                             Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
                                             color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText
                                         }
@@ -2144,6 +2147,23 @@ Item {
                                                 visible: opacity > 0; opacity: member.modelData.is_outgoing && member.modelData.outgoing_state === "accepted" ? 1 : 0
                                                 Behavior on opacity { NumberAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
                                                 name: "check"; size: 11; color: Theme.accent; Layout.rightMargin: 4
+                                            }
+                                            // OpenPGP: a lock for encrypted mail, a shield for a signature;
+                                            // muted when all is well, amber when something needs a look.
+                                            Item {
+                                                id: pgpBadge; objectName: "messagePgp_" + member.modelData.id
+                                                readonly property bool problem: (messageSource.encrypted && messageSource.decryption.length > 0 && messageSource.decryption !== "decrypted")
+                                                    || (!!messageSource.signature && !messageSource.trustedSignature)
+                                                visible: member.isExpanded && (messageSource.encrypted || !!messageSource.signature)
+                                                implicitWidth: 26; implicitHeight: 26
+                                                Accessible.role: Accessible.StaticText; Accessible.name: messageSource.pgpSummary
+                                                FmIcon {
+                                                    anchors.centerIn: parent; size: 13
+                                                    name: messageSource.encrypted ? "lock" : "shield"
+                                                    color: pgpBadge.problem ? Theme.warn : messageSource.trustedSignature ? Theme.accent : Theme.inkAlpha(.55)
+                                                }
+                                                HoverHandler { id: pgpBadgeHover }
+                                                FmToolTip { shown: pgpBadgeHover.hovered; text: messageSource.pgpSummary }
                                             }
                                             // Gmail's checks or the From header look wrong: say so before
                                             // the person trusts the message. Red when DMARC failed.
@@ -2295,6 +2315,8 @@ Item {
                                         mailingList: member.isLast && !member.modelData.sent ? mail.thread.mailing_list || null : null
                                         unsubscribe: member.isLast && !member.modelData.sent ? messageSource.result.unsubscribe || null : null
                                         htmlBody: messageBody.htmlShown ? htmlBody.item : null
+                                        pgp: messageSource.pgp
+                                        signature: messageSource.signature
                                     }
                                     Loader {
                                         id: htmlBody
@@ -2427,7 +2449,7 @@ Item {
                                     visible: member.isExpanded && member.attachmentCount > 0 && !attachmentsHeading.collapsed; Layout.fillWidth: true; Layout.maximumWidth: 798; spacing: 10
                                     Repeater {
                                         id: attachmentRepeater
-                                        model: member.modelData.attachments||[]
+                                        model: member.attachmentList
                                         AttachmentTile {
                                             required property var modelData
                                             attachment: modelData; account: backend.account

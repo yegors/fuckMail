@@ -1,5 +1,13 @@
 # Gmail provider
 
+## D217 — protected mail through Gmail (Gmail47)
+
+- A draft that will be encrypted is never uploaded to Gmail Drafts; an earlier upload stays until the send replaces it. Sending submits the frozen PGP/MIME bytes through `messages.send` or `drafts.send` as before (Core104).
+- The Subject stays outside the encryption, since the Gmail API threads a message only when its subject matches the thread's.
+- Received PGP/MIME and inline PGP are stored as Gmail sends them; decryption happens only when reading.
+
+Consumers: Core104, Mail UI158.
+
 ## D212 — unsubscribe email needs a confirmed address at the sender's own domain (Gmail46)
 
 - `google_unsubscribe_mail` requires `address`, the address the person confirmed, and refuses unless it equals the address the message's unsubscribe would go to (Core99). The GUI sends it only from its confirmation, including the `fallback` after a refused one-click POST.

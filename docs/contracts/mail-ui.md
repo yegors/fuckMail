@@ -1,5 +1,17 @@
 # Mail UI, reader and human composer
 
+## D217 — Settings → Encryption, account OpenPGP rows, Sign and Encrypt (Mail UI158)
+
+- **Settings → Encryption** (sidebar after Accounts, lock icon): Create key… and Import key…, then Your keys, Accounts and Other people's keys. Each key shows its primary user ID, its fingerprint in groups of four (monospace), algorithm, creation and expiry or status, and the accounts using it. Its menu: Copy public key, Save public key…, and for own keys Back up secret key…, Save revocation certificate…, Change expiry… (1, 2, 3 or 5 years, or never) and Delete… (a confirmation that warns an own key can't be recovered without a backup). The Accounts section has, per active account, a key choice (Off, or own valid keys naming the account's address) and Sign and Encrypt defaults. A status line under the buttons reports each result.
+- **Create key** picks an account (the first without a key), its name (editable) and address, Ed25519 (recommended) or RSA 4096, and an expiry (3 years by default). After it is made, Back up secret key opens at once.
+- **Back up secret key** takes a passphrase of at least 12 characters, typed twice, then the system save dialog; the file is created owner-only. **Import key** takes a file or pasted armor; a protected secret key then asks for its passphrase, naming the key.
+- **Accounts card.** An OpenPGP row between Signature and Local model: "Off", or "On · <key ID> · signs/encrypts new mail", amber with the key's status when it isn't valid. The row opens Settings → Encryption ("Set up" or "Edit").
+- **Composer.** For an account with a key (live profiles), Sign and Encrypt toggles after Attach; each saves with the draft. With Encrypt on, recipients are checked (`pgp_recipients`) and any without a usable key are named above the footer.
+- **Reader.** An encrypted message shows a lock and a signed one a shield, left of the sender warning: muted when all is well, accent for a good signature from the sender's own key, amber otherwise; the tooltip says how it was decrypted and who signed, with the fingerprint. Problems (no key, keychain refused, damaged, bad or unknown signature, a key for another address, expired, revoked, weak) take a row in the message notices. A decrypted message's attachments are its decrypted ones. The list and a collapsed message read "Encrypted message" with a lock when there is no text outside the encryption.
+- `PgpKeys` (`backend.pgpKeys`) makes every keyring call on its own engine connection; a keyring change clears held message sources and HTML views so signatures and decryption are checked again.
+
+Consumers: `EncryptionSettings`, `PgpKeyDialog`, `PgpImportDialog`, `PgpBackupDialog`, `AccountCard`, `ReplyComposer`, `MessageSource`, `MessageNotices`, `MailView`, `PgpKeys`, `MailBackend::setDraftProtection`; Core104; gui-integration (settings stage).
+
 ## D216 — forwards keep the format being read (Mail UI157)
 
 - Forward asks Core for `forward_format: "html"` when the reader shows the source's sender as HTML (`html_senders` for this account), whichever way the forward starts. Core forwards as text when the message has no HTML (Core103).

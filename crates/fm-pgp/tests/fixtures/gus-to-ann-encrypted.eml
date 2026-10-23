@@ -1,0 +1,35 @@
+From: Gus GnuPG <gus@example.test>
+To: Ann Example <ann@example.test>
+Date: Thu, 22 Oct 2026 12:00:00 +0000
+Message-ID: <fixture-encrypted@example.test>
+MIME-Version: 1.0
+Subject: Encrypted plan
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="outer-enc"
+
+This is an OpenPGP/MIME encrypted message
+--outer-enc
+Content-Type: application/pgp-encrypted
+
+Version: 1
+
+--outer-enc
+Content-Type: application/octet-stream; name="encrypted.asc"
+Content-Disposition: inline; filename="encrypted.asc"
+
+-----BEGIN PGP MESSAGE-----
+
+hF4Dw8XwimqR/NwSAQdA7mkRst0Sg2kcYaI+zH2FGpwwyWOCaMDL0+XH2iHNvQAw
+ewfC55FscjktWC2lOiOCEruRYh8f6l4jo31AgB3pC+skWztc3aBWS5bc+Ebklgj4
+0sD+AWXgbmTvac0JkRSGCM94r7himl+kHofGXmZzigDuDy9p+CCmS8qNMT+CtPwf
+LFUf1TWDqmP3RZb3Po47OOzExAFbAYKIpHj1UBfa79fxL9pf0h8hPSgzZ6ZAR5q9
+MVaQmtUW9nf2BFL9ny4hs8kdhM4guz23QdZgXVql3liIHAiERIhd7xLVftjSUteU
+NENGfuHGkzctZj9xRfgRnkALZh7YPQQuwPDd9yWzo+5Ob45EpGdfBO3XmVzVWXAR
+i+q+FO6Q357WYiTKnjAeLFcJ9XmZ3+oWc+/6XvE0WkKwoL2BxfYj5Vmze7YFQWR5
+8HyWr+6TLeNpo76t/QxocynpkLl+pMgR7eZdgnUT/ZhxuxnuN0rVPyfziNKXvWoC
+SilRwr5c/8NIxMdR6JErayQRZ4j1U9A3JT4NP4MkAbo6B9WvNy0hlJ6cr/rutcPE
+r97F11ohEj8LFzRZaH/rTRn8unZ5wkWjgJdx9MJyMNxiMtCkyGaW0UUfVToC+d6s
+qCDSzWQdhe73Vt7w7x14lQHn3V4faA6M4GxnO6l3tQ+toP5e7UpyYYOrbk21dA7Y
+Hv6J8LtW0j15FKt5cnDc0Wk=
+=C5zn
+-----END PGP MESSAGE-----
+--outer-enc--

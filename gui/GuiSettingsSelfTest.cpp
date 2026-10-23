@@ -306,12 +306,76 @@ void GuiSettingsSelfTest::step() {
             finish(QString("Settings did not restore independent Mail scroll and editor focus/selection (list %1/%2, reader %3/%4).")
                 .arg(list?list->property("contentY").toDouble():-1).arg(m_listY).arg(reader?reader->property("contentY").toDouble():-1).arg(m_readerY)); return;
         }
-        qInfo() << "Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).";
+        qInfo() << "Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences, an OpenPGP key created and made Windscribe's default, and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).";
         finish(); break;
     }
     case 30:
         if (!click("settingsPage_General")) return;
         ++m_stage; break;
+    // Settings → Encryption: create a key for Windscribe through the dialog,
+    // check the backup passphrase rules, make encryption the default, and
+    // read the result back through the CLI and the account card.
+    case 50:
+        if (!click("settingsPage_Encryption")) return;
+        ++m_stage; break;
+    case 51:
+        if (!item("pgpNoOwnKeys") || !click("pgpCreateKey")) return;
+        ++m_stage; break;
+    case 52: {
+        const auto account = item("pgpKeyAccount"), name = item("pgpKeyName");
+        if (!account || !name || !item("pgpKeyCreate")) return;
+        if (account->property("currentIndex").toInt() != 0 || name->property("text").toString() != m_name) { finish("Create key did not start with the Windscribe account's name."); return; }
+        if (!click("pgpKeyCreate")) return;
+        ++m_stage; break;
+    }
+    case 53: {
+        const auto keys = m_backend.pgpKeys()->property("keys").toList();
+        if (keys.size() != 1 || !item("pgpBackupPassphrase")) return;
+        const auto created = keys.first().toMap();
+        if (!created["secret"].toBool() || created["accounts"].toList() != QVariantList{"windscribe"} || created["algorithm"].toString() != "Ed25519"
+            || created["user_ids"].toList().value(0).toString() != m_name + " <you@windscribe.example>" || created["expires_at"].isNull()) {
+            finish("The created key is not Windscribe's own Ed25519 key with an expiry."); return;
+        }
+        m_pgpFingerprint = created["fingerprint"].toString();
+        if (!type("pgpBackupPassphrase", "too short") || !type("pgpBackupRepeat", "too short") || item("pgpBackupSave")->isEnabled()) { finish("A short backup passphrase was accepted."); return; }
+        if (!type("pgpBackupPassphrase", "a long enough passphrase") || !type("pgpBackupRepeat", "a different passphrase") || item("pgpBackupSave")->isEnabled()) { finish("Mismatched backup passphrases were accepted."); return; }
+        if (!type("pgpBackupRepeat", "a long enough passphrase") || !item("pgpBackupSave")->isEnabled()) { finish("A strong, repeated backup passphrase was refused."); return; }
+        // The save dialog is the system's; leave without saving.
+        if (!click("pgpBackupCancel")) { finish("The backup dialog has no Cancel."); return; }
+        ++m_stage; break;
+    }
+    case 54:
+        if (item("pgpBackupPassphrase") || !click("pgpEncryptDefault_windscribe")) return;
+        ++m_stage; break;
+    case 55: {
+        const auto choice = m_backend.pgpKeys()->property("accounts").toMap().value("windscribe").toMap();
+        if (!choice["encrypt_by_default"].toBool() || !choice["sign_by_default"].toBool()) return;
+        ++m_stage;
+        cli({"accounts"}, [this](auto result) {
+            for (const auto &value : result["accounts"].toArray()) {
+                const auto row = value.toObject();
+                if (row["id"].toString() != "windscribe") continue;
+                const auto pgp = row["pgp"].toObject();
+                if (pgp["fingerprint"].toString() != m_pgpFingerprint || !pgp["encrypt_by_default"].toBool() || pgp["status"].toString() != "valid")
+                    finish("The CLI did not see Windscribe's new key and default.");
+                return;
+            }
+            finish("The CLI account list omitted Windscribe.");
+        });
+        break;
+    }
+    case 56:
+        if (!click("settingsPage_Accounts")) return;
+        ++m_stage; break;
+    case 57: {
+        const auto row = item("accountPgp_windscribe");
+        if (!row) return;
+        const auto text = row->property("text").toString();
+        if (!text.startsWith("On · ") || !text.endsWith("signs and encrypts new mail")) return;
+        if (!draftIntact()) { finish("Setting up OpenPGP changed the existing authored draft."); return; }
+        m_result["pgp"] = QVariantMap{{"fingerprint", m_pgpFingerprint}, {"account_row", text}};
+        m_stage = 23; break;
+    }
     case 31:
         if (!item("settingsPage_General") || !m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.m_calendarRevision < 0) return;
         // Earlier calendar/account settings have already committed. Wait for
@@ -371,7 +435,7 @@ void GuiSettingsSelfTest::step() {
         auto expected = m_result["preferences"].toMap();
         for (const auto &key : {"theme", "text_size", "startup_view", "timeline_position", "default_event_duration_minutes"}) expected[key] = m_backend.preferences()[key];
         m_result["preferences"] = expected;
-        m_stage = 23;
+        m_stage = 50;
         cli({"preferences","show"}, [this, expected](auto result) {
             const auto actual = result["preferences"].toObject();
             const auto jsonExpected = QJsonObject::fromVariantMap(expected);

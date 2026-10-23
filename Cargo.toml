@@ -14,3 +14,11 @@ publish = false
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# RSA key generation is unusably slow unoptimized; keep it fast in dev builds
+# and tests.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3

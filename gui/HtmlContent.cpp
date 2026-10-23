@@ -417,6 +417,10 @@ void HtmlContent::refreshImageCache() {
     });
 }
 
+void HtmlContent::forgetViews() {
+    m_htmlCache.clear(); m_htmlOrder.clear();
+}
+
 void HtmlContent::clearImageCache() {
     call({}, "remote_image_cache", {{"op", "clear"}}, [this](const QJsonObject &result, bool ok) {
         if (ok) { m_imageCache = result.toVariantMap(); emit imageCacheChanged(); }

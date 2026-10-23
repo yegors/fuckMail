@@ -15,6 +15,11 @@ bool remoteContent(const QString &method) {
         || method == "remote_proxy_test" || method == "remote_proxy_password" || method == "remote_image_cache"
         || method == "message_unsubscribe" || method == "sender_avatar";
 }
+// The OpenPGP keyring, in every profile kind.
+bool keyring(const QString &method) {
+    return method == "pgp_keys" || method == "pgp_key_generate" || method == "pgp_key_import" || method == "pgp_key_export"
+        || method == "pgp_key_expiry" || method == "pgp_key_delete" || method == "pgp_account" || method == "pgp_recipients";
+}
 }
 
 GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *parent)
@@ -72,7 +77,7 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_unsubscribe_mail" && method != "google_bin_counts" && method != "google_not_spam"
         && method != "google_delete_forever" && method != "google_empty"
         && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get"
-        && !remoteContent(method)) {
+        && !remoteContent(method) && !keyring(method)) {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
     // Read the session token from discovery, and refuse if the engine that
@@ -130,7 +135,7 @@ void GoogleOperation::receive() {
     const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source"
         || m_method == "google_draft_authoring" || m_method == "google_draft_copy" || m_method == "draft_transfer"
         || m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get"
-        || remoteContent(m_method);
+        || remoteContent(m_method) || keyring(m_method);
     if (mode != "live" && !(localImport && mode == "synthetic")) {
         reject("profile_mode_mismatch", "Google operations require a live profile."); return;
     }
@@ -143,6 +148,9 @@ void GoogleOperation::receive() {
             || m_method == "google_delete_forever" ? 60000
         : m_method == "google_empty" ? 300000
         : m_method == "google_remote_thread" || m_method == "google_remote_attachment" ? 120000
+        // RSA keys take a while to make; the rest is quick local work.
+        : m_method == "pgp_key_generate" ? 120000
+        : keyring(m_method) ? 30000
         : m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" || remoteContent(m_method) ? 15000
         : localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});

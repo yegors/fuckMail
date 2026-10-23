@@ -1,6 +1,8 @@
 # Local mail search
 
-State: Draft · Revision: 11 · Updated: 2026-09-25 · Implementation: D130 match highlighting; D129 phrase matching; D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+State: Draft · Revision: 12 · Updated: 2026-10-22 · Implementation: D217 encrypted text stays out of the index; D130 match highlighting; D129 phrase matching; D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+
+Revision 12 (D217): the text inside an encrypted message is never indexed, as it is decrypted only to be read; search and snippets see only what was outside the encryption. Inline armor is left out of indexed text, and a clear-signed message is indexed by its text. Consumers: Core104, Mail UI158; schema41.
 
 Revision 11 (D130) adds `phrases` to `search_terms`: `[{text, field}]`, with `field` `any` for bare phrases, or `subject` or `body` for those operators, in the order typed. Clients use it to highlight matches by the same rules; it does not change which mail matches. A result's `snippet` now starts about 60 characters before the first place a bare or `body:` phrase matches, by those rules. Before, it started at the first appearance of any word, which could be inside another word. Consumers: Mail UI95 and CLI (the field is additive); schema37, fixtures0/3 and protocol1 unchanged.
 

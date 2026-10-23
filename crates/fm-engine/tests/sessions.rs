@@ -780,3 +780,100 @@ async fn html_reader_serves_sanitised_html_and_fetches_nothing_unasked() {
         json!({"state":"none","label":"No photo \u{b7} initials","off":true})
     );
 }
+
+#[tokio::test]
+async fn keyring_requests_run_through_the_engine_with_a_private_demo_key() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("demo");
+    let mut c = client(&profile).await;
+    let accounts = ok(c.call("accounts", None, json!({})).await.unwrap());
+    let account = &accounts["accounts"][0];
+    let id = account["id"].as_str().unwrap().to_owned();
+    assert_eq!(account["pgp"], Value::Null);
+    assert_eq!(
+        ok(c.call("pgp_keys", None, json!({})).await.unwrap())["keys"],
+        json!([])
+    );
+    let generated = ok(c
+        .call(
+            "pgp_key_generate",
+            None,
+            json!({"name":account["name"],"email":account["email"],"algorithm":"curve25519","expires_days":1095,"account":id,"request_id":"engine-generate"}),
+        )
+        .await
+        .unwrap());
+    let fingerprint = generated["fingerprint"].as_str().unwrap().to_owned();
+    // The demo profile keeps the sealing key in a private file, never the keychain.
+    let key_file = profile.join("pgp-demo-key");
+    assert!(key_file.exists());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&key_file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    let accounts = ok(c.call("accounts", None, json!({})).await.unwrap());
+    assert_eq!(accounts["accounts"][0]["pgp"]["fingerprint"], fingerprint);
+    let exported = ok(c
+        .call(
+            "pgp_key_export",
+            None,
+            json!({"fingerprint":fingerprint,"kind":"public"}),
+        )
+        .await
+        .unwrap());
+    assert!(exported["armored"]
+        .as_str()
+        .unwrap()
+        .starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----"));
+    // Errors keep their details, such as which key needs a passphrase.
+    let secret = ok(c
+        .call(
+            "pgp_key_export",
+            None,
+            json!({"fingerprint":fingerprint,"kind":"secret","passphrase":"engine test passphrase"}),
+        )
+        .await
+        .unwrap());
+    let refused = c
+        .call(
+            "pgp_key_import",
+            None,
+            json!({"text":secret["armored"],"request_id":"engine-import"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(refused["error"]["code"], "passphrase_required", "{refused}");
+    assert_eq!(refused["error"]["details"]["fingerprint"], fingerprint);
+    let scoped = c.call("pgp_keys", Some(&id), json!({})).await.unwrap();
+    assert_eq!(scoped["error"]["code"], "invalid_request", "{scoped}");
+    let recipients = ok(c
+        .call(
+            "pgp_recipients",
+            Some(&id),
+            json!({"addresses":[account["email"]]}),
+        )
+        .await
+        .unwrap());
+    assert_eq!(recipients["recipients"][0]["status"], "ready");
+    // A restarted engine reads the same sealing key back.
+    drop(c);
+    wait_stopped(&profile).await;
+    let mut c = client(&profile).await;
+    let revocation = ok(c
+        .call(
+            "pgp_key_export",
+            None,
+            json!({"fingerprint":fingerprint,"kind":"revocation"}),
+        )
+        .await
+        .unwrap());
+    assert!(revocation["armored"]
+        .as_str()
+        .unwrap()
+        .contains("BEGIN PGP PUBLIC KEY BLOCK"));
+    drop(c);
+    wait_stopped(&profile).await;
+}

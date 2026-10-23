@@ -400,6 +400,10 @@ async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_cl
                 &std::env::temp_dir(),
                 None,
             )),
+            keyring: Arc::new(crate::pgp::Runtime::new(
+                CoreBridge::new(queue.clone(), Arc::new(Semaphore::new(4))),
+                Arc::new(fm_core::pgp::MemoryKek::new()),
+            )),
         };
         let foreground = Arc::new(Semaphore::new(2));
         let engine = CancellationToken::new();

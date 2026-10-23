@@ -10,6 +10,7 @@ pub struct ReadPlan {
     account: String,
     message: String,
     version: String,
+    pgp: crate::pgp::ReadKeys,
 }
 
 impl Store {
@@ -36,6 +37,7 @@ impl Store {
             account: account.into(),
             message: mid.into(),
             version,
+            pgp: self.pgp_read_keys()?,
         })
     }
 }
@@ -70,8 +72,11 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let bytes = crate::local_content::read_source(&plan.blobs, &plan.version)?;
+    // Protected mail reads as its decrypted or unwrapped message; `raw` stays
+    // the source as received.
+    let readable = plan.pgp.readable(bytes.clone());
     let parsed = mail_parser::MessageParser::default()
-        .parse(&bytes)
+        .parse(&readable.bytes[..])
         .ok_or_else(|| {
             err(
                 "content_unavailable",
@@ -135,6 +140,14 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
         "metadata":metadata,"sender_check":sender_check,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
         "body_text":body_text,"text_truncated":text_truncated,"body_full":body_full,"full_truncated":full_truncated,"raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
+    if let Some(opened) = &readable.opened {
+        result["pgp"] = crate::pgp::opened_json(opened);
+        // Files inside an encrypted message exist only once it is decrypted.
+        if readable.decrypted() {
+            result["pgp"]["attachments"] =
+                crate::pgp::decrypted_attachments(&plan.message, &parsed).into();
+        }
+    }
     fit_reply(&mut result)?;
     Ok(result)
 }

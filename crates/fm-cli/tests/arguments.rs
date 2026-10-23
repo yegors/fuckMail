@@ -1259,3 +1259,36 @@ fn assist_thread_needs_an_account_before_storage() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("thread"));
     assert!(!profile.exists());
 }
+
+#[test]
+fn pgp_commands_check_scope_and_input_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    for args in [
+        vec!["pgp", "use", "ABCDEF"],
+        vec!["pgp", "use", "--off"],
+        vec!["pgp", "recipients", "ann@example.test"],
+        vec!["pgp", "generate", "--expires", "5x"],
+        vec!["pgp", "generate", "--expires", "0d"],
+        vec!["pgp", "expiry", "ABCDEF", "--expires", "100y"],
+        vec!["pgp", "export", "ABCDEF", "--secret"],
+        vec![
+            "pgp",
+            "export",
+            "ABCDEF",
+            "--secret",
+            "--revocation",
+            "--passphrase-stdin",
+        ],
+        vec!["pgp", "import", "-", "--passphrase-stdin"],
+        vec!["pgp", "use"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", profile.to_str().unwrap()])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(!profile.exists(), "{args:?} must not open storage");
+    }
+}

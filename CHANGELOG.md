@@ -4,6 +4,12 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-22
 
+- OpenPGP: sign and encrypt mail with your own keys. **Settings → Encryption** creates keys (Ed25519 by default, or RSA 4096), imports keys from GnuPG and other apps, and backs up, exports, renews or revokes them. Pick each account's key and whether new mail signs or encrypts by default there.
+- The Accounts page shows which accounts have OpenPGP on, with the key and its defaults.
+- The composer has Sign and Encrypt buttons for accounts with a key, and names any recipient whose key you don't have. Encrypted mail is also encrypted to you, so your Sent copy stays readable, and its drafts stay on this computer instead of Gmail Drafts.
+- Encrypted mail you receive opens decrypted, attachments included, and signed mail shows whether the signature is good and really from the sender. Its text is never stored decrypted or made searchable, and pictures or attachments you open from it are cleared when fuckMail closes.
+- Secret keys are sealed with a key kept in your system keychain. Back them up from Settings → Encryption: a copy of the profile on another computer can't open them.
+- `fm pgp` lists, creates, imports, exports, renews and deletes keys, sets an account's key, and checks recipients; `fm draft save --sign/--encrypt` turns protection on or off for a draft.
 - Forwarding a message you read as HTML sends it as received, layout and images included, below what you write. The message area shows it under your words, read-only. Messages you read as text still forward as quoted text.
 - Hover a recipient in To, Cc or Bcc to see their contact card, with their address, as you can for names in the reader. Click to open it at once.
 - A forward opens at its top with two empty lines above the forwarded message, even without a signature, so you can start typing straight away.

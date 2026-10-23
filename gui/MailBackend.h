@@ -28,6 +28,7 @@
 
 class GoogleOperation;
 class HtmlContent;
+class PgpKeys;
 
 // Presentation state and asynchronous engine IPC only. The engine owns the
 // database and every Google call, so the GUI and the CLI always see the same data.
@@ -71,6 +72,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
     // The HTML reader: sanitised HTML, images, link cards, blocklist and proxy.
     Q_PROPERTY(QObject *htmlContent READ htmlContent CONSTANT)
+    // The OpenPGP keyring: keys, each account's key and recipient checks.
+    Q_PROPERTY(QObject *pgpKeys READ pgpKeys CONSTANT)
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantMap googleAuthConfiguration READ googleAuthConfiguration NOTIFY googleAuthChanged)
@@ -222,6 +225,7 @@ public:
     QString recipientError() const { return m_recipientError; }
     bool connected() const { return m_connected; }
     QObject *htmlContent() const;
+    QObject *pgpKeys() const;
     bool syntheticProfile() const { return m_syntheticProfile; }
     QVariantMap googleAuth() const { return m_googleAuth; }
     QVariantMap googleAuthConfiguration() const { return m_googleAuthConfiguration; }
@@ -416,6 +420,9 @@ public:
     Q_INVOKABLE void stageDraftRecipient(const QString &field, const QString &text);
     Q_INVOKABLE void removeDraftRecipient(const QString &field, int index);
     Q_INVOKABLE void setDraftSubject(const QString &subject);
+    /// Whether the open draft is signed and encrypted with OpenPGP when sent.
+    /// Saved like any other edit; an encrypted draft stays out of Gmail Drafts.
+    Q_INVOKABLE void setDraftProtection(bool sign, bool encrypt);
     Q_INVOKABLE void editFormattedDraft(const QString &body, const QString &html);
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
     Q_INVOKABLE void importDraftAttachment(const QUrl &file, const QString &account, const QString &draftId);
@@ -593,6 +600,7 @@ private:
     friend class CalendarMailActivityTest;
     friend class AccountLifecycleControlsTest;
     friend class HtmlContent;
+    friend class PgpKeys;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -978,6 +986,7 @@ private:
     QCache<QString, ReaderSnapshot> m_sourceCache{8 * 1024 * 1024};
     mutable QCache<QByteArray, QVariantList> m_bodyCache{4 * 1024 * 1024};
     mutable HtmlContent *m_htmlContent = nullptr;
+    mutable PgpKeys *m_pgpKeys = nullptr;
     bool m_initialAccountsLoaded = false, m_initialPreferencesLoaded = false;
     QTimer m_notificationTimer;
     QVariantList m_reminders;

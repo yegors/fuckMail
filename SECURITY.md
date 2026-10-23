@@ -23,6 +23,20 @@ releases yet, so fixes land on `main`.
   **The app does not encrypt this data.** It refuses profile folders owned by or shared with
   other users, but beyond that it relies on your OS account and full-disk encryption (BitLocker,
   FileVault or LUKS). Keep the profile out of cloud-synced folders.
+
+  OpenPGP-encrypted mail is the exception: it is stored as received and decrypted only in
+  memory while you read it, so its text never reaches the database, search or local models.
+  Its pictures and any attachment you open or preview are written to a `decrypted` folder in
+  the profile, which the engine empties when it starts and stops; a copy you save elsewhere is
+  yours to look after.
+- **OpenPGP keys.** Public keys and sealed secret keys are stored in the profile's database.
+  Each secret key is sealed with AES-256-GCM under a key kept in the OS credential store (one
+  entry per profile), so the database alone can't open it; without that entry, secret keys
+  can't be used, and the app never falls back to storing them in the clear. A passphrase on an
+  imported key is removed once it is sealed. Exported secret keys are always protected with a
+  passphrase of at least 12 characters and written to a new file only you can read. Keys never
+  leave the machine except as files you export: there are no keyserver or key-discovery
+  lookups.
 - **Google app registration.** A build's OAuth client file (`google-oauth-client.json`)
   identifies the app, not a user, and contains no tokens. See
   [Google sign-in setup](docs/build-development.md#google-sign-in-setup).

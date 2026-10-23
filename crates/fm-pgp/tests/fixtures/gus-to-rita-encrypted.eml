@@ -1,0 +1,33 @@
+From: Gus GnuPG <gus@example.test>
+To: Rita RSA <rita@example.test>
+Date: Thu, 22 Oct 2026 12:00:00 +0000
+Message-ID: <fixture-rita@example.test>
+MIME-Version: 1.0
+Subject: For Rita
+Content-Type: multipart/encrypted; protocol="application/pgp-encrypted"; boundary="outer-enc"
+
+--outer-enc
+Content-Type: application/pgp-encrypted
+
+Version: 1
+
+--outer-enc
+Content-Type: application/octet-stream
+
+-----BEGIN PGP MESSAGE-----
+
+hQGMA5ON+FWSiKo3AQwAgOzx74NiXOLYt33v0i6tKQKjpBuGppwsnPysLaqAO/8K
+6XM8KA6MHqsi0Y9He9sJPjVV9S1o5Sb2fZO56iQp7zBuPzTTe4t5nk8Svo+q15by
+HYhPxbfRVv/GTs+14a2q4Wf7A9S5EJoqZUogGKrC9qzlAHXox7nn8JEpE2qVCesn
+K0KMfqudX7AowgxQuBcz5yH1x+tofbU2R2uHa1d4QtawiV86PBakpf4r7K78S8x7
+6iuyMT8owc5OJzu2hMYLJ9+Rz2OtFBOsPkoVJvf66MyD4oOSKfJsSDaIvg/q9NMu
+RhUXcwxYWgeFANuZX+7XSrGG/borrB/IZmLvTNTcUZAIu13nqUrRdiJuusUexRbd
+1pYYsJyTNaM84TxoCcDSJwn45iSGY8upHRWG/yxy41uuJMFwXxMl8bJbdiblzfYV
+fA2i/43OM1ibKztWBSi/0Tqb7rM9ceMobaXytEBO6FOs+8XfC9UQ2/h+Jt+gywJ2
+VlTyyrJ8EyATw+Ygi0fS1IsBCQIQFY8AVo5yJJs5WIwL4tfLc6NRr7I1/Z6Crnr3
+v5xY+xAusBX9yHhclAuOeuFbGFcluQsR9ZLJs/c40XUxEL7kiO6afnwtcoFrZhSP
+Ci8hOFgAnsagAYVnPYGtNurd/EGEgszq1YnCwB+aQYRzZZl1QkK4cL+abIeCcb9r
+5oLw0Qsd84Onolm7
+=QtmA
+-----END PGP MESSAGE-----
+--outer-enc--

@@ -94,6 +94,10 @@ bool draw(const QString &name, Sketch &c) {
     else if (n == "check") c.line({3.5,8,6.5,11,12.5,4.5});
     // M8 2 13 4v4c0 3-2.2 5.2-5 6-2.8-.8-5-3-5-6V4zM6 8l1.5 1.5L10.5 6.5
     else if (n == "shield") { c.moveTo(8,2); c.lineTo(13,4); c.lineTo(13,8); c.cubicTo(13,11,10.8,13.2,8,14); c.cubicTo(5.2,13.2,3,11,3,8); c.lineTo(3,4); c.path.closeSubpath(); c.line({6,8,7.5,9.5,10.5,6.5}); }
+    // A padlock: body M3.5 7.5h9v6h-9z, shackle M5.5 7.5V5a2.5 2.5 0 0 1 5 0v2.5
+    else if (n == "lock") { c.roundedRect(3.5,7.5,9,6,1); c.moveTo(5.5,7.5); c.lineTo(5.5,5); c.arc(8,5,2.5,M_PI,0); c.lineTo(10.5,7.5); c.line({8,10,8,11.2}); }
+    // A key: bow circle (5,8) r2.75, shaft M7.75 8h6.25, teeth M12 8v2M14 8v1.5
+    else if (n == "key") { c.circle(5,8,2.75); c.line({7.75,8,14,8}); c.line({12,8,12,10}); c.line({14,8,14,9.5}); }
     // M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5
     else if (n == "bin") { c.line({3,4.5,13,4.5}); c.line({6.5,4.5,6.5,3,9.5,3,9.5,4.5}); c.line({4.5,4.5,5.1,13,10.9,13,11.5,4.5}); }
     // M2.5 9.5h3l1 1.5h3l1-1.5h3M2.5 9.5 4 4h8l1.5 5.5V13h-11z

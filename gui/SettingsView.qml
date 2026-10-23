@@ -1,6 +1,6 @@
-// The Settings workspace: the page list (General, Accounts, Local LLM, Mail,
-// Calendar, Shortcuts, Diagnostics), each page's content and the account
-// dialogs. Main.qml loads it on first open; each page is built when first shown.
+// The Settings workspace: the page list (General, Accounts, Encryption, Local
+// LLM, Mail, Calendar, Shortcuts, Diagnostics), each page's content and the
+// account dialogs. Main.qml loads it on first open; each page is built when first shown.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,7 +12,7 @@ Item {
     signal done()
     signal archiveOpened()
     property string page: "General"
-    readonly property bool popupOpen: accountEditor.opened || googleSignIn.opened || modelUnsaved.opened || labelsDialog.opened || colorPicker.opened || signatureDialog.opened
+    readonly property bool popupOpen: accountEditor.opened || googleSignIn.opened || modelUnsaved.opened || labelsDialog.opened || colorPicker.opened || signatureDialog.opened || (!!encryptionPage.item && encryptionPage.item.popupOpen)
     readonly property bool recordingShortcut: !!shortcutsPage.item && shortcutsPage.item.recording.length > 0
     property var pageScroll: ({})
     property string localError: ""
@@ -31,6 +31,7 @@ Item {
     readonly property var subtitles: ({
         "General": "Appearance, text size and notifications for the whole app.",
         "Accounts": "Connect accounts and see what each one is syncing and processing.",
+        "Encryption": "OpenPGP keys for signing and encrypting mail, and which one each account uses.",
         "Local LLM": "Pick the on-device model that summarizes and labels your mail.",
         "Mail": "How the mail list looks, what stays blocked, and how images load.",
         "Calendar": "Defaults for new events, reminders and the calendar view.",
@@ -208,7 +209,7 @@ Item {
                 anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 16; anchors.topMargin: 24; anchors.bottomMargin: 20; spacing: 2
                 Heading { text: "Settings"; leading: 1; Layout.leftMargin: 10; Layout.bottomMargin: 18 }
                 Repeater {
-                    model: [{name:"General",icon:"general"},{name:"Accounts",icon:"accounts"},{name:"Local LLM",icon:"chip"},{name:"Mail",icon:"mail"},{name:"Calendar",icon:"calendar"},{name:"Shortcuts",icon:"keyboard"}]
+                    model: [{name:"General",icon:"general"},{name:"Accounts",icon:"accounts"},{name:"Encryption",icon:"lock"},{name:"Local LLM",icon:"chip"},{name:"Mail",icon:"mail"},{name:"Calendar",icon:"calendar"},{name:"Shortcuts",icon:"keyboard"}]
                     FmButton {
                         required property var modelData
                         objectName: "settingsPage_" + modelData.name
@@ -356,6 +357,7 @@ Item {
                             Caption { Layout.topMargin: 4; visible: backend.syntheticProfile; text: "Open a separate live profile to connect your Google accounts." }
                         }
                     }
+                    SettingsPage { id: encryptionPage; name: "Encryption"; sourceComponent: EncryptionSettings {} }
                     SettingsPage { id: modelPage; name: "Local LLM"; sourceComponent: LocalModelSettings { onSaveCompleted: if(settings.pendingModelLeave)settings.finishModelLeave() } }
                     SettingsPage {
                         name: "Mail"

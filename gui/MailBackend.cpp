@@ -2118,6 +2118,10 @@ void MailBackend::saveDraft() {
     for (const auto &key : {"subject", "to_recipients", "cc_recipients", "bcc_recipients"}) {
         if (m_draft.contains(key)) { headers[key] = m_draft[key]; params[key] = QJsonValue::fromVariant(m_draft[key]); }
     }
+    // OpenPGP choices go only once set here or loaded; the engine keeps them otherwise.
+    for (const auto &key : {"pgp_sign", "pgp_encrypt"}) {
+        if (m_draft.contains(key)) { headers[key] = m_draft[key].toBool(); params[key] = m_draft[key].toBool(); }
+    }
     m_savingDraft = true;
     const auto account = m_account;
     const auto context = draftContext();

@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
     const auto captureView = parser.value("screenshot-view");
     if (captureView != "mail" && captureView != "calendar" && captureView != "settings") parser.showHelp(1);
     if (!QStringList{"day", "week", "month", "agenda"}.contains(parser.value("screenshot-calendar-view"))) parser.showHelp(1);
-    if (!QStringList{"General", "Accounts", "Local LLM", "Mail", "Calendar", "Shortcuts", "Diagnostics"}.contains(parser.value("screenshot-settings-page"))) parser.showHelp(1);
+    if (!QStringList{"General", "Accounts", "Encryption", "Local LLM", "Mail", "Calendar", "Shortcuts", "Diagnostics"}.contains(parser.value("screenshot-settings-page"))) parser.showHelp(1);
     if (parser.isSet("screenshot-date") && !QDate::fromString(parser.value("screenshot-date"), Qt::ISODate).isValid()) parser.showHelp(1);
     auto profile = parser.value("profile");
     const bool demoProfile = parser.isSet("demo-profile") || parser.isSet("self-test")

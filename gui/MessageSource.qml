@@ -39,6 +39,35 @@ Item {
     readonly property var senderCheck: message.sent ? null : result.sender_check || message.sender_check || null
     readonly property bool senderVerified: !!senderCheck && senderCheck.verified === true
     readonly property var senderWarnings: senderCheck ? senderCheck.warnings || [] : []
+    // OpenPGP: how the message is protected and what opening it found.
+    readonly property var pgp: result.pgp || null
+    readonly property bool encrypted: (!!pgp && pgp.encrypted === true) || message.pgp === "encrypted"
+    readonly property string decryption: pgp && pgp.decryption ? pgp.decryption.state || "" : ""
+    readonly property var signatures: pgp ? pgp.signatures || [] : []
+    // The best signature result: good and from the sender beats good, beats the rest.
+    readonly property var signature: signatures.length === 0 ? null
+        : signatures.find(function(s) { return s.status === "good" && s.sender_matches }) || signatures.find(function(s) { return s.status === "good" }) || signatures[0]
+    readonly property bool trustedSignature: !!signature && signature.status === "good" && signature.sender_matches
+    // Files inside an encrypted message, once it is decrypted.
+    readonly property var decryptedAttachments: pgp && pgp.attachments ? pgp.attachments : null
+    function keyId(id) { return String(id || "").slice(-16).replace(/(.{4})(?=.)/g, "$1 ") }
+    // The header icon's tooltip: one line for encryption, one for the signature.
+    readonly property string pgpSummary: {
+        const lines = []
+        if (encrypted) lines.push(decryption === "decrypted" ? "Encrypted · decrypted with your key" : decryption ? "Encrypted · can't be read here" : "Encrypted")
+        if (signature) {
+            const who = signature.signer || ("key " + keyId(signature.key_id))
+            lines.push(({good: signature.sender_matches ? "Signed by " + who : "Signed by " + who + ", which isn't the sender's address",
+                bad: "Signature doesn't match: the message changed after it was signed",
+                unknown_key: "Signed with key " + keyId(signature.key_id) + ", which isn't in your keyring",
+                key_expired: "Signed by " + who + " with a key that had expired",
+                key_revoked: "Signed by " + who + " with a key that has been revoked",
+                weak: "Signed by " + who + " with a hash too weak to trust",
+                invalid_key: "Signed by " + who + " with a key that can't sign"})[signature.status] || "Signed")
+            if (signature.fingerprint) lines.push(signature.fingerprint.replace(/(.{4})(?=.)/g, "$1 "))
+        }
+        return lines.join("\n")
+    }
     readonly property bool popupOpen: original.visible
     function adopt() {
         const prepared = message.reader_source

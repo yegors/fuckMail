@@ -21,8 +21,9 @@ const MAX_METADATA: usize = 32 * 1024;
 // deferral for the same revision and the quiet period both hold a draft back.
 // A draft with nothing written (no subject, recipients, attachments or text
 // beyond the signature) is not sent to Gmail until something is, unless it
-// already has a Gmail draft to update.
-const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR json_extract(google_json,'$.baseline.draft_id') IS NOT NULL OR json_extract(google_json,'$.adoption.target.provider_draft_id') IS NOT NULL OR trim(COALESCE(json_extract(routing_json,'$.subject'),''))<>'' OR COALESCE(json_array_length(json_extract(routing_json,'$.to_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.cc_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.bcc_recipients')),0)>0 OR COALESCE(json_array_length(attachments_json),0)>0 OR trim(replace(body,COALESCE(signature_text,''),''),' '||char(9,10,13))<>'') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR updated_at*1000<=?3-?4) ORDER BY updated_at,draft_id LIMIT ?2";
+// already has a Gmail draft to update. A draft that will be encrypted is
+// never uploaded: Gmail would hold its text in the clear.
+const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(routing_json,'$.pgp_encrypt'),0)=0 AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR json_extract(google_json,'$.baseline.draft_id') IS NOT NULL OR json_extract(google_json,'$.adoption.target.provider_draft_id') IS NOT NULL OR trim(COALESCE(json_extract(routing_json,'$.subject'),''))<>'' OR COALESCE(json_array_length(json_extract(routing_json,'$.to_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.cc_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.bcc_recipients')),0)>0 OR COALESCE(json_array_length(attachments_json),0)>0 OR trim(replace(body,COALESCE(signature_text,''),''),' '||char(9,10,13))<>'') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR updated_at*1000<=?3-?4) ORDER BY updated_at,draft_id LIMIT ?2";
 
 /// The verified Google connection a draft or send operation runs under.
 ///
@@ -517,10 +518,16 @@ impl Store {
                 "The previous immutable draft operation must finish or be inspected first",
             ));
         }
-        let (from,discarded): (String,bool) = self.db.query_row("SELECT json_extract(routing_json,'$.from'),discarded FROM drafts WHERE account=?1 AND draft_id=?2",params![scope.account,draft_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
+        let (from,discarded,encrypted): (String,bool,bool) = self.db.query_row("SELECT json_extract(routing_json,'$.from'),discarded,COALESCE(json_extract(routing_json,'$.pgp_encrypt'),0) FROM drafts WHERE account=?1 AND draft_id=?2",params![scope.account,draft_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
         same_from(&from, &scope.primary_email)?;
         if discarded {
             return Err(err("invalid_draft", "Discarded draft cannot be uploaded"));
+        }
+        if encrypted {
+            return Err(err(
+                "pgp_draft_local",
+                "A draft that will be encrypted stays on this computer, not in Gmail Drafts",
+            ));
         }
         if !resolving
             && ((twin.state == "synced"

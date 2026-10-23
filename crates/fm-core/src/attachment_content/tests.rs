@@ -130,6 +130,7 @@ fn schema_upgrade_converts_old_copies_and_keeps_shared_authored_bytes() {
         .db
         .execute_batch("DROP TABLE attachment_sources; PRAGMA user_version=37;")
         .unwrap();
+    crate::fresh_schema_tests::undo_openpgp_schema(&store.db);
     store.db.execute("INSERT INTO attachments(account,id,name,mime_type,size,state,blob_hash) VALUES('windscribe','authored','file.bin','application/octet-stream',?1,'available',?2)",params![bytes.len(),hash]).unwrap();
     drop(store);
     let store = Store::open(tmp.path()).unwrap();

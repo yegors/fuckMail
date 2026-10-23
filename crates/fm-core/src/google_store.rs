@@ -180,6 +180,9 @@ pub(crate) struct StagedMessage {
     /// RFC 3339 UTC from the Date header, or empty when missing or invalid.
     pub(crate) sent_at: String,
     pub(crate) attachments: Vec<StagedAttachment>,
+    /// How the message is protected: 0 none, 1 OpenPGP-signed, 2 encrypted.
+    #[serde(default)]
+    pub(crate) pgp: i64,
 }
 
 fn storage_error(_: impl std::fmt::Debug) -> GoogleError {
@@ -392,11 +395,11 @@ pub(crate) fn publish_message(
     )
     .map_err(storage_error)?;
     if existing.is_some() {
-        db.execute("UPDATE messages SET sender_name=?1,sender_email=?2,recipient=?3,subject=?4,body=?5,sent_at=?6,unread=?7,starred=?8,inbox=?9,sent=?10,source_hash=?11,revision=revision+1 WHERE account=?12 AND id=?13",
-            params![staged.sender_name,staged.sender_email,staged.recipient,staged.subject,staged.body,staged.sent_at,unread,starred,labels.contains("INBOX"),labels.contains("SENT"),source_hash,account,mid]).map_err(storage_error)?;
+        db.execute("UPDATE messages SET sender_name=?1,sender_email=?2,recipient=?3,subject=?4,body=?5,sent_at=?6,unread=?7,starred=?8,inbox=?9,sent=?10,source_hash=?11,pgp=?14,revision=revision+1 WHERE account=?12 AND id=?13",
+            params![staged.sender_name,staged.sender_email,staged.recipient,staged.subject,staged.body,staged.sent_at,unread,starred,labels.contains("INBOX"),labels.contains("SENT"),source_hash,account,mid,staged.pgp]).map_err(storage_error)?;
     } else {
-        db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,1)",
-            params![account,mid,cid,staged.remote_id,staged.sender_name,staged.sender_email,staged.recipient,staged.subject,staged.body,staged.sent_at,unread,starred,labels.contains("INBOX"),labels.contains("SENT"),source_hash]).map_err(storage_error)?;
+        db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision,pgp) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,1,?16)",
+            params![account,mid,cid,staged.remote_id,staged.sender_name,staged.sender_email,staged.recipient,staged.subject,staged.body,staged.sent_at,unread,starred,labels.contains("INBOX"),labels.contains("SENT"),source_hash,staged.pgp]).map_err(storage_error)?;
     }
     if indexed_source.as_deref() != Some(source_hash) {
         let rowid: i64 = db
@@ -468,8 +471,14 @@ pub(crate) fn prepare_message(
         .parse(&content.source_mime)
         .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
     let sender = parsed.from().and_then(|list| list.first());
+    let protection = fm_pgp::protection(&parsed);
     let mut body = fm_mail::extract_parsed_incoming_contribution(&parsed)
         .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
+    // Encrypted text is only ever decrypted for reading, so search and
+    // previews see what's around the armor, not ciphertext.
+    if protection != fm_pgp::Protection::None {
+        body = fm_pgp::readable_text(&body);
+    }
     // The reading copy keeps its first 256 KiB; the source MIME stays whole.
     if body.len() > 256 * 1024 {
         let mut end = 256 * 1024;
@@ -483,6 +492,10 @@ pub(crate) fn prepare_message(
     for (index, part) in parsed.attachments().enumerate() {
         // Images the HTML shows (cid:) are part of the body, not attachments.
         if fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
+            continue;
+        }
+        // Nor are a signature or the encrypted payload of PGP/MIME.
+        if fm_pgp::is_protection_part(&parsed, part) {
             continue;
         }
         if attachments.len() >= MAX_RECEIVED_ATTACHMENTS {
@@ -530,6 +543,7 @@ pub(crate) fn prepare_message(
             .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
             .unwrap_or_default(),
         attachments,
+        pgp: protection.code(),
     };
     Ok(staged)
 }
@@ -594,6 +608,89 @@ impl Store {
         let more = rows.len() >= batch;
         tx.execute("INSERT INTO meta(key,value) VALUES('inline_attachment_repair',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[if more { last } else { -1 }])?;
         if removed > 0 {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.commit()?;
+        Ok(more)
+    }
+
+    /// Mail synced before OpenPGP support has no protection recorded, lists
+    /// PGP/MIME plumbing as attachments and indexes inline armor. Repairs
+    /// that a batch at a time and says whether more remain. Progress is kept
+    /// in meta, so each profile is checked once.
+    pub fn repair_pgp_messages(&mut self, batch: usize) -> Result<bool> {
+        let after: i64 = self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key='pgp_message_repair'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        if after < 0 {
+            return Ok(false);
+        }
+        type Row = (i64, String, String, String, String, String, String, String);
+        let rows: Vec<Row> = {
+            let mut stmt = self.db.prepare("SELECT m.rowid,m.account,m.id,m.conversation_id,m.source_hash,m.body,m.sender_name||' '||m.sender_email,m.subject FROM messages m WHERE m.rowid>?1 AND m.pgp=0 AND (instr(m.body,'-----BEGIN PGP ')>0 OR EXISTS(SELECT 1 FROM attachments a WHERE a.account=m.account AND a.message_id=m.id AND a.mime_type IN ('application/pgp-encrypted','application/pgp-signature'))) ORDER BY m.rowid LIMIT ?2")?;
+            let rows = stmt
+                .query_map(params![after, batch as i64], |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        let blobs = self.google_blob_store();
+        let tx = self.db.unchecked_transaction()?;
+        let mut last = after;
+        let mut changed = false;
+        for (rowid, account, id, conversation, hash, body, sender, subject) in &rows {
+            last = *rowid;
+            let Ok(bytes) = crate::local_content::read_source(&blobs, hash) else {
+                continue;
+            };
+            let Some(parsed) = mail_parser::MessageParser::default().parse(&bytes) else {
+                continue;
+            };
+            let protection = fm_pgp::protection(&parsed);
+            if protection == fm_pgp::Protection::None {
+                continue;
+            }
+            let readable = fm_pgp::readable_text(body);
+            tx.execute(
+                "UPDATE messages SET pgp=?3,body=?4,revision=revision+1 WHERE account=?1 AND id=?2",
+                params![account, id, protection.code(), readable],
+            )?;
+            tx.execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])?;
+            tx.execute(
+                "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)",
+                params![rowid, sender, subject, readable],
+            )?;
+            for part in parsed.attachments() {
+                if fm_pgp::is_protection_part(&parsed, part) {
+                    let blob = format!("{:x}", Sha256::digest(part.contents()));
+                    tx.execute("DELETE FROM attachments WHERE account=?1 AND message_id=?2 AND blob_hash=?3 AND NOT EXISTS(SELECT 1 FROM drafts d,json_each(d.attachments_json) j WHERE d.account=?1 AND j.value=attachments.id)",params![account,id,blob])?;
+                }
+            }
+            tx.execute(
+                "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
+                params![account, conversation],
+            )?;
+            changed = true;
+        }
+        let more = rows.len() >= batch;
+        tx.execute("INSERT INTO meta(key,value) VALUES('pgp_message_repair',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[if more { last } else { -1 }])?;
+        if changed {
             tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         }
         tx.commit()?;

@@ -1,5 +1,18 @@
 # Quality, performance and release acceptance
 
+## D217 — OpenPGP (Quality95)
+
+Core104, Mail UI158, CLI66; schema 41, fixtures live0/demo3 unchanged.
+
+- `fm-pgp` tests: generation, expiry changes and merges, RSA, user-ID validation, sealing (wrong key, wrong fingerprint, tampering), passphrase export and import, revocation, multi-key files, signing and verifying composer-built MIME (tampering detected, unknown key, another address), encryption to several recipients with a hidden Bcc and the sender, missing and expired keys, and GnuPG-made keys and messages (PGP/MIME encrypted and signed, detached signatures, inline and clear-signed text, OCB to RSA). Two ignored tests repeat the round trips through an installed GnuPG.
+- `fm-core` `pgp_tests`: keyring requests and receipts, imports with passphrases and revocations, exports, expiry and deletion clearing the account, account-key rules and recipient checks, signed and encrypted sends (draft upload exclusion, missing keys refused before freezing, the sender reading their own copy, no journal preview), sync-time marking and plumbing hiding, the repair pass, reader decryption with attachments and their verified ids, signed HTML, encrypted HTML, decrypted attachments and inline pictures kept under `decrypted/` and removed by `forget_decrypted`, and replies defaulting to encrypted.
+- `fm-engine` `sessions`: keyring requests over IPC on a demo profile, the owner-only demo key file, error details and a restart reading the same key.
+- `fm-cli` `arguments`: scope, duration and stdin checks before storage.
+- `gui-integration` settings stage: Create key through the dialog, backup passphrase rules, Encrypt by default, CLI readback and the Accounts row.
+- `gui-mail-selection` `protectedMail`: "Encrypted message" and a lock in the list only for encrypted rows, no notice or problem for a decrypted, well-signed message, and the notice and problem badge for a missing key and for a signature that doesn't match.
+
+Validation (macOS 15, arm64): `cargo test --workspace`, strict workspace clippy, formatting and hygiene pass; the `build/dev` GUI ctest suite passes, gui-mail-gpu only when run alone (its 100 ms frame budget fails with three tests at once).
+
 ## D214 — Today grouping (Quality94)
 
 Core101 and Mail UI155; live0/demo3 fixtures unchanged.

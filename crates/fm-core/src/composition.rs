@@ -858,6 +858,34 @@ impl Store {
             "draft-{:x}",
             Sha256::digest(format!("{account}\0{}", string(p, "request_id")?).as_bytes())
         );
+        let mut routing = routing;
+        // An account with a key signs by default and may encrypt by default; a
+        // reply to encrypted mail is encrypted too.
+        if let Some((sign, encrypt)) = self
+            .db
+            .query_row(
+                "SELECT sign_by_default,encrypt_by_default FROM pgp_accounts WHERE account=?1",
+                [account],
+                |r| Ok((r.get::<_, bool>(0)?, r.get::<_, bool>(1)?)),
+            )
+            .optional()?
+        {
+            let replying_to_encrypted = mid.is_some_and(|mid| {
+                self.db
+                    .query_row(
+                        "SELECT pgp FROM messages WHERE account=?1 AND id=?2",
+                        params![account, mid],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .is_ok_and(|pgp| pgp == 2)
+            });
+            if sign {
+                routing["pgp_sign"] = json!(true);
+            }
+            if encrypt || (replying_to_encrypted && mode != "forward") {
+                routing["pgp_encrypt"] = json!(true);
+            }
+        }
         let (name, signature, identity) = self.draft_identity(account)?;
         let timestamp = now()?;
         let body = signed_body(&body, &signature);
@@ -1020,6 +1048,22 @@ impl Store {
         if draft["forward_html"] == true {
             routing["forward_html"] = json!(true);
         }
+        // OpenPGP choices carry over unless this save changes them.
+        for key in ["pgp_sign", "pgp_encrypt"] {
+            let on = match p.get(key) {
+                None => draft[key] == true,
+                Some(Value::Bool(on)) => *on,
+                Some(_) => {
+                    return Err(err(
+                        "invalid_request",
+                        "pgp_sign and pgp_encrypt must be true or false",
+                    ))
+                }
+            };
+            if on {
+                routing[key] = json!(true);
+            }
+        }
         validate_routing(&routing)?;
         // Whether this save changes anything the author wrote. An unchanged
         // save of an adopted Gmail draft must not queue an upload.
@@ -1044,7 +1088,10 @@ impl Store {
             .iter()
             .all(|key| draft[*key] == routing[*key])
             && p.get("signature_text")
-                .is_none_or(|v| original_signature == *v);
+                .is_none_or(|v| original_signature == *v)
+            && ["pgp_sign", "pgp_encrypt"]
+                .iter()
+                .all(|key| (draft[*key] == true) == (routing[*key] == true));
         let timestamp = now()?;
         let next = expected
             .checked_add(1)

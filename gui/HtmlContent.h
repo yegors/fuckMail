@@ -135,6 +135,9 @@ public:
     /// Deletes the engine's cached images and sender pictures, and drops the
     /// in-memory HTML and picture caches that point at those files.
     Q_INVOKABLE void clearImageCache();
+    /// Drops held HTML views, so the next load asks the engine again; used
+    /// when the OpenPGP keyring changes what can be decrypted.
+    void forgetViews();
 signals:
     /// Answers load(). Always emitted from the event loop, after load() has
     /// returned `ticket`. `result` is the engine's `message_html` result, or
