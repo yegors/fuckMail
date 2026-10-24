@@ -136,15 +136,17 @@ fuckMail signs and encrypts mail with OpenPGP, the standard GnuPG, Thunderbird, 
 
 - **Create key…** makes a key for one account's name and address and makes it that account's key. Ed25519 (recommended) works with every current OpenPGP app; RSA 4096 is for older software. It expires after three years unless you choose otherwise, and **Change expiry…** renews it.
 - **Import key…** takes a key file or pasted text: your own secret key from another app (you enter its passphrase once), someone's public key, or a revocation certificate.
-- Under **Accounts**, choose each account's key and whether new mail is signed or encrypted by default.
+- Under **Accounts**, choose each account's key and whether new mail is signed or encrypted by default. Encrypt by default turns on only once every recipient has a key here, so mail to someone without one stays unencrypted rather than unsendable.
 
 **Back up your key** right after making it: **Back up secret key…** saves a copy protected with a passphrase of at least 12 characters. Without a backup, a lost computer means mail encrypted to you can't be read. **Save revocation certificate…** lets you tell others the key is no longer in use, even if you lose it.
 
 **Share your public key** with **Copy public key** or **Save public key…**, and import other people's to encrypt to them. A key is only as trustworthy as where it came from: compare its fingerprint with its owner, in person or on a call.
 
-**Writing.** For an account with a key, the composer has **Sign** and **Encrypt**. Encrypted mail can be read only by its recipients and you; the composer names anyone whose key you don't have yet. The subject, the sender and the recipients stay visible, so Gmail can keep replies together. A draft you'll encrypt is kept on this computer and not saved to Gmail Drafts. A reply to encrypted mail starts encrypted.
+**Writing.** For an account with a key, the composer has **Sign** and **Encrypt**. Encrypted mail can be read only by its recipients and you. **Encrypt** works once every recipient has a key here; until then it's dimmed, and hovering it names whoever is missing one. The subject, the sender and the recipients stay visible, so Gmail can keep replies together. A draft you'll encrypt is kept on this computer and not saved to Gmail Drafts. A reply to encrypted mail starts encrypted.
 
-**Reading.** A lock marks encrypted mail and a shield a signature; hover them to see who signed and how it was checked. Encrypted mail is decrypted only while you read it, so its text isn't searchable or summarized, and the list shows "Encrypted message". Its pictures and the attachments you open or preview are cleared when fuckMail closes; a copy you **Save** elsewhere is yours to keep safe. If something is wrong (no key for it, a signature that doesn't match, a key for another address), a note above the message says so.
+**Reading.** Encrypted mail opens sealed, its text hidden, until you click **Decrypt**; mail you sent encrypted has **Reveal**. It stays decrypted until fuckMail closes, or until you click **Hide**. Without a key for it, the message says which key it needs. A lock marks encrypted mail and a shield a signature; hover them to see who signed and how it was checked. Encrypted mail is decrypted only while you read it, so its text isn't searchable or summarized, and the list shows "Encrypted message". Its pictures and the attachments you open or preview are cleared when fuckMail closes; a copy you **Save** elsewhere is yours to keep safe. If a signature is wrong (it doesn't match, or the key is for another address), a note above the message says so.
+
+**Keys and signatures in mail.** A public key someone attaches shows as an OpenPGP key card: click it, or its **+**, to import it. Gmail changes signed mail on its way to another Gmail mailbox, so a signature there arrives as a `signature.asc` file that can't be checked; encrypted mail isn't affected.
 
 Secret keys stay on this computer, sealed with a key kept in your system keychain, and never go to Google.
 

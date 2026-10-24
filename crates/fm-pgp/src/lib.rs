@@ -20,8 +20,8 @@ pub use cert::{
 pub use generate::{generate, set_expiry, Algorithm, NewKey};
 pub use mime::{encrypt_message, sign_message, Recipient};
 pub use open::{
-    is_protection_part, looks_protected, open_message, protection, readable_text, Decryption,
-    Keyring, Opened, Protection, SignatureCheck, SignatureStatus,
+    inspect_message, is_protection_part, looks_protected, open_message, protection, readable_text,
+    Decryption, Keyring, Opened, Protection, SignatureCheck, SignatureStatus,
 };
 pub use seal::{
     combine, export_public, export_revocation, export_secret, is_protected, merge, new_kek,

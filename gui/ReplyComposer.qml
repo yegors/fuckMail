@@ -47,24 +47,51 @@ Item {
     readonly property bool pgpSign: backend.draft.pgp_sign === true
     readonly property bool pgpEncrypt: backend.draft.pgp_encrypt === true
     readonly property bool pgpShown: !root.readOnly && !backend.syntheticProfile && (!!backend.currentAccount.pgp || pgpSign || pgpEncrypt)
-    // Recipients without a usable key, while Encrypt is on.
+    // Recipients without a usable key, and which recipients that answer
+    // covers. Mail can be encrypted once every recipient has a key.
     property var pgpMissing: []
     property string pgpTicket: ""
+    property string pgpAsked: ""
+    property string pgpChecked: ""
     readonly property string pgpRecipients: [].concat(backend.draft.to_recipients || [], backend.draft.cc_recipients || [], backend.draft.bcc_recipients || [])
         .map(function(r) { return String(r.email || "").toLowerCase() }).filter(function(e) { return e.length }).join(",")
+    readonly property bool pgpKnown: pgpChecked === pgpRecipients
+    readonly property bool pgpReady: pgpRecipients.length > 0 && pgpKnown && pgpMissing.length === 0
+    // Drafts whose Encrypt the person set; the rest follow the account's
+    // default and stay unencrypted while a recipient has no key.
+    property var pgpChosen: ({})
+    readonly property bool pgpEncryptDefault: !!backend.currentAccount.pgp && backend.currentAccount.pgp.encrypt_by_default === true
+    readonly property string pgpDraft: String(backend.draft.draft_id || "")
     function checkPgp() {
-        if (!pgpShown || !pgpEncrypt || !pgpRecipients.length) { pgpTicket = ""; pgpMissing = []; return }
-        pgpTicket = backend.pgpKeys.checkRecipients(backend.account, pgpRecipients.split(","))
+        if (!pgpShown || !pgpRecipients.length) { pgpTicket = ""; pgpMissing = []; pgpChecked = pgpRecipients; followPgp(); return }
+        pgpAsked = pgpRecipients
+        pgpTicket = backend.pgpKeys.checkRecipients(backend.account, pgpAsked.split(","))
+    }
+    // A reply not yet saved starts from the engine's defaults; changing it
+    // here would save a draft just for opening the conversation.
+    readonly property bool pgpSaved: Number(backend.draft.revision || 0) > 0
+    onPgpSavedChanged: followPgp()
+    function followPgp() {
+        if (!pgpShown || !pgpKnown || !pgpSaved || root.readOnly || backend.draftLocked || !pgpDraft || pgpChosen[pgpDraft]) return
+        if (pgpEncrypt && !pgpReady) backend.setDraftProtection(pgpSign, false)
+        else if (!pgpEncrypt && pgpReady && pgpEncryptDefault) backend.setDraftProtection(pgpSign, true)
+    }
+    function choosePgpEncrypt(on) {
+        const chosen = Object.assign({}, pgpChosen); chosen[pgpDraft] = true; pgpChosen = chosen
+        backend.setDraftProtection(pgpSign, on)
     }
     onPgpRecipientsChanged: checkPgp()
-    onPgpEncryptChanged: checkPgp()
+    onPgpShownChanged: checkPgp()
+    onPgpDraftChanged: followPgp()
     Connections {
         // Only an account with a key reaches the keyring.
         target: root.pgpShown ? backend.pgpKeys : null
         ignoreUnknownSignals: true
         function onRecipientsReady(ticket, result, ok) {
             if (ticket !== root.pgpTicket) return
-            root.pgpMissing = ok ? (result.recipients || []).filter(function(r) { return r.status !== "ready" }).map(function(r) { return r.address }) : []
+            root.pgpMissing = ok ? (result.recipients || []).filter(function(r) { return r.status !== "ready" }).map(function(r) { return r.address }) : root.pgpAsked.split(",")
+            root.pgpChecked = root.pgpAsked
+            root.followPgp()
         }
         function onKeyringChanged() { root.checkPgp() }
     }
@@ -516,10 +543,14 @@ Item {
             }
             Text {
                 objectName: "draftPgpMissing"
-                visible: root.pgpShown && root.pgpEncrypt && root.pgpMissing.length > 0
+                // With Encrypt on, a recipient without a key stops the send; with it
+                // off where the account encrypts by default, this says why.
+                visible: root.pgpShown && root.pgpKnown && root.pgpMissing.length > 0 && (root.pgpEncrypt || root.pgpEncryptDefault)
                 Layout.fillWidth: true; Layout.bottomMargin: 8; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                text: "No OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption, or turn off Encrypt to send it unencrypted."
-                color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+                text: root.pgpEncrypt
+                    ? "No OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption, or turn off Encrypt to send it unencrypted."
+                    : "Not encrypted: no OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption to encrypt."
+                color: root.pgpEncrypt ? Theme.warn : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
             }
             RowLayout {
                 visible: backend.draftStatus.indexOf("Not saved") >= 0 && !backend.draftConflict
@@ -570,14 +601,27 @@ Item {
                     onClicked: backend.setDraftProtection(!root.pgpSign, root.pgpEncrypt)
                     Accessible.role: Accessible.CheckBox; Accessible.checked: root.pgpSign
                 }
-                FmButton {
-                    objectName: "draftPgpEncrypt"; visible: root.pgpShown
-                    text: "Encrypt"; iconName: "lock"; iconSize: 13; outlined: !root.pgpEncrypt; selected: root.pgpEncrypt
-                    implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12)
-                    tip: root.pgpEncrypt ? "Only the recipients and you can read it; the subject stays visible · this draft isn't saved to Gmail Drafts" : "Encrypt to every recipient's OpenPGP key"
-                    enabled: !backend.draftLocked && !backend.draftBusy
-                    onClicked: backend.setDraftProtection(root.pgpSign, !root.pgpEncrypt)
-                    Accessible.role: Accessible.CheckBox; Accessible.checked: root.pgpEncrypt
+                // Encrypt turns on only once every recipient has a key; while it
+                // can't, hovering says why.
+                Item {
+                    visible: root.pgpShown
+                    implicitWidth: encryptButton.implicitWidth; implicitHeight: encryptButton.implicitHeight
+                    FmButton {
+                        id: encryptButton
+                        objectName: "draftPgpEncrypt"; anchors.fill: parent
+                        text: "Encrypt"; iconName: "lock"; iconSize: 13; outlined: !root.pgpEncrypt; selected: root.pgpEncrypt
+                        implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12)
+                        tip: root.pgpEncrypt ? "Only the recipients and you can read it; the subject stays visible · this draft isn't saved to Gmail Drafts" : "Encrypt to every recipient's OpenPGP key"
+                        enabled: !backend.draftLocked && !backend.draftBusy && (root.pgpEncrypt || root.pgpReady)
+                        onClicked: root.choosePgpEncrypt(!root.pgpEncrypt)
+                        Accessible.role: Accessible.CheckBox; Accessible.checked: root.pgpEncrypt
+                    }
+                    HoverHandler { id: encryptHover }
+                    FmToolTip {
+                        shown: encryptHover.hovered && !encryptButton.enabled && !backend.draftLocked && !backend.draftBusy
+                        text: !root.pgpRecipients.length ? "Add recipients to encrypt" : !root.pgpKnown ? "Checking recipients' keys…"
+                            : "No OpenPGP key for " + root.pgpMissing.join(", ") + " · import theirs in Settings → Encryption"
+                    }
                 }
                 Text {
                     objectName: "composerHint"

@@ -111,7 +111,10 @@ QVariantMap MailBackend::outgoingMessage(const QVariantMap &value) const {
         {"sent",true},{"unread",false},{"starred",false},{"categories",QVariantList{}},
         {"is_outgoing",true},{"outgoing_state",value.value("state")},{"send_status",stateText(value.value("state").toString())},
         {"request_id",value.value("request_id")},{"draft_id",value.value("draft_id")},
-        {"source_available",false},{"source_version",value.value("source_version")}};
+        {"source_available",false},{"source_version",value.value("source_version")},
+        // Its OpenPGP protection, as stored mail names it; the reader keeps
+        // encrypted text hidden until the person reveals it.
+        {"pgp",headers.value("pgp_encrypt").toBool() ? QVariant("encrypted") : headers.value("pgp_sign").toBool() ? QVariant("signed") : QVariant()}};
 }
 
 QVariantList MailBackend::conversations() const {
@@ -123,7 +126,7 @@ QVariantList MailBackend::conversations() const {
         const auto message=outgoingMessage(value.toMap());
         auto row=message;
         row["subject"]=message.value("subject").toString().isEmpty() ? "(No subject)" : message.value("subject");
-        row["snippet"]=message.value("text"); row["sender_name"]=message.value("to");
+        row["snippet"]=message.value("pgp") == "encrypted" ? QVariant(QString()) : message.value("text"); row["sender_name"]=message.value("to");
         row["recipient_names"]=message.value("to"); row["last_at"]=message.value("sent_at");
         row["latest_at"]=message.value("sent_at"); row["message_count"]=1; row["revision"]=0;
         row["message_ids"]=QVariantList{}; row["group"]="done";

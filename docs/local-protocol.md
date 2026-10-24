@@ -346,7 +346,7 @@ The client holds a send for its Undo delay (a GUI setting; six seconds in the CL
 | Method | Acct | Description |
 | --- | --- | --- |
 | `attachment` | yes | Metadata for `id`, plus `path` to a freshly verified copy under `exports/` and `sha256`. An id `pgp:<message>:<index>:<size>:<sha256>` from `message_source` names a file inside an encrypted message; it is decrypted again and checked against its size and hash. |
-| `message_source` | yes | Raw RFC 822 text (cut at 256 KiB), HTML part, address metadata, `has_invite`: `id`, `source_version`. For OpenPGP mail, the text and HTML are of the decrypted or unwrapped message and `pgp` says how: `{encrypted, inline, decryption: {state: decrypted\|no_key\|unavailable\|failed, …}, signatures: [{status, key_id, fingerprint, signer, sender_matches, created_at}], attachments}`; `raw` stays the source. |
+| `message_source` | yes | Raw RFC 822 text (cut at 256 KiB), HTML part, address metadata, `has_invite`: `id`, `source_version`, optional `decrypt`. For OpenPGP mail, the text and HTML are of the decrypted or unwrapped message and `pgp` says how: `{encrypted, inline, decryption: {state: decrypted\|sealed\|no_key\|unavailable\|failed, …}, signatures: [{status, key_id, fingerprint, signer, sender_matches, created_at}], attachments}`; `raw` stays the source. Encrypted mail is decrypted only with `decrypt: true`; otherwise it is `sealed`, with `recipients` and `can_decrypt`. |
 | `message_invite` | yes | A message's calendar invitation, linked to the cached event: `id`, `source_version`. |
 | `google_remote_attachment` | yes | Save an attachment of a server-only message (`id` `remote-att:<message>:<index>`) to a file. **live, session** |
 
@@ -393,7 +393,7 @@ Only the engine fetches remote content. Received HTML is sanitised, with images 
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `message_html` | yes | Sanitised HTML for `id` + `source_version` (`html` or `html_path`), `resources`, `links`. No network. |
+| `message_html` | yes | Sanitised HTML for `id` + `source_version` (`html` or `html_path`), `resources`, `links`. No network. Encrypted mail has HTML only with `decrypt: true`. |
 | `message_image` | yes | `resource` N as a PNG `path` and a `state`; `cached_only` stays offline. |
 | `sender_avatar` | — | Picture for `address` + `kind` (Gravatar by hashed address, or the domain icon) as a PNG `path`. |
 | `message_unsubscribe` | yes | For `id` + `source_version`: an RFC 8058 one-click POST now, or a `link` for the browser. |

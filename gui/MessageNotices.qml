@@ -45,17 +45,12 @@ ColumnLayout {
     readonly property bool invited: !!inviteEvent && Theme.rsvpOf(inviteEvent) !== undefined && invite.method !== "CANCEL"
     // Answers show for an invitation to you, dimmed until its event has synced.
     readonly property bool answerable: showInvite && invite.method !== "CANCEL" && (!inviteEvent || invited)
-    // OpenPGP: the message source's `pgp` result and its best signature. Only
-    // problems show here; a good signature or a decrypted message is the
-    // header's icon alone.
+    // OpenPGP: the message source's best signature. Only problems show here;
+    // a good signature is the header's icon alone, and decryption problems
+    // show in SealedMessage where the text would be.
     property var pgp: null
     property var signature: null
-    readonly property bool encrypted: (!!pgp && pgp.encrypted === true) || message.pgp === "encrypted"
-    readonly property string decryption: pgp && pgp.decryption ? pgp.decryption.state || "" : ""
     readonly property string pgpProblem: {
-        if (encrypted && decryption === "no_key") return "Encrypted to a key you don't have here. Import the secret key it was sent to in Settings → Encryption."
-        if (encrypted && decryption === "unavailable") return "Your secret keys couldn't be opened: " + ((pgp.decryption || {}).message || "the system keychain refused.")
-        if (encrypted && decryption === "failed") return "This encrypted message couldn't be read: " + ((pgp.decryption || {}).message || "it's damaged.")
         if (!signature) return ""
         const who = signature.signer || "an unknown key"
         return ({bad: "The signature doesn't match. The message was changed after it was signed, or it's forged.",
@@ -181,7 +176,7 @@ ColumnLayout {
         objectName: "pgpNotice_" + (notices.message.id || "")
         visible: notices.showPgp
         Layout.fillWidth: true; Layout.minimumHeight: 36; spacing: 10
-        FmIcon { name: notices.encrypted ? "lock" : "shield"; size: 13; color: Theme.warn }
+        FmIcon { name: "shield"; size: 13; color: Theme.warn }
         Text {
             objectName: "pgpNoticeText_" + (notices.message.id || "")
             text: notices.pgpProblem

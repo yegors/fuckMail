@@ -1,8 +1,9 @@
 //! PGP/MIME signing, encryption and opening, against our own output and
 //! messages GnuPG made.
 use fm_pgp::{
-    encrypt_message, generate, open_message, parse_keys, sign_message, signing_key, unlock,
-    Algorithm, Decryption, Keyring, NewKey, ParsedKey, Recipient, SignatureStatus,
+    encrypt_message, generate, inspect_message, open_message, parse_keys, sign_message,
+    signing_key, unlock, Algorithm, Decryption, Keyring, NewKey, ParsedKey, Recipient,
+    SignatureStatus,
 };
 use mail_parser::MimeHeaders;
 use pgp::composed::{SignedPublicKey, SignedSecretKey};
@@ -324,6 +325,88 @@ fn gnupg_pgp_mime_encrypted_and_signed() {
     let attachment = parsed.attachments().next().unwrap();
     assert_eq!(attachment.attachment_name(), Some("plan.txt"));
     assert_eq!(attachment.contents(), b"Step one.\nStep two.\n");
+}
+
+/// The GnuPG PGP/MIME fixture as Gmail delivers it to another mailbox: a
+/// `multipart/mixed` whose text part holds the armored message, with the
+/// version part as an attachment.
+fn gmail_rewritten() -> Vec<u8> {
+    let original = String::from_utf8(fixture("gus-to-ann-encrypted.eml")).unwrap();
+    let start = original.find("-----BEGIN PGP MESSAGE-----").unwrap();
+    let end =
+        original.find("-----END PGP MESSAGE-----").unwrap() + "-----END PGP MESSAGE-----".len();
+    let armor = original[start..end]
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n");
+    [
+        "From: Gus GnuPG <gus@example.test>",
+        "To: Ann Example <ann@example.test>",
+        "Date: Thu, 22 Oct 2026 12:00:00 +0000",
+        "Message-ID: <fixture-encrypted@example.test>",
+        "Subject: Encrypted plan",
+        "MIME-Version: 1.0",
+        "Content-Type: multipart/mixed; boundary=\"gm\"",
+        "",
+        "--gm",
+        "Content-Type: text/plain; charset=\"UTF-8\"",
+        "",
+        &armor,
+        "--gm",
+        "Content-Type: application/pgp-encrypted",
+        "Content-Disposition: attachment",
+        "Content-Transfer-Encoding: base64",
+        "",
+        "VmVyc2lvbjogMQ0K",
+        "--gm--",
+        "",
+    ]
+    .join("\r\n")
+    .into_bytes()
+}
+
+#[test]
+fn pgp_mime_rewritten_by_gmail_reads_as_pgp_mime() {
+    let keyring = Keyring {
+        certs: vec![public("gus.pub.asc"), public("ann.pub.asc")],
+    };
+    let ann = secret("ann.sec.asc", "fixture passphrase ann");
+    let mut secrets = || Ok(vec![ann.clone()]);
+    let opened = open_message(&gmail_rewritten(), &keyring, &mut secrets, FIXTURE_NOW).unwrap();
+    assert!(opened.encrypted && !opened.inline);
+    assert!(matches!(opened.decryption, Some(Decryption::Decrypted)));
+    assert_eq!(opened.signatures[0].status, SignatureStatus::Good);
+    // The decrypted entity is read as MIME, not shown as text.
+    let message = opened.message.unwrap();
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&message[..])
+        .unwrap();
+    assert_eq!(parsed.subject(), Some("Encrypted plan"));
+    let text = parsed.body_text(0).unwrap();
+    assert!(text.contains("Hello Ann, the plan is attached."));
+    assert!(!text.contains("Content-Type"));
+    assert_eq!(
+        parsed.attachments().next().unwrap().attachment_name(),
+        Some("plan.txt")
+    );
+}
+
+#[test]
+fn encrypted_mail_stays_sealed_until_asked() {
+    let keyring = Keyring {
+        certs: vec![public("gus.pub.asc"), public("ann.pub.asc")],
+    };
+    for raw in [fixture("gus-to-ann-encrypted.eml"), gmail_rewritten()] {
+        let opened = inspect_message(&raw, &keyring, FIXTURE_NOW).unwrap();
+        assert!(opened.encrypted);
+        let Some(Decryption::Sealed { recipients }) = opened.decryption else {
+            panic!("expected sealed");
+        };
+        assert!(!recipients.is_empty());
+        assert!(opened.message.is_none() && opened.signatures.is_empty());
+    }
+    // Signed mail is still checked.
+    let signed = inspect_message(&fixture("gus-signed.eml"), &keyring, FIXTURE_NOW).unwrap();
+    assert_eq!(signed.signatures[0].status, SignatureStatus::Good);
 }
 
 #[test]

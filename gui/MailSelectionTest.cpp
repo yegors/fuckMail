@@ -88,6 +88,8 @@ class MailSelectionTest {
         // messages with their stored protection.
         QHash<QString,QJsonObject> pgpSources;
         QHash<QString,QString> pgpTexts, pgpKinds;
+        // Message ids whose source was read with decrypt asked for.
+        QStringList decryptedReads;
         // Core's Done group for a row: Today, then This Week from the requested weekday,
         // the rest of this month, then its month. Row times here are midday UTC.
         static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
@@ -178,8 +180,18 @@ class MailSelectionTest {
                             {"metadata",sourceMetadata.value(params["id"].toString(),QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}})}};
                         if (senderChecks.contains(params["id"].toString())) result["sender_check"] = senderChecks.value(params["id"].toString());
                         if (pgpSources.contains(params["id"].toString())) {
-                            result["pgp"] = pgpSources.value(params["id"].toString());
-                            result["body_text"] = pgpTexts.value(params["id"].toString());
+                            // As the engine does: encrypted mail reads sealed unless
+                            // decrypting is asked for.
+                            const auto pgp = pgpSources.value(params["id"].toString());
+                            if (pgp["encrypted"].toBool() && !params["decrypt"].toBool()) {
+                                result["pgp"] = QJsonObject{{"encrypted",true},{"inline",false},{"signatures",QJsonArray{}},
+                                    {"decryption",QJsonObject{{"state","sealed"},{"recipients",QJsonArray{"89ABCDEF01234567"}},{"can_decrypt",pgp["decryption"].toObject()["state"] == "decrypted"}}}};
+                                result["body_text"] = "";
+                            } else {
+                                if (params["decrypt"].toBool()) decryptedReads.append(params["id"].toString());
+                                result["pgp"] = pgp;
+                                result["body_text"] = pgpTexts.value(params["id"].toString());
+                            }
                             result.remove("body_html");
                         }
                     }
@@ -2693,16 +2705,30 @@ public:
         require(plainIcon && !plainIcon->isVisible(),"an unencrypted row has no lock");
         const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible() ? item : nullptr; };
         h.backend.selectConversation("a");
+        // Sealed until the person decrypts it: bars and Decrypt, no text or files.
+        QQuickItem *decrypt=nullptr;
+        await([&]{ decrypt=shown("sealedMessageDecrypt_a-original"); return decrypt && decrypt->isEnabled(); },"an encrypted message opens sealed, with Decrypt");
+        require(shown("sealedMessageBars_a-original"),"the sealed message shows redaction bars");
+        require(!shown("messageBody_a-original"),"a sealed message shows no text");
+        require(!shown("attachment_pgp:a-original:0:4:"+QString(64,'b')),"a sealed message lists no files");
+        require(h.decryptedReads.isEmpty(),"nothing is decrypted before Decrypt");
+        require(QMetaObject::invokeMethod(decrypt,"clicked"),"click Decrypt");
         QQuickItem *badge=nullptr;
-        await([&]{ badge=shown("messagePgp_a-original"); return badge && badge->property("problem").isValid(); },"the decrypted message shows its lock");
+        await([&]{ badge=shown("messagePgp_a-original"); return badge && shown("messageBody_a-original"); },"Decrypt shows the text");
+        require(h.decryptedReads.contains("a-original"),"Decrypt asks the engine to decrypt");
+        require(!shown("sealedMessage_a-original"),"the sealed card goes once decrypted");
+        require(shown("messageDecrypted_a-original"),"a decrypted message says so, with Hide");
         await([&]{ return shown("attachment_pgp:a-original:0:4:"+QString(64,'b')); },"decrypted files are listed");
         require(!badge->property("problem").toBool(),"a decrypted, well-signed message is not a problem");
         require(!shown("pgpNotice_a-original"),"no notice for a decrypted, well-signed message");
+        require(QMetaObject::invokeMethod(shown("messageSealAgain_a-original"),"clicked"),"click Hide");
+        await([&]{ return shown("sealedMessageBars_a-original") && !shown("messageBody_a-original"); },"Hide seals it again");
         h.backend.selectConversation("b");
-        QQuickItem *notice=nullptr;
-        await([&]{ notice=shown("pgpNoticeText_b-original"); return notice != nullptr; },"an undecryptable message explains itself");
-        require(notice->property("text").toString().contains("key you don't have"),"the notice names the missing key");
+        QQuickItem *hint=nullptr;
+        await([&]{ hint=shown("sealedMessageHint_b-original"); return hint && hint->property("text").toString().contains("isn't here"); },"an undecryptable message explains itself");
+        require(!shown("sealedMessageDecrypt_b-original"),"no Decrypt without a key for it");
         require(shown("messagePgp_b-original") && shown("messagePgp_b-original")->property("problem").toBool(),"its lock shows the problem");
+        QQuickItem *notice=nullptr;
         h.backend.selectConversation("c");
         await([&]{ notice=shown("pgpNoticeText_c-original"); return notice != nullptr; },"a bad signature explains itself");
         require(notice->property("text").toString().contains("doesn't match"),"the notice says the signature doesn't match");

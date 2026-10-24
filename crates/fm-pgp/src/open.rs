@@ -71,6 +71,11 @@ pub struct SignatureCheck {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Decryption {
     Decrypted,
+    /// Left encrypted, because the reader didn't ask to decrypt it yet.
+    /// `recipients` are the key IDs it was encrypted to.
+    Sealed {
+        recipients: Vec<String>,
+    },
     /// None of the person's secret keys was among its recipients.
     NoKey {
         recipients: Vec<String>,
@@ -341,12 +346,16 @@ fn recipients(message: &Message<'_>) -> Vec<String> {
         .collect()
 }
 
+/// Where the secret keys for decrypting come from: `None` leaves encrypted
+/// content sealed.
+type Secrets<'a> = Option<&'a mut dyn FnMut() -> Result<Vec<SignedSecretKey>>>;
+
 /// Decrypts (or just reads, if only signed) one OpenPGP message.
 fn read_pgp_message(
     data: &[u8],
     armored: bool,
     keyring: &Keyring,
-    secrets: &mut dyn FnMut() -> Result<Vec<SignedSecretKey>>,
+    secrets: &mut Secrets<'_>,
     sender: Option<&str>,
     now: u64,
 ) -> (
@@ -366,6 +375,13 @@ fn read_pgp_message(
     let mut decryption = None;
     if message.is_encrypted() {
         let to = recipients(&message);
+        let Some(secrets) = secrets.as_mut() else {
+            return (
+                Some(Decryption::Sealed { recipients: to }),
+                Vec::new(),
+                None,
+            );
+        };
         let keys = match secrets() {
             Ok(keys) => keys,
             Err(error) => {
@@ -453,14 +469,57 @@ fn multipart_parts(body: &[u8], boundary: &str) -> Vec<Vec<u8>> {
 /// Opens `raw` when it is OpenPGP-protected, and `None` when it is not.
 ///
 /// `secrets` is called only for encrypted content, so a signed message never
-/// reaches the keychain. `sender` is the From address, lowercased, for
-/// matching signing keys. `now` is the current time in Unix seconds.
+/// reaches the keychain. Signing keys are matched against the From address.
+/// `now` is the current time in Unix seconds.
 pub fn open_message(
     raw: &[u8],
     keyring: &Keyring,
     secrets: &mut dyn FnMut() -> Result<Vec<SignedSecretKey>>,
     now: u64,
 ) -> Option<Opened> {
+    open(raw, keyring, Some(secrets), now)
+}
+
+/// Like [`open_message`], but leaves encrypted content sealed
+/// ([`Decryption::Sealed`]): signed mail is still checked, and nothing
+/// reaches the secret keys.
+pub fn inspect_message(raw: &[u8], keyring: &Keyring, now: u64) -> Option<Opened> {
+    open(raw, keyring, None, now)
+}
+
+/// A decrypted MIME `entity` as a whole message under the `outer` header
+/// fields, with a signed entity inside it unwrapped and checked.
+fn entity_message(
+    outer: &[u8],
+    entity: &[u8],
+    keyring: &Keyring,
+    sender: Option<&str>,
+    now: u64,
+    signatures: &mut Vec<SignatureCheck>,
+) -> Zeroizing<Vec<u8>> {
+    // A signed entity inside the encryption (RFC 3156 section 6.1).
+    let mut inner = Zeroizing::new(outer.to_vec());
+    inner.extend_from_slice(&content_only(entity));
+    if let Some(opened) = open_signed(&inner, keyring, sender, now) {
+        signatures.extend(opened.0);
+        return opened.1;
+    }
+    inner
+}
+
+/// Whether decrypted inline content is a MIME entity rather than text: it
+/// starts with a `Content-*` or `MIME-Version` field and has a header block.
+/// Gmail delivers PGP/MIME encrypted mail rewritten as a text part holding
+/// the armored message, so its plaintext is the PGP/MIME entity.
+fn is_mime_entity(plain: &[u8]) -> bool {
+    let first = plain.split(|b| *b == b'\n').next().unwrap_or_default();
+    let lower = first.to_ascii_lowercase();
+    (lower.starts_with(b"content-") || lower.starts_with(b"mime-version:"))
+        && first.contains(&b':')
+        && (plain.windows(4).any(|w| w == b"\r\n\r\n") || plain.windows(2).any(|w| w == b"\n\n"))
+}
+
+fn open(raw: &[u8], keyring: &Keyring, mut secrets: Secrets<'_>, now: u64) -> Option<Opened> {
     if !looks_protected(raw) {
         return None;
     }
@@ -489,17 +548,9 @@ pub fn open_message(
                     .is_some_and(|(t, s, _)| t == "application" && s == "octet-stream")
             })?;
         let (decryption, mut signatures, plain) =
-            read_pgp_message(payload.contents(), true, keyring, secrets, sender, now);
-        let message = plain.map(|entity| {
-            // A signed entity inside the encryption (RFC 3156 section 6.1).
-            let mut inner = Zeroizing::new(outer.clone());
-            inner.extend_from_slice(&content_only(&entity));
-            if let Some(opened) = open_signed(&inner, keyring, sender, now) {
-                signatures.extend(opened.0);
-                return opened.1;
-            }
-            inner
-        });
+            read_pgp_message(payload.contents(), true, keyring, &mut secrets, sender, now);
+        let message = plain
+            .map(|entity| entity_message(&outer, &entity, keyring, sender, now, &mut signatures));
         return Some(Opened {
             encrypted: true,
             inline: false,
@@ -523,15 +574,19 @@ pub fn open_message(
         let end = text[start..]
             .find("-----END PGP MESSAGE-----")
             .map(|e| start + e + "-----END PGP MESSAGE-----".len())?;
-        let (decryption, signatures, plain) = read_pgp_message(
+        let (decryption, mut signatures, plain) = read_pgp_message(
             text[start..end].as_bytes(),
             true,
             keyring,
-            secrets,
+            &mut secrets,
             sender,
             now,
         );
+        let entity = plain.as_deref().is_some_and(|p| is_mime_entity(p));
         let message = plain.map(|plain| {
+            if entity {
+                return entity_message(&outer, &plain, keyring, sender, now, &mut signatures);
+            }
             let decrypted = String::from_utf8_lossy(&plain).replace("\r\n", "\n");
             text_message(
                 &outer,
@@ -540,7 +595,7 @@ pub fn open_message(
         });
         return Some(Opened {
             encrypted: decryption.is_some(),
-            inline: true,
+            inline: !entity,
             decryption,
             signatures,
             message,

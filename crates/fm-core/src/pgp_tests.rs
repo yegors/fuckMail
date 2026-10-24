@@ -450,7 +450,7 @@ fn drafts_default_to_signing_and_send_signed() {
     assert!(text.contains("Subject: Plan"));
     // It verifies against the sender's key, as a recipient would check it.
     let keyring = store.pgp_keyring().unwrap();
-    let opened = keyring.open(&raw, &crate::pgp::NoKeychain).unwrap();
+    let opened = keyring.open(&raw, &crate::pgp::NoKeychain, true).unwrap();
     assert_eq!(opened.signatures[0].status, fm_pgp::SignatureStatus::Good);
     assert!(opened.signatures[0].sender_matches);
     // The journal still previews a signed message.
@@ -605,6 +605,15 @@ fn receive(store: &mut Store, account: &str, source: &[u8], remote: &str) -> Str
 }
 
 fn source(store: &Store, account: &str, message: &str) -> Value {
+    read_source(store, account, message, true)
+}
+
+/// A read as the reader makes it before the person chooses Decrypt.
+fn sealed_source(store: &Store, account: &str, message: &str) -> Value {
+    read_source(store, account, message, false)
+}
+
+fn read_source(store: &Store, account: &str, message: &str, decrypt: bool) -> Value {
     let version: String = store
         .db
         .query_row(
@@ -614,7 +623,10 @@ fn source(store: &Store, account: &str, message: &str) -> Value {
         )
         .unwrap();
     let plan = store
-        .message_source_begin(account, &json!({"id":message,"source_version":version}))
+        .message_source_begin(
+            account,
+            &json!({"id":message,"source_version":version,"decrypt":decrypt}),
+        )
         .unwrap();
     crate::message_source::read(plan, &CancellationToken::new()).unwrap()
 }
@@ -660,9 +672,12 @@ fn encrypted_mail_is_marked_at_sync_and_decrypted_only_to_read() {
         .unwrap();
     let thread = store.conversation(&account, &conversation).unwrap();
     assert_eq!(thread["messages"][0]["pgp"], "encrypted");
-    // Without Ann's key it reads as undecryptable.
+    // Without Ann's key it reads as undecryptable, and sealed it says so.
     let locked = source(&store, &account, &message);
     assert_eq!(locked["pgp"]["decryption"]["state"], "no_key");
+    let sealed = sealed_source(&store, &account, &message);
+    assert_eq!(sealed["pgp"]["decryption"]["state"], "sealed");
+    assert_eq!(sealed["pgp"]["decryption"]["can_decrypt"], false);
     // With it, the reader sees the text, Gus's signature and the attachment.
     call(
         &mut store,
@@ -671,6 +686,16 @@ fn encrypted_mail_is_marked_at_sync_and_decrypted_only_to_read() {
         json!({"text":text("ann.sec.asc"),"passphrase":"fixture passphrase ann","request_id":"ann"}),
     );
     import(&mut store, &text("gus.pub.asc"), "gus");
+    // Until the reader asks, it stays sealed: no text, no files, no signature.
+    let sealed = sealed_source(&store, &account, &message);
+    assert_eq!(sealed["pgp"]["decryption"]["state"], "sealed");
+    assert_eq!(sealed["pgp"]["decryption"]["can_decrypt"], true);
+    assert!(!sealed["body_text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("plan is attached"));
+    assert!(sealed["pgp"]["attachments"].is_null());
+    assert_eq!(sealed["pgp"]["signatures"], json!([]));
     let read = source(&store, &account, &message);
     assert_eq!(read["pgp"]["decryption"]["state"], "decrypted");
     assert_eq!(read["pgp"]["signatures"][0]["status"], "good");
@@ -740,6 +765,10 @@ fn signed_mail_keeps_its_text_and_hides_its_signature() {
     import(&mut store, &text("gus.pub.asc"), "gus");
     let known = source(&store, &account, &message);
     assert_eq!(known["pgp"]["signatures"][0]["status"], "good");
+    // A read that leaves encrypted mail sealed still checks signatures.
+    let sealed = sealed_source(&store, &account, &message);
+    assert_eq!(sealed["pgp"]["signatures"][0]["status"], "good");
+    assert!(sealed["pgp"]["decryption"].is_null());
     assert!(known["body_html"].as_str().unwrap().contains("<b>Gus</b>"));
     // Inline armor never reaches search text.
     let inline = receive(
@@ -793,6 +822,51 @@ fn mail_synced_before_openpgp_support_is_repaired() {
 }
 
 #[test]
+fn encrypt_by_default_waits_for_every_recipient_key() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let account = scope.account.clone();
+    let own = generate(&mut store, &account);
+    call(
+        &mut store,
+        "pgp_account",
+        Some(&account),
+        json!({"fingerprint":own,"sign_by_default":false,"encrypt_by_default":true,"request_id":"encrypt"}),
+    );
+    // A new message has no recipients yet, so nothing to encrypt to.
+    let created = call(
+        &mut store,
+        "draft_create",
+        Some(&account),
+        json!({"mode":"new","request_id":"new"}),
+    );
+    assert!(created["pgp_sign"].is_null());
+    assert!(created["pgp_encrypt"].is_null());
+    // Replying to someone without a key starts unencrypted; with their key,
+    // encrypted.
+    let message = receive(&mut store, &account, &fixture("gus-signed.eml"), "signed");
+    let conversation: String = store
+        .db
+        .query_row(
+            "SELECT conversation_id FROM messages WHERE id=?1",
+            [&message],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let reply = |store: &mut Store| {
+        call(
+            store,
+            "draft_get",
+            Some(&account),
+            json!({"conversation_id":conversation}),
+        )
+    };
+    assert!(reply(&mut store)["pgp_encrypt"].is_null());
+    import(&mut store, &text("gus.pub.asc"), "gus");
+    assert_eq!(reply(&mut store)["pgp_encrypt"], true);
+}
+
+#[test]
 fn replies_to_encrypted_mail_start_encrypted() {
     let temp = tempfile::tempdir().unwrap();
     let (mut store, scope) = setup(temp.path());
@@ -812,6 +886,16 @@ fn replies_to_encrypted_mail_start_encrypted() {
             |r| r.get(0),
         )
         .unwrap();
+    // Without Gus's key it starts unencrypted, so it can still be sent.
+    let unready = call(
+        &mut store,
+        "draft_create",
+        Some(&account),
+        json!({"mode":"reply","conversation_id":conversation,"source_message_id":message,"request_id":"unready"}),
+    );
+    assert_eq!(unready["pgp_sign"], true);
+    assert!(unready["pgp_encrypt"].is_null());
+    import(&mut store, &text("gus.pub.asc"), "gus");
     let reply = call(
         &mut store,
         "draft_create",
@@ -820,6 +904,16 @@ fn replies_to_encrypted_mail_start_encrypted() {
     );
     assert_eq!(reply["pgp_sign"], true);
     assert_eq!(reply["pgp_encrypt"], true);
+    // The reply box shown before anything is saved starts the same way.
+    let unsaved = call(
+        &mut store,
+        "draft_get",
+        Some(&account),
+        json!({"conversation_id":conversation}),
+    );
+    assert_eq!(unsaved["revision"], 0);
+    assert_eq!(unsaved["pgp_sign"], true);
+    assert_eq!(unsaved["pgp_encrypt"], true);
     let forward = call(
         &mut store,
         "draft_create",
@@ -893,26 +987,29 @@ fn encrypted_html_shows_once_decrypted_and_never_from_a_failed_attempt() {
         )
         .unwrap();
     let cache = crate::view_cache::ViewCache::new(temp.path());
-    let html = |store: &Store| {
+    let html = |store: &Store, decrypt: bool| {
         let plan = store
             .message_html_begin(
                 &account,
-                &json!({"id":message,"source_version":version}),
+                &json!({"id":message,"source_version":version,"decrypt":decrypt}),
                 &[],
             )
             .unwrap();
         crate::html_content::read_html(plan, &cache, &CancellationToken::new()).unwrap()
     };
-    assert_eq!(html(&store)["has_html"], false);
+    assert_eq!(html(&store, true)["has_html"], false);
     call(
         &mut store,
         "pgp_key_import",
         None,
         json!({"text":text("ann.sec.asc"),"passphrase":"fixture passphrase ann","request_id":"ann"}),
     );
-    let view = html(&store);
+    assert_eq!(html(&store, false)["has_html"], false);
+    let view = html(&store, true);
     assert_eq!(view["has_html"], true);
     assert!(view["html"].as_str().unwrap().contains("words"));
+    // The decrypted view held in memory isn't handed to a sealed read.
+    assert_eq!(html(&store, false)["has_html"], false);
 }
 
 #[test]
@@ -967,7 +1064,7 @@ fn pictures_in_encrypted_html_stay_out_of_the_image_cache() {
         store
             .message_html_begin(
                 &account,
-                &json!({"id":message,"source_version":version}),
+                &json!({"id":message,"source_version":version,"decrypt":true}),
                 &[],
             )
             .unwrap()

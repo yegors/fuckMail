@@ -74,6 +74,9 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QObject *htmlContent READ htmlContent CONSTANT)
     // The OpenPGP keyring: keys, each account's key and recipient checks.
     Q_PROPERTY(QObject *pgpKeys READ pgpKeys CONSTANT)
+    // "account\nmessage id" for each encrypted message decrypted or revealed
+    // this session (see setUnsealed).
+    Q_PROPERTY(QStringList unsealedMessages READ unsealedMessages NOTIFY unsealedChanged)
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantMap googleAuthConfiguration READ googleAuthConfiguration NOTIFY googleAuthChanged)
@@ -226,6 +229,7 @@ public:
     bool connected() const { return m_connected; }
     QObject *htmlContent() const;
     QObject *pgpKeys() const;
+    QStringList unsealedMessages() const { return QStringList(m_unsealed.cbegin(), m_unsealed.cend()); }
     bool syntheticProfile() const { return m_syntheticProfile; }
     QVariantMap googleAuth() const { return m_googleAuth; }
     QVariantMap googleAuthConfiguration() const { return m_googleAuthConfiguration; }
@@ -348,7 +352,13 @@ public:
     Q_INVOKABLE QString downloadAttachment(const QString &account, const QString &id, const QString &name);
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
     // withRaw adds the raw text for the source dialog; it is never cached.
+    // An encrypted message reads sealed until the person decrypts it.
     Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version, bool withRaw = false);
+    // Encrypted messages the person chose to decrypt, or to reveal when they
+    // sent them, this session. Kept in memory only, so closing the app seals
+    // them again. `unsealedChanged` follows each change.
+    bool isUnsealed(const QString &account, const QString &id) const { return m_unsealed.contains(account + '\n' + id); }
+    Q_INVOKABLE void setUnsealed(const QString &id, bool unsealed);
     // A calendar invitation's event and times; never cached, so answers show.
     // Returns a ticket; `messageInviteReady(ticket, result, ok)` follows.
     Q_INVOKABLE QString requestMessageInvite(const QString &id, const QString &version);
@@ -522,6 +532,7 @@ signals:
     void attachmentSaved(const QString &ticket, const QString &error);
     void mailSelectionRestored(const QVariantList &rows);
     void messageSourceReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void unsealedChanged();
     void messageInviteReady(const QString &ticket, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
@@ -837,6 +848,8 @@ private:
     // polled only while one is in flight.
     QVariantMap m_sendProgress;
     QSet<QString> m_sendProgressReads;
+    // "account\nmessage id" for each message decrypted or revealed this session.
+    QSet<QString> m_unsealed;
     QTimer m_sendProgressTimer;
     void pollSendProgress();
     QHash<QString, int> m_outgoingNext, m_outgoingGeneration;

@@ -14,8 +14,27 @@ ColumnLayout {
     readonly property var ownKeys: (keyring ? keyring.keys : []).filter(k => k.secret)
     readonly property var otherKeys: (keyring ? keyring.keys : []).filter(k => !k.secret)
     readonly property var accounts: backend.allAccounts.filter(a => (a.lifecycle || {}).state !== "removed")
+    // The rows, by account id and fingerprint. Each save reloads the keyring
+    // and the account rows; a row whose details change updates in place, and
+    // the lists are rebuilt only when rows come or go.
+    property var accountIds: []
+    property var ownFingerprints: []
+    property var otherFingerprints: []
+    function same(a, b) { return a.length === b.length && a.every((v, i) => v === b[i]) }
+    function syncRows() {
+        const ids = page.accounts.map(a => a.id), own = page.ownKeys.map(k => k.fingerprint), other = page.otherKeys.map(k => k.fingerprint)
+        if (!same(ids, accountIds)) accountIds = ids
+        if (!same(own, ownFingerprints)) ownFingerprints = own
+        if (!same(other, otherFingerprints)) otherFingerprints = other
+    }
+    onAccountsChanged: syncRows()
+    onOwnKeysChanged: syncRows()
+    onOtherKeysChanged: syncRows()
+    Component.onCompleted: syncRows()
     property string status: ""
     property bool statusError: false
+    // A keyring change failed; account rows drop the choice they showed early.
+    signal saveFailed()
     // A pending export or save waits here while the file dialog is open.
     property var pendingSave: null
     readonly property bool popupOpen: createDialog.opened || importDialog.opened || backupDialog.opened || expiryDialog.opened || deleteDialog.opened || saveDialog.visible
@@ -47,7 +66,9 @@ ColumnLayout {
         target: page.keyring
         ignoreUnknownSignals: true
         function onFinished(ticket, action, result, ok) {
-            if (!ok) { page.say(result.message || "That didn't work.", true); return }
+            if (!ok) { page.say(result.message || "That didn't work.", true); page.saveFailed(); return }
+            // Switching a default shows in its switch; a status line would push the page down.
+            if (action === "account" && result.pgp) return
             if (action === "export") page.say(result.copied ? "Public key copied. Paste it into a message or share it with anyone who wants to write to you securely." : "Saved to " + result.path + ".")
             else if (action === "delete") page.say("Key deleted.")
             else if (action === "expiry") page.say(result.expires_at ? "The key now expires " + page.when(result.expires_at) + ". Send your updated public key to the people who use it." : "The key no longer expires. Send your updated public key to the people who use it.")
@@ -111,8 +132,9 @@ ColumnLayout {
     // One key: who it is, its fingerprint, algorithm and dates, and a menu.
     component KeyRow: ColumnLayout {
         id: keyRow
+        // The key's fingerprint.
         required property var modelData
-        readonly property var key: modelData
+        readonly property var key: (page.keyring ? page.keyring.keys : []).find(k => k.fingerprint === modelData) || ({})
         Layout.fillWidth: true; spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 14
@@ -173,7 +195,7 @@ ColumnLayout {
         Layout.topMargin: 16; spacing: 8
         FmButton { objectName: "pgpCreateKey"; text: "Create key…"; iconName: "plus"; outlined: true; enabled: backend.connected && !!page.keyring && page.keyring.busy === ""; onClicked: createDialog.show(page.accounts.find(a => !(page.keyring.accounts || {})[a.id]) || page.accounts[0] || null) }
         FmButton { objectName: "pgpImportKey"; text: "Import key…"; iconName: "download"; outlined: true; enabled: backend.connected && !!page.keyring && page.keyring.busy === ""; onClicked: importDialog.show() }
-        Text { visible: !!page.keyring && page.keyring.busy !== ""; text: ({generate: "Creating key…", import: "Importing…", export: "Exporting…", expiry: "Renewing…", delete: "Deleting…", account: "Saving…"})[page.keyring ? page.keyring.busy : ""] || ""; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+        Text { visible: !!page.keyring && page.keyring.busy !== ""; text: ({generate: "Creating key…", import: "Importing…", export: "Exporting…", expiry: "Renewing…", delete: "Deleting…"})[page.keyring ? page.keyring.busy : ""] || ""; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
     }
     Text {
         objectName: "encryptionStatus"
@@ -186,7 +208,7 @@ ColumnLayout {
 
     SectionTitle { text: "Your keys" }
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 10; implicitHeight: 1; color: Theme.line }
-    Repeater { model: page.ownKeys; KeyRow {} }
+    Repeater { model: page.ownFingerprints; KeyRow {} }
     Note {
         objectName: "pgpNoOwnKeys"
         visible: !!page.keyring && !page.keyring.loading && page.ownKeys.length === 0
@@ -195,41 +217,69 @@ ColumnLayout {
     }
 
     SectionTitle { text: "Accounts" }
-    Note { text: "The key each account signs and decrypts with, and what new mail does by default. You can change both in each message." }
+    Note { text: "The key each account signs and decrypts with, and what new mail does by default. Encrypt turns on only when every recipient has a key here. You can change both in each message." }
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 10; implicitHeight: 1; color: Theme.line }
     Repeater {
-        model: page.accounts
+        model: page.accountIds
         ColumnLayout {
             id: accountRow
+            // The account's id.
             required property var modelData
-            readonly property var choice: (page.keyring ? page.keyring.accounts : {})[modelData.id] || null
-            readonly property var usable: page.usableFor(modelData)
+            readonly property var account: page.accounts.find(a => a.id === modelData) || ({})
+            readonly property var choice: (page.keyring ? page.keyring.accounts : {})[modelData] || null
+            readonly property var usable: page.usableFor(account)
             readonly property var options: [null].concat(usable)
+            // A default just switched shows at once, until the saved choice
+            // comes back or the save fails.
+            property var pendingSign: undefined
+            property var pendingEncrypt: undefined
+            readonly property bool sign: pendingSign !== undefined ? pendingSign : !!choice && choice.sign_by_default
+            readonly property bool encrypt: pendingEncrypt !== undefined ? pendingEncrypt : !!choice && choice.encrypt_by_default
+            onChoiceChanged: if (!choice || (choice.sign_by_default === sign && choice.encrypt_by_default === encrypt)) { pendingSign = undefined; pendingEncrypt = undefined }
+            function save(sign, encrypt) {
+                pendingSign = sign; pendingEncrypt = encrypt
+                page.keyring.useForAccount(modelData, choice.fingerprint, sign, encrypt)
+            }
+            Connections { target: page; function onSaveFailed() { accountRow.pendingSign = undefined; accountRow.pendingEncrypt = undefined } }
             Layout.fillWidth: true; spacing: 0
             RowLayout {
                 Layout.fillWidth: true; Layout.topMargin: 10; Layout.bottomMargin: 10; spacing: 14
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2
-                    Text { text: accountRow.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
-                    Text { text: accountRow.modelData.email; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
+                    Text { text: accountRow.account.name; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                    Text { text: accountRow.account.email; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
                 }
                 FmComboBox {
-                    objectName: "pgpAccountKey_" + accountRow.modelData.id
+                    objectName: "pgpAccountKey_" + accountRow.modelData
                     implicitWidth: 220; implicitHeight: 32
                     enabled: backend.connected && page.keyring && page.keyring.busy === ""
                     model: accountRow.options.map(k => k ? (k.key_id.slice(8).match(/.{4}/g).join(" ") + " · " + k.algorithm) : (accountRow.usable.length ? "Off" : "Off · no key for this address"))
                     currentIndex: { const at = accountRow.options.findIndex(k => k && accountRow.choice && k.fingerprint === accountRow.choice.fingerprint); return at < 0 ? 0 : at }
                     onActivated: function(index) {
                         const key = accountRow.options[index]
-                        page.keyring.useForAccount(accountRow.modelData.id, key ? key.fingerprint : "", accountRow.choice ? accountRow.choice.sign_by_default : true, accountRow.choice ? accountRow.choice.encrypt_by_default : false)
+                        page.keyring.useForAccount(accountRow.modelData, key ? key.fingerprint : "", accountRow.choice ? accountRow.sign : true, accountRow.choice ? accountRow.encrypt : false)
                     }
-                    Accessible.name: "OpenPGP key for " + accountRow.modelData.email
+                    Accessible.name: "OpenPGP key for " + accountRow.account.email
                 }
                 RowLayout {
                     spacing: 6; opacity: accountRow.choice ? 1 : .35
-                    FmSwitch { objectName: "pgpSignDefault_" + accountRow.modelData.id; pill: true; enabled: !!accountRow.choice && page.keyring.busy === ""; checked: !!accountRow.choice && accountRow.choice.sign_by_default; onClicked: page.keyring.useForAccount(accountRow.modelData.id, accountRow.choice.fingerprint, checked, accountRow.choice.encrypt_by_default); Accessible.name: "Sign new mail" }
+                    // The switches show the row's value; a click saves the other one.
+                    // They stay enabled while saving, so nothing dims or jumps.
+                    FmSwitch {
+                        objectName: "pgpSignDefault_" + accountRow.modelData; pill: true; checkable: false
+                        enabled: !!accountRow.choice
+                        checked: accountRow.sign
+                        onClicked: accountRow.save(!accountRow.sign, accountRow.encrypt)
+                        Accessible.name: "Sign new mail"
+                    }
                     Text { text: "Sign"; color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                    FmSwitch { objectName: "pgpEncryptDefault_" + accountRow.modelData.id; pill: true; Layout.leftMargin: 10; enabled: !!accountRow.choice && page.keyring.busy === ""; checked: !!accountRow.choice && accountRow.choice.encrypt_by_default; onClicked: page.keyring.useForAccount(accountRow.modelData.id, accountRow.choice.fingerprint, accountRow.choice.sign_by_default, checked); Accessible.name: "Encrypt new mail" }
+                    FmSwitch {
+                        objectName: "pgpEncryptDefault_" + accountRow.modelData; pill: true; checkable: false; Layout.leftMargin: 10
+                        enabled: !!accountRow.choice
+                        checked: accountRow.encrypt
+                        onClicked: accountRow.save(accountRow.sign, !accountRow.encrypt)
+                        Accessible.name: "Encrypt new mail when every recipient has a key"
+                    }
                     Text { text: "Encrypt"; color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                 }
             }
@@ -240,7 +290,7 @@ ColumnLayout {
     SectionTitle { text: "Other people's keys" }
     Note { text: "Import someone's public key to encrypt mail to them and check their signatures. A key is only as trustworthy as where you got it: compare its fingerprint with its owner." }
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 10; implicitHeight: 1; color: Theme.line }
-    Repeater { model: page.otherKeys; KeyRow {} }
+    Repeater { model: page.otherFingerprints; KeyRow {} }
     Note { visible: !!page.keyring && !page.keyring.loading && page.otherKeys.length === 0; Layout.topMargin: 12; text: "None yet." }
 
     Note {

@@ -157,8 +157,8 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
             )
         })?;
     let mut result = plan.metadata;
-    if let Some(opened) = &readable.opened {
-        result["pgp"] = crate::pgp::opened_json(opened);
+    if let Some(pgp) = readable.pgp_json() {
+        result["pgp"] = pgp;
     }
     let text = parsed.body_text(0).unwrap_or_default();
     // Bound the escaped JSON contribution as well as UTF-8, preserving characters.

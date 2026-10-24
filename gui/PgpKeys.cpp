@@ -69,8 +69,12 @@ void PgpKeys::refresh() {
         std::stable_sort(keys.begin(), keys.end(), [](const QVariant &a, const QVariant &b) {
             return a.toMap().value("secret").toBool() && !b.toMap().value("secret").toBool();
         });
+        auto accounts = result["accounts"].toObject().toVariantMap();
+        // Each change reloads the list more than once (here, then as the
+        // account rows change); an unchanged list rebuilds nothing.
+        if (!m_loading && keys == m_keys && accounts == m_accounts) return;
         m_keys = keys;
-        m_accounts = result["accounts"].toObject().toVariantMap();
+        m_accounts = accounts;
         m_loading = false;
         emit changed();
     });
@@ -84,12 +88,36 @@ QVariantMap PgpKeys::key(const QString &fingerprint) const {
 
 QString PgpKeys::mutate(const QString &action, const QString &account, const QString &method, QJsonObject params) {
     const auto ticket = QStringLiteral("pgp-%1").arg(++m_serial);
-    params["request_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     setBusy(action);
+    send(ticket, action, account, method, std::move(params));
+    return ticket;
+}
+
+void PgpKeys::send(const QString &ticket, const QString &action, const QString &account, const QString &method, QJsonObject params) {
+    params["request_id"] = QUuid::createUuid().toString(QUuid::WithoutBraces);
     call(account, method, params, [this, ticket, action](const QJsonObject &result, bool ok) {
         setBusy({});
-        if (ok) { refresh(); emit keyringChanged(); m_backend->loadAccounts(); }
+        if (ok) {
+            refresh();
+            // An account's key and defaults decide nothing about reading, so
+            // held messages stay as they are; the account rows show the choice.
+            if (action != "account") emit keyringChanged();
+            m_backend->loadAccounts();
+        }
         emit finished(ticket, action, result.toVariantMap(), ok);
+    });
+}
+
+QString PgpKeys::importAttachment(const QString &account, const QString &attachment) {
+    const auto ticket = QStringLiteral("pgp-%1").arg(++m_serial);
+    setBusy("import");
+    // The engine verifies the attachment and hands back its local copy.
+    m_backend->attachmentFile(account, attachment, [this, ticket](const QJsonObject &result, bool ok) {
+        const auto path = result["path"].toString();
+        if (ok && !path.isEmpty()) { send(ticket, "import", {}, "pgp_key_import", {{"path", path}}); return; }
+        setBusy({});
+        emit finished(ticket, "import", {{"code", ok ? "content_unavailable" : result["code"].toString()},
+                                         {"message", result["message"].toString("This key isn't on this computer yet.")}}, false);
     });
     return ticket;
 }

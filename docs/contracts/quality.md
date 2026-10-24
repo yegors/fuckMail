@@ -1,5 +1,15 @@
 # Quality, performance and release acceptance
 
+## D218 — Sealed encrypted mail and Gmail's PGP/MIME rewrite (Quality96)
+
+Core105, Mail UI159; schema 41, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-pgp` `messages`: `pgp_mime_rewritten_by_gmail_reads_as_pgp_mime` (the GnuPG fixture rewritten as Gmail delivers it decrypts to MIME with its text, attachment and good signature, and no `Content-Type` lines in the text) and `encrypted_mail_stays_sealed_until_asked` (sealed with recipients for both forms, no text or signatures; signed mail still verifies).
+- `fm-core` `pgp_tests`: sealed `message_source` reads report `can_decrypt` false then true once the key is imported, with no text, files or signatures; signed mail checks without decrypting; sealed `message_html` has no HTML before or after a decrypted view is memoised; `encrypt_by_default_waits_for_every_recipient_key` (no recipients, a recipient without a key, then with it, on the unsaved reply); replies to encrypted mail start unencrypted until the recipient's key is imported, and the unsaved reply projection carries the defaults.
+- `gui-mail-selection` `protectedMail`: an encrypted message opens sealed with bars and an enabled Decrypt, no text, files or decrypt request; Decrypt asks the engine to decrypt and shows the text, "Decrypted · Hide" and the decrypted files; Hide seals it again; a message without a key names it in the hint, offers no Decrypt and marks its lock.
+
+Validation (Windows 11, x64, release build): `cargo test --workspace` and strict workspace clippy pass. 37 of 38 GUI tests passed in one sequential ctest run with gui-mail-gpu left out; gui-mail-selection failed there at an attachment-fold mouse click straight after a relink, then passed three runs out of three on its own. Checked by eye on the release build against the live profile: a received message rewritten by Gmail opens sealed with Decrypt and no TLDR, and decrypts to its text with "Decrypted · Hide"; the sender's copy shows "Encrypted · only you and the recipients can read it" with Reveal and reveals its text; the rewritten signed reply shows its signature.asc as a Signature card; Settings → Encryption lists both keys and the account switches. A real mouse click on Decrypt, the composer's Encrypt gating and the feel of the Settings switches weren't checked: off-screen captures don't take clicks, and the switches would change the founder's real defaults.
+
 ## D217 — OpenPGP (Quality95)
 
 Core104, Mail UI158, CLI66; schema 41, fixtures live0/demo3 unchanged.

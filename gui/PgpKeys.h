@@ -50,6 +50,9 @@ public:
     /// protected secret key fails with `passphrase_required` (details name the
     /// key) until `passphrase` unlocks it.
     Q_INVOKABLE QString importKeys(const QString &text, const QUrl &file, const QString &passphrase);
+    /// Imports the keys in a message's attachment, such as a public key
+    /// someone sent. `finished(ticket, "import", …)` follows.
+    Q_INVOKABLE QString importAttachment(const QString &account, const QString &attachment);
     /// Exports a key as armored text: `kind` is public, secret (protected with
     /// `passphrase`) or revocation. With `destination`, writes a new private
     /// file there; without, copies a public key to the clipboard.
@@ -86,6 +89,7 @@ private:
     using Callback = std::function<void(const QJsonObject &, bool)>;
     void call(const QString &account, const QString &method, const QJsonObject &params, Callback callback);
     QString mutate(const QString &action, const QString &account, const QString &method, QJsonObject params);
+    void send(const QString &ticket, const QString &action, const QString &account, const QString &method, QJsonObject params);
     void setBusy(const QString &busy);
     MailBackend *m_backend;
     QList<GoogleOperation *> m_operations;

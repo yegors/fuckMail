@@ -65,9 +65,21 @@ GnuPG 2.4.8 (libgcrypt 1.11.2, Homebrew), each run in a throwaway `GNUPGHOME` un
 
 The GnuPG-made keys and messages are committed as synthetic fixtures in `crates/fm-pgp/tests/fixtures/`. `cargo test -p fm-pgp -- --ignored` repeats the two GnuPG round trips where GnuPG is installed.
 
+## Through real Gmail
+
+Recorded 2026-10-23 for [D218](../decisions.md), on Windows 11 between the founder's two accounts (a gmail.com address and a Google Workspace one), each sending to the other through the Gmail API. Only the MIME structure and the engine's results were read; no message content is recorded here.
+
+| Message | Sender's Sent copy | Recipient's copy |
+| --- | --- | --- |
+| Encrypted (`multipart/encrypted`, signed inside) | As sent | Rewritten as `multipart/mixed`: a `text/plain` part holding the armored `PGP MESSAGE`, and the `application/pgp-encrypted` version part as an attachment with no name (shown as `attachment.bin`) |
+| Signed (`multipart/signed`) | As sent | Rewritten as `multipart/mixed`: the signed `multipart/alternative` with Gmail's own boundaries and encodings, and `signature.asc` as an attachment |
+
+- **Encrypted mail still opens.** The inline path found the armor and decrypted it, but showed the plaintext, the PGP/MIME entity, as text: the reader displayed its `Content-Type` lines and base64. Decrypted inline content that starts with a `Content-*` or `MIME-Version` field and has a header block is now read as MIME under the outer headers, as PGP/MIME is, with a signed entity inside checked the same way. The version part is hidden in the reader.
+- **Signed mail can't be checked.** The signed bytes no longer exist: the boundaries and transfer encodings changed, so the signature can't verify, and the message isn't `multipart/signed` any more. It reads as ordinary mail with a `signature.asc` attachment, which the reader shows as an OpenPGP signature card. Encrypting avoids this, since the signature is inside the encryption. Whether another upload path (`uploadType=media` instead of the JSON `raw` field) keeps the structure wasn't tried.
+
 ## Not verified
 
 - Thunderbird, Proton, Mailvelope and other clients were not run; only GnuPG was.
-- No PGP/MIME message went through real Gmail, in either direction.
+- PGP/MIME through Gmail to a non-Gmail mailbox, and from other clients into Gmail.
 - The keychain entry on Windows and Linux, and the macOS keychain prompt for it; tests use an in-memory key and demo profiles a file.
 - Autocrypt headers, key discovery (WKD, keyservers) and importing keys attached to mail are not implemented; keys come from files or pasted text.

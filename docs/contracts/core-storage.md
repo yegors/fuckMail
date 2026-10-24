@@ -1,5 +1,13 @@
 # Core and storage
 
+## D218 — Encrypted mail read on request, recipient-aware Encrypt, Gmail-rewritten PGP/MIME (Core105)
+
+- **Sealed reads.** `message_source` and `message_html` take an optional boolean `decrypt` (default false; anything else is `invalid_request`). Without it encrypted mail isn't decrypted and no secret key is unsealed: `pgp.decryption` is `{state: "sealed", recipients, can_decrypt}`, where `can_decrypt` says one of the profile's own keys or subkeys is among the recipient key IDs (or a recipient is anonymous). There are no signatures, attachments or decrypted text, and `message_html` reports no HTML. Signed mail is checked either way. A decrypted view memoised for `message_html` isn't handed to a sealed read. `message_image` and `attachment` always decrypt: their ids come from a decrypted view. `google_sent_message` (a send's own frozen copy) still decrypts.
+- **Gmail's rewrite.** Gmail delivers PGP/MIME encrypted mail as `multipart/mixed` with the armored message in a text part ([research](../research/openpgp.md#through-real-gmail)). Inline decryption whose plaintext is a MIME entity (it starts with a `Content-*` or `MIME-Version` field and has a header block) reads it as PGP/MIME does: the entity under the outer headers, a signed entity inside unwrapped and checked; `pgp.inline` is false.
+- **Draft defaults.** A new draft, the unsaved reply `draft_get` projects for a conversation (revision 0), and a discarded draft reopened all take their account's defaults: `pgp_sign` when it signs by default; `pgp_encrypt` when it encrypts by default or the draft replies (not forwards) to encrypted mail, but only when there is at least one recipient and every To, Cc and Bcc address has a key that can encrypt now (`Store::pgp_can_encrypt_to`). Otherwise the draft starts unencrypted. Saved drafts keep their own choices.
+
+Consumers: fm-pgp, the engine's message reads, Mail UI159, Quality96; schema 41, fixtures live0/demo3 and protocol1 unchanged.
+
 ## D217 — OpenPGP keyring, signed and encrypted mail (Core104)
 
 - **Schema 41** (migration 041 and the fresh schema): `pgp_keys(fingerprint, public_key, secret_key, origin, added_at, updated_at)` holds every key, own and other people's; `secret_key` is sealed and null for public keys. `pgp_key_addresses(address, fingerprint)` lists each key's lowercase user-ID addresses for recipient lookup. `pgp_accounts(account, fingerprint, sign_by_default, encrypt_by_default)` is each account's key, deleted with the key. `messages.pgp` records how a received message is protected: 0 none, 1 signed, 2 encrypted. Archive deletion removes an account's `pgp_accounts` row with its other rows; keys are profile-wide and stay.

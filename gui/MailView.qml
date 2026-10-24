@@ -1800,9 +1800,9 @@ Item {
                                                     text: backend.folder === "sent" ? "To " + (groupedRow.modelData.recipient_names || groupedRow.modelData.recipient || "recipient") : groupedRow.modelData.sender_name === "No recipients" ? "No recipient" : groupedRow.modelData.sender_name || ""
                                                     color: Theme.inkAlpha(.72); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText
                                                 }
-                                                FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:10; color:Theme.ai; Layout.rightMargin: 6 }
+                                                FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary && groupedRow.modelData.pgp !== "encrypted"; name:"summary"; size:10; color:Theme.ai; Layout.rightMargin: 6 }
                                                 FmIcon { objectName:"encryptedPreviewIcon_"+groupedRow.modelData.id; visible:groupedRow.modelData.pgp === "encrypted"; name:"lock"; size:10; color:Theme.inkAlpha(.45); Layout.rightMargin: 6 }
-                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + (Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet) || (groupedRow.modelData.pgp === "encrypted" ? "Encrypted message" : "")); maximumLineCount: 1; color: row.outgoingScope ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
+                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + (groupedRow.modelData.pgp === "encrypted" ? Theme.oneLine(groupedRow.modelData.snippet) || "Encrypted message" : Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet)); maximumLineCount: 1; color: row.outgoingScope ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
                                                     MatchMarks { objectName: "mailPreviewMatch_" + groupedRow.modelData.id; phrases: mail.bodyPhrases }
                                                 }
                                             }
@@ -2008,7 +2008,11 @@ Item {
                                 readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen || attachmentPopupOpen()
                                 readonly property bool isLast: index === mail.members.length - 1
                                 // An encrypted message's files are known only once it is decrypted.
-                                readonly property var attachmentList: messageSource.decryptedAttachments || modelData.attachments || []
+                                // Gmail delivers PGP/MIME with its version part as a file; that
+                                // part is plumbing, not something the sender attached.
+                                readonly property var attachmentList: messageSource.decryptedAttachments
+                                    || (modelData.pgp !== "encrypted" ? modelData.attachments || []
+                                        : (modelData.attachments || []).filter(function(a) { return !/^application\/pgp-encrypted$/i.test(a.mime_type || "") }))
                                 readonly property int attachmentCount: attachmentList.length
                                 function attachmentPopupOpen() {
                                     for (let i = 0; i < attachmentRepeater.count; ++i) {
@@ -2125,7 +2129,7 @@ Item {
                                         Text {
                                             objectName: "messageInlineDetail_" + member.modelData.id
                                             visible: !member.isExpanded
-                                            text: (member.modelData.text || "").replace(/\s+/g," ") || (member.modelData.pgp === "encrypted" ? "Encrypted message" : "")
+                                            text: messageSource.sealed ? "Encrypted message" : (member.modelData.text || "").replace(/\s+/g," ") || (member.modelData.pgp === "encrypted" ? "Encrypted message" : "")
                                             Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
                                             color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText
                                         }
@@ -2152,14 +2156,14 @@ Item {
                                             // muted when all is well, amber when something needs a look.
                                             Item {
                                                 id: pgpBadge; objectName: "messagePgp_" + member.modelData.id
-                                                readonly property bool problem: (messageSource.encrypted && messageSource.decryption.length > 0 && messageSource.decryption !== "decrypted")
+                                                readonly property bool problem: messageSource.undecryptable
                                                     || (!!messageSource.signature && !messageSource.trustedSignature)
                                                 visible: member.isExpanded && (messageSource.encrypted || !!messageSource.signature)
                                                 implicitWidth: 26; implicitHeight: 26
                                                 Accessible.role: Accessible.StaticText; Accessible.name: messageSource.pgpSummary
                                                 FmIcon {
                                                     anchors.centerIn: parent; size: 13
-                                                    name: messageSource.encrypted ? "lock" : "shield"
+                                                    name: messageSource.encrypted ? (messageSource.sealed || messageSource.unreadable ? "lock" : "unlock") : "shield"
                                                     color: pgpBadge.problem ? Theme.warn : messageSource.trustedSignature ? Theme.accent : Theme.inkAlpha(.55)
                                                 }
                                                 HoverHandler { id: pgpBadgeHover }
@@ -2257,7 +2261,7 @@ Item {
                                     Layout.fillWidth: true; Layout.topMargin: summaryShowing ? 12 : 0
                                     controller: assistance; message: member.modelData
                                     showKindControl: false; label: ((mail.thread.categories || [])[0] || {}).name || ""
-                                    visible: member.isExpanded && !member.modelData.sent && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
+                                    visible: member.isExpanded && !member.modelData.sent && member.modelData.pgp !== "encrypted" && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
                                 }
                                 Text { visible: member.isExpanded && !!member.modelData.content_error; Layout.fillWidth: true; Layout.topMargin: 10; text: member.modelData.content_error || ""; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                                 ColumnLayout {
@@ -2290,18 +2294,22 @@ Item {
                                         ? backend.quoteAdditions(historyText, mail.members.slice(0, member.index).reverse().filter(function(m) { return !m.content_pending }).map(function(m) { return m.text || "" }))
                                         : []
                                     onQuoteAdditionsChanged: reproject.restart()
-                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded + "/" + showQuotes
+                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded + "/" + showQuotes + "/" + messageSource.sealed
                                     function project() {
                                         if (!member.isExpanded) { rows = []; return }
                                         if (showQuotes && historyText) { rows = backend.historyBody(historyText, quoteAdditions); return }
-                                        const prepared = messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
+                                        // Sections prepared ahead come from the sealed reading.
+                                        const prepared = messageSource.encrypted ? null : messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
                                         rows = (prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", sourceText || plainText)).filter(function(row) { return !row.quote && !(row.parents || []).length })
                                     }
                                     onPlainTextChanged: project()
                                     onProjectionKeyChanged: project()
                                     Component.onCompleted: project()
                                     // HTML mode renders through the HTML reader; its failure falls back to text.
-                                    readonly property bool htmlMode: messageSource.hasHtml && !messageSource.plain && !!backend.htmlContent
+                                    readonly property bool htmlMode: messageSource.hasHtml && !messageSource.plain && !!backend.htmlContent && !sealedShown
+                                    // Encrypted mail not yet decrypted, or that can't be, shows the
+                                    // sealed card in place of its text.
+                                    readonly property bool sealedShown: messageSource.sealed || messageSource.unreadable
                                     readonly property bool htmlShown: htmlMode && htmlBody.item !== null && !htmlBody.item.failed
                                     // Mailing list (latest received message only) and hidden images; 16px above the text.
                                     MessageNotices {
@@ -2317,6 +2325,26 @@ Item {
                                         htmlBody: messageBody.htmlShown ? htmlBody.item : null
                                         pgp: messageSource.pgp
                                         signature: messageSource.signature
+                                    }
+                                    SealedMessage { visible: messageBody.sealedShown; Layout.fillWidth: true; Layout.topMargin: 4; source: messageSource }
+                                    // Decrypted for now: says so, and seals it again on request.
+                                    RowLayout {
+                                        objectName: "messageDecrypted_" + member.modelData.id
+                                        visible: messageSource.encrypted && messageSource.unsealed && !messageBody.sealedShown
+                                        Layout.bottomMargin: 4; spacing: 7
+                                        FmIcon { name: "unlock"; size: 11; color: Theme.inkAlpha(.45) }
+                                        Text { text: member.modelData.sent ? "Revealed" : "Decrypted"; color: Theme.inkAlpha(.45); textFormat: Text.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: 0.6 }
+                                        Text { text: "·"; color: Theme.inkAlpha(.3); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
+                                        AbstractButton {
+                                            id: sealAgain
+                                            objectName: "messageSealAgain_" + member.modelData.id
+                                            implicitWidth: sealAgainLabel.implicitWidth; implicitHeight: sealAgainLabel.implicitHeight; padding: 0; hoverEnabled: true
+                                            Accessible.name: "Hide the decrypted text"
+                                            onClicked: messageSource.seal()
+                                            background: Item {}
+                                            contentItem: Text { id: sealAgainLabel; text: "Hide"; color: sealAgain.hovered ? Theme.text : Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: 0.6 }
+                                            FmToolTip { shown: sealAgain.hovered; text: "Hide it again until you decrypt it" }
+                                        }
                                     }
                                     Loader {
                                         id: htmlBody
@@ -2340,7 +2368,7 @@ Item {
                                         color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
                                     }
                                     Repeater {
-                                        model: messageBody.htmlShown ? [] : messageBody.rows
+                                        model: messageBody.htmlShown || messageBody.sealedShown ? [] : messageBody.rows
                                         TextArea {
                                             id: bodyText
                                             required property var modelData
@@ -2407,7 +2435,7 @@ Item {
                                     AbstractButton {
                                         id: quotesToggle
                                         objectName: "messageQuotesToggle_" + member.modelData.id
-                                        visible: messageBody.showQuotes || messageBody.historyHidden
+                                        visible: !messageBody.sealedShown && (messageBody.showQuotes || messageBody.historyHidden)
                                         Layout.topMargin: 3
                                         implicitWidth: 28; implicitHeight: 14; padding: 0; hoverEnabled: true
                                         Accessible.name: messageBody.showQuotes ? "Hide quoted text" : "Show quoted text"

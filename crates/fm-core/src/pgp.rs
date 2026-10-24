@@ -160,6 +160,27 @@ impl Keyring {
             .collect()
     }
 
+    /// The key IDs of every own key and subkey, uppercase hex, as encrypted
+    /// mail names its recipients.
+    fn own_key_ids(&self) -> Vec<String> {
+        use pgp::types::KeyDetails;
+        let hex = |id: pgp::types::KeyId| id.as_ref().iter().map(|b| format!("{b:02X}")).collect();
+        self.keys
+            .iter()
+            .filter(|k| k.secret.is_some())
+            .filter_map(|k| SignedPublicKey::from_bytes(&k.public[..]).ok())
+            .flat_map(|cert| {
+                std::iter::once(hex(cert.primary_key.legacy_key_id()))
+                    .chain(
+                        cert.public_subkeys
+                            .iter()
+                            .map(|sub| hex(sub.key.legacy_key_id())),
+                    )
+                    .collect::<Vec<String>>()
+            })
+            .collect()
+    }
+
     /// Every own secret key, unsealed and combined with its current
     /// certificate. Empty when there are none; reaches the keychain only when
     /// there are.
@@ -178,14 +199,18 @@ impl Keyring {
     }
 
     /// Opens a protected message with this keyring, or `None` for ordinary
-    /// mail. Secret keys are unsealed only for encrypted content.
-    pub fn open(&self, raw: &[u8], kek: &dyn KekSource) -> Option<fm_pgp::Opened> {
+    /// mail. Secret keys are unsealed only for encrypted content, and only
+    /// with `decrypt`; without it encrypted content stays sealed.
+    pub fn open(&self, raw: &[u8], kek: &dyn KekSource, decrypt: bool) -> Option<fm_pgp::Opened> {
         if !fm_pgp::looks_protected(raw) {
             return None;
         }
         let keyring = fm_pgp::Keyring {
             certs: self.certs(),
         };
+        if !decrypt {
+            return fm_pgp::inspect_message(raw, &keyring, now());
+        }
         let mut secrets = || {
             self.secrets(kek).map_err(|e| fm_pgp::PgpError {
                 code: if e.code == "store_unavailable" {
@@ -1228,11 +1253,13 @@ pub(crate) fn protect_outgoing(
     fm_pgp::encrypt_message(raw, &recipients, signer, now).map_err(pgp_error)
 }
 
-/// The keyring and key source a read opens protected mail with, off the writer.
+/// The keyring and key source a read opens protected mail with, off the
+/// writer, and whether it decrypts.
 #[derive(Clone)]
 pub struct ReadKeys {
     keyring: Keyring,
     kek: std::sync::Arc<dyn KekSource>,
+    decrypt: bool,
 }
 
 /// A message as a reader should see it.
@@ -1240,6 +1267,9 @@ pub struct Readable {
     /// The decrypted or unwrapped message, or the source itself.
     pub bytes: Zeroizing<Vec<u8>>,
     pub opened: Option<fm_pgp::Opened>,
+    /// Sealed mail names one of the person's own keys among its recipients
+    /// (or hides them), so decrypting it may work.
+    pub can_decrypt: bool,
 }
 
 impl Readable {
@@ -1249,27 +1279,77 @@ impl Readable {
             .as_ref()
             .is_some_and(|o| matches!(o.decryption, Some(fm_pgp::Decryption::Decrypted)))
     }
+
+    /// The `pgp` status message reads return, or `None` for ordinary mail. A
+    /// sealed message's `decryption` says whether it `can_decrypt`.
+    pub fn pgp_json(&self) -> Option<Value> {
+        let opened = self.opened.as_ref()?;
+        let mut out = opened_json(opened);
+        if matches!(opened.decryption, Some(fm_pgp::Decryption::Sealed { .. })) {
+            out["decryption"]["can_decrypt"] = self.can_decrypt.into();
+        }
+        Some(out)
+    }
 }
 
 impl ReadKeys {
+    /// Whether reads decrypt; without it encrypted mail reads sealed.
+    pub fn decrypting(mut self, decrypt: bool) -> Self {
+        self.decrypt = decrypt;
+        self
+    }
+
+    pub fn decrypts(&self) -> bool {
+        self.decrypt
+    }
+
     /// Opens `raw` when it is protected. A message that couldn't be
-    /// decrypted reads as its source, with the reason in `opened`.
+    /// decrypted, or was left sealed, reads as its source, with the reason in
+    /// `opened`.
     pub fn readable(&self, raw: Vec<u8>) -> Readable {
-        let mut opened = self.keyring.open(&raw, self.kek.as_ref());
+        let mut opened = self.keyring.open(&raw, self.kek.as_ref(), self.decrypt);
+        let can_decrypt = match opened.as_ref().and_then(|o| o.decryption.as_ref()) {
+            Some(fm_pgp::Decryption::Sealed { recipients }) => {
+                let own = self.keyring.own_key_ids();
+                !own.is_empty()
+                    && recipients
+                        .iter()
+                        .any(|id| id.chars().all(|c| c == '0') || own.contains(id))
+            }
+            _ => false,
+        };
         let bytes = match opened.as_mut().and_then(|o| o.message.take()) {
             Some(message) => message,
             None => Zeroizing::new(raw),
         };
-        Readable { bytes, opened }
+        Readable {
+            bytes,
+            opened,
+            can_decrypt,
+        }
     }
 }
 
 impl Store {
+    /// Whether mail can be encrypted to every one of `addresses`: there is at
+    /// least one, and each has a key that can encrypt now.
+    pub(crate) fn pgp_can_encrypt_to(&self, addresses: &[String]) -> Result<bool> {
+        if addresses.is_empty() {
+            return Ok(false);
+        }
+        let keyring = self.pgp_keyring()?;
+        let now = now();
+        Ok(addresses
+            .iter()
+            .all(|address| !encryption_certs(&keyring, address, now).is_empty()))
+    }
+
     /// A keyring snapshot for reading mail off the writer.
     pub fn pgp_read_keys(&self) -> Result<ReadKeys> {
         Ok(ReadKeys {
             keyring: self.pgp_keyring()?,
             kek: self.pgp_kek(),
+            decrypt: true,
         })
     }
 }

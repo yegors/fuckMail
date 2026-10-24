@@ -39,16 +39,27 @@ pub struct HtmlPlan {
     pgp: crate::pgp::ReadKeys,
 }
 
+impl HtmlPlan {
+    /// Decrypts encrypted mail whatever the request said: image requests come
+    /// from a view that was already decrypted.
+    pub fn decrypting(mut self) -> Self {
+        self.pgp = self.pgp.decrypting(true);
+        self
+    }
+}
+
 impl Store {
     /// Validate that `id` is this account's message at exactly `source_version`.
-    /// An optional `quotes` boolean asks for the view with reply history kept.
+    /// An optional `quotes` boolean asks for the view with reply history kept,
+    /// and `decrypt` for encrypted mail to be decrypted rather than left
+    /// without HTML.
     pub fn message_html_begin(
         &self,
         account: &str,
         request: &Value,
         extra: &[&str],
     ) -> Result<HtmlPlan> {
-        let mut allowed = vec!["id", "source_version", "quotes"];
+        let mut allowed = vec!["id", "source_version", "quotes", "decrypt"];
         allowed.extend_from_slice(extra);
         fields(request, &allowed)?;
         let quotes = match request.get("quotes") {
@@ -56,6 +67,7 @@ impl Store {
             Some(Value::Bool(v)) => *v,
             _ => return Err(err("invalid_request", "quotes must be true or false")),
         };
+        let decrypt = crate::message_source::decrypt_flag(request)?;
         let mid = id(string(request, "id")?)?;
         let found: Option<(String, String)> = self
             .db
@@ -80,7 +92,7 @@ impl Store {
             version,
             sender: sender.trim().to_ascii_lowercase(),
             quotes,
-            pgp: self.pgp_read_keys()?,
+            pgp: self.pgp_read_keys()?.decrypting(decrypt),
         })
     }
 }
@@ -126,6 +138,11 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<(Option<Arc<HtmlV
             .iter()
             .find(|(v, q, _, _)| v == &plan.version && *q == plan.quotes)
         {
+            // A view decrypted earlier isn't shown to a read that leaves the
+            // message sealed.
+            if *decrypted && !plan.pgp.decrypts() {
+                return Ok((None, false));
+            }
             return Ok((view.clone(), *decrypted));
         }
     }
