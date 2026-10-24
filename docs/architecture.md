@@ -56,6 +56,7 @@ A client that disconnects cancels its queued work and interrupts its running SQL
 | `fm-google` | OAuth desktop sign-in and token refresh, Gmail API client, quota scheduler, OS keychain vault |
 | `fm-calendar` | Calendar event model, recurrence expansion, permission filtering, write requests and the Calendar API client |
 | `fm-mail` | Pure transforms: MIME parsing and construction, text extraction, HTML sanitiser, image normalisation |
+| `fm-pgp` | Pure OpenPGP transforms on rpgp: key generation, validity rules, sealing secret keys, export, PGP/MIME signing, encryption, decryption and verification |
 | `fm-assist` | Local-model settings, prompts, request bodies and reply validation |
 
 Solid arrows are Cargo dependencies. The GUI is not a crate; it only speaks the protocol.
@@ -70,14 +71,16 @@ flowchart LR
   engine --> calendar["fm-calendar"]
   engine --> mail["fm-mail"]
   engine --> assist["fm-assist"]
+  engine --> pgp["fm-pgp"]
   core --> calendar
   core --> google
   core --> mail
   core --> assist
+  core --> pgp
   calendar --> google
 ```
 
-Inside the engine, a Tokio runtime handles sessions and network I/O, and one dedicated thread owns the `fm_core::Store`. The session loop routes each request by method name. Model methods, remote content (`message_html`, `message_image`, ...), Google sign-in, Google sync and explicit Google operations, and local file work (draft saves, attachment imports, message sources) each go to their own runtime; everything else is queued to the writer. Runtimes reach the store only through short queued calls (`CoreBridge`), and do HTTP, MIME parsing and hashing elsewhere, mostly on blocking worker threads. The writer queue holds 32 jobs, 16 for client requests and 16 for background calls. It runs up to four client requests before giving background work a turn, and answers `busy` when full.
+Inside the engine, a Tokio runtime handles sessions and network I/O, and one dedicated thread owns the `fm_core::Store`. The session loop routes each request by method name. Model methods, remote content (`message_html`, `message_image`, ...), Google sign-in, Google sync and explicit Google operations, the OpenPGP keyring (`pgp_*`), and local file work (draft saves, attachment imports, message sources) each go to their own runtime; everything else is queued to the writer. Runtimes reach the store only through short queued calls (`CoreBridge`), and do HTTP, MIME parsing and hashing elsewhere, mostly on blocking worker threads. The writer queue holds 32 jobs, 16 for client requests and 16 for background calls. It runs up to four client requests before giving background work a turn, and answers `busy` when full.
 
 ## Storage
 
@@ -145,7 +148,7 @@ The engine keeps one local-model queue ([`local_model.rs`](../crates/fm-engine/s
 
 ## Security model
 
-Mail, sources and attachments sit unencrypted in the private profile folder; the app relies on OS account separation and full-disk encryption. Google tokens and the image-proxy password live in the OS credential store. Besides the private IPC endpoint, the only listening socket is the temporary `127.0.0.1` OAuth callback. Received HTML is sanitised in Rust and rendered without scripting or networking. Details and how to report a problem: [SECURITY.md](../SECURITY.md).
+Mail, sources and attachments sit unencrypted in the private profile folder; the app relies on OS account separation and full-disk encryption. OpenPGP-encrypted mail is the exception: it is stored as received and decrypted only in memory while read. Google tokens, the image-proxy password and the key that seals OpenPGP secret keys live in the OS credential store; the secret keys themselves are stored only sealed (AES-256-GCM). Besides the private IPC endpoint, the only listening socket is the temporary `127.0.0.1` OAuth callback. Received HTML is sanitised in Rust and rendered without scripting or networking. Details and how to report a problem: [SECURITY.md](../SECURITY.md).
 
 ## Testing
 

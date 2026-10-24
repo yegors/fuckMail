@@ -128,6 +128,28 @@ Apply or remove labels from a conversation's right-click menu → **Labels**. Ea
 - **Remove** takes the label off every conversation in fuckMail only. Your mail and the label in Gmail stay unchanged.
 - **Sync with Google** matches local and Gmail labels by name and creates missing ones.
 
+## Encryption (OpenPGP)
+
+fuckMail signs and encrypts mail with OpenPGP, the standard GnuPG, Thunderbird, Proton and Mailvelope use, so keys and messages work with them too.
+
+**Set up a key** in **Settings → Encryption**:
+
+- **Create key…** makes a key for one account's name and address and makes it that account's key. Ed25519 (recommended) works with every current OpenPGP app; RSA 4096 is for older software. It expires after three years unless you choose otherwise, and **Change expiry…** renews it.
+- **Import key…** takes a key file or pasted text: your own secret key from another app (you enter its passphrase once), someone's public key, or a revocation certificate.
+- Under **Accounts**, choose each account's key and whether new mail is signed or encrypted by default. Encrypt by default turns on only once every recipient has a key here, so mail to someone without one stays unencrypted rather than unsendable.
+
+**Back up your key** right after making it: **Back up secret key…** saves a copy protected with a passphrase of at least 12 characters. Without a backup, a lost computer means mail encrypted to you can't be read. **Save revocation certificate…** lets you tell others the key is no longer in use, even if you lose it.
+
+**Share your public key** with **Copy public key** or **Save public key…**, and import other people's to encrypt to them. A key is only as trustworthy as where it came from: compare its fingerprint with its owner, in person or on a call.
+
+**Writing.** For an account with a key, the composer has **Sign** and **Encrypt**. Encrypted mail can be read only by its recipients and you. **Encrypt** works once every recipient has a key here; until then it's dimmed, and hovering it names whoever is missing one. The subject, the sender and the recipients stay visible, so Gmail can keep replies together. A draft you'll encrypt is kept on this computer and not saved to Gmail Drafts. A reply to encrypted mail starts encrypted.
+
+**Reading.** Encrypted mail opens sealed, its text hidden, until you click **Decrypt**; mail you sent encrypted has **Reveal**. It stays decrypted until fuckMail closes, or until you click **Hide**. Without a key for it, the message says which key it needs. A lock marks encrypted mail and a shield a signature; hover them to see who signed and how it was checked. Encrypted mail is decrypted only while you read it, so its text isn't searchable or summarized, and the list shows "Encrypted message". Its pictures and the attachments you open or preview are cleared when fuckMail closes; a copy you **Save** elsewhere is yours to keep safe. If a signature is wrong (it doesn't match, or the key is for another address), a note above the message says so.
+
+**Keys and signatures in mail.** A public key someone attaches shows as an OpenPGP key card: click it, or its **+**, to import it. Gmail changes signed mail on its way to another Gmail mailbox, so a signature there arrives as a `signature.asc` file that can't be checked; encrypted mail isn't affected.
+
+Secret keys stay on this computer, sealed with a key kept in your system keychain, and never go to Google.
+
 ## Calendar
 
 Press `V` to switch between Mail and Calendar.
@@ -212,7 +234,8 @@ In the mail list, the arrow keys, `Page Up`/`Page Down` and `Home`/`End` move; a
 | Page | What's there |
 | --- | --- |
 | General | **Theme:** Graphite (default), Paper or Terminal. **Text size:** Small, Default or Large. **Open on:** Mail, Calendar or where you left off. **Sync every:** 1 (default), 5 or 15 minutes; sending is always immediate. **Notifications:** All, Events only (default) or Off. |
-| Accounts | One card per account: sync progress, labels, signature, local model, and the **…** menu (Edit, Remove). |
+| Accounts | One card per account: sync progress, labels, signature, OpenPGP, local model, and the **…** menu (Edit, Remove). |
+| Encryption | OpenPGP keys and each account's key. See [Encryption](#encryption-openpgp). |
 | Local LLM | Model server, model and prompts. See [Local AI](#local-ai). |
 | Mail | **Row density:** Comfortable (52 px) or Compact (44 px). Drafts in the corner. Blocked domains. Image loading. |
 | Calendar | New event length, default reminder, snooze length, timeline, week start, visible calendars and time zone. |
@@ -254,6 +277,7 @@ Each account's card in Settings → Accounts has:
 
 - **Colour**, chosen from 16 swatches, to tell accounts apart.
 - **Signature**, added to new messages and replies as ordinary text you can edit.
+- **OpenPGP**: Off, or the account's key and whether new mail is signed or encrypted. It opens Settings → Encryption.
 - **Edit…** (in the **…** menu): display name, local retention, and which services sync with what access (Mail and Calendar, Read or Read & write). Asking for more access than Google granted takes you through sign-in again.
 - **Reconnect**, when Google needs you to sign in again.
 
@@ -309,8 +333,8 @@ The demo profile is `demo-v1` in the same place. Inside:
 - `engine.json`: how the app and CLI find the running engine;
 - `window.json`: where the window was left, so the app reopens there (maximized if it was), and where you left the Mail list/reader divider (one position for every account). If that monitor is gone, it opens in the default place.
 
-Google sign-in credentials and the proxy password are in your system keychain, not in the folder.
+Google sign-in credentials, the proxy password and the key that seals your OpenPGP secret keys are in your system keychain, not in the folder.
 
-**Backup:** quit the app and any `fm` commands, then copy the whole profile folder. Never copy `store.sqlite3` on its own. Credentials aren't included, so a restored copy on another machine needs its accounts reconnected, with the same Google Cloud client.
+**Backup:** quit the app and any `fm` commands, then copy the whole profile folder. Never copy `store.sqlite3` on its own. Credentials aren't included, so a restored copy on another machine needs its accounts reconnected, with the same Google Cloud client. OpenPGP secret keys can't be opened there without this machine's keychain: back them up with **Back up secret key…** and import that copy.
 
 **The app does not encrypt this data.** It relies on your operating system account and full-disk encryption (BitLocker, FileVault or LUKS). Keep the profile out of cloud-synced folders. [SECURITY.md](../SECURITY.md) has more.

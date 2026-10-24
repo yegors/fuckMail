@@ -14,6 +14,7 @@ client that speaks the same protocol to the same engine.
 | `fm-calendar` | Google Calendar event model: normalization, recurrence, permission-filtered projection, write requests and the Calendar API client. Vendors a patched `rrule`. |
 | `fm-mail` | MIME parsing and construction, plain-text extraction, and sanitized HTML and image views. Pure transforms. |
 | `fm-assist` | Optional local-model settings, prompts, request bodies and reply validation. |
+| `fm-pgp` | OpenPGP on rpgp: keys and their validity rules, sealing secret keys at rest, export, and PGP/MIME signing, encryption, decryption and verification. Pure transforms. |
 
 ## Dependencies
 
@@ -21,13 +22,13 @@ Each arrow points from a crate to the workspace crates it depends on.
 
 ```text
 fm-cli      -> fm-ipc
-fm-engine   -> fm-core, fm-ipc, fm-google, fm-calendar, fm-mail, fm-assist
-fm-core     -> fm-calendar, fm-google, fm-mail, fm-assist
+fm-engine   -> fm-core, fm-ipc, fm-google, fm-calendar, fm-mail, fm-assist, fm-pgp
+fm-core     -> fm-calendar, fm-google, fm-mail, fm-assist, fm-pgp
 fm-calendar -> fm-google
 ```
 
-`fm-ipc`, `fm-google`, `fm-mail` and `fm-assist` depend on no other workspace
-crate. `fm-cli` does not link `fm-core`: only the engine opens the database.
+`fm-ipc`, `fm-google`, `fm-mail`, `fm-assist` and `fm-pgp` depend on no other
+workspace crate. `fm-cli` does not link `fm-core`: only the engine opens the database.
 
 ## How the processes fit
 

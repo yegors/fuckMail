@@ -282,6 +282,52 @@ fn export_content(
     name: &str,
     part: Option<&SourcePart>,
 ) -> Result<PathBuf> {
+    export_from(profile, hash, size, name, || {
+        Ok(if let Some(part) = part {
+            let bytes = attachment_content::read(
+                &BlobStore {
+                    profile: profile.to_owned(),
+                },
+                hash,
+                size,
+                Some(part),
+            )?;
+            Box::new(std::io::Cursor::new(bytes)) as Box<dyn Read>
+        } else {
+            let source = blob_directory(profile, false)
+                .map_err(|_| unavailable())?
+                .join(hash);
+            let file = open_regular(&source).map_err(|_| unavailable())?;
+            if file.metadata()?.len() != size {
+                return Err(unavailable());
+            }
+            Box::new(file)
+        })
+    })
+}
+
+/// Exports a decrypted attachment held in memory, under the same
+/// verification as retained content, to `<profile>/decrypted/exports`, which
+/// the engine empties whenever it starts or stops.
+pub(crate) fn export_bytes(
+    profile: &Path,
+    hash: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf> {
+    let root = private_directory(profile, crate::pgp::DECRYPTED_DIR, true)?;
+    export_from(&root, hash, bytes.len() as u64, name, || {
+        Ok(Box::new(std::io::Cursor::new(bytes)) as Box<dyn Read + '_>)
+    })
+}
+
+fn export_from<'a>(
+    profile: &Path,
+    hash: &str,
+    size: u64,
+    name: &str,
+    open: impl FnOnce() -> Result<Box<dyn Read + 'a>>,
+) -> Result<PathBuf> {
     let _guard = EXPORT_IO.lock().map_err(|_| unavailable())?;
     validate_hash(hash)?;
     if size > MAX_BLOB_BYTES {
@@ -304,28 +350,9 @@ fn export_content(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    // One pass: the retained blob is hashed while it is copied, so the copy
-    // is exactly the verified bytes.
-    let mut input: Box<dyn Read> = if let Some(part) = part {
-        let bytes = attachment_content::read(
-            &BlobStore {
-                profile: profile.to_owned(),
-            },
-            hash,
-            size,
-            Some(part),
-        )?;
-        Box::new(std::io::Cursor::new(bytes))
-    } else {
-        let source = blob_directory(profile, false)
-            .map_err(|_| unavailable())?
-            .join(hash);
-        let file = open_regular(&source).map_err(|_| unavailable())?;
-        if file.metadata()?.len() != size {
-            return Err(unavailable());
-        }
-        Box::new(file)
-    };
+    // One pass: the content is hashed while it is copied, so the copy is
+    // exactly the verified bytes.
+    let mut input = open()?;
     let (temporary, mut file) = create_stage(&directory)?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0u8; 256 * 1024];
@@ -540,6 +567,29 @@ impl Store {
     fn attachment_plan(&self, account: &str, attachment_id: &str) -> Result<AttachmentPlan> {
         id(account)?;
         id(attachment_id)?;
+        if let Some(part) = crate::pgp::DecryptedPart::parse(attachment_id) {
+            let source: String = self
+                .db
+                .query_row(
+                    "SELECT source_hash FROM messages WHERE account=?1 AND id=?2",
+                    [account, part.message.as_str()],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| err("not_found", "Attachment does not exist in this account"))?;
+            let result = json!({"account":account,"id":attachment_id,"message_id":part.message,"name":"","mime_type":"","size":part.size,"state":"available"});
+            return Ok(AttachmentPlan {
+                result,
+                export: None,
+                preview: false,
+                decrypted: Some(Box::new((
+                    self.google_blob_store(),
+                    source,
+                    part,
+                    self.pgp_read_keys()?,
+                ))),
+            });
+        }
         let row = self.db.query_row(
             "SELECT message_id,name,mime_type,size,state,blob_hash FROM attachments WHERE account=?1 AND id=?2",
             [account, attachment_id],
@@ -563,6 +613,7 @@ impl Store {
             result,
             export,
             preview: false,
+            decrypted: None,
         })
     }
 }
@@ -573,6 +624,17 @@ pub struct AttachmentPlan {
     result: Value,
     export: Option<(BlobStore, String, u64, String, Option<SourcePart>)>,
     preview: bool,
+    /// A file inside an encrypted message: the source to decrypt, which part,
+    /// and the keys.
+    #[allow(clippy::type_complexity)]
+    decrypted: Option<
+        Box<(
+            BlobStore,
+            String,
+            crate::pgp::DecryptedPart,
+            crate::pgp::ReadKeys,
+        )>,
+    >,
 }
 
 /// Largest attachment read for a preview; bigger files show their type only.
@@ -585,6 +647,39 @@ impl AttachmentPlan {
     /// read again.
     pub fn export(self) -> Result<Value> {
         let mut result = self.result;
+        if let Some(decrypted) = self.decrypted {
+            let (blobs, source, part, keys) = *decrypted;
+            let raw = crate::local_content::read_source(&blobs, &source)?;
+            let (name, mime_type, bytes) = crate::pgp::decrypted_part(&keys, raw, &part)?;
+            result["name"] = json!(name);
+            result["mime_type"] = json!(mime_type);
+            if self.preview {
+                let cache = crate::view_cache::ViewCache::new(&blobs.profile);
+                let key = crate::view_cache::key(&["attachment-preview", &part.hash]);
+                let (path, width, height) = match cache.cached_decrypted(&key) {
+                    Some(hit) => hit,
+                    None => match fm_mail::image_view::normalize_image(&bytes) {
+                        Ok(image) => (
+                            cache.store_decrypted(&key, &image.png)?,
+                            image.width,
+                            image.height,
+                        ),
+                        Err(error) => {
+                            result["preview_error"] = json!(error.code());
+                            return Ok(result);
+                        }
+                    },
+                };
+                result["preview_path"] = json!(path.to_str().ok_or_else(unavailable)?);
+                result["width"] = json!(width);
+                result["height"] = json!(height);
+                return Ok(result);
+            }
+            let path = export_bytes(&blobs.profile, &part.hash, &name, &bytes)?;
+            result["path"] = json!(path.to_str().ok_or_else(unavailable)?);
+            result["sha256"] = json!(part.hash);
+            return Ok(result);
+        }
         if let (true, Some((blobs, hash, size, name, source))) = (self.preview, &self.export) {
             preview(&mut result, blobs, hash, *size, name, source.as_ref())?;
             return Ok(result);
@@ -880,6 +975,7 @@ mod tests {
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
             state_scans: Default::default(),
+            pgp_kek: std::sync::Arc::new(crate::pgp::NoKeychain),
         }
     }
 

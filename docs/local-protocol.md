@@ -211,7 +211,7 @@ Every open connection counts as an owner, idle or not. The engine exits 350 ms a
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `accounts` | — | Account rows: identity, counts, coverage, retention, `lifecycle`, Google connection state, scopes and sync summary. `include_removed` adds archives. |
+| `accounts` | — | Account rows: identity, counts, coverage, retention, `lifecycle`, Google connection state, scopes and sync summary, and `pgp` (`{fingerprint, sign_by_default, encrypt_by_default, status, expires_at}` or `null`). `include_removed` adds archives. |
 | `account_update` | yes | `name` and `signature_text` (required), `color`, `mail_retention`, `sync`, `analyze_history`; `expected_revision` (`metadata_revision`), `request_id`. |
 | `google_auth_configuration` | — | Whether the app's OAuth registration is usable: `{available, error?}`. **live** |
 | `google_auth_begin` | opt | Start sign-in, or reconnect `account`. Optional `email`, `reauthorize`, `access` (`{mail, calendar}`: `none`/`read`/`write`), `client_config_path`. Returns `attempt_id`, `authorization_url`. One at a time per engine (`login_in_progress`). **live** |
@@ -243,7 +243,7 @@ Source: [`queries.rs`](../crates/fm-core/src/queries.rs), grammar in [`search_qu
 | Method | Acct | Description |
 | --- | --- | --- |
 | `conversations` | yes | The list. Filters: `query`, `field`, `folder` (`inbox`, `received`, `sent`, `trash`, `all`), `category`, `sender`, `exact_sender`, `exact_person`, `kind`, `status`, `has_attachment`, `after`/`before` (UTC dates), `grouped` and group/month collapsing. With `month_zone`, `done_week_start` and `today`, Done counts use `today`, `week`, `month`, then older months. Paging: `limit`, `offset` or `cursor`, `live_paging`. Rows carry `message_ids` and `revision`. |
-| `conversation` | yes | Messages of `id` with text, flags, attachments, `source_version`. A pure read: opening marks nothing read. |
+| `conversation` | yes | Messages of `id` with text, flags, attachments, `source_version` and `pgp` (`"signed"`, `"encrypted"` or null). A pure read: opening marks nothing read. List rows carry `pgp` for the message their snippet comes from. |
 | `sender_summary` | yes | `email` → count and three recent conversations with that person. |
 | `search_senders` | yes | People for search autocomplete: `query`, `folder`, `role`, `limit` (≤10). |
 | `recipient_suggestions` | yes | Addresses for composing from all active accounts: `query`, `exclude`, `limit` (≤10). |
@@ -298,7 +298,7 @@ Drafts are named by `draft_id`, or a conversation's reply draft by `conversation
 | `draft_get` | yes | One draft; an unsaved reply comes back at revision 0. |
 | `drafts` | yes | Open drafts: `query`, `limit`, `offset`. |
 | `draft_create` | yes | `mode` (`new`, `reply`, `reply_all`, `forward`), `conversation_id` + `source_message_id` (not for `new`), `request_id`. |
-| `draft_save` | yes | `body` (required), `body_html`, `signature_text`, `subject`, `to_recipients`/`cc_recipients`/`bcc_recipients`, `recipient_inputs` (unparsed text), `attachment_ids`, `expected_revision`, `request_id`. |
+| `draft_save` | yes | `body` (required), `body_html`, `signature_text`, `subject`, `to_recipients`/`cc_recipients`/`bcc_recipients`, `recipient_inputs` (unparsed text), `attachment_ids`, `pgp_sign`, `pgp_encrypt` (booleans; omitted keeps the saved ones), `expected_revision`, `request_id`. A draft with `pgp_encrypt` isn't uploaded to Gmail Drafts. |
 | `draft_attachment_import` | yes | Copy a local file in: `draft_id`, absolute `path`, `expected_revision`, `request_id`. |
 | `draft_discard` | yes | `expected_revision`, `request_id`, optional unsaved `buffer`; returns a `discard_undo` receipt. |
 | `draft_discard_status` | yes | Discard receipt and `can_undo` by `request_id`. |
@@ -345,8 +345,8 @@ The client holds a send for its Undo delay (a GUI setting; six seconds in the CL
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `attachment` | yes | Metadata for `id`, plus `path` to a freshly verified copy under `exports/` and `sha256`. |
-| `message_source` | yes | Raw RFC 822 text (cut at 256 KiB), HTML part, address metadata, `has_invite`: `id`, `source_version`. |
+| `attachment` | yes | Metadata for `id`, plus `path` to a freshly verified copy under `exports/` and `sha256`. An id `pgp:<message>:<index>:<size>:<sha256>` from `message_source` names a file inside an encrypted message; it is decrypted again and checked against its size and hash. |
+| `message_source` | yes | Raw RFC 822 text (cut at 256 KiB), HTML part, address metadata, `has_invite`: `id`, `source_version`, optional `decrypt`. For OpenPGP mail, the text and HTML are of the decrypted or unwrapped message and `pgp` says how: `{encrypted, inline, decryption: {state: decrypted\|sealed\|no_key\|unavailable\|failed, …}, signatures: [{status, key_id, fingerprint, signer, sender_matches, created_at}], attachments}`; `raw` stays the source. Encrypted mail is decrypted only with `decrypt: true`; otherwise it is `sealed`, with `recipients` and `can_decrypt`. |
 | `message_invite` | yes | A message's calendar invitation, linked to the cached event: `id`, `source_version`. |
 | `google_remote_attachment` | yes | Save an attachment of a server-only message (`id` `remote-att:<message>:<index>`) to a file. **live, session** |
 
@@ -393,7 +393,7 @@ Only the engine fetches remote content. Received HTML is sanitised, with images 
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `message_html` | yes | Sanitised HTML for `id` + `source_version` (`html` or `html_path`), `resources`, `links`. No network. |
+| `message_html` | yes | Sanitised HTML for `id` + `source_version` (`html` or `html_path`), `resources`, `links`. No network. Encrypted mail has HTML only with `decrypt: true`. |
 | `message_image` | yes | `resource` N as a PNG `path` and a `state`; `cached_only` stays offline. |
 | `sender_avatar` | — | Picture for `address` + `kind` (Gravatar by hashed address, or the domain icon) as a PNG `path`. |
 | `message_unsubscribe` | yes | For `id` + `source_version`: an RFC 8058 one-click POST now, or a `link` for the browser. |
@@ -403,6 +403,23 @@ Only the engine fetches remote content. Received HTML is sanitised, with images 
 | `remote_proxy_test` | — | Test the proxy: `{ok, ms}` or `{ok: false, reason}`. |
 | `remote_proxy_password` | — | `op` `status`, `set` (`password`) or `clear`; kept in the OS credential store, never returned. |
 | `remote_image_cache` | — | `op` `stats` or `clear`. |
+
+### OpenPGP
+
+One keyring per profile: the person's own keys, with their secret keys sealed by a key in the OS keychain (a profile file in demo profiles), and other people's public keys. OpenPGP work runs off the store writer. Mutations take `request_id`. Source: [`pgp.rs`](../crates/fm-core/src/pgp.rs), [`fm-pgp`](../crates/fm-pgp/src/lib.rs).
+
+| Method | Acct | Description |
+| --- | --- | --- |
+| `pgp_keys` | — | `keys` (fingerprint, key ID, version, algorithm, user IDs, addresses, created and expiry times, `status` valid/expired/revoked/invalid/weak, `can_sign`, `can_encrypt`, `secret`, subkeys, origin, `accounts`) and `accounts` (account → choice). |
+| `pgp_key_generate` | — | `email`, optional `name`, `algorithm` (`curve25519` or `rsa4096`), `expires_days` (null for never), `account` to make it that account's key. Returns `fingerprint` and `key`. |
+| `pgp_key_import` | — | `text` or `path` (absolute, ≤1 MiB), optional `passphrase`. Public keys, secret keys and revocation certificates; known keys merge. Returns `added`, `updated`, `revoked`. A protected secret key without its passphrase fails with `passphrase_required` (details: `fingerprint`, `user_ids`); `wrong_passphrase`, `secret_key_incomplete`, `invalid_key`. |
+| `pgp_key_export` | — | `fingerprint`, `kind` `public`, `secret` (with `passphrase`, ≥12 characters, else `weak_passphrase`) or `revocation`. Returns `armored` and a suggested `filename`. |
+| `pgp_key_expiry` | — | An own key's `fingerprint` and `expires_days` (null for never). |
+| `pgp_key_delete` | — | `fingerprint`; accounts using it stop (`used_by`). |
+| `pgp_account` | yes | `fingerprint` (an own key naming the account's address, else `pgp_key_unusable`) or null, `sign_by_default`, `encrypt_by_default`. |
+| `pgp_recipients` | yes | `addresses` (≤100): each `ready` (with the key it would use), `unusable` or `missing`. |
+
+Sending checks the draft's flags: `pgp_not_set_up` (no account key), `pgp_recipient_key_missing` and `pgp_recipient_key_unusable` (details: `addresses`); nothing is sent unprotected instead. Keychain problems are `store_unavailable` or `key_locked`; a key changed meanwhile is `stale_keyring`.
 
 ### Local AI
 

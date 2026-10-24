@@ -8,6 +8,12 @@ target_compile_features(fm-gui-html PUBLIC cxx_std_20)
 add_library(fm-gui-html-content STATIC HtmlContent.cpp HtmlContent.h)
 target_link_libraries(fm-gui-html-content PUBLIC Qt6::Quick Qt6::Network)
 target_compile_features(fm-gui-html-content PUBLIC cxx_std_20)
+# The OpenPGP keyring's engine calls. PgpKeys.cpp defines MailBackend::pgpKeys,
+# so only programs that compile MailBackend use this library. It calls into
+# fm-gui-html-content, so link lists name it first.
+add_library(fm-gui-keyring STATIC PgpKeys.cpp PgpKeys.h)
+target_link_libraries(fm-gui-keyring PUBLIC Qt6::Quick Qt6::Network)
+target_compile_features(fm-gui-keyring PUBLIC cxx_std_20)
 # FmIcon.qml wraps this item; every process that loads it registers the type first.
 add_library(fm-gui-icons STATIC FmIconItem.cpp FmIconItem.h)
 target_link_libraries(fm-gui-icons PUBLIC Qt6::Quick fm-gui-html)
@@ -83,11 +89,12 @@ qt_add_qml_module(fuckmail-gui
     QML_FILES DebugConsole.qml AccountAnalysis.qml
     QML_FILES AccountProgress.qml AccountPolicy.qml AccountCard.qml AccountHoverCard.qml AccountColorPicker.qml LabelsDialog.qml SignatureDialog.qml
     QML_FILES HtmlMessageBody.qml MessageNotices.qml RemoteContentSettings.qml
+    QML_FILES EncryptionSettings.qml PgpKeyDialog.qml PgpImportDialog.qml PgpBackupDialog.qml
     QML_FILES CalendarMailCount.qml
-    QML_FILES FmScrollBar.qml Main.qml KeyHints.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml TextMenu.qml TextMenuHandler.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml LabelSettings.qml TodayStrip.qml
+    QML_FILES FmScrollBar.qml Main.qml KeyHints.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml TextMenu.qml TextMenuHandler.qml FmDialog.qml FmDialogFooter.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml SenderAvatar.qml AttendeeList.qml MatchMarks.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml SealedMessage.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/GeistMono-Regular.ttf fonts/GeistMono-Medium.ttf fonts/LICENSE-Geist.txt app-icon/app-icon.png
 )
-target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-html-content fm-gui-spelling Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
+target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-keyring fm-gui-html-content fm-gui-spelling Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm dwmapi)
@@ -124,7 +131,7 @@ endif()
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
     CONTENT "$<TARGET_FILE:fuckmail-gui>\n")
 if(BUILD_TESTING)
-    link_libraries(Qt6::Widgets fm-gui-icons fm-gui-html-content fm-gui-spelling)
+    link_libraries(Qt6::Widgets fm-gui-icons fm-gui-keyring fm-gui-html-content fm-gui-spelling)
     if(WIN32)
         link_libraries(winmm)
     endif()

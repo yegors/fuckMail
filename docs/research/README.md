@@ -21,6 +21,7 @@ Evidence, comparisons and experiment reports, grouped by subject. Each file reco
 | [Gmail](gmail.md) | OAuth scopes, quotas, history-based sync, drafts and sending | [Gmail](../contracts/gmail.md) |
 | [Calendar](calendar.md) | Quotas, permissions, sync, recurrence and invitations | [Calendar](../contracts/calendar.md) |
 | [Authorization and credential storage](phase-2-auth.md) | Desktop OAuth with loopback callback, OS keychains | [Platform](../contracts/platform.md), [Gmail](../contracts/gmail.md) |
+| [OpenPGP](openpgp.md) | Library choice, key and validity rules, sealing secret keys, PGP/MIME and GnuPG interoperability | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Platform](../contracts/platform.md) |
 | [HTTPS transport](phase-2-transport.md) | Bounded native HTTPS, quota scheduling, cancellation and fault tests | [Gmail](../contracts/gmail.md), [Quality](../contracts/quality.md) |
 | [Gmail HTTP calls](phase-2-gmail-http.md) | Typed Gmail endpoints, method costs, send outcomes | [Gmail](../contracts/gmail.md) |
 | [Mail acquisition](phase-2-mail-acquisition.md) | Preparing and publishing downloaded mail into the store | [Core](../contracts/core-storage.md), [Gmail](../contracts/gmail.md) |

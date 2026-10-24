@@ -2,6 +2,8 @@
 * text=auto eol=lf
 # Wire-format MIME fixtures have intentional CRLF and recorded SHA-256 values.
 fixtures/messages/*.eml -text whitespace=cr-at-eol
+# GnuPG-made OpenPGP mail: signatures cover the CRLF bytes as sent.
+crates/fm-pgp/tests/fixtures/*.eml -text whitespace=cr-at-eol
 # Supplied design exports retain verbatim bytes and formatting.
 docs/research/assets/2026-09-*/** -text -whitespace
 # Synthetic OAuth key/JWKS fixtures retain their recorded source hashes.

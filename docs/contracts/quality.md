@@ -1,5 +1,28 @@
 # Quality, performance and release acceptance
 
+## D218 — Sealed encrypted mail and Gmail's PGP/MIME rewrite (Quality96)
+
+Core105, Mail UI159; schema 41, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-pgp` `messages`: `pgp_mime_rewritten_by_gmail_reads_as_pgp_mime` (the GnuPG fixture rewritten as Gmail delivers it decrypts to MIME with its text, attachment and good signature, and no `Content-Type` lines in the text) and `encrypted_mail_stays_sealed_until_asked` (sealed with recipients for both forms, no text or signatures; signed mail still verifies).
+- `fm-core` `pgp_tests`: sealed `message_source` reads report `can_decrypt` false then true once the key is imported, with no text, files or signatures; signed mail checks without decrypting; sealed `message_html` has no HTML before or after a decrypted view is memoised; `encrypt_by_default_waits_for_every_recipient_key` (no recipients, a recipient without a key, then with it, on the unsaved reply); replies to encrypted mail start unencrypted until the recipient's key is imported, and the unsaved reply projection carries the defaults.
+- `gui-mail-selection` `protectedMail`: an encrypted message opens sealed with bars and an enabled Decrypt, no text, files or decrypt request; Decrypt asks the engine to decrypt and shows the text, "Decrypted · Hide" and the decrypted files; Hide seals it again; a message without a key names it in the hint, offers no Decrypt and marks its lock.
+
+Validation (Windows 11, x64, release build): `cargo test --workspace` and strict workspace clippy pass. 37 of 38 GUI tests passed in one sequential ctest run with gui-mail-gpu left out; gui-mail-selection failed there at an attachment-fold mouse click straight after a relink, then passed three runs out of three on its own. Checked by eye on the release build against the live profile: a received message rewritten by Gmail opens sealed with Decrypt and no TLDR, and decrypts to its text with "Decrypted · Hide"; the sender's copy shows "Encrypted · only you and the recipients can read it" with Reveal and reveals its text; the rewritten signed reply shows its signature.asc as a Signature card; Settings → Encryption lists both keys and the account switches. A real mouse click on Decrypt, the composer's Encrypt gating and the feel of the Settings switches weren't checked: off-screen captures don't take clicks, and the switches would change the founder's real defaults.
+
+## D217 — OpenPGP (Quality95)
+
+Core104, Mail UI158, CLI66; schema 41, fixtures live0/demo3 unchanged.
+
+- `fm-pgp` tests: generation, expiry changes and merges, RSA, user-ID validation, sealing (wrong key, wrong fingerprint, tampering), passphrase export and import, revocation, multi-key files, signing and verifying composer-built MIME (tampering detected, unknown key, another address), encryption to several recipients with a hidden Bcc and the sender, missing and expired keys, and GnuPG-made keys and messages (PGP/MIME encrypted and signed, detached signatures, inline and clear-signed text, OCB to RSA). Two ignored tests repeat the round trips through an installed GnuPG.
+- `fm-core` `pgp_tests`: keyring requests and receipts, imports with passphrases and revocations, exports, expiry and deletion clearing the account, account-key rules and recipient checks, signed and encrypted sends (draft upload exclusion, missing keys refused before freezing, the sender reading their own copy, no journal preview), sync-time marking and plumbing hiding, the repair pass, reader decryption with attachments and their verified ids, signed HTML, encrypted HTML, decrypted attachments and inline pictures kept under `decrypted/` and removed by `forget_decrypted`, and replies defaulting to encrypted.
+- `fm-engine` `sessions`: keyring requests over IPC on a demo profile, the owner-only demo key file, error details and a restart reading the same key.
+- `fm-cli` `arguments`: scope, duration and stdin checks before storage.
+- `gui-integration` settings stage: Create key through the dialog, backup passphrase rules, the backup holding the new key and opening the save dialog with `<key ID>-secret.asc` (Qt's own dialog standing in for the system's), Encrypt by default, CLI readback and the Accounts row.
+- `gui-mail-selection` `protectedMail`: "Encrypted message" and a lock in the list only for encrypted rows, no notice or problem for a decrypted, well-signed message, and the notice and problem badge for a missing key and for a signature that doesn't match.
+
+Validation (macOS 15, arm64): `cargo test --workspace`, strict workspace clippy, formatting and hygiene pass; the `build/dev` GUI ctest suite passes, gui-mail-gpu only when run alone (its 100 ms frame budget fails with three tests at once).
+
 ## D214 — Today grouping (Quality94)
 
 Core101 and Mail UI155; live0/demo3 fixtures unchanged.

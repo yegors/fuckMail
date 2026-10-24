@@ -37,6 +37,7 @@ own; everything comes from the Rust engine (`fm-engine`), which the `fm` CLI als
 | HTML messages | `FmHtmlView` (tiled QQuickItem), `HtmlDocument` (layout and painting on [litehtml](third_party/litehtml/VENDORED.md), built by `cmake/litehtml.cmake`), `HtmlContent` (engine calls for HTML, images, blocklist, proxy), `HtmlLinks.h`, `SearchMatch.h`, `ReceivedBody.h`; `HtmlMessageBody.qml`. The engine sanitises HTML and fetches images; the view loads nothing itself |
 | Icons | `FmIconItem` behind `FmIcon.qml` |
 | Notifications | `NotificationPresenter` (system tray messages); reminder logic in `RemindersAndPreferencesBackend.cpp`; `ReminderPopup.qml` |
+| OpenPGP | `PgpKeys` (`backend.pgpKeys`: the keyring's engine calls, each on its own connection), `EncryptionSettings.qml` (Settings → Encryption), `PgpKeyDialog.qml`, `PgpImportDialog.qml`, `PgpBackupDialog.qml`; the account card's OpenPGP row, the composer's Sign and Encrypt, and the reader's lock, shield and notices in `MessageSource.qml` and `MessageNotices.qml` |
 | Debug console | `DebugConsole.h` / `.cpp` and `DebugConsole.qml`: filtered log, `gui.log`, state view and `fm` commands |
 | Tests | `*Test.cpp`, plus `GoogleOperationTestFixture.h` (a scripted stand-in engine) |
 | Self-tests and benchmarks | `Gui*SelfTest.*`, `Gui*Benchmark.*`, `GuiPaintObserver.h`, `GuiBenchmarkSupport.h`; compiled into the app and started by `main.cpp` flags |

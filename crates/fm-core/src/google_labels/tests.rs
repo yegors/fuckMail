@@ -318,6 +318,7 @@ fn remapping_preserves_existing_assignments_pending_intent_and_flags() {
         body: "Retained body".into(),
         sent_at: "2026-09-13T10:00:00Z".into(),
         attachments: vec![],
+        pgp: 0,
     };
     crate::google_store::publish_message(&store.db, &account, &staged, "source").unwrap();
     let (message, conversation): (String, String) = store
@@ -480,6 +481,7 @@ fn linking_after_import_projects_saved_labels_without_inbox_or_remote_writes() {
         body: "Preserved source".into(),
         sent_at: "2026-09-14T10:00:00Z".into(),
         attachments: vec![],
+        pgp: 0,
     };
     crate::google_store::publish_message(&store.db, &account, &staged, "source").unwrap();
     let (mid, cid, before_labels): (String,String,String) = store.db.query_row(
@@ -595,6 +597,7 @@ fn saved_manual_category_choice_wins_during_projection_repair() {
         body: "Retained".into(),
         sent_at: "2026-09-14T10:00:00Z".into(),
         attachments: vec![],
+        pgp: 0,
     };
     crate::google_store::publish_message(&store.db, &account, &staged, "source").unwrap();
     let (mid, cid): (String, String) = store
@@ -647,6 +650,7 @@ fn labelled_mail(store: &Store, account: &str, from: usize, to: usize, unlabelle
             body: "Body".into(),
             sent_at: "2026-09-14T10:00:00Z".into(),
             attachments: vec![],
+            pgp: 0,
         };
         crate::google_store::publish_message(&tx, account, &staged, "source").unwrap();
     }

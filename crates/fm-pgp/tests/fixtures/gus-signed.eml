@@ -1,0 +1,35 @@
+From: Gus GnuPG <gus@example.test>
+To: Ann Example <ann@example.test>
+Date: Thu, 22 Oct 2026 12:00:00 +0000
+Message-ID: <fixture-signed@example.test>
+MIME-Version: 1.0
+Subject: Signed hello
+Content-Type: multipart/signed; micalg=pgp-sha256; protocol="application/pgp-signature"; boundary="outer-sig"
+
+This is an OpenPGP/MIME signed message
+--outer-sig
+Content-Type: multipart/alternative; boundary="inner-alt"
+
+--inner-alt
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Signed hello from Gus.
+--inner-alt
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<p>Signed hello from <b>Gus</b>.</p>
+--inner-alt--
+
+--outer-sig
+Content-Type: application/pgp-signature; name="signature.asc"
+
+-----BEGIN PGP SIGNATURE-----
+
+iIcEABYIAC8WIQTxLQAnrC5B4HiBX5zp/2HTik2dFQUCatqYshEcZ3VzQGV4YW1w
+bGUudGVzdAAKCRDp/2HTik2dFVOgAP4uWpQ7+sIztdEexwhlDatP5fofi7JIOKek
+5JBrdBlj9AEA30ySqpGhHJUxhUFYA2e99ZuySsiqIwl+QVFxEE3GJQ8=
+=VZPT
+-----END PGP SIGNATURE-----
+--outer-sig--

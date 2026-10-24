@@ -11,6 +11,8 @@ publish.workspace = true
 fm-assist = { path = "../fm-assist" }
 reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-native-roots"] }
 fm-mail = { path = "../fm-mail" }
+fm-pgp = { path = "../fm-pgp" }
+zeroize = "1.8.1"
 mail-parser = "0.11"
 url = "2.5"
 fm-core = { path = "../fm-core" }

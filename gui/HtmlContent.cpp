@@ -75,15 +75,18 @@ void HtmlContent::call(const QString &account, const QString &method, const QJso
 }
 
 namespace {
-// One held HTML view: a message version, with or without its quoted history.
-QString htmlKey(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
-    return account + '/' + id + '/' + sourceVersion + (quotes ? QStringLiteral("/quotes") : QString());
+// One held HTML view: a message version, with or without its quoted history,
+// and decrypted once the person chose to decrypt it.
+QString htmlKey(const QString &account, const QString &id, const QString &sourceVersion, bool quotes, bool decrypt) {
+    return account + '/' + id + '/' + sourceVersion + (quotes ? QStringLiteral("/quotes") : QString())
+        + (decrypt ? QStringLiteral("/decrypted") : QString());
 }
 }
 
 QString HtmlContent::load(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
     const auto ticket = QStringLiteral("html-%1").arg(++m_serial);
-    const auto key = htmlKey(account, id, sourceVersion, quotes);
+    const bool decrypt = m_backend->isUnsealed(account, id);
+    const auto key = htmlKey(account, id, sourceVersion, quotes, decrypt);
     if (const auto cached = m_htmlCache.constFind(key); cached != m_htmlCache.cend()) {
         m_htmlOrder.removeOne(key); m_htmlOrder.append(key);
         QMetaObject::invokeMethod(this, [this, ticket, result = *cached] { emit htmlReady(ticket, result, true); }, Qt::QueuedConnection);
@@ -91,6 +94,7 @@ QString HtmlContent::load(const QString &account, const QString &id, const QStri
     }
     QJsonObject params{{"id", id}, {"source_version", sourceVersion}};
     if (quotes) params["quotes"] = true;
+    if (decrypt) params["decrypt"] = true;
     call(account, "message_html", params, [this, ticket, key](const QJsonObject &result, bool ok) {
         const auto value = result.toVariantMap();
         if (ok) {
@@ -103,7 +107,7 @@ QString HtmlContent::load(const QString &account, const QString &id, const QStri
 }
 
 QVariantMap HtmlContent::cached(const QString &account, const QString &id, const QString &sourceVersion, bool quotes) {
-    const auto key = htmlKey(account, id, sourceVersion, quotes);
+    const auto key = htmlKey(account, id, sourceVersion, quotes, m_backend->isUnsealed(account, id));
     const auto hit = m_htmlCache.constFind(key);
     if (hit == m_htmlCache.cend()) return {};
     m_htmlOrder.removeOne(key); m_htmlOrder.append(key);
@@ -135,7 +139,7 @@ void HtmlContent::pumpImages() {
             const auto value = result.toVariantMap();
             // Reopening from the GUI cache shows what already loaded.
             const auto &job = running.second;
-            const auto key = htmlKey(job.account, job.id, job.version, job.quotes);
+            const auto key = htmlKey(job.account, job.id, job.version, job.quotes, m_backend->isUnsealed(job.account, job.id));
             if (ok && value.value("state") == "ready" && m_htmlCache.contains(key)) {
                 auto cached = m_htmlCache.value(key);
                 auto resources = cached.value("resources").toList();
@@ -415,6 +419,10 @@ void HtmlContent::refreshImageCache() {
     call({}, "remote_image_cache", {{"op", "stats"}}, [this](const QJsonObject &result, bool ok) {
         if (ok) { m_imageCache = result.toVariantMap(); emit imageCacheChanged(); }
     });
+}
+
+void HtmlContent::forgetViews() {
+    m_htmlCache.clear(); m_htmlOrder.clear();
 }
 
 void HtmlContent::clearImageCache() {

@@ -280,6 +280,16 @@ impl NativeSecret {
     /// The remote-content proxy password entry for this profile namespace,
     /// which is validated as in [`NativeCredentialVault::new`].
     pub fn proxy_password(profile_namespace: &str) -> Result<Self, GoogleError> {
+        Self::named("proxy", "remote-content", profile_namespace)
+    }
+
+    /// The entry holding the key that seals this profile's OpenPGP secret
+    /// keys, for the namespace validated as in [`NativeCredentialVault::new`].
+    pub fn pgp_keyring(profile_namespace: &str) -> Result<Self, GoogleError> {
+        Self::named("pgp", "keyring", profile_namespace)
+    }
+
+    fn named(kind: &str, user: &'static str, profile_namespace: &str) -> Result<Self, GoogleError> {
         if !(16..=256).contains(&profile_namespace.len())
             || !profile_namespace
                 .bytes()
@@ -291,10 +301,10 @@ impl NativeSecret {
         }
         Ok(Self {
             service: format!(
-                "fuckmail.proxy.v1.{:x}",
+                "fuckmail.{kind}.v1.{:x}",
                 Sha256::digest(profile_namespace.as_bytes())
             ),
-            user: "remote-content",
+            user,
             operations: Mutex::new(()),
         })
     }

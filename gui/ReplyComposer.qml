@@ -42,6 +42,59 @@ Item {
             for (const item of (message.attachments || [])) if (item.state === "available") items.push(item)
         return items
     }
+    // OpenPGP, once the account has a key or the draft already asks for it.
+    // Local demo captures are never signed or encrypted, so they don't offer it.
+    readonly property bool pgpSign: backend.draft.pgp_sign === true
+    readonly property bool pgpEncrypt: backend.draft.pgp_encrypt === true
+    readonly property bool pgpShown: !root.readOnly && !backend.syntheticProfile && (!!backend.currentAccount.pgp || pgpSign || pgpEncrypt)
+    // Recipients without a usable key, and which recipients that answer
+    // covers. Mail can be encrypted once every recipient has a key.
+    property var pgpMissing: []
+    property string pgpTicket: ""
+    property string pgpAsked: ""
+    property string pgpChecked: ""
+    readonly property string pgpRecipients: [].concat(backend.draft.to_recipients || [], backend.draft.cc_recipients || [], backend.draft.bcc_recipients || [])
+        .map(function(r) { return String(r.email || "").toLowerCase() }).filter(function(e) { return e.length }).join(",")
+    readonly property bool pgpKnown: pgpChecked === pgpRecipients
+    readonly property bool pgpReady: pgpRecipients.length > 0 && pgpKnown && pgpMissing.length === 0
+    // Drafts whose Encrypt the person set; the rest follow the account's
+    // default and stay unencrypted while a recipient has no key.
+    property var pgpChosen: ({})
+    readonly property bool pgpEncryptDefault: !!backend.currentAccount.pgp && backend.currentAccount.pgp.encrypt_by_default === true
+    readonly property string pgpDraft: String(backend.draft.draft_id || "")
+    function checkPgp() {
+        if (!pgpShown || !pgpRecipients.length) { pgpTicket = ""; pgpMissing = []; pgpChecked = pgpRecipients; followPgp(); return }
+        pgpAsked = pgpRecipients
+        pgpTicket = backend.pgpKeys.checkRecipients(backend.account, pgpAsked.split(","))
+    }
+    // A reply not yet saved starts from the engine's defaults; changing it
+    // here would save a draft just for opening the conversation.
+    readonly property bool pgpSaved: Number(backend.draft.revision || 0) > 0
+    onPgpSavedChanged: followPgp()
+    function followPgp() {
+        if (!pgpShown || !pgpKnown || !pgpSaved || root.readOnly || backend.draftLocked || !pgpDraft || pgpChosen[pgpDraft]) return
+        if (pgpEncrypt && !pgpReady) backend.setDraftProtection(pgpSign, false)
+        else if (!pgpEncrypt && pgpReady && pgpEncryptDefault) backend.setDraftProtection(pgpSign, true)
+    }
+    function choosePgpEncrypt(on) {
+        const chosen = Object.assign({}, pgpChosen); chosen[pgpDraft] = true; pgpChosen = chosen
+        backend.setDraftProtection(pgpSign, on)
+    }
+    onPgpRecipientsChanged: checkPgp()
+    onPgpShownChanged: checkPgp()
+    onPgpDraftChanged: followPgp()
+    Connections {
+        // Only an account with a key reaches the keyring.
+        target: root.pgpShown ? backend.pgpKeys : null
+        ignoreUnknownSignals: true
+        function onRecipientsReady(ticket, result, ok) {
+            if (ticket !== root.pgpTicket) return
+            root.pgpMissing = ok ? (result.recipients || []).filter(function(r) { return r.status !== "ready" }).map(function(r) { return r.address }) : root.pgpAsked.split(",")
+            root.pgpChecked = root.pgpAsked
+            root.followPgp()
+        }
+        function onKeyringChanged() { root.checkPgp() }
+    }
     readonly property var firstRecipient: (backend.draft.to_recipients || [])[0] || null
     // Shown under a new message once its first recipient shares mail with this account.
     readonly property bool recentVisible: mode === "new" && !readOnly && !!firstRecipient && backend.recentWith.email === String(firstRecipient.email || "").toLowerCase() && (backend.recentWith.rows || []).length > 0
@@ -488,6 +541,17 @@ Item {
                     FmButton { objectName: "retryDraftDiscard"; text: backend.draftDiscard.retry_label || "Retry discard"; visible: backend.draftDiscard.can_retry || false; onClicked: backend.retryDraftDiscard() }
                 }
             }
+            Text {
+                objectName: "draftPgpMissing"
+                // With Encrypt on, a recipient without a key stops the send; with it
+                // off where the account encrypts by default, this says why.
+                visible: root.pgpShown && root.pgpKnown && root.pgpMissing.length > 0 && (root.pgpEncrypt || root.pgpEncryptDefault)
+                Layout.fillWidth: true; Layout.bottomMargin: 8; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: root.pgpEncrypt
+                    ? "No OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption, or turn off Encrypt to send it unencrypted."
+                    : "Not encrypted: no OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption to encrypt."
+                color: root.pgpEncrypt ? Theme.warn : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+            }
             RowLayout {
                 visible: backend.draftStatus.indexOf("Not saved") >= 0 && !backend.draftConflict
                 Layout.bottomMargin: 8
@@ -528,6 +592,37 @@ Item {
                     onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
                 }
                 FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12); tip: "Attach files — or drop them anywhere on the message"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: root.chooseLocalAttachment() }
+                FmButton {
+                    objectName: "draftPgpSign"; visible: root.pgpShown
+                    text: "Sign"; iconName: "shield"; iconSize: 13; outlined: !root.pgpSign; selected: root.pgpSign
+                    implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12)
+                    tip: root.pgpSign ? "Signed with your OpenPGP key, so recipients can check it's from you · click to stop" : "Sign with your OpenPGP key"
+                    enabled: !backend.draftLocked && !backend.draftBusy
+                    onClicked: backend.setDraftProtection(!root.pgpSign, root.pgpEncrypt)
+                    Accessible.role: Accessible.CheckBox; Accessible.checked: root.pgpSign
+                }
+                // Encrypt turns on only once every recipient has a key; while it
+                // can't, hovering says why.
+                Item {
+                    visible: root.pgpShown
+                    implicitWidth: encryptButton.implicitWidth; implicitHeight: encryptButton.implicitHeight
+                    FmButton {
+                        id: encryptButton
+                        objectName: "draftPgpEncrypt"; anchors.fill: parent
+                        text: "Encrypt"; iconName: "lock"; iconSize: 13; outlined: !root.pgpEncrypt; selected: root.pgpEncrypt
+                        implicitHeight: 32; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(12)
+                        tip: root.pgpEncrypt ? "Only the recipients and you can read it; the subject stays visible · this draft isn't saved to Gmail Drafts" : "Encrypt to every recipient's OpenPGP key"
+                        enabled: !backend.draftLocked && !backend.draftBusy && (root.pgpEncrypt || root.pgpReady)
+                        onClicked: root.choosePgpEncrypt(!root.pgpEncrypt)
+                        Accessible.role: Accessible.CheckBox; Accessible.checked: root.pgpEncrypt
+                    }
+                    HoverHandler { id: encryptHover }
+                    FmToolTip {
+                        shown: encryptHover.hovered && !encryptButton.enabled && !backend.draftLocked && !backend.draftBusy
+                        text: !root.pgpRecipients.length ? "Add recipients to encrypt" : !root.pgpKnown ? "Checking recipients' keys…"
+                            : "No OpenPGP key for " + root.pgpMissing.join(", ") + " · import theirs in Settings → Encryption"
+                    }
+                }
                 Text {
                     objectName: "composerHint"
                     Layout.fillWidth: true

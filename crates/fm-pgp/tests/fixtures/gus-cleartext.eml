@@ -1,0 +1,20 @@
+From: Gus GnuPG <gus@example.test>
+To: Ann Example <ann@example.test>
+Date: Thu, 22 Oct 2026 12:00:00 +0000
+Message-ID: <fixture-cleartext@example.test>
+MIME-Version: 1.0
+Subject: Cleartext
+Content-Type: text/plain; charset=utf-8
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Cleartext signed note.
+- - a dashed line
+-----BEGIN PGP SIGNATURE-----
+
+iIcEARYKAC8WIQTxLQAnrC5B4HiBX5zp/2HTik2dFQUCatqYshEcZ3VzQGV4YW1w
+bGUudGVzdAAKCRDp/2HTik2dFZZWAQCBsgUxsAiVcAwJIbGn07Z7UxqYbBS95AJt
+cBEGj5wH5QD/eaUDO1BGC4LISsgA4soIS000zDJzKYqy6oaVQ8HM6Qg=
+=aNWQ
+-----END PGP SIGNATURE-----

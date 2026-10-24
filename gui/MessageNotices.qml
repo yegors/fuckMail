@@ -2,9 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Notices above a message's text: a calendar invitation, the mailing-list row
-// and the hidden-images row, in that order, one group between thin rules with
-// no fill. Only rows that apply show, and the group hides when none does.
+// Notices above a message's text: an OpenPGP problem, a calendar invitation,
+// the mailing-list row and the hidden-images row, in that order, one group
+// between thin rules with no fill. Only rows that apply show, and the group
+// hides when none does.
 ColumnLayout {
     id: notices
     objectName: "messageNotices_" + (message.id || "")
@@ -44,8 +45,25 @@ ColumnLayout {
     readonly property bool invited: !!inviteEvent && Theme.rsvpOf(inviteEvent) !== undefined && invite.method !== "CANCEL"
     // Answers show for an invitation to you, dimmed until its event has synced.
     readonly property bool answerable: showInvite && invite.method !== "CANCEL" && (!inviteEvent || invited)
+    // OpenPGP: the message source's best signature. Only problems show here;
+    // a good signature is the header's icon alone, and decryption problems
+    // show in SealedMessage where the text would be.
+    property var pgp: null
+    property var signature: null
+    readonly property string pgpProblem: {
+        if (!signature) return ""
+        const who = signature.signer || "an unknown key"
+        return ({bad: "The signature doesn't match. The message was changed after it was signed, or it's forged.",
+            unknown_key: "Signed with a key that isn't in your keyring. Import the sender's public key to check it.",
+            key_expired: "Signed by " + who + " with a key that had already expired.",
+            key_revoked: "Signed by " + who + " with a key that has since been revoked.",
+            weak: "Signed with a hash too weak to trust.",
+            invalid_key: "Signed with a key that isn't allowed to sign.",
+            good: signature.sender_matches ? "" : "Signed by " + who + ", which isn't the address this came from."})[signature.status] || ""
+    }
+    readonly property bool showPgp: pgpProblem.length > 0
     signal openInvite(var event, bool declined)
-    visible: showInvite || showList || showImages
+    visible: showPgp || showInvite || showList || showImages
     spacing: 0
 
     function loadInvite() {
@@ -154,6 +172,19 @@ ColumnLayout {
     }
 
     Rule {}
+    RowLayout {
+        objectName: "pgpNotice_" + (notices.message.id || "")
+        visible: notices.showPgp
+        Layout.fillWidth: true; Layout.minimumHeight: 36; spacing: 10
+        FmIcon { name: "shield"; size: 13; color: Theme.warn }
+        Text {
+            objectName: "pgpNoticeText_" + (notices.message.id || "")
+            text: notices.pgpProblem
+            Layout.fillWidth: true; Layout.topMargin: 8; Layout.bottomMargin: 8; wrapMode: Text.Wrap; textFormat: Text.PlainText
+            color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+        }
+    }
+    Rule { visible: notices.showPgp && (notices.showInvite || notices.showList || notices.showImages) }
     // The invitation: its time (and the time it moved from), your answer, and
     // Yes / Maybe / No. The time opens the event in Calendar's Day view.
     RowLayout {

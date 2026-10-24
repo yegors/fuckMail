@@ -54,6 +54,9 @@ struct Plan {
     thread_id: Option<String>,
     baseline: Value,
     expected_target: Option<Value>,
+    /// OpenPGP signing and encryption the draft asks for.
+    pgp: Option<crate::pgp::OutgoingProtection>,
+    kek: std::sync::Arc<dyn crate::pgp::KekSource>,
 }
 impl GoogleSendPlan {
     /// Gmail draft that will be sent, or `None` for a new message.
@@ -394,6 +397,8 @@ impl Store {
             Value::Null
         };
         let expected_target = target.as_ref().map(|_| twin["effective_target"].clone());
+        // Checked before anything is frozen: a missing key stops the send here.
+        let pgp = self.pgp_outgoing(&scope.account, draft)?;
         Ok(GoogleSendStep::Prepare(GoogleSendPlan(Box::new(Plan {
             scope: scope.clone(),
             request: p.clone(),
@@ -402,6 +407,8 @@ impl Store {
             thread_id,
             baseline,
             expected_target,
+            pgp,
+            kek: self.pgp_kek(),
         }))))
     }
 
@@ -450,13 +457,18 @@ impl Store {
         ] {
             headers[key] = draft[key].clone();
         }
-        headers["preview"] = draft["body"]
-            .as_str()
-            .unwrap_or("")
-            .chars()
-            .take(320)
-            .collect::<String>()
-            .into();
+        // An encrypted message keeps no readable preview in the journal.
+        headers["preview"] = if draft["pgp_encrypt"] == true {
+            "".into()
+        } else {
+            draft["body"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(320)
+                .collect::<String>()
+                .into()
+        };
         let op = Operation {
             version: 1,
             kind: "send".into(),
@@ -939,7 +951,16 @@ pub fn prepare_google_send(
             &format!("This message cannot be sent: {error}"),
         )
     })?;
-    let size = built.raw.len() as u64;
+    // Signing and encryption wrap the built message; the frozen bytes are
+    // exactly what Gmail receives.
+    let raw = match &plan.pgp {
+        Some(protection) => {
+            cancelled(cancel)?;
+            crate::pgp::protect_outgoing(&built.raw, protection, plan.kek.as_ref())?
+        }
+        None => built.raw,
+    };
+    let size = raw.len() as u64;
     if size > MAX_GOOGLE_SEND_BYTES {
         return Err(err(
             "limit_exceeded",
@@ -947,7 +968,7 @@ pub fn prepare_google_send(
         ));
     }
     cancelled(cancel)?;
-    let hash = plan.retained.blobs.stage_blob(&built.raw)?;
+    let hash = plan.retained.blobs.stage_blob(&raw)?;
     cancelled(cancel)?;
     Ok(PreparedGoogleSend {
         plan,

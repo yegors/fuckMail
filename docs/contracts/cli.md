@@ -1,5 +1,15 @@
 # CLI and external agent interface
 
+## D217 — OpenPGP keys (CLI66)
+
+- `fm pgp keys` lists the keyring: fingerprint, algorithm, primary user ID, yours or public, status, expiry and the accounts using it.
+- `fm pgp generate [--email E] [--name N] [--algorithm curve25519|rsa4096] [--expires 3y|18m|90d|never]`; with `--account`, the account's name and address are the defaults and the key becomes its key.
+- `fm pgp import FILE|-` reads armored or binary keys (binary only from a file); `--passphrase-stdin` unlocks a protected secret key, and then the key must come from a file.
+- `fm pgp export FINGERPRINT [--secret --passphrase-stdin | --revocation] [--output FILE]` writes armor to stdout or a new owner-only file.
+- `fm pgp expiry FINGERPRINT --expires …`, `fm pgp delete FINGERPRINT`, `fm --account A pgp use FINGERPRINT|--off [--sign on|off] [--encrypt on|off]`, `fm --account A pgp recipients ADDRESS…`.
+- `fm draft save --sign on|off --encrypt on|off` sets the draft's flags.
+- Durations and the stdin rule are checked before any engine starts (exit 2).
+
 ## D216 — forward format (CLI65)
 
 - `fm draft create --mode forward --forward-format html|text` passes `forward_format` (Core103). Without it a forward quotes the original's text, as before.

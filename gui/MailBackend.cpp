@@ -1586,7 +1586,8 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
     const auto latest = members.isEmpty() ? QVariantMap{} : members.last().toMap();
     const auto message = latest.value("id").toString(), version = latest.value("source_version").toString();
     if (!latest.value("source_available").toBool() || version.isEmpty()) { summaries(); return; }
-    const auto key = account + '\n' + message + '\n' + version;
+    const bool decrypt = isUnsealed(account, message);
+    const auto key = account + '\n' + message + '\n' + version + (decrypt ? QStringLiteral("\nd") : QString());
     const auto sourceReady = [this, snapshot, account, message, version, key, lifecycle, current, summaries](const QVariantMap &source, bool ok, bool cache) {
         if (!current()) return;
         auto members = snapshot->value("messages").toList();
@@ -1606,7 +1607,7 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
     };
     if (const auto cached = m_sourceCache.object(key); cached && cached->lifecycle == lifecycle)
         sourceReady(cached->data, true, false);
-    else requestReader(account, {{"id", message}, {"source_version", version}},
+    else requestReader(account, decrypt ? QJsonObject{{"id", message}, {"source_version", version}, {"decrypt", true}} : QJsonObject{{"id", message}, {"source_version", version}},
         [sourceReady](auto result, bool ok) { sourceReady(withoutRaw(result).toVariantMap(), ok, true); }, "message_source", prefetch);
 }
 
@@ -2117,6 +2118,10 @@ void MailBackend::saveDraft() {
     QVariantMap headers;
     for (const auto &key : {"subject", "to_recipients", "cc_recipients", "bcc_recipients"}) {
         if (m_draft.contains(key)) { headers[key] = m_draft[key]; params[key] = QJsonValue::fromVariant(m_draft[key]); }
+    }
+    // OpenPGP choices go only once set here or loaded; the engine keeps them otherwise.
+    for (const auto &key : {"pgp_sign", "pgp_encrypt"}) {
+        if (m_draft.contains(key)) { headers[key] = m_draft[key].toBool(); params[key] = m_draft[key].toBool(); }
     }
     m_savingDraft = true;
     const auto account = m_account;
@@ -2675,17 +2680,20 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
     })) return {};
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces), account = m_account;
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
-    const auto key = account + '\n' + id + '\n' + version;
+    const bool decrypt = isUnsealed(account, id);
+    const auto key = account + '\n' + id + '\n' + version + (decrypt ? QStringLiteral("\nd") : QString());
     // A reload of the thread, such as a draft opening, must not cancel or
     // drop the request: the reply is matched to its message by id and
     // version, so only the account is checked.
-    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, withRaw] {
+    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, withRaw, decrypt] {
         if (account != m_account) return;
         // The cache holds sources without raw text, so a raw request always reads.
         if (auto cached = m_sourceCache.object(key); !withRaw && cached && cached->lifecycle == lifecycle) {
             emit messageSourceReady(ticket, cached->data, true); return;
         }
-        request("message_source", account, {{"id",id},{"source_version",version}}, [this, ticket, account, key, lifecycle, withRaw](auto result, bool ok) {
+        QJsonObject params{{"id",id},{"source_version",version}};
+        if (decrypt) params["decrypt"] = true;
+        request("message_source", account, params, [this, ticket, account, key, lifecycle, withRaw](auto result, bool ok) {
             const auto prepared = withoutRaw(result);
             if (ok && lifecycle == lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) {
                 const auto bytes = QJsonDocument(prepared).toJson(QJsonDocument::Compact).size();
@@ -2695,6 +2703,12 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
         }, true);
     });
     return ticket;
+}
+void MailBackend::setUnsealed(const QString &id, bool unsealed) {
+    const auto key = m_account + '\n' + id;
+    if (id.isEmpty() || m_unsealed.contains(key) == unsealed) return;
+    if (unsealed) m_unsealed.insert(key); else m_unsealed.remove(key);
+    emit unsealedChanged();
 }
 QString MailBackend::requestMessageInvite(const QString &id, const QString &version) {
     if (id.isEmpty() || version.isEmpty() || !m_connected) return {};

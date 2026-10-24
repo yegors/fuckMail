@@ -36,7 +36,7 @@ Builds also copy `fm` and `fm-engine` next to the app's executable. The examples
 
 The default live profile is `%LOCALAPPDATA%\fuckMail\default` on Windows, `~/Library/Application Support/fuckMail/default` on macOS and `~/.local/share/fuckMail/default` on Linux (`$XDG_DATA_HOME` if set).
 
-**Account.** Most commands need `--account`. Commands that work across accounts don't: `accounts`, `status`, `notifications`, `watch`, `call`, `preferences`, `proxy`, `links`, `assist` (some of its subcommands read `--account`), `calendar-sources`, `calendar --combined`, `calendar search`, `calendar reminders`, and `google connect`, `google setup-status` and `google sync-status`.
+**Account.** Most commands need `--account`. Commands that work across accounts don't: `accounts`, `status`, `notifications`, `watch`, `call`, `preferences`, `proxy`, `pgp` (except `use` and `recipients`; `generate` reads it if given), `links`, `assist` (some of its subcommands read `--account`), `calendar-sources`, `calendar --combined`, `calendar search`, `calendar reminders`, and `google connect`, `google setup-status` and `google sync-status`.
 
 ## How `fm` talks to the engine
 
@@ -200,6 +200,26 @@ fm --profile P --account ID google send-status --request-id send-deck-1
 
 Other draft commands: `draft list`, `draft show`, `draft discard` / `draft undo-discard`, and `draft transfer` to move a draft to another account.
 
+### OpenPGP keys
+
+```sh
+fm --account ID pgp generate --expires 3y        # a key for the account's name and address; it becomes the account's key
+fm pgp keys                                       # your keys and other people's
+fm pgp import ./maya-public.asc                   # someone's public key, or a revocation certificate
+fm pgp import ./my-secret.asc --passphrase-stdin < passphrase.txt
+fm pgp export FINGERPRINT --output me.asc         # your public key, to share
+fm pgp export FINGERPRINT --secret --passphrase-stdin --output backup.asc < new-passphrase.txt
+fm pgp export FINGERPRINT --revocation --output revoke.asc
+fm --account ID pgp use FINGERPRINT --sign on --encrypt off
+fm --account ID pgp recipients maya@example.com   # can mail to Maya be encrypted?
+fm --account ID draft save --draft-id D --body-file body.txt --sign on --encrypt on
+```
+
+- `--expires` takes `3y`, `18m`, `90d` or `never`; `pgp expiry FINGERPRINT --expires …` changes it later. `pgp delete FINGERPRINT` removes a key.
+- An exported secret key is protected with the passphrase you give, at least 12 characters, and written only to a new file that only you can read, or to standard output.
+- A protected secret key is imported once with its passphrase; after that it is sealed with a key kept in your system keychain, and fm never asks again.
+- A draft with `--encrypt on` stays out of Gmail Drafts. Sending it fails with `pgp_recipient_key_missing` until every recipient's key is in the keyring.
+
 ### Calendar
 
 ```sh
@@ -293,6 +313,7 @@ The methods and their parameters are described in [local-protocol.md](local-prot
 | `preferences` | `show`, `save` |
 | `links` | `summary`, `blocked`, `block`, `unblock` |
 | `proxy` | `show`, `set`, `clear`, `test`, `cache` for the image proxy |
+| `pgp` | OpenPGP: `keys`, `generate`, `import`, `export`, `expiry`, `delete`, `use`, `recipients` |
 | `assist` | Local model: `settings`, `configure`, `discover`, `test`, `analyze`, `results`, `correct`, `accept`, `progress`, `backlog`, `catch-up`, `pause`, `resume`, `run` |
 | `call` | Send a raw protocol method |
 

@@ -32,6 +32,7 @@ mod local_content;
 mod local_model;
 mod ollama;
 mod openai_local;
+mod pgp;
 mod remote_content;
 mod verification_fixture;
 
@@ -305,6 +306,7 @@ struct SessionServices {
     content: Arc<local_content::Runtime>,
     assistance: Arc<local_model::Runtime>,
     remote: Arc<remote_content::Runtime>,
+    keyring: Arc<pgp::Runtime>,
 }
 
 #[cfg(test)]
@@ -321,9 +323,13 @@ impl SessionServices {
                 Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT)),
             ))),
             remote: Arc::new(remote_content::Runtime::new(
-                core_tasks::CoreBridge::new(queue, Arc::new(Semaphore::new(4))),
+                core_tasks::CoreBridge::new(queue.clone(), Arc::new(Semaphore::new(4))),
                 &std::env::temp_dir(),
                 None,
+            )),
+            keyring: Arc::new(pgp::Runtime::new(
+                core_tasks::CoreBridge::new(queue, Arc::new(Semaphore::new(4))),
+                Arc::new(fm_core::pgp::MemoryKek::new()),
             )),
         }
     }
@@ -653,6 +659,48 @@ async fn session_inner(
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
         }
+        if pgp::Runtime::handles(&request.method) {
+            let Ok(_permit) = foreground_slots.clone().try_acquire_owned() else {
+                let reply = error(
+                    &request.id,
+                    "busy",
+                    "engine work queue is full; retry later",
+                );
+                session_write(stream.get_mut(), &reply, &engine_cancel).await?;
+                continue;
+            };
+            let work = services.keyring.handle(
+                owner_cancel.clone(),
+                &request.method,
+                request.account.as_deref(),
+                request.params,
+            );
+            let Some(result) = await_sync_reply(work, &mut stream, &owner_cancel, true).await?
+            else {
+                return Ok(());
+            };
+            let reply = match result {
+                Ok(result) => response(&request.id, result),
+                Err(e) => {
+                    let mut reply = error(&request.id, &e.code, &e.message);
+                    if !e.details.is_null() {
+                        reply["error"]["details"] = e.details;
+                    }
+                    reply
+                }
+            };
+            let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {
+                error(
+                    &request.id,
+                    "response_too_large",
+                    "The keyring reply exceeds its bound",
+                )
+            } else {
+                reply
+            };
+            session_write(stream.get_mut(), &reply, &engine_cancel).await?;
+            continue;
+        }
         if local_content::Runtime::handles(&request.method) {
             // Local content shares the foreground limit with store requests;
             // when it is used up the client gets `busy` rather than a wait.
@@ -888,6 +936,19 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
         .then(|| store.vault_namespace())
         .transpose()?;
+    // Secret OpenPGP keys are sealed by a key in the OS keychain; demo
+    // profiles, which hold only synthetic data, keep it in a profile file.
+    let keyring_kek: Arc<dyn fm_core::pgp::KekSource> =
+        if store.profile_kind()? == fm_core::live_profile::ProfileKind::Live {
+            Arc::new(pgp::KeychainKek::new(store.vault_namespace().ok()))
+        } else {
+            Arc::new(pgp::FileKek::new(&profile))
+        };
+    store.set_pgp_kek(keyring_kek.clone());
+    // Decrypted files left by an engine that didn't stop cleanly.
+    if fm_core::pgp::forget_decrypted(&profile).is_err() {
+        diagnostics::event("Keyring", "decrypted_files_kept", json!({}));
+    }
     let hello_metadata = Arc::new(handshake_metadata(&mut store)?);
     // Listen before publishing discovery, so any client that reads
     // `engine.json` finds a live endpoint and the matching token.
@@ -954,6 +1015,10 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             &profile,
             store.vault_namespace().ok(),
         )),
+        keyring: Arc::new(pgp::Runtime::new(
+            core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
+            keyring_kek,
+        )),
     };
     services.remote.start_link_indexer(engine_cancel.clone());
     services
@@ -966,6 +1031,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         let stop = engine_cancel.clone();
         tokio::spawn(async move {
             while let Ok(true) = core.call(|store| store.repair_inline_attachments(50)).await {
+                tokio::select! {
+                    _ = stop.cancelled() => return,
+                    _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                }
+            }
+            // Mail from before OpenPGP support learns how it is protected.
+            while let Ok(true) = core.call(|store| store.repair_pgp_messages(50)).await {
                 tokio::select! {
                     _ = stop.cancelled() => return,
                     _ = tokio::time::sleep(Duration::from_millis(50)) => {}
@@ -1167,6 +1239,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     drop(provider);
     drop(queue);
     let _ = worker.join();
+    if fm_core::pgp::forget_decrypted(&profile).is_err() {
+        diagnostics::event("Keyring", "decrypted_files_kept", json!({}));
+    }
     Ok(())
 }
 
@@ -1244,6 +1319,14 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "remote_proxy_test",
         "remote_proxy_password",
         "remote_image_cache",
+        "pgp_keys",
+        "pgp_key_generate",
+        "pgp_key_import",
+        "pgp_key_export",
+        "pgp_key_expiry",
+        "pgp_key_delete",
+        "pgp_account",
+        "pgp_recipients",
         "sender_avatar",
         "draft_transfer",
         "draft_transfer_status",
@@ -1427,6 +1510,14 @@ mod session_tests {
                 "google_draft_delete_status",
                 "google_draft_delete_reconcile",
                 "google_draft_delete_abandon",
+                "pgp_keys",
+                "pgp_key_generate",
+                "pgp_key_import",
+                "pgp_key_export",
+                "pgp_key_expiry",
+                "pgp_key_delete",
+                "pgp_account",
+                "pgp_recipients",
             ] {
                 assert!(methods.contains(&json!(method)), "missing {method}");
             }

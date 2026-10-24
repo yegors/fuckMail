@@ -105,6 +105,7 @@ fn publish(store: &Store, account: &str, remote: &str, history: &str, labels: &[
         body: "Retained synthetic source".into(),
         sent_at: "2026-09-12T12:00:00Z".into(),
         attachments: vec![],
+        pgp: 0,
     };
     publish_message(&store.db, account, &staged, "synthetic-source-hash").unwrap();
 }

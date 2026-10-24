@@ -79,6 +79,9 @@ pub mod local_content;
 pub mod message_invite;
 pub mod message_source;
 mod mutations;
+pub mod pgp;
+#[cfg(test)]
+mod pgp_tests;
 mod preferences;
 mod queries;
 pub mod remote_mail;
@@ -98,6 +101,7 @@ const POST_RESET_MIGRATIONS: &[&str] = &[
     include_str!("migration-038.sql"),
     include_str!("migration-039.sql"),
     include_str!("migration-040.sql"),
+    include_str!("migration-041.sql"),
 ];
 /// The SQLite `user_version` this build creates and opens.
 ///
@@ -178,6 +182,9 @@ pub struct Store {
     pub(crate) planner_refreshed_at: std::cell::Cell<Option<std::time::Instant>>,
     /// Full conversation-state scans since open (diagnostics and tests).
     pub(crate) state_scans: std::cell::Cell<u64>,
+    /// Where OpenPGP secret keys' key-encryption key lives; see
+    /// [`Store::set_pgp_kek`].
+    pub(crate) pgp_kek: std::sync::Arc<dyn pgp::KekSource>,
 }
 impl Store {
     /// Opens the profile directory `profile`, creating it if needed.
@@ -319,6 +326,7 @@ impl Store {
             conversation_cache: Default::default(),
             planner_refreshed_at: Default::default(),
             state_scans: Default::default(),
+            pgp_kek: std::sync::Arc::new(pgp::NoKeychain),
         };
         // Seeding writes the `fixture_revision` sentinel in the same transaction
         // as the demo data, and live creation writes 0, so a missing sentinel
@@ -415,6 +423,10 @@ impl Store {
         }
         if method.starts_with("assist_") {
             return self.local_model_handle(method, account, &params);
+        }
+        // The engine runs keyring work on a worker; direct callers run it here.
+        if pgp::METHODS.contains(&method) {
+            return self.pgp_handle(method, account, &params);
         }
         if method == "accounts" {
             fields(&params, &["include_removed"])?;
