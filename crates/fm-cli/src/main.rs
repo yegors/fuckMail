@@ -93,7 +93,7 @@ enum Command {
         #[command(subcommand)]
         command: Preferences,
     },
-    /// Update display name and signature, preserving existing draft snapshots.
+    /// Update display name, From name and signature, preserving existing draft snapshots.
     AccountUpdate {
         /// How far back to keep this account's mail; shortening it removes older local copies.
         #[arg(long, value_parser=["1_month","3_months","90_days","1_year","2_years","5_years","all"])]
@@ -114,6 +114,10 @@ enum Command {
         /// Display name, 1–80 characters.
         #[arg(long)]
         name: String,
+        /// Name mail is sent under, up to 80 characters; an empty value uses
+        /// the Gmail send-as name. Unchanged when left out.
+        #[arg(long)]
+        from_name: Option<String>,
         /// File with the signature text, or `-` for stdin; at most 16 KiB.
         #[arg(long)]
         signature_file: PathBuf,
@@ -3063,6 +3067,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             analyze_history,
             color,
             name,
+            from_name,
             signature_file,
             expected_revision,
             request_id,
@@ -3073,6 +3078,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
             if let Some(analyze)=analyze_history {params["analyze_history"]=json!(analyze);}
             if let Some(color)=color {params["color"]=json!(color);}
+            if let Some(from_name)=from_name {params["from_name"]=json!(from_name);}
             // clap requires both access flags together. `none` turns that service
             // off; the engine still wants an access level for it, so read is sent.
             if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {

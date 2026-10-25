@@ -573,7 +573,7 @@ void MailBackend::savePreferences() {
         if (m_shutdown) finishShutdown();
     });
 }
-void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention, const QVariantMap &sync, bool analyzeHistory, const QString &color) {
+void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention, const QVariantMap &sync, bool analyzeHistory, const QString &color, const QVariant &fromName) {
     qint64 revision = -1; bool retentionChanged = false;
     for (const auto &row : m_accounts) if (row.toMap()["id"].toString() == account) {
         revision = row.toMap()["metadata_revision"].toLongLong();
@@ -585,6 +585,7 @@ void MailBackend::updateAccountPreferences(const QString &account, const QString
     if (!sync.isEmpty()) params["sync"] = QJsonObject::fromVariantMap(sync);
     if (analyzeHistory) params["analyze_history"] = true;
     if (!color.isEmpty()) params["color"] = color;
+    if (fromName.isValid()) params["from_name"] = fromName.toString();
     m_preferencesStatus = "Saving…"; emit preferencesChanged();
     ++m_accountWrites;
     request("account_update", account, params, [this, account, retentionChanged](auto result, bool ok) {

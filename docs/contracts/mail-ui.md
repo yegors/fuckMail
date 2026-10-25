@@ -1,5 +1,12 @@
 # Mail UI, reader and human composer
 
+## D220 — From name in Edit account (Mail UI161)
+
+- Edit account has **From name** under Display name (now captioned "Shown in fuckMail only."). It shows the saved `from_name`, with `default_from_name` (or "No name, only the address") as its placeholder, and saves through `updateAccountPreferences`' new `fromName` argument. Its caption says it's what recipients see, that empty uses the Gmail name, and that drafts already started keep their name.
+- Other callers (signature, colour, sign-in) leave `fromName` out, so the saved From name is kept.
+
+Consumers: Core107.
+
 ## D219 — Key preview, protection warnings, Encrypt that stays on (Mail UI160)
 
 - **Keys from mail.** A key card's click or **+** opens `PgpKeyPreviewDialog` ("Import key?") instead of importing: `PgpKeys::previewAttachment` reads the file with `preview` and `public_only`. Each key shows its user IDs, fingerprint in groups of four (monospace), algorithm, creation date and whether it is new or updates a key; amber lines say when a key isn't for the message's sender, and when it would take an address another key (named by its user ID) or one of the person's accounts has. **Import** (**Import anyway** with conflicts) calls `PgpKeys::importPreviewed` with `replace` when there are conflicts; the card reports the result. A secret key or unreadable file shows its error with Close.

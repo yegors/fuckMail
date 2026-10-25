@@ -1,5 +1,11 @@
 # CLI and external agent interface
 
+## D220 — From name (CLI68)
+
+- `fm account-update --from-name NAME` sets the name mail is sent under; `--from-name ""` follows the Gmail send-as name. Left out, the saved one stays.
+
+Consumers: Core107.
+
 ## D219 — OpenPGP import preview and engine-written exports (CLI67)
 
 - `fm pgp import FILE --preview` prints what the file holds (each key's fingerprint, user IDs and `add` or `update`, revocations and conflicts) and changes nothing; it needs no request ID. `--replace` imports keys that take an address another key or one of your accounts has; without it they fail with `pgp_key_conflict`. The two flags conflict.

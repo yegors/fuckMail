@@ -485,7 +485,8 @@ public:
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
     // Remembers the open workspace without re-notifying every preference binding.
     Q_INVOKABLE void rememberWorkspace(const QString &workspace);
-    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false, const QString &color = {});
+    // An invalid fromName leaves the saved From name as it is.
+    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false, const QString &color = {}, const QVariant &fromName = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);

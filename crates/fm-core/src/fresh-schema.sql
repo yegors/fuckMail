@@ -2,7 +2,7 @@
 -- Schema version and profile-kind markers are committed by Store::open_profile.
 
 -- tables
-CREATE TABLE account_metadata(account TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 0,signature_text TEXT NOT NULL, mail_retention TEXT NOT NULL DEFAULT 'all' CHECK(mail_retention IN ('1_month','3_months','90_days','1_year','2_years','5_years','all')), mail_since INTEGER,FOREIGN KEY(account) REFERENCES accounts(id)) STRICT;
+CREATE TABLE account_metadata(account TEXT PRIMARY KEY,revision INTEGER NOT NULL DEFAULT 0,signature_text TEXT NOT NULL, mail_retention TEXT NOT NULL DEFAULT 'all' CHECK(mail_retention IN ('1_month','3_months','90_days','1_year','2_years','5_years','all')), mail_since INTEGER, from_name TEXT NOT NULL DEFAULT '', gmail_from_name TEXT NOT NULL DEFAULT '',FOREIGN KEY(account) REFERENCES accounts(id)) STRICT;
 CREATE TABLE accounts(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL,provider TEXT NOT NULL, lifecycle_state TEXT NOT NULL DEFAULT 'active'
     CHECK(lifecycle_state IN ('active','removed')), lifecycle_revision INTEGER NOT NULL DEFAULT 1
     CHECK(lifecycle_revision > 0), cleanup_json TEXT

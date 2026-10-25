@@ -1,5 +1,12 @@
 # Gmail provider
 
+## D220 — the send-as name (Gmail48)
+
+- `GmailCall::send_as` (`settings.sendAs.list`, 1 unit, UserRead) returns `GmailSendAsList`; `primary_name()` is the trimmed display name of the entry with `isPrimary`, or none. Addresses over 320 bytes or names over 1 KiB are refused.
+- The labels worker reads it after each catalog refresh (every ten minutes) and passes it to `Store::google_send_as_name`. A failed read keeps the saved name. Mail read access (`gmail.readonly` or full mail) is enough.
+
+Consumers: Core107.
+
 ## D217 — protected mail through Gmail (Gmail47)
 
 - A draft that will be encrypted is never uploaded to Gmail Drafts; an earlier upload stays until the send replaces it. Sending submits the frozen PGP/MIME bytes through `messages.send` or `drafts.send` as before (Core104).

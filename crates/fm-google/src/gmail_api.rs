@@ -52,13 +52,14 @@ pub enum GmailMethod {
     DraftDelete,
     MessageSend,
     DraftSend,
+    SendAsList,
 }
 impl GmailMethod {
     /// Returns the quota units charged for one call, from Google's per-method
     /// unit table. Project and per-account limits are configured separately.
     pub fn quota_units(self) -> u32 {
         match self {
-            Self::Profile | Self::LabelsList | Self::LabelGet => 1,
+            Self::Profile | Self::LabelsList | Self::LabelGet | Self::SendAsList => 1,
             Self::HistoryList => 2,
             Self::MessagesList
             | Self::MessageModify
@@ -307,6 +308,18 @@ impl GmailCall {
         )?;
         call.expected_id = Some(id.into());
         Ok(call)
+    }
+    /// `settings.sendAs.list`: the addresses the account sends as, with the
+    /// display name Gmail puts on each.
+    pub fn send_as(account: &AccountId) -> Result<Self, GoogleError> {
+        Self::new(
+            account,
+            GmailMethod::SendAsList,
+            HttpMethod::Get,
+            &["settings", "sendAs"],
+            &[],
+            None,
+        )
     }
     /// `labels.list`: every system and user label.
     pub fn labels(account: &AccountId) -> Result<Self, GoogleError> {
@@ -602,6 +615,34 @@ pub struct GmailLabel {
     pub message_list_visibility: Option<String>,
     pub label_list_visibility: Option<String>,
 }
+/// One address of [`GmailCall::send_as`]. `display_name` is empty when the
+/// person never set one in Gmail.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailSendAs {
+    pub send_as_email: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub is_primary: bool,
+}
+/// Reply to [`GmailCall::send_as`].
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailSendAsList {
+    #[serde(default)]
+    pub send_as: Vec<GmailSendAs>,
+}
+impl GmailSendAsList {
+    /// The display name of the primary address, if Gmail has one.
+    pub fn primary_name(&self) -> Option<&str> {
+        self.send_as
+            .iter()
+            .find(|entry| entry.is_primary)
+            .map(|entry| entry.display_name.trim())
+            .filter(|name| !name.is_empty())
+    }
+}
 /// Reply to [`GmailCall::labels`].
 #[derive(Deserialize)]
 pub struct GmailLabels {
@@ -778,6 +819,7 @@ pub enum GmailReply {
     /// Messages deleted for good.
     Deleted,
     Labels(GmailLabels),
+    SendAs(GmailSendAsList),
     /// The label just created.
     Label(GmailLabel),
     /// HTTP 400/409 rejected creation; a malformed success remains uncertain.
@@ -1017,6 +1059,19 @@ impl<T: HttpTransport> GmailApi<T> {
                     }
                 }
                 Ok(GmailReply::Labels(value))
+            }
+            GmailMethod::SendAsList => {
+                let value: GmailSendAsList = decode_json(bytes, MAX_JSON)?;
+                if value.send_as.len() > 1_000 {
+                    return Err(invalid());
+                }
+                for entry in &value.send_as {
+                    checked(&entry.send_as_email, 320)?;
+                    if entry.display_name.len() > 1024 {
+                        return Err(invalid());
+                    }
+                }
+                Ok(GmailReply::SendAs(value))
             }
             GmailMethod::LabelCreate => {
                 let label: GmailLabel = decode_json(bytes, MAX_JSON)?;

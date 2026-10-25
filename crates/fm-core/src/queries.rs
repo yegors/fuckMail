@@ -419,10 +419,10 @@ impl Store {
                 |r| r.get(0),
             )?;
             let counts = self.account_counts(&account)?;
-            let (metadata_revision, signature_text, mail_retention, mail_since): (i64, String, String, Option<i64>) = self.db.query_row(
-                "SELECT revision,signature_text,mail_retention,mail_since FROM account_metadata WHERE account=?1",
+            let (metadata_revision, signature_text, mail_retention, mail_since, from_name, default_from_name): (i64, String, String, Option<i64>, String, String) = self.db.query_row(
+                &format!("SELECT m.revision,m.signature_text,m.mail_retention,m.mail_since,m.from_name,{} FROM account_metadata m JOIN accounts a ON a.id=m.account WHERE m.account=?1",crate::preferences::DEFAULT_SENDER_NAME_SQL),
                 [&account],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
             )?;
             // Events stored for this account's calendars, for the Accounts card.
             let calendar_events: i64 = self.db.query_row(
@@ -432,6 +432,9 @@ impl Store {
             )?;
             let color = crate::preferences::account_color(&self.db, &account)?;
             out.push(json!({"color":color,"calendar_events":calendar_events,"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"inbox_review_count":counts["inbox_review_count"],"inbox_held_count":counts["inbox_held_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            // `from_name` is the person's choice (empty follows the default).
+            out.last_mut().unwrap()["from_name"] = json!(from_name);
+            out.last_mut().unwrap()["default_from_name"] = json!(default_from_name);
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let oldest: Option<String> = self.db.query_row(

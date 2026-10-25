@@ -55,7 +55,10 @@ pub(crate) fn compose_request(
         fm_mail::AccountIdentity {
             account_id: account.into(),
             from: fm_mail::Address {
-                name: Some(draft["from_name"].as_str().unwrap_or("").into()),
+                name: draft["from_name"]
+                    .as_str()
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
                 email: draft["from"]
                     .as_str()
                     .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
@@ -631,11 +634,12 @@ impl Store {
         Ok(row)
     }
 
-    /// Returns the account's display name, signature and metadata revision.
-    /// A draft records the name and revision when it is first saved, so later
-    /// identity edits do not silently change a draft in progress.
+    /// Returns the name the account's mail goes out under, its signature and
+    /// metadata revision. A draft records the name and revision when it is
+    /// first saved, so later identity edits do not silently change a draft in
+    /// progress.
     pub(crate) fn draft_identity(&self, account: &str) -> Result<(String, String, i64)> {
-        Ok(self.db.query_row("SELECT a.name,m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",
+        Ok(self.db.query_row(&format!("SELECT {},m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",crate::preferences::SENDER_NAME_SQL),
             [account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
     }
 

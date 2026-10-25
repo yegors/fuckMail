@@ -211,8 +211,8 @@ Every open connection counts as an owner, idle or not. The engine exits 350 ms a
 
 | Method | Acct | Description |
 | --- | --- | --- |
-| `accounts` | — | Account rows: identity, counts, coverage, retention, `lifecycle`, Google connection state, scopes and sync summary, and `pgp` (`{fingerprint, sign_by_default, encrypt_by_default, status, expires_at}` or `null`). `include_removed` adds archives. |
-| `account_update` | yes | `name` and `signature_text` (required), `color`, `mail_retention`, `sync`, `analyze_history`; `expected_revision` (`metadata_revision`), `request_id`. |
+| `accounts` | — | Account rows: identity, counts, coverage, retention, `lifecycle`, Google connection state, scopes and sync summary, `from_name` and `default_from_name`, and `pgp` (`{fingerprint, sign_by_default, encrypt_by_default, status, expires_at}` or `null`). `include_removed` adds archives. |
+| `account_update` | yes | `name` and `signature_text` (required), `from_name` (`''` follows Gmail), `color`, `mail_retention`, `sync`, `analyze_history`; `expected_revision` (`metadata_revision`), `request_id`. |
 | `google_auth_configuration` | — | Whether the app's OAuth registration is usable: `{available, error?}`. **live** |
 | `google_auth_begin` | opt | Start sign-in, or reconnect `account`. Optional `email`, `reauthorize`, `access` (`{mail, calendar}`: `none`/`read`/`write`), `client_config_path`. Returns `attempt_id`, `authorization_url`. One at a time per engine (`login_in_progress`). **live** |
 | `google_auth_restore_begin` | yes | The same for an archived account: `expected_revision` (lifecycle); the Google identity must match. **live** |

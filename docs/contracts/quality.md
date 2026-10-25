@@ -1,5 +1,17 @@
 # Quality, performance and release acceptance
 
+## D220 — Account From names (Quality98)
+
+Core107, Gmail48, Mail UI161, CLI68; schema 42, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-core` `composition_tests::from_name_is_the_chosen_one_then_gmail_then_a_display_name_that_is_not_the_address`: a real-name display name is used, one that is only the address sends a bare From address (read back from the sent capture), Gmail's name comes next, the chosen name first (in the capture's From header), earlier drafts keep theirs, a left-out `from_name` is kept, `''` follows Gmail, and control characters, 81 characters or a non-string are `invalid_request`.
+- `fm-core` `fresh_schema_tests::accounts_upgrade_with_no_from_name_of_their_own`: a schema-41 profile upgrades with both names empty and keeps sending under its display name.
+- `fm-google`: `send_as` is in the endpoint inventory (GET `/settings/sendAs`, 1 unit, UserRead); `send_as_reads_the_primary_display_name_and_refuses_oversized_entries`.
+- Engine `labels::tests::label_refresh_keeps_the_gmail_send_as_name_for_the_from_line`: the worker stores the primary name, keeps it after a malformed reply, and clears it when Gmail's is empty.
+- `gui-mail-selection`: Edit account sends the trimmed From name with the display name, retention and access.
+
+Validation (Windows 11, x64): `cargo test --workspace` (980 passed, none failed), strict workspace clippy, formatting and repository hygiene pass; `gui-mail-selection` passed twice on a release build. Not checked: a live account's send-as name and the From line Gmail delivers.
+
 ## D219 — OpenPGP audit fixes (Quality97)
 
 Core106, Mail UI160, CLI67, Platform28; schema 41, fixtures live0/demo3 and protocol1 unchanged.

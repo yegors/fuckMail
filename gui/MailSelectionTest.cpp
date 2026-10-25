@@ -1822,11 +1822,12 @@ public:
         await([&]{return editor->property("opened").toBool();},"account editor opens");
         capture("account-editor");
         find(window->contentItem(),"editAccountName")->setProperty("text","Renamed account");
+        find(window->contentItem(),"editAccountFromName")->setProperty("text","  Alex Example ");
         find(window->contentItem(),"editAccountRetention")->setProperty("currentIndex",2);
         find(window->contentItem(),"editAccountMailMode")->setProperty("currentIndex",0);
         QMetaObject::invokeMethod(find(window->contentItem(),"saveAccountEdit"),"clicked");
         await([&]{return !savedAccount.isEmpty();},"account edit reaches shared command");
-        require(savedAccount["name"]=="Renamed account" && savedAccount["mail_retention"]=="2_years" && savedAccount["sync"].toObject()["mail_access"]=="read","name, retention and access saved together");
+        require(savedAccount["name"]=="Renamed account" && savedAccount["from_name"]=="Alex Example" && savedAccount["mail_retention"]=="2_years" && savedAccount["sync"].toObject()["mail_access"]=="read","name, From name, retention and access saved together");
         await([&]{return !editor->property("opened").toBool();},"saved editor closes");
         // Missing Calendar grant opens reconnect; close it before shortcut recording.
         if(auto dialog=window->findChild<QObject *>("googleSignInDialog"))QMetaObject::invokeMethod(dialog,"close");

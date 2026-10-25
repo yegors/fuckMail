@@ -1,4 +1,5 @@
-//! Complete labels.list discovery; cached readers never call this worker.
+//! Complete labels.list discovery, plus the Gmail send-as name read on the
+//! same schedule; cached readers never call this worker.
 use super::{mail::Step, SyncContext};
 use fm_core::{google_labels::prepare_google_labels, CoreError, Result};
 use fm_google::{
@@ -23,8 +24,9 @@ pub(crate) struct LabelsWorker {
 impl LabelsWorker {
     /// Applies one part of a pending category projection, such as one a closed
     /// engine left unfinished or a link made outside a label sync. Otherwise
-    /// refreshes the catalog when due, then tries the one-time link of an
-    /// account's existing Gmail labels, or idles until the next refresh.
+    /// refreshes the catalog and the send-as name when due, then tries the
+    /// one-time link of an account's existing Gmail labels, or idles until the
+    /// next refresh.
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
         let account = ctx.account.as_str().to_owned();
         if ctx
@@ -39,9 +41,30 @@ impl LabelsWorker {
             )));
         }
         refresh(ctx).await?;
+        refresh_send_as(ctx).await;
         initial_import(ctx).await;
         self.next_refresh_ms = now_ms.saturating_add(REFRESH_INTERVAL_MS);
         Ok(Step::Progress)
+    }
+}
+/// Reads the display name Gmail sends the primary address under and keeps it
+/// for mail sent while the person has chosen no From name. A failure keeps
+/// the saved name until the next refresh.
+async fn refresh_send_as(ctx: &SyncContext) {
+    let Ok(call) = GmailCall::send_as(&ctx.account) else {
+        return;
+    };
+    let Ok(GmailReply::SendAs(list)) = ctx.gmail(call).await else {
+        return;
+    };
+    let name = list.primary_name().unwrap_or_default().to_owned();
+    let account = ctx.account.as_str().to_owned();
+    if let Ok(true) = ctx
+        .core_call(move |store| store.google_send_as_name(&account, &name))
+        .await
+    {
+        ctx.refresh
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }
 /// A newly added account links its existing Gmail labels once, right after the

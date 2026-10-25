@@ -1,5 +1,14 @@
 # Core and storage
 
+## D220 — account From names (Core107)
+
+- **Schema 42** (migration 042 and the fresh schema): `account_metadata` gains `from_name` (the person's choice, `''` when unset) and `gmail_from_name` (Gmail's send-as display name for the primary address, `''` when Gmail has none). Existing accounts upgrade with both empty.
+- **The name mail goes out under** is `from_name`, else `gmail_from_name`, else the display name unless it equals the address (case-insensitively), else none (the From header is the bare address). New drafts, unsaved replies and copied Gmail drafts record it as `from_name` when first made, as before.
+- **Requests.** `account_update` takes an optional `from_name`: at most 80 characters with no control characters, trimmed; `''` follows Gmail. Left out, it keeps the saved one. `accounts` rows add `from_name` and `default_from_name` (what is used while `from_name` is empty).
+- **Sync.** `Store::google_send_as_name` stores the Gmail name and bumps the store revision when it changes; it never changes the metadata revision, so an open Edit account dialog doesn't go stale.
+
+Consumers: Gmail48, Mail UI161, CLI68, Quality98; fixtures live0/demo3 and protocol1 unchanged.
+
 ## D219 — OpenPGP audit fixes (Core106)
 
 - **Import preview and conflicts.** `pgp_key_import` takes optional booleans `preview`, `public_only` and `replace` (anything else is `invalid_request`). `preview` isn't a mutation (no `request_id`): it returns `{keys, revoked, conflicts}`, each key `fm_pgp::inspect` plus `action` `add` or `update`, lists a secret key without unlocking it, and stores nothing. `public_only` refuses a file holding a secret key with `secret_key_not_allowed`. A conflict is `{address, fingerprint, holders, own}`: an address a key in the file gains that another stored key has (`holders`), or one of the profile's account addresses when the key isn't an own key (`own`). Without `replace`, conflicts fail with `pgp_key_conflict` (`details.conflicts`).

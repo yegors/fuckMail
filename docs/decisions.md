@@ -2633,3 +2633,14 @@ The founder asked for a security audit of the OpenPGP feature against best pract
 - **Not checked.** A real mouse click through the key preview; how Thunderbird, Proton and Mailvelope show the protected headers and intended recipients; whether Gmail keeps `hp` parameters on delivery.
 
 Core106, Mail UI160, CLI67, Platform28, Quality97. Schema 41; fixtures live0/demo3 and protocol1 unchanged.
+
+## D220 — Each account has its own From name (2026-10-25T02:15:09Z)
+
+The founder noticed that mail went out under the account's display name, the label fuckMail shows in its top bar, and asked for a From name per account that starts from Gmail's send-as name and is edited in Edit account. A new account's display name defaults to its address, so such accounts sent as `you@example.test <you@example.test>`.
+
+- **Separate names.** The display name stays a label inside fuckMail. The From name is stored beside it, with Gmail's send-as name for the primary address kept next to it. Mail uses the person's From name, else Gmail's name, else the display name when it isn't only the address, else no name. Keeping the display name as the last fallback keeps today's From line for people who named their account after themselves and set no name in Gmail; leaving the address out avoids repeating it as a name.
+- **Gmail's name.** Sign-in asks only for `openid` and `email`, not `profile`, so the Google account's own name isn't available. `settings.sendAs.list` is, under the mail scopes already granted. Gmail's primary entry often has an empty display name (Gmail then uses the Google account name), and the fallbacks cover that. The labels worker reads it every ten minutes for 1 quota unit. Writing the name back to Gmail would need `gmail.settings.basic` and change Gmail's own setting, so the choice stays local.
+- **Drafts** keep the name they were made with, as they already did for the display name.
+- **Verification.** On Windows 11 (x64): new tests in `fm-core` (the fallback order, saving, clearing and validation, the From header of a sent capture, the upgrade from schema 41), `fm-google` (the send-as call, its cost and validation) and the engine's labels worker (reading, keeping the saved name on a bad reply, clearing it), plus `gui-mail-selection` for the Edit account field.
+
+Core107, Gmail48, Mail UI161, CLI68, Quality98. Schema 42; fixtures live0/demo3 and protocol1 unchanged.

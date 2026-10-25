@@ -4,6 +4,7 @@ Notable changes to fuckMail. There are no tagged releases yet; everything is unr
 
 ## 2026-10-24
 
+- Each account has its own **From name**, the name people see when you write to them, in Settings → Accounts → Edit account and `fm account-update --from-name`. It starts as the name you set in Gmail. The display name is now only what fuckMail shows, and an account whose display name is just its address no longer sends mail under the address as a name.
 - A key attached to mail now shows what it is before anything is imported: its name, address and fingerprint, a warning if it isn't the sender's, and a warning if it would replace the key you already have for an address. Only public keys import from mail.
 - Importing a key that claims an address another key already has, or one of your own, now asks first, in Settings and in `fm pgp import` (`--preview`, `--replace`).
 - Signed and encrypted mail shows only the part that was actually signed or encrypted, and says when there was more around it.

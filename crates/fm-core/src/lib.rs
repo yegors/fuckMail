@@ -102,6 +102,7 @@ const POST_RESET_MIGRATIONS: &[&str] = &[
     include_str!("migration-039.sql"),
     include_str!("migration-040.sql"),
     include_str!("migration-041.sql"),
+    include_str!("migration-042.sql"),
 ];
 /// The SQLite `user_version` this build creates and opens.
 ///

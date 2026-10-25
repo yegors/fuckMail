@@ -462,9 +462,9 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
-    /// Updates an account's local metadata: display name, signature, mail
-    /// retention, per-service sync and access choices, colour and history
-    /// analysis. Returns the account row.
+    /// Updates an account's local metadata: display name, From name,
+    /// signature, mail retention, per-service sync and access choices, colour
+    /// and history analysis. Returns the account row.
     ///
     /// Revision-checked against the account metadata and idempotent per
     /// request ID. Changing retention restarts mail acquisition and purges
@@ -476,6 +476,7 @@ impl Store {
             p,
             &[
                 "name",
+                "from_name",
                 "signature_text",
                 "mail_retention",
                 "sync",
@@ -519,6 +520,20 @@ impl Store {
                     "Display name must contain 1–80 visible characters",
                 )
             })?;
+        let from_name = match p.get("from_name") {
+            None => None,
+            Some(v) => Some(
+                v.as_str()
+                    .filter(|v| v.chars().count() <= 80 && !v.chars().any(char::is_control))
+                    .map(str::trim)
+                    .ok_or_else(|| {
+                        err(
+                            "invalid_request",
+                            "From name must be at most 80 visible characters",
+                        )
+                    })?,
+            ),
+        };
         let signature = p["signature_text"]
             .as_str()
             .filter(|v| v.len() <= 16 * 1024 && !v.contains('\0'))
@@ -593,6 +608,12 @@ impl Store {
             "UPDATE account_metadata SET signature_text=?1,revision=revision+1 WHERE account=?2",
             params![signature, account],
         )?;
+        if let Some(from_name) = from_name {
+            tx.execute(
+                "UPDATE account_metadata SET from_name=?1 WHERE account=?2",
+                params![from_name, account],
+            )?;
+        }
         let result = self.accounts()?["accounts"]
             .as_array()
             .unwrap()
@@ -612,6 +633,35 @@ impl Store {
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(result)
+    }
+}
+/// SQL for the name an account's mail goes out under, over `accounts a` joined
+/// to `account_metadata m`: the From name the person chose, else Gmail's
+/// send-as name, else the display name unless it is only the address.
+pub(crate) const SENDER_NAME_SQL: &str = "COALESCE(NULLIF(m.from_name,''),NULLIF(m.gmail_from_name,''),CASE WHEN lower(a.name)=lower(a.email) THEN '' ELSE a.name END)";
+/// [`SENDER_NAME_SQL`] when the person has chosen no From name.
+pub(crate) const DEFAULT_SENDER_NAME_SQL: &str = "COALESCE(NULLIF(m.gmail_from_name,''),CASE WHEN lower(a.name)=lower(a.email) THEN '' ELSE a.name END)";
+impl Store {
+    /// Records the display name Gmail sends the account's primary address
+    /// under, as sync reads it from the send-as settings. Mail uses it while
+    /// the person has chosen no From name. Returns whether it changed.
+    pub fn google_send_as_name(&self, account: &str, name: &str) -> Result<bool> {
+        let name: String = name
+            .trim()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(256)
+            .collect();
+        let tx = self.db.unchecked_transaction()?;
+        let changed = tx.execute(
+            "UPDATE account_metadata SET gmail_from_name=?1 WHERE account=?2 AND gmail_from_name<>?1",
+            params![name, account],
+        )? > 0;
+        if changed {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 }
 /// Remove a deleted account's sync choices and calendar selections from the
