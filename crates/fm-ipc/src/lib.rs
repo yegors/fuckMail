@@ -301,6 +301,56 @@ pub fn clear_startup_refusal(profile: &Path) {
     let _ = std::fs::remove_file(profile.join(STARTUP_REFUSAL_FILE));
 }
 
+/// Creates `path` as a new file for writing that only the current user can
+/// open: mode 0600 on Unix, a user-only owner and DACL on Windows. Fails with
+/// `AlreadyExists` when the path exists, so nothing is ever replaced.
+pub fn create_private_file(path: &Path) -> io::Result<std::fs::File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        opts.mode(0o600);
+        opts.open(path)
+    }
+    #[cfg(windows)]
+    {
+        windows::create_private_file(path)
+    }
+}
+
+/// Writes `bytes` to `path` as a file only the current user can open. Without
+/// `replace` an existing file is an `AlreadyExists` error. With it, the bytes
+/// go to a new private file beside `path` that then takes its place, so they
+/// are never in a file others can read, even briefly.
+pub fn write_private_file(path: &Path, bytes: &[u8], replace: bool) -> io::Result<()> {
+    use std::io::Write;
+    if !replace {
+        let mut file = create_private_file(path)?;
+        file.write_all(bytes)?;
+        return file.sync_all();
+    }
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path names no file"))?;
+    let temp = path.with_file_name(format!(
+        ".{}.{:016x}.tmp",
+        name.to_string_lossy(),
+        rand::random::<u64>()
+    ));
+    let written = create_private_file(&temp).and_then(|mut file| {
+        file.write_all(bytes)?;
+        file.sync_all()
+    });
+    // Renaming over a file replaces it on every platform; the temp file's
+    // owner-only permissions come along.
+    let result = written.and_then(|()| std::fs::rename(&temp, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
 fn replace_private_json(
     profile: &Path,
     temp_name: &str,
@@ -311,16 +361,7 @@ fn replace_private_json(
     // The temp file is created new and private, so it can never be a
     // pre-placed file or link, and it is durable before it becomes visible.
     let temp = profile.join(temp_name);
-    #[cfg(unix)]
-    let mut f = {
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create_new(true);
-        opts.mode(0o600);
-        opts.open(&temp)?
-    };
-    #[cfg(windows)]
-    let mut f = windows::create_private_file(&temp)?;
+    let mut f = create_private_file(&temp)?;
     serde_json::to_writer(&mut f, value)?;
     f.write_all(b"\n")?;
     f.sync_all()?;
@@ -678,6 +719,28 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn private_files_never_replace_unless_asked_and_leave_nothing_behind() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("key.asc");
+        super::write_private_file(&path, b"first", false).unwrap();
+        let again = super::write_private_file(&path, b"second", false).unwrap_err();
+        assert_eq!(again.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        super::write_private_file(&path, b"second", true).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        // No temporary file is left beside it.
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+
     #[test]
     fn ordinary_and_demo_defaults_have_separate_names() {
         let ordinary = super::default_profile().unwrap();

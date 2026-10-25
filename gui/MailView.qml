@@ -2157,7 +2157,7 @@ Item {
                                             Item {
                                                 id: pgpBadge; objectName: "messagePgp_" + member.modelData.id
                                                 readonly property bool problem: messageSource.undecryptable
-                                                    || (!!messageSource.signature && !messageSource.trustedSignature)
+                                                    || (!!messageSource.signature && !messageSource.trustedSignature) || messageSource.pgpWarning
                                                 visible: member.isExpanded && (messageSource.encrypted || !!messageSource.signature)
                                                 implicitWidth: 26; implicitHeight: 26
                                                 Accessible.role: Accessible.StaticText; Accessible.name: messageSource.pgpSummary
@@ -2480,7 +2480,7 @@ Item {
                                         model: member.attachmentList
                                         AttachmentTile {
                                             required property var modelData
-                                            attachment: modelData; account: backend.account
+                                            attachment: modelData; account: backend.account; sender: member.modelData.sender_email || ""
                                             // A server-only attachment is fetched when opened, not to preview.
                                             // Re-checked on scrolling and on any layout change above, so a card
                                             // placed before the thread settled still loads once it is on screen.

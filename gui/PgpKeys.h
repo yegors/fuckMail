@@ -16,8 +16,9 @@ class MailBackend;
 /// engine connection, as making an RSA key can take a while.
 ///
 /// MailBackend creates one lazily (its `pgpKeys` property). GUI thread only.
-/// Passphrases and exported secret keys pass through only on their way to the
-/// engine or to a file the person chose; nothing here keeps them.
+/// Passphrases pass through only on their way to the engine, and nothing here
+/// keeps them; exported secret keys never come here, as the engine writes them
+/// to the file the person chose.
 class PgpKeys final : public QObject {
     Q_OBJECT
     /// The engine's `pgp_keys` list: one map per key, own keys first.
@@ -48,14 +49,21 @@ public:
                                  const QString &algorithm, int expiresDays);
     /// Imports pasted armored text, or with `file` set, that local file. A
     /// protected secret key fails with `passphrase_required` (details name the
-    /// key) until `passphrase` unlocks it.
-    Q_INVOKABLE QString importKeys(const QString &text, const QUrl &file, const QString &passphrase);
-    /// Imports the keys in a message's attachment, such as a public key
-    /// someone sent. `finished(ticket, "import", …)` follows.
-    Q_INVOKABLE QString importAttachment(const QString &account, const QString &attachment);
-    /// Exports a key as armored text: `kind` is public, secret (protected with
-    /// `passphrase`) or revocation. With `destination`, writes a new private
-    /// file there; without, copies a public key to the clipboard.
+    /// key) until `passphrase` unlocks it. A key naming an address another key
+    /// has fails with `pgp_key_conflict` (details list them) unless `replace`.
+    Q_INVOKABLE QString importKeys(const QString &text, const QUrl &file, const QString &passphrase, bool replace);
+    /// Reads the public keys in a message's attachment, such as a key someone
+    /// sent, without storing them: `previewReady(ticket, …)` follows with the
+    /// engine's preview (keys, revoked, conflicts) and the file's `path`. A
+    /// secret key in it fails with `secret_key_not_allowed`.
+    Q_INVOKABLE QString previewAttachment(const QString &account, const QString &attachment);
+    /// Imports the public keys previewed at `path`; `replace` lets them take
+    /// addresses other keys have. `finished(ticket, "import", …)` follows.
+    Q_INVOKABLE QString importPreviewed(const QString &path, bool replace);
+    /// Exports a key: `kind` is public, secret (protected with `passphrase`)
+    /// or revocation. With `destination`, the engine writes it there, readable
+    /// by this user alone, replacing a file the save dialog asked about;
+    /// without, a public key is copied to the clipboard.
     Q_INVOKABLE QString exportKey(const QString &fingerprint, const QString &kind, const QString &passphrase,
                                   const QUrl &destination);
     /// Moves an own key's expiry `days` from now; 0 removes it.
@@ -82,6 +90,7 @@ signals:
     /// {code, message, details} when `ok` is false.
     void finished(const QString &ticket, const QString &action, const QVariantMap &result, bool ok);
     void recipientsReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void previewReady(const QString &ticket, const QVariantMap &result, bool ok);
     /// Keys or account choices changed, so decrypted views and signature
     /// checks shown earlier may be out of date.
     void keyringChanged();

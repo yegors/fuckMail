@@ -57,8 +57,8 @@ Item {
         .map(function(r) { return String(r.email || "").toLowerCase() }).filter(function(e) { return e.length }).join(",")
     readonly property bool pgpKnown: pgpChecked === pgpRecipients
     readonly property bool pgpReady: pgpRecipients.length > 0 && pgpKnown && pgpMissing.length === 0
-    // Drafts whose Encrypt the person set; the rest follow the account's
-    // default and stay unencrypted while a recipient has no key.
+    // Drafts whose Encrypt the person set; on the rest, encrypt by default
+    // turns Encrypt on once every recipient has a key.
     property var pgpChosen: ({})
     readonly property bool pgpEncryptDefault: !!backend.currentAccount.pgp && backend.currentAccount.pgp.encrypt_by_default === true
     readonly property string pgpDraft: String(backend.draft.draft_id || "")
@@ -73,8 +73,9 @@ Item {
     onPgpSavedChanged: followPgp()
     function followPgp() {
         if (!pgpShown || !pgpKnown || !pgpSaved || root.readOnly || backend.draftLocked || !pgpDraft || pgpChosen[pgpDraft]) return
-        if (pgpEncrypt && !pgpReady) backend.setDraftProtection(pgpSign, false)
-        else if (!pgpEncrypt && pgpReady && pgpEncryptDefault) backend.setDraftProtection(pgpSign, true)
+        // Encrypt never turns itself off: a recipient without a key stops the
+        // send instead, so nothing goes out readable that wasn't chosen to.
+        if (!pgpEncrypt && pgpReady && pgpEncryptDefault) backend.setDraftProtection(pgpSign, true)
     }
     function choosePgpEncrypt(on) {
         const chosen = Object.assign({}, pgpChosen); chosen[pgpDraft] = true; pgpChosen = chosen
@@ -551,6 +552,15 @@ Item {
                     ? "No OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption, or turn off Encrypt to send it unencrypted."
                     : "Not encrypted: no OpenPGP key for " + root.pgpMissing.join(", ") + ". Import " + (root.pgpMissing.length === 1 ? "their key" : "their keys") + " in Settings → Encryption to encrypt."
                 color: root.pgpEncrypt ? Theme.warn : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+            }
+            Text {
+                objectName: "draftPgpReplyClear"
+                // A reply to encrypted mail starts encrypted; turned off, its
+                // text (and the quote of what was encrypted) goes out readable.
+                visible: root.pgpShown && backend.draft.replies_to_encrypted === true && !root.pgpEncrypt
+                Layout.fillWidth: true; Layout.bottomMargin: 8; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: "You're replying to encrypted mail without encryption. This reply, and any quote of the message, is saved to Gmail Drafts and sent readable."
+                color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
             }
             RowLayout {
                 visible: backend.draftStatus.indexOf("Not saved") >= 0 && !backend.draftConflict

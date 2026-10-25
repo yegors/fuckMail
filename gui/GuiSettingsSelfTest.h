@@ -29,7 +29,7 @@ private:
     QVariantMap m_result;
     QVariantMap m_originalPreferences;
     QJsonObject m_draftSnapshot;
-    QString m_originalName, m_originalSignature, m_pgpFingerprint;
+    QString m_originalName, m_originalSignature, m_pgpFingerprint, m_backupPath;
     const QString m_name = "Windscribe — Montréal";
     const QString m_signature = "Native settings — Montréal\nA human-written default signature.";
     const QString m_oversizedSignature = QString(QChar(0x03bb)).repeated(9000);

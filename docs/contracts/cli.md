@@ -1,5 +1,12 @@
 # CLI and external agent interface
 
+## D219 — OpenPGP import preview and engine-written exports (CLI67)
+
+- `fm pgp import FILE --preview` prints what the file holds (each key's fingerprint, user IDs and `add` or `update`, revocations and conflicts) and changes nothing; it needs no request ID. `--replace` imports keys that take an address another key or one of your accounts has; without it they fail with `pgp_key_conflict`. The two flags conflict.
+- `fm pgp export … --output FILE` sends the absolute path to the engine, which writes a new file readable only by you on every platform (`already_exists` if it is there); the reply has `path` instead of `armored`.
+
+Consumers: Core106; Quality97.
+
 ## D217 — OpenPGP keys (CLI66)
 
 - `fm pgp keys` lists the keyring: fingerprint, algorithm, primary user ID, yours or public, status, expiry and the accounts using it.

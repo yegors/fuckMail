@@ -63,7 +63,12 @@ Item {
     // The best signature result: good and from the sender beats good, beats the rest.
     readonly property var signature: signatures.length === 0 ? null
         : signatures.find(function(s) { return s.status === "good" && s.sender_matches }) || signatures.find(function(s) { return s.status === "good" }) || signatures[0]
-    readonly property bool trustedSignature: !!signature && signature.status === "good" && signature.sender_matches
+    // A signature made for other recipients may be someone else's mail sent on.
+    readonly property bool trustedSignature: !!signature && signature.status === "good" && signature.sender_matches && !signature.forwarded
+    // Header fields changed after the sender protected them.
+    readonly property var alteredHeaders: pgp && pgp.headers ? pgp.headers.altered || [] : []
+    // Something about the protection needs a look even when the signature is good.
+    readonly property bool pgpWarning: !!pgp && (pgp.unprotected === true || alteredHeaders.length > 0 || (!!signature && signature.forwarded === true))
     // Files inside an encrypted message, once it is decrypted.
     readonly property var decryptedAttachments: pgp && pgp.attachments ? pgp.attachments : null
     function keyId(id) { return String(id || "").slice(-16).replace(/(.{4})(?=.)/g, "$1 ") }
@@ -80,7 +85,13 @@ Item {
                 key_revoked: "Signed by " + who + " with a key that has been revoked",
                 weak: "Signed by " + who + " with a hash too weak to trust",
                 invalid_key: "Signed by " + who + " with a key that can't sign"})[signature.status] || "Signed")
+            if (signature.forwarded) lines.push("Signed for other recipients")
             if (signature.fingerprint) lines.push(signature.fingerprint.replace(/(.{4})(?=.)/g, "$1 "))
+        }
+        if (pgp && pgp.unprotected) lines.push("Part of the message is outside the " + (encrypted ? "encryption" : "signature"))
+        if (pgp && pgp.headers) {
+            lines.push(alteredHeaders.length ? "Changed after sending: " + alteredHeaders.join(", ") : "Subject and addresses protected")
+            if (pgp.headers.subject && pgp.headers.subject !== message.subject) lines.push("Subject: " + pgp.headers.subject)
         }
         return lines.join("\n")
     }

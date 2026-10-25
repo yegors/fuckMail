@@ -490,11 +490,28 @@ impl Store {
         self.project_composition(account, row)
     }
 
+    /// Whether a draft in `mode` answers the encrypted message `source`; a
+    /// forward doesn't.
+    fn replies_to_encrypted(&self, account: &str, source: Option<&str>, mode: &str) -> bool {
+        mode != "forward"
+            && source.is_some_and(|mid| {
+                self.db
+                    .query_row(
+                        "SELECT pgp FROM messages WHERE account=?1 AND id=?2",
+                        params![account, mid],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .is_ok_and(|pgp| pgp == 2)
+            })
+    }
+
     /// Sets a new draft's OpenPGP choices from its account's defaults. An
-    /// account with a key signs when it signs by default. It encrypts when it
-    /// encrypts by default, or the draft replies to encrypted mail, but only
-    /// once every recipient has a key to encrypt to; otherwise the draft
-    /// starts unencrypted rather than unsendable.
+    /// account with a key signs when it signs by default. A reply (not a
+    /// forward) to encrypted mail always starts encrypted: if a recipient has
+    /// no key, sending waits until they do or the person turns Encrypt off,
+    /// and the draft never reaches Gmail Drafts meanwhile. Encrypt by default
+    /// applies only once every recipient has a key to encrypt to; otherwise
+    /// a new message starts unencrypted rather than unsendable.
     fn pgp_defaults(
         &self,
         account: &str,
@@ -517,20 +534,13 @@ impl Store {
         else {
             return Ok(());
         };
-        let replying_to_encrypted = mode != "forward"
-            && source.is_some_and(|mid| {
-                self.db
-                    .query_row(
-                        "SELECT pgp FROM messages WHERE account=?1 AND id=?2",
-                        params![account, mid],
-                        |r| r.get::<_, i64>(0),
-                    )
-                    .is_ok_and(|pgp| pgp == 2)
-            });
+        let replying_to_encrypted = self.replies_to_encrypted(account, source, mode);
         if sign {
             routing["pgp_sign"] = json!(true);
         }
-        if encrypt || replying_to_encrypted {
+        if replying_to_encrypted {
+            routing["pgp_encrypt"] = json!(true);
+        } else if encrypt {
             let addresses: Vec<String> = ["to_recipients", "cc_recipients", "bcc_recipients"]
                 .iter()
                 .flat_map(|key| routing[*key].as_array().cloned().unwrap_or_default())
@@ -575,6 +585,12 @@ impl Store {
         row["attachment_ids"] = json!(ids);
         row["attachments"] = json!(attachments);
         row["account"] = json!(account);
+        // The composer warns when such a reply would go out unencrypted.
+        row["replies_to_encrypted"] = json!(self.replies_to_encrypted(
+            account,
+            row["source_message_id"].as_str(),
+            row["mode"].as_str().unwrap_or("reply"),
+        ));
         row["account_archived"] = json!(self.account_lifecycle(account)?["state"] == "removed");
         row["read_only"] =
             json!(row["origin"] == "google_snapshot" || row["account_archived"] == true);

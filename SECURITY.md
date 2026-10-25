@@ -34,9 +34,11 @@ releases yet, so fixes land on `main`.
   entry per profile), so the database alone can't open it; without that entry, secret keys
   can't be used, and the app never falls back to storing them in the clear. A passphrase on an
   imported key is removed once it is sealed. Exported secret keys are always protected with a
-  passphrase of at least 12 characters and written to a new file only you can read. Keys never
-  leave the machine except as files you export: there are no keyserver or key-discovery
-  lookups.
+  passphrase of at least 12 characters. The engine writes every exported key to a file only
+  your OS account can read, on every platform (an owner-only access list on Windows, mode 0600
+  elsewhere). Keys never leave the machine except as files you export: there are no keyserver
+  or key-discovery lookups. A key attached to mail is shown, with its fingerprint, before it is
+  imported, and only public keys import from mail.
 - **Google app registration.** A build's OAuth client file (`google-oauth-client.json`)
   identifies the app, not a user, and contains no tokens. See
   [Google sign-in setup](docs/build-development.md#google-sign-in-setup).
@@ -62,7 +64,13 @@ fuckMail has no servers of its own and sends no telemetry. The engine connects t
 
 - The GUI and the `fm` CLI talk to the engine over a named pipe (Windows) or a Unix socket.
   Only the same OS user can connect: on Windows through the pipe's access list, on
-  macOS and Linux through socket permissions and a peer-credential check.
+  macOS and Linux through socket permissions and a peer-credential check. Every program
+  running as you is trusted alike: it could also read the profile folder. So keeping
+  encrypted mail sealed until you click **Decrypt**, and the backup passphrase rules, are
+  how the app behaves, not a barrier against other programs: one running as you can ask the
+  engine to decrypt mail or export a secret key under a passphrase it chooses. On macOS that
+  skips the keychain's per-app prompt, since the engine already holds the key that seals
+  your secret keys.
 - Received HTML is rebuilt by the engine's sanitizer, which drops scripts and
   trackers, before the GUI renders it with litehtml. litehtml has no scripting or
   networking. HTML built to be slow to parse is shown as plain text, and a layout that

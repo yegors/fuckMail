@@ -328,4 +328,64 @@ mod tests {
             "existing content must not be replaced"
         );
     }
+
+    /// The DACL of `path`, as SDDL.
+    fn dacl(path: &Path) -> String {
+        use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+        let name = wide(path.as_os_str());
+        // SAFETY: `name` is NUL-terminated and outlives the calls. Windows
+        // allocates `descriptor` and `text` with LocalAlloc; `text` is read
+        // only up to its terminator, and both are freed once after use.
+        unsafe {
+            let mut descriptor = ptr::null_mut();
+            assert_eq!(
+                GetNamedSecurityInfoW(
+                    name.as_ptr(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut descriptor
+                ),
+                0
+            );
+            let mut text = ptr::null_mut();
+            assert_ne!(
+                ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                    descriptor,
+                    SDDL_REVISION_1,
+                    DACL_SECURITY_INFORMATION,
+                    &mut text,
+                    ptr::null_mut()
+                ),
+                0
+            );
+            let mut len = 0;
+            while *text.add(len) != 0 {
+                len += 1;
+            }
+            let out = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
+            LocalFree(text as _);
+            LocalFree(descriptor);
+            out
+        }
+    }
+
+    #[test]
+    fn written_private_files_are_the_users_alone() {
+        // An ordinary folder, whose inherited permissions must not apply.
+        let temp = tempfile::tempdir().unwrap();
+        let only_user = format!("D:P(A;;FA;;;{})", user_sid().unwrap());
+        let new = temp.path().join("new.asc");
+        crate::write_private_file(&new, b"one", false).unwrap();
+        assert_eq!(dacl(&new), only_user);
+        let replaced = temp.path().join("replaced.asc");
+        std::fs::write(&replaced, b"anyone could read this").unwrap();
+        assert_ne!(dacl(&replaced), only_user);
+        crate::write_private_file(&replaced, b"two", true).unwrap();
+        assert_eq!(dacl(&replaced), only_user);
+        assert_eq!(std::fs::read(&replaced).unwrap(), b"two");
+    }
 }

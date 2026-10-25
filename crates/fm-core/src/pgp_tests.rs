@@ -886,7 +886,9 @@ fn replies_to_encrypted_mail_start_encrypted() {
             |r| r.get(0),
         )
         .unwrap();
-    // Without Gus's key it starts unencrypted, so it can still be sent.
+    // Even without Gus's key it starts encrypted: sending waits for his key
+    // (or for the person to turn Encrypt off), and the draft never goes to
+    // Gmail Drafts meanwhile.
     let unready = call(
         &mut store,
         "draft_create",
@@ -894,7 +896,25 @@ fn replies_to_encrypted_mail_start_encrypted() {
         json!({"mode":"reply","conversation_id":conversation,"source_message_id":message,"request_id":"unready"}),
     );
     assert_eq!(unready["pgp_sign"], true);
-    assert!(unready["pgp_encrypt"].is_null());
+    assert_eq!(unready["pgp_encrypt"], true);
+    assert_eq!(unready["replies_to_encrypted"], true);
+    let unready_id = unready["draft_id"].as_str().unwrap().to_owned();
+    let saved = call(
+        &mut store,
+        "draft_save",
+        Some(&account),
+        json!({"draft_id":unready_id,"expected_revision":unready["revision"],"request_id":"unready-save","body":"About the plan."}),
+    );
+    assert_eq!(saved["pgp_encrypt"], true);
+    let due = store
+        .google_draft_due_after(&account, scope.connection_generation, 10, 0)
+        .unwrap();
+    assert!(!due.iter().any(|d| d.draft_id == unready_id));
+    let p = send_request(&store, &scope, &unready_id);
+    assert_eq!(
+        store.google_send_begin(&scope, &p).err().unwrap().code,
+        "pgp_recipient_key_missing"
+    );
     import(&mut store, &text("gus.pub.asc"), "gus");
     let reply = call(
         &mut store,
@@ -921,6 +941,7 @@ fn replies_to_encrypted_mail_start_encrypted() {
         json!({"mode":"forward","conversation_id":conversation,"source_message_id":message,"request_id":"forward"}),
     );
     assert!(forward["pgp_encrypt"].is_null());
+    assert_eq!(forward["replies_to_encrypted"], false);
 }
 
 #[test]
@@ -1106,4 +1127,328 @@ fn pictures_in_encrypted_html_stay_out_of_the_image_cache() {
     assert_eq!(item["image"]["path"], shown.as_str());
     crate::pgp::forget_decrypted(temp.path()).unwrap();
     assert!(!std::path::Path::new(&shown).exists());
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// A new public key, armored, whose user ID claims `email`, and its
+/// fingerprint.
+fn claiming(email: &str) -> (String, String) {
+    let key = fm_pgp::generate(&fm_pgp::NewKey {
+        name: "Claimant".into(),
+        email: email.into(),
+        algorithm: fm_pgp::Algorithm::Curve25519,
+        expires_in: None,
+    })
+    .unwrap()
+    .to_public_key();
+    (
+        fm_pgp::export_public(&key).unwrap(),
+        fm_pgp::inspect(&key, false, now()).fingerprint,
+    )
+}
+
+fn key_count(store: &mut Store) -> usize {
+    call(store, "pgp_keys", None, json!({}))["keys"]
+        .as_array()
+        .unwrap()
+        .len()
+}
+
+fn recipient_key(store: &mut Store, account: &str, address: &str) -> Value {
+    call(
+        store,
+        "pgp_recipients",
+        Some(account),
+        json!({"addresses":[address]}),
+    )["recipients"][0]["fingerprint"]
+        .clone()
+}
+
+#[test]
+fn a_key_for_an_address_another_key_has_needs_the_persons_say_so() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let account = scope.account.clone();
+    let gus = import(&mut store, &text("gus.pub.asc"), "gus")["added"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Someone else's key naming Gus's address, as a mail attachment might.
+    let (armored, other) = claiming("gus@example.test");
+    // A preview lists the key and the conflict, and changes nothing.
+    let preview = call(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":armored,"preview":true}),
+    );
+    assert_eq!(preview["keys"][0]["fingerprint"], other);
+    assert_eq!(preview["keys"][0]["action"], "add");
+    assert_eq!(preview["keys"][0]["secret"], false);
+    assert_eq!(
+        preview["conflicts"],
+        json!([{"address":"gus@example.test","fingerprint":other,"holders":[gus],"own":false}])
+    );
+    assert_eq!(key_count(&mut store), 1);
+    // Importing it is refused, and mail to Gus still uses his key.
+    let refused = failure(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":armored,"request_id":"other"}),
+    );
+    assert_eq!(refused.code, "pgp_key_conflict");
+    assert_eq!(refused.details["conflicts"][0]["holders"], json!([gus]));
+    assert_eq!(key_count(&mut store), 1);
+    assert_eq!(recipient_key(&mut store, &account, "gus@example.test"), gus);
+    // Once the person says to use it, it is the key for that address.
+    call(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":armored,"replace":true,"request_id":"other-replace"}),
+    );
+    assert_eq!(
+        recipient_key(&mut store, &account, "gus@example.test"),
+        other
+    );
+    // Updating Gus's key again doesn't take the address back.
+    import(&mut store, &text("gus.pub.asc"), "gus-again");
+    assert_eq!(
+        recipient_key(&mut store, &account, "gus@example.test"),
+        other
+    );
+}
+
+#[test]
+fn the_key_stored_last_wins_whatever_it_says_its_age_is() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let account = scope.account.clone();
+    // A key made now claims Gus's address first.
+    let (armored, newer) = claiming("gus@example.test");
+    import(&mut store, &armored, "newer");
+    assert_eq!(
+        recipient_key(&mut store, &account, "gus@example.test"),
+        newer
+    );
+    // Gus's real key, made earlier, is chosen once the person accepts it.
+    let gus = call(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":text("gus.pub.asc"),"replace":true,"request_id":"gus"}),
+    )["added"][0]
+        .clone();
+    assert_eq!(recipient_key(&mut store, &account, "gus@example.test"), gus);
+}
+
+#[test]
+fn keys_from_mail_are_public_only_and_your_address_is_yours() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, _) = setup(temp.path());
+    // A secret key from a message is refused, even before its passphrase.
+    let refused = failure(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":text("rita.sec.asc"),"public_only":true,"request_id":"rita"}),
+    );
+    assert_eq!(refused.code, "secret_key_not_allowed");
+    // A preview names a secret key without asking for its passphrase.
+    let preview = call(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":text("rita.sec.asc"),"preview":true}),
+    );
+    assert_eq!(preview["keys"][0]["secret"], true);
+    assert_eq!(
+        preview["keys"][0]["user_ids"],
+        json!(["Rita RSA <rita@example.test>"])
+    );
+    // Someone's public key for the account's own address needs a say-so,
+    // though no key holds that address yet.
+    let (armored, fingerprint) = claiming("ann@example.test");
+    let own = failure(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":armored,"public_only":true,"request_id":"own"}),
+    );
+    assert_eq!(own.code, "pgp_key_conflict");
+    assert_eq!(
+        own.details["conflicts"],
+        json!([{"address":"ann@example.test","fingerprint":fingerprint,"holders":[],"own":true}])
+    );
+    // The person's own secret key for that address imports as before.
+    call(
+        &mut store,
+        "pgp_key_import",
+        None,
+        json!({"text":text("ann.sec.asc"),"passphrase":"fixture passphrase ann","request_id":"ann"}),
+    );
+    assert_eq!(key_count(&mut store), 1);
+}
+
+#[test]
+fn exported_keys_are_written_to_files_only_by_the_engine() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let fingerprint = generate(&mut store, &scope.account);
+    let target = temp.path().join("key.asc");
+    let direct = failure(
+        &mut store,
+        "pgp_key_export",
+        None,
+        json!({"fingerprint":fingerprint,"kind":"public","path":target.to_str().unwrap()}),
+    );
+    assert_eq!(direct.code, "invalid_request");
+    let relative = failure(
+        &mut store,
+        "pgp_key_export",
+        None,
+        json!({"fingerprint":fingerprint,"kind":"public","path":"key.asc"}),
+    );
+    assert_eq!(relative.code, "invalid_request");
+    assert!(!target.exists());
+}
+
+#[test]
+fn reads_report_text_outside_the_signed_part() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let account = scope.account.clone();
+    import(&mut store, &text("gus.pub.asc"), "gus");
+    let clear = receive(&mut store, &account, &fixture("gus-cleartext.eml"), "clear");
+    let read = source(&store, &account, &clear);
+    assert_eq!(read["pgp"]["unprotected"], false);
+    assert!(read["pgp"]["headers"].is_null());
+    let wrapped = text("gus-cleartext.eml").replacen(
+        "-----BEGIN PGP SIGNED MESSAGE-----",
+        "Pay the new account today.\r\n\r\n-----BEGIN PGP SIGNED MESSAGE-----",
+        1,
+    );
+    let wrapped = receive(&mut store, &account, wrapped.as_bytes(), "wrapped");
+    let read = source(&store, &account, &wrapped);
+    assert_eq!(read["pgp"]["signatures"][0]["status"], "good");
+    assert_eq!(read["pgp"]["unprotected"], true);
+    assert!(!read["body_text"]
+        .as_str()
+        .unwrap()
+        .contains("Pay the new account"));
+    // Search still has what arrived outside the armor.
+    let body: String = store
+        .db
+        .query_row("SELECT body FROM messages WHERE id=?1", [&wrapped], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(body.contains("Pay the new account"));
+}
+
+/// A `multipart/signed` message whose signed content has a file of type
+/// `application/octet-stream`, as many mailers send a zip or a PDF.
+fn signed_with_a_file() -> Vec<u8> {
+    [
+        "From: Gus GnuPG <gus@example.test>",
+        "To: ann@example.test",
+        "Subject: Contract",
+        "Date: Thu, 22 Oct 2026 12:00:00 +0000",
+        "Message-ID: <signed-file@example.test>",
+        "MIME-Version: 1.0",
+        "Content-Type: multipart/signed; micalg=pgp-sha256; protocol=\"application/pgp-signature\"; boundary=\"outer\"",
+        "",
+        "--outer",
+        "Content-Type: multipart/mixed; boundary=\"inner\"",
+        "",
+        "--inner",
+        "Content-Type: text/plain",
+        "",
+        "The contract is attached.",
+        "--inner",
+        "Content-Type: application/octet-stream; name=\"contract.zip\"",
+        "Content-Disposition: attachment; filename=\"contract.zip\"",
+        "Content-Transfer-Encoding: base64",
+        "",
+        "UEsDBA==",
+        "--inner--",
+        "--outer",
+        "Content-Type: application/pgp-signature; name=\"signature.asc\"",
+        "",
+        "-----BEGIN PGP SIGNATURE-----",
+        "",
+        "AA==",
+        "-----END PGP SIGNATURE-----",
+        "--outer--",
+        "",
+    ]
+    .join("\r\n")
+    .into_bytes()
+}
+
+#[test]
+fn files_in_signed_mail_are_listed_and_restored() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(temp.path());
+    let account = scope.account.clone();
+    let message = receive(&mut store, &account, &signed_with_a_file(), "signed-file");
+    let names = |store: &Store| -> Vec<String> {
+        store
+            .db
+            .prepare("SELECT name FROM attachments WHERE message_id=?1 ORDER BY name")
+            .unwrap()
+            .query_map([&message], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    };
+    // The file is listed; the signature isn't.
+    assert_eq!(names(&store), ["contract.zip"]);
+    // As an earlier build left it: the file's row deleted, the protection
+    // repair done.
+    store
+        .db
+        .execute("DELETE FROM attachments WHERE message_id=?1", [&message])
+        .unwrap();
+    store
+        .db
+        .execute(
+            "INSERT INTO meta(key,value) VALUES('pgp_message_repair',-1)",
+            [],
+        )
+        .unwrap();
+    while store.repair_pgp_messages(10).unwrap() {}
+    assert_eq!(names(&store), ["contract.zip"]);
+    // It reads back from the retained source.
+    let id: String = store
+        .db
+        .query_row(
+            "SELECT id FROM attachments WHERE message_id=?1",
+            [&message],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let exported = store
+        .attachment_begin(&account, &json!({"id":id}))
+        .unwrap()
+        .export()
+        .unwrap();
+    assert_eq!(
+        std::fs::read(exported["path"].as_str().unwrap()).unwrap(),
+        b"PK\x03\x04"
+    );
+    // The repair runs once.
+    store
+        .db
+        .execute("DELETE FROM attachments WHERE message_id=?1", [&message])
+        .unwrap();
+    assert!(!store.repair_pgp_messages(10).unwrap());
+    assert!(names(&store).is_empty());
 }

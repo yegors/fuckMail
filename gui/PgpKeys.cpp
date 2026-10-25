@@ -5,10 +5,8 @@
 #include "HtmlContent.h"
 #include "MailBackend.h"
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
-#include <QSaveFile>
 #include <QStandardPaths>
 #include <QUuid>
 
@@ -108,18 +106,28 @@ void PgpKeys::send(const QString &ticket, const QString &action, const QString &
     });
 }
 
-QString PgpKeys::importAttachment(const QString &account, const QString &attachment) {
+QString PgpKeys::previewAttachment(const QString &account, const QString &attachment) {
     const auto ticket = QStringLiteral("pgp-%1").arg(++m_serial);
-    setBusy("import");
-    // The engine verifies the attachment and hands back its local copy.
+    // The engine verifies the attachment and hands back its local copy, then
+    // reads the keys in it without storing anything.
     m_backend->attachmentFile(account, attachment, [this, ticket](const QJsonObject &result, bool ok) {
         const auto path = result["path"].toString();
-        if (ok && !path.isEmpty()) { send(ticket, "import", {}, "pgp_key_import", {{"path", path}}); return; }
-        setBusy({});
-        emit finished(ticket, "import", {{"code", ok ? "content_unavailable" : result["code"].toString()},
-                                         {"message", result["message"].toString("This key isn't on this computer yet.")}}, false);
+        if (!ok || path.isEmpty()) {
+            emit previewReady(ticket, {{"code", ok ? "content_unavailable" : result["code"].toString()},
+                                       {"message", result["message"].toString("This key isn't on this computer yet.")}}, false);
+            return;
+        }
+        call({}, "pgp_key_import", {{"path", path}, {"preview", true}, {"public_only", true}}, [this, ticket, path](const QJsonObject &result, bool ok) {
+            auto reply = result.toVariantMap();
+            if (ok) reply["path"] = path;
+            emit previewReady(ticket, reply, ok);
+        });
     });
     return ticket;
+}
+
+QString PgpKeys::importPreviewed(const QString &path, bool replace) {
+    return mutate("import", {}, "pgp_key_import", {{"path", path}, {"public_only", true}, {"replace", replace}});
 }
 
 QString PgpKeys::generate(const QString &account, const QString &name, const QString &email, const QString &algorithm, int expiresDays) {
@@ -129,11 +137,12 @@ QString PgpKeys::generate(const QString &account, const QString &name, const QSt
     return mutate("generate", {}, "pgp_key_generate", params);
 }
 
-QString PgpKeys::importKeys(const QString &text, const QUrl &file, const QString &passphrase) {
+QString PgpKeys::importKeys(const QString &text, const QUrl &file, const QString &passphrase, bool replace) {
     QJsonObject params;
     if (file.isLocalFile()) params["path"] = file.toLocalFile();
     else params["text"] = text;
     if (!passphrase.isEmpty()) params["passphrase"] = passphrase;
+    if (replace) params["replace"] = true;
     return mutate("import", {}, "pgp_key_import", params);
 }
 
@@ -141,29 +150,22 @@ QString PgpKeys::exportKey(const QString &fingerprint, const QString &kind, cons
     const auto ticket = QStringLiteral("pgp-%1").arg(++m_serial);
     QJsonObject params{{"fingerprint", fingerprint}, {"kind", kind}};
     if (kind == "secret") params["passphrase"] = passphrase;
+    // The engine writes the file, readable by this user alone on every
+    // platform; the save dialog has already asked before replacing one.
+    if (destination.isLocalFile()) {
+        params["path"] = QFileInfo(destination.toLocalFile()).absoluteFilePath();
+        params["replace"] = true;
+    }
     setBusy("export");
     call({}, "pgp_key_export", params, [this, ticket, destination](const QJsonObject &result, bool ok) {
         setBusy({});
         auto reply = result.toVariantMap();
-        if (ok) {
-            const auto armored = result["armored"].toString().toUtf8();
+        if (ok && destination.isLocalFile()) {
+            m_exportFolder = QFileInfo(destination.toLocalFile()).absolutePath();
+        } else if (ok) {
+            m_backend->copyText(result["armored"].toString());
             reply.remove("armored");
-            if (destination.isLocalFile()) {
-                // A new private file the person named; a secret key is never
-                // left readable by others, even briefly.
-                QSaveFile file(destination.toLocalFile());
-                if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
-                    || file.write(armored) != armored.size() || !file.commit()) {
-                    ok = false;
-                    reply = {{"code", "storage_error"}, {"message", "The key couldn't be saved there."}};
-                } else {
-                    reply["path"] = destination.toLocalFile();
-                    m_exportFolder = QFileInfo(destination.toLocalFile()).absolutePath();
-                }
-            } else {
-                m_backend->copyText(QString::fromUtf8(armored));
-                reply["copied"] = true;
-            }
+            reply["copied"] = true;
         }
         emit finished(ticket, "export", reply, ok);
     });

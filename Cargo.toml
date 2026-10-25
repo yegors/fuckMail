@@ -22,3 +22,8 @@ opt-level = 3
 
 [profile.dev.package.rsa]
 opt-level = 3
+
+# Exported secret keys hash their passphrase over 65 MiB (the highest
+# iterated S2K count); unoptimized SHA-256 makes that take many seconds.
+[profile.dev.package.sha2]
+opt-level = 3

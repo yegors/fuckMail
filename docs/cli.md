@@ -205,6 +205,7 @@ Other draft commands: `draft list`, `draft show`, `draft discard` / `draft undo-
 ```sh
 fm --account ID pgp generate --expires 3y        # a key for the account's name and address; it becomes the account's key
 fm pgp keys                                       # your keys and other people's
+fm pgp import ./maya-public.asc --preview         # what the file holds, with fingerprints; changes nothing
 fm pgp import ./maya-public.asc                   # someone's public key, or a revocation certificate
 fm pgp import ./my-secret.asc --passphrase-stdin < passphrase.txt
 fm pgp export FINGERPRINT --output me.asc         # your public key, to share
@@ -216,7 +217,8 @@ fm --account ID draft save --draft-id D --body-file body.txt --sign on --encrypt
 ```
 
 - `--expires` takes `3y`, `18m`, `90d` or `never`; `pgp expiry FINGERPRINT --expires …` changes it later. `pgp delete FINGERPRINT` removes a key.
-- An exported secret key is protected with the passphrase you give, at least 12 characters, and written only to a new file that only you can read, or to standard output.
+- An exported secret key is protected with the passphrase you give, at least 12 characters, and written only to a new file that only you can read (the engine writes it), or to standard output.
+- A key that claims an address another key already has, or one of your accounts' addresses, fails with `pgp_key_conflict` naming them. Compare its fingerprint with its owner's, then import it again with `--replace`.
 - A protected secret key is imported once with its passphrase; after that it is sealed with a key kept in your system keychain, and fm never asks again.
 - A draft with `--encrypt on` stays out of Gmail Drafts. Sending it fails with `pgp_recipient_key_missing` until every recipient's key is in the keyring.
 

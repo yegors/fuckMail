@@ -2,8 +2,10 @@
 // appearance, calendar and account settings through the native controls, checks
 // validation and viewport restoration, and reads the results back with `fm`.
 #include "GuiSettingsSelfTest.h"
+#include "PgpKeys.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QInputMethodEvent>
 #include <QJsonArray>
@@ -361,10 +363,29 @@ void GuiSettingsSelfTest::step() {
         // as the system does for its own.
         QMetaObject::invokeMethod(save, "reject");
         m_window->requestActivate();
+        // Save the backup over a file the save dialog would have asked about:
+        // the engine writes it, replacing the old one, readable by this user alone.
+        m_backupPath = QFileInfo(QDir(m_profile).filePath("backup-secret.asc")).absoluteFilePath();
+        QFile old(m_backupPath);
+        if (!old.open(QIODevice::WriteOnly) || old.write("an older backup") < 0) { finish("Could not stage an older backup file."); return; }
+        old.close();
+        qobject_cast<PgpKeys *>(m_backend.pgpKeys())->exportKey(m_pgpFingerprint, "secret", "a long enough passphrase", QUrl::fromLocalFile(m_backupPath));
         ++m_stage; break;
     }
     case 55: {
         const auto save = m_window->findChild<QObject *>("pgpSaveDialog");
+        const auto page = m_window->findChild<QObject *>("encryptionSettings");
+        if (!page) return;
+        const auto status = page->property("status").toString();
+        if (page->property("statusError").toBool()) { finish("The backup was not saved through the engine: " + status); return; }
+        if (!status.startsWith("Saved to ")) return;
+        if (status != "Saved to " + m_backupPath + ".") { finish("The backup was saved somewhere else: " + status); return; }
+        QFile backup(m_backupPath);
+        if (!backup.open(QIODevice::ReadOnly) || !backup.readAll().startsWith("-----BEGIN PGP PRIVATE KEY BLOCK-----")) { finish("The saved backup is not the protected secret key."); return; }
+#ifndef Q_OS_WIN
+        if (backup.permissions() != (QFileDevice::ReadOwner | QFileDevice::WriteOwner)) { finish("The saved backup is readable by others."); return; }
+#endif
+        if (!QDir(m_profile).entryList({".backup-secret.asc.*"}, QDir::Files | QDir::Hidden).isEmpty()) { finish("Saving the backup left a temporary file behind."); return; }
         if ((save && save->property("visible").toBool()) || !m_window->isActive() || !click("pgpEncryptDefault_windscribe")) return;
         ++m_stage; break;
     }

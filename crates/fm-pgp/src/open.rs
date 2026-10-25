@@ -6,6 +6,12 @@
 //! of the protected body. Callers read it with the same MIME code as any other
 //! message, then throw it away; plaintext is never written anywhere here.
 //!
+//! Only protected content is shown as protected. Text around an inline armored
+//! block is left out of the opened message, and [`Opened::unprotected`] says
+//! so, rather than appearing under the block's signature or encryption. When
+//! the sender used header protection (RFC 9788), outer header fields changed
+//! after sending are reported in [`HeaderCheck::altered`].
+//!
 //! Signatures are only as trustworthy as the keyring: a key counts as the
 //! sender's when the person imported it and its user IDs include the sender's
 //! address. There is no web of trust and no key lookup on the network.
@@ -19,8 +25,8 @@ use pgp::{
         CleartextSignedMessage, DecryptionOptions, Deserializable, DetachedSignature, Esk, Message,
         SignedPublicKey, SignedSecretKey, TheRing,
     },
-    packet::Signature,
-    types::{KeyDetails, Password, VerifyingKey},
+    packet::{Signature, SignatureType, SubpacketData},
+    types::{Fingerprint, KeyDetails, Password, VerifyingKey},
 };
 use serde::Serialize;
 use std::io::Read;
@@ -37,7 +43,8 @@ pub struct Keyring {
 pub enum SignatureStatus {
     /// It verifies with a key in the keyring that could sign when it was made.
     Good,
-    /// The content doesn't match the signature: it was changed after signing.
+    /// The content doesn't match the signature: it was changed after signing,
+    /// or the signature isn't a signature over a document at all.
     Bad,
     /// No key in the keyring made it.
     UnknownKey,
@@ -64,6 +71,20 @@ pub struct SignatureCheck {
     /// The sender's address is one of the signing key's user IDs.
     pub sender_matches: bool,
     pub created_at: Option<u64>,
+    /// The signature names the recipients it was made for (RFC 9580 intended
+    /// recipients), and none of the keys that decrypted the message is among
+    /// them: someone may have re-encrypted another person's signed message.
+    pub forwarded: bool,
+}
+
+/// What header protection (RFC 9788) says about the outer header fields.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct HeaderCheck {
+    /// The Subject the sender protected, when there was one.
+    pub subject: Option<String>,
+    /// Outer header fields that differ from what the sender protected: any of
+    /// `subject`, `from`, `to`, `cc` and `date`.
+    pub altered: Vec<&'static str>,
 }
 
 /// What happened when decrypting.
@@ -97,8 +118,14 @@ pub struct Opened {
     pub encrypted: bool,
     /// The protection was inline armor in a text part, not PGP/MIME.
     pub inline: bool,
+    /// An inline message also has text or files outside its signed or
+    /// encrypted block. The text is left out of `message`; the files aren't
+    /// covered by the block's protection.
+    pub unprotected: bool,
     pub decryption: Option<Decryption>,
     pub signatures: Vec<SignatureCheck>,
+    /// Header protection, when the sender used it.
+    pub headers: Option<HeaderCheck>,
     /// The message to read in place of the source, when there is one.
     pub message: Option<Zeroizing<Vec<u8>>>,
 }
@@ -119,6 +146,164 @@ fn content_type(part: &mail_parser::MessagePart<'_>) -> Option<(String, String, 
         ct.subtype().unwrap_or_default().to_ascii_lowercase(),
         ct.attribute("protocol").map(|p| p.to_ascii_lowercase()),
     ))
+}
+
+/// The header fields header protection compares: the subject and date, and
+/// the From, To and Cc addresses (lowercased, sorted, without names).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Fields {
+    subject: Option<String>,
+    from: Vec<String>,
+    to: Vec<String>,
+    cc: Vec<String>,
+    date: Option<i64>,
+}
+
+impl Fields {
+    fn of(message: &mail_parser::Message<'_>) -> Self {
+        let addresses = |list: Option<&mail_parser::Address<'_>>| {
+            let mut out: Vec<String> = list
+                .into_iter()
+                .flat_map(|list| list.iter())
+                .filter_map(|a| a.address())
+                .map(str::to_lowercase)
+                .collect();
+            out.sort();
+            out.dedup();
+            out
+        };
+        Self {
+            subject: message
+                .subject()
+                .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" ")),
+            from: addresses(message.from()),
+            to: addresses(message.to()),
+            cc: addresses(message.cc()),
+            date: message.date().map(|d| d.to_timestamp()),
+        }
+    }
+
+    /// The fields that differ between `self` and `outer`: those `self` has,
+    /// or with `all`, those either has.
+    fn differences(&self, outer: &Fields, all: bool) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        let mut compare = |name: &'static str, mine: bool, theirs: bool, same: bool| {
+            if (mine || (all && theirs)) && !same {
+                out.push(name);
+            }
+        };
+        compare(
+            "subject",
+            self.subject.is_some(),
+            outer.subject.is_some(),
+            self.subject == outer.subject,
+        );
+        compare(
+            "from",
+            !self.from.is_empty(),
+            !outer.from.is_empty(),
+            self.from == outer.from,
+        );
+        compare(
+            "to",
+            !self.to.is_empty(),
+            !outer.to.is_empty(),
+            self.to == outer.to,
+        );
+        compare(
+            "cc",
+            !self.cc.is_empty(),
+            !outer.cc.is_empty(),
+            self.cc == outer.cc,
+        );
+        compare(
+            "date",
+            self.date.is_some(),
+            outer.date.is_some(),
+            self.date == outer.date,
+        );
+        out
+    }
+}
+
+/// Where an entity's header section ends: the index of the blank line that
+/// closes it (0 when the entity starts with one), or `None` without one.
+fn header_end(entity: &[u8]) -> Option<usize> {
+    if entity.starts_with(b"\r\n") || entity.starts_with(b"\n") {
+        return Some(0);
+    }
+    let crlf = entity
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|p| p + 2);
+    let lf = entity.windows(2).position(|w| w == b"\n\n").map(|p| p + 1);
+    match (crlf, lf) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// The `HP-Outer` fields of a protected header section, read as a header
+/// section of their own: the outer fields as the sender sent them.
+fn hp_outer(entity: &[u8]) -> Option<Fields> {
+    let head = &entity[..header_end(entity)?];
+    let mut fields: Vec<Vec<u8>> = Vec::new();
+    let mut current: Option<Vec<u8>> = None;
+    for line in head.split_inclusive(|b| *b == b'\n') {
+        if line.starts_with(b" ") || line.starts_with(b"\t") {
+            if let Some(field) = current.as_mut() {
+                field.extend_from_slice(line);
+            }
+            continue;
+        }
+        fields.extend(current.take());
+        if line.len() > 9 && line[..9].eq_ignore_ascii_case(b"hp-outer:") {
+            current = Some(line[9..].trim_ascii_start().to_vec());
+        }
+    }
+    fields.extend(current);
+    if fields.is_empty() {
+        return None;
+    }
+    let mut section = Vec::new();
+    for field in fields {
+        section.extend_from_slice(field.trim_ascii_end());
+        section.extend_from_slice(b"\r\n");
+    }
+    section.extend_from_slice(b"\r\n");
+    let parsed = MessageParser::default().parse(&section)?;
+    Some(Fields::of(&parsed))
+}
+
+/// Checks the header protection (RFC 9788) of a cryptographic payload whose
+/// root carries an `hp` parameter, against the `outer` fields. Signed-only
+/// (`clear`) payloads protect copies that must match the outer fields; for
+/// encrypted (`cipher`) ones the `HP-Outer` fields record what was sent
+/// outside, since the sender may have hidden the subject there.
+fn header_check(outer: &Fields, payload: &[u8]) -> Option<HeaderCheck> {
+    let parsed = MessageParser::default().parse(payload)?;
+    let hp = parsed
+        .parts
+        .first()?
+        .content_type()?
+        .attribute("hp")?
+        .to_ascii_lowercase();
+    let inner = Fields::of(&parsed);
+    let mut altered = match hp.as_str() {
+        "clear" => inner.differences(outer, false),
+        "cipher" => hp_outer(payload)
+            .map(|sent| sent.differences(outer, true))
+            .unwrap_or_default(),
+        _ => return None,
+    };
+    // A From that isn't the protected one is never the sender's to trust.
+    if !inner.from.is_empty() && inner.from != outer.from && !altered.contains(&"from") {
+        altered.push("from");
+    }
+    Some(HeaderCheck {
+        subject: inner.subject,
+        altered,
+    })
 }
 
 /// The outer header block without its `Content-*` and `MIME-Version`
@@ -150,12 +335,7 @@ fn outer_headers(raw: &[u8], body_offset: usize) -> Vec<u8> {
 /// Drops the non-`Content-*` header fields an inner entity carries (protected
 /// headers), so the outer ones stay authoritative for routing.
 fn content_only(entity: &[u8]) -> Vec<u8> {
-    let end = entity
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .map(|p| p + 2)
-        .or_else(|| entity.windows(2).position(|w| w == b"\n\n").map(|p| p + 1));
-    let Some(end) = end else {
+    let Some(end) = header_end(entity) else {
         return entity.to_vec();
     };
     let mut out = Vec::with_capacity(entity.len());
@@ -193,10 +373,10 @@ fn text_message(outer: &[u8], text: &str) -> Zeroizing<Vec<u8>> {
 fn signer<'a>(
     sig: &Signature,
     keyring: &'a Keyring,
-) -> Option<(&'a SignedPublicKey, pgp::types::Fingerprint, KeyRef<'a>)> {
+) -> Option<(&'a SignedPublicKey, Fingerprint, KeyRef<'a>)> {
     let fingerprints = sig.issuer_fingerprint();
     let ids = sig.issuer_key_id();
-    let matches = |fingerprint: pgp::types::Fingerprint, id: pgp::types::KeyId| {
+    let matches = |fingerprint: Fingerprint, id: pgp::types::KeyId| {
         fingerprints.iter().any(|f| **f == fingerprint) || ids.iter().any(|i| **i == id)
     };
     for cert in &keyring.certs {
@@ -227,13 +407,22 @@ fn verify_detached(sig: &Signature, key: KeyRef<'_>, data: &[u8]) -> bool {
     }
 }
 
+/// What every signature check needs: the keyring, the sender's address and
+/// the outer header fields, and the time.
+struct Context<'a> {
+    keyring: &'a Keyring,
+    sender: Option<&'a str>,
+    outer: Fields,
+    now: u64,
+}
+
 /// Checks one signature: `verifies` runs the cryptographic check with the
-/// signing key once it is found.
+/// signing key once it is found. `own` are the primary fingerprints of the
+/// keys that decrypted the content, or empty when it wasn't encrypted.
 fn check(
     sig: &Signature,
-    keyring: &Keyring,
-    sender: Option<&str>,
-    now: u64,
+    cx: &Context<'_>,
+    own: &[Fingerprint],
     verifies: impl Fn(KeyRef<'_>) -> bool,
 ) -> SignatureCheck {
     let key_id = sig
@@ -242,7 +431,18 @@ fn check(
         .map(|f| hex(f.as_bytes()))
         .or_else(|| sig.issuer_key_id().first().map(|id| hex(id.as_ref())));
     let made = created(sig);
-    let Some((cert, used, key)) = signer(sig, keyring) else {
+    let intended: Vec<&Fingerprint> = sig
+        .config()
+        .into_iter()
+        .flat_map(|config| config.hashed_subpackets())
+        .filter_map(|p| match &p.data {
+            SubpacketData::IntendedRecipientFingerprint(fingerprint) => Some(fingerprint),
+            _ => None,
+        })
+        .collect();
+    let forwarded =
+        !own.is_empty() && !intended.is_empty() && !intended.iter().any(|f| own.contains(f));
+    let Some((cert, used, key)) = signer(sig, cx.keyring) else {
         return SignatureCheck {
             status: SignatureStatus::UnknownKey,
             key_id,
@@ -250,8 +450,10 @@ fn check(
             signer: None,
             sender_matches: false,
             created_at: made,
+            forwarded,
         };
     };
+    let now = cx.now;
     let current = evaluate(cert, now);
     let addresses: Vec<String> = current
         .users
@@ -269,7 +471,10 @@ fn check(
                 && sub.status(at) == KeyStatus::Valid
         })
     };
-    let status = if !verifies(key) {
+    // Only a signature over a document counts here; a key certification or
+    // revocation that happens to verify over the same bytes doesn't.
+    let document = matches!(sig.typ(), Some(SignatureType::Binary | SignatureType::Text));
+    let status = if !document || !verifies(key) {
         SignatureStatus::Bad
     } else if !acceptable_hash(sig, false) {
         SignatureStatus::Weak
@@ -287,8 +492,9 @@ fn check(
         key_id,
         fingerprint: Some(hex(cert.primary_key.fingerprint().as_bytes())),
         signer: current.users.first().map(|(id, _)| id.clone()),
-        sender_matches: sender.is_some_and(|s| addresses.iter().any(|a| a == s)),
+        sender_matches: cx.sender.is_some_and(|s| addresses.iter().any(|a| a == s)),
         created_at: made,
+        forwarded,
     }
 }
 
@@ -312,9 +518,8 @@ fn read_limited(message: &mut Message<'_>) -> Result<Zeroizing<Vec<u8>>> {
 /// Signatures inside an OpenPGP message that has been read to its end.
 fn message_signatures(
     message: &Message<'_>,
-    keyring: &Keyring,
-    sender: Option<&str>,
-    now: u64,
+    cx: &Context<'_>,
+    own: &[Fingerprint],
 ) -> Vec<SignatureCheck> {
     let Message::Signed { reader, .. } = message else {
         return Vec::new();
@@ -322,7 +527,7 @@ fn message_signatures(
     (0..reader.num_signatures())
         .filter_map(|index| {
             let sig = reader.signature(index)?;
-            Some(check(sig, keyring, sender, now, |key| {
+            Some(check(sig, cx, own, |key| {
                 let key: &dyn VerifyingKey = match key {
                     KeyRef::Primary(key) => key,
                     KeyRef::Sub(key) => key,
@@ -350,20 +555,31 @@ fn recipients(message: &Message<'_>) -> Vec<String> {
 /// content sealed.
 type Secrets<'a> = Option<&'a mut dyn FnMut() -> Result<Vec<SignedSecretKey>>>;
 
+/// One OpenPGP message, decrypted or just read.
+#[derive(Default)]
+struct Unwrapped {
+    decryption: Option<Decryption>,
+    signatures: Vec<SignatureCheck>,
+    plain: Option<Zeroizing<Vec<u8>>>,
+    /// The primary fingerprints of the keys it was decrypted with.
+    own: Vec<Fingerprint>,
+}
+
 /// Decrypts (or just reads, if only signed) one OpenPGP message.
 fn read_pgp_message(
     data: &[u8],
     armored: bool,
-    keyring: &Keyring,
+    cx: &Context<'_>,
     secrets: &mut Secrets<'_>,
-    sender: Option<&str>,
-    now: u64,
-) -> (
-    Option<Decryption>,
-    Vec<SignatureCheck>,
-    Option<Zeroizing<Vec<u8>>>,
-) {
-    let failed = |message: String| (Some(Decryption::Failed { message }), Vec::new(), None);
+) -> Unwrapped {
+    let failed = |message: String| Unwrapped {
+        decryption: Some(Decryption::Failed { message }),
+        ..Default::default()
+    };
+    let only = |decryption: Decryption| Unwrapped {
+        decryption: Some(decryption),
+        ..Default::default()
+    };
     let parsed = if armored {
         Message::from_armor(data).map(|(m, _)| m)
     } else {
@@ -373,30 +589,23 @@ fn read_pgp_message(
         return failed("The encrypted part is damaged".into());
     };
     let mut decryption = None;
+    let mut own = Vec::new();
     if message.is_encrypted() {
         let to = recipients(&message);
         let Some(secrets) = secrets.as_mut() else {
-            return (
-                Some(Decryption::Sealed { recipients: to }),
-                Vec::new(),
-                None,
-            );
+            return only(Decryption::Sealed { recipients: to });
         };
         let keys = match secrets() {
             Ok(keys) => keys,
             Err(error) => {
-                return (
-                    Some(Decryption::Unavailable {
-                        code: error.code.into(),
-                        message: error.message,
-                    }),
-                    Vec::new(),
-                    None,
-                )
+                return only(Decryption::Unavailable {
+                    code: error.code.into(),
+                    message: error.message,
+                })
             }
         };
         if keys.is_empty() {
-            return (Some(Decryption::NoKey { recipients: to }), Vec::new(), None);
+            return only(Decryption::NoKey { recipients: to });
         }
         let password = Password::empty();
         // GnuPG 2.4 encrypts to keys that announce it with its own OCB packet
@@ -414,11 +623,15 @@ fn read_pgp_message(
         {
             Ok(message) => message,
             Err(pgp::errors::Error::MissingKey) => {
-                return (Some(Decryption::NoKey { recipients: to }), Vec::new(), None)
+                return only(Decryption::NoKey { recipients: to })
             }
             Err(error) => return failed(format!("It couldn't be decrypted: {error}")),
         };
         decryption = Some(Decryption::Decrypted);
+        own = keys
+            .iter()
+            .map(|key| key.primary_key.fingerprint())
+            .collect();
     }
     if message.is_compressed() {
         message = match message.decompress() {
@@ -430,8 +643,13 @@ fn read_pgp_message(
         Ok(plain) => plain,
         Err(error) => return failed(error.message),
     };
-    let signatures = message_signatures(&message, keyring, sender, now);
-    (decryption, signatures, Some(plain))
+    let signatures = message_signatures(&message, cx, &own);
+    Unwrapped {
+        decryption,
+        signatures,
+        plain: Some(plain),
+        own,
+    }
 }
 
 /// The exact bytes of a multipart's sub-parts, split at `boundary`, with line
@@ -488,36 +706,59 @@ pub fn inspect_message(raw: &[u8], keyring: &Keyring, now: u64) -> Option<Opened
 }
 
 /// A decrypted MIME `entity` as a whole message under the `outer` header
-/// fields, with a signed entity inside it unwrapped and checked.
+/// fields, with a signed entity inside it unwrapped and checked. `own` are
+/// the keys that decrypted it; `headers` gets its header protection.
 fn entity_message(
     outer: &[u8],
     entity: &[u8],
-    keyring: &Keyring,
-    sender: Option<&str>,
-    now: u64,
+    cx: &Context<'_>,
+    own: &[Fingerprint],
     signatures: &mut Vec<SignatureCheck>,
+    headers: &mut Option<HeaderCheck>,
 ) -> Zeroizing<Vec<u8>> {
-    // A signed entity inside the encryption (RFC 3156 section 6.1).
+    // A signed entity inside the encryption (RFC 3156 section 6.1); its
+    // signed part is then the payload that carries header protection.
     let mut inner = Zeroizing::new(outer.to_vec());
     inner.extend_from_slice(&content_only(entity));
-    if let Some(opened) = open_signed(&inner, keyring, sender, now) {
-        signatures.extend(opened.0);
-        return opened.1;
+    if let Some(signed) = open_signed(&inner, cx, own) {
+        signatures.extend(signed.signatures);
+        *headers = signed.headers.or_else(|| header_check(&cx.outer, entity));
+        return signed.message;
     }
+    *headers = header_check(&cx.outer, entity);
     inner
 }
 
-/// Whether decrypted inline content is a MIME entity rather than text: it
-/// starts with a `Content-*` or `MIME-Version` field and has a header block.
-/// Gmail delivers PGP/MIME encrypted mail rewritten as a text part holding
-/// the armored message, so its plaintext is the PGP/MIME entity.
+/// Whether decrypted inline content is a MIME entity rather than text: a
+/// header section of well-formed fields, one of them `Content-Type`, then a
+/// blank line. Gmail delivers PGP/MIME encrypted mail rewritten as a text
+/// part holding the armored message, so its plaintext is the PGP/MIME entity,
+/// which may start with protected header fields.
 fn is_mime_entity(plain: &[u8]) -> bool {
-    let first = plain.split(|b| *b == b'\n').next().unwrap_or_default();
-    let lower = first.to_ascii_lowercase();
-    (lower.starts_with(b"content-") || lower.starts_with(b"mime-version:"))
-        && first.contains(&b':')
-        && (plain.windows(4).any(|w| w == b"\r\n\r\n") || plain.windows(2).any(|w| w == b"\n\n"))
+    let Some(end) = header_end(plain).filter(|end| *end > 0) else {
+        return false;
+    };
+    let mut typed = false;
+    for line in plain[..end].split_inclusive(|b| *b == b'\n') {
+        if line.starts_with(b" ") || line.starts_with(b"\t") {
+            continue;
+        }
+        let Some(colon) = line.iter().position(|b| *b == b':') else {
+            return false;
+        };
+        let name = &line[..colon];
+        if name.is_empty() || !name.iter().all(u8::is_ascii_graphic) {
+            return false;
+        }
+        typed |= name.eq_ignore_ascii_case(b"content-type");
+    }
+    typed
 }
+
+const BEGIN_MESSAGE: &str = "-----BEGIN PGP MESSAGE-----";
+const END_MESSAGE: &str = "-----END PGP MESSAGE-----";
+const BEGIN_SIGNED: &str = "-----BEGIN PGP SIGNED MESSAGE-----";
+const END_SIGNATURE: &str = "-----END PGP SIGNATURE-----";
 
 fn open(raw: &[u8], keyring: &Keyring, mut secrets: Secrets<'_>, now: u64) -> Option<Opened> {
     if !looks_protected(raw) {
@@ -529,7 +770,12 @@ fn open(raw: &[u8], keyring: &Keyring, mut secrets: Secrets<'_>, now: u64) -> Op
         .and_then(|from| from.first())
         .and_then(|a| a.address())
         .map(str::to_lowercase);
-    let sender = sender.as_deref();
+    let cx = Context {
+        keyring,
+        sender: sender.as_deref(),
+        outer: Fields::of(&parsed),
+        now,
+    };
     let root = parsed.parts.first()?;
     let outer = outer_headers(raw, root.offset_body as usize);
     let (ctype, subtype, protocol) = content_type(root)?;
@@ -547,99 +793,125 @@ fn open(raw: &[u8], keyring: &Keyring, mut secrets: Secrets<'_>, now: u64) -> Op
                 content_type(part)
                     .is_some_and(|(t, s, _)| t == "application" && s == "octet-stream")
             })?;
-        let (decryption, mut signatures, plain) =
-            read_pgp_message(payload.contents(), true, keyring, &mut secrets, sender, now);
-        let message = plain
-            .map(|entity| entity_message(&outer, &entity, keyring, sender, now, &mut signatures));
-        return Some(Opened {
-            encrypted: true,
-            inline: false,
-            decryption,
-            signatures,
-            message,
-        });
-    }
-    if let Some((signatures, message)) = open_signed(raw, keyring, sender, now) {
-        return Some(Opened {
-            encrypted: false,
-            inline: false,
-            decryption: None,
-            signatures,
-            message: Some(message),
-        });
-    }
-    // Inline PGP: an armored block inside the first plain-text body.
-    let text = parsed.body_text(0)?;
-    if let Some(start) = text.find("-----BEGIN PGP MESSAGE-----") {
-        let end = text[start..]
-            .find("-----END PGP MESSAGE-----")
-            .map(|e| start + e + "-----END PGP MESSAGE-----".len())?;
-        let (decryption, mut signatures, plain) = read_pgp_message(
-            text[start..end].as_bytes(),
-            true,
-            keyring,
-            &mut secrets,
-            sender,
-            now,
-        );
-        let entity = plain.as_deref().is_some_and(|p| is_mime_entity(p));
-        let message = plain.map(|plain| {
-            if entity {
-                return entity_message(&outer, &plain, keyring, sender, now, &mut signatures);
-            }
-            let decrypted = String::from_utf8_lossy(&plain).replace("\r\n", "\n");
-            text_message(
+        let read = read_pgp_message(payload.contents(), true, &cx, &mut secrets);
+        let (mut signatures, mut headers) = (read.signatures, None);
+        let message = read.plain.map(|entity| {
+            entity_message(
                 &outer,
-                &format!("{}{}{}", &text[..start], decrypted, &text[end..]),
+                &entity,
+                &cx,
+                &read.own,
+                &mut signatures,
+                &mut headers,
             )
         });
         return Some(Opened {
-            encrypted: decryption.is_some(),
-            inline: !entity,
-            decryption,
+            encrypted: true,
+            inline: false,
+            unprotected: false,
+            decryption: read.decryption,
             signatures,
+            headers,
             message,
         });
     }
-    if let Some(start) = text.find("-----BEGIN PGP SIGNED MESSAGE-----") {
-        let tail = &text[start..];
-        let end = tail
-            .find("-----END PGP SIGNATURE-----")
-            .map(|e| start + e + "-----END PGP SIGNATURE-----".len())?;
+    if let Some(signed) = open_signed(raw, &cx, &[]) {
+        return Some(Opened {
+            encrypted: false,
+            inline: false,
+            unprotected: false,
+            decryption: None,
+            signatures: signed.signatures,
+            headers: signed.headers,
+            message: Some(signed.message),
+        });
+    }
+    // Inline PGP: an armored block inside the first plain-text body. Only the
+    // block is shown; other text parts and files are outside its protection.
+    let text = parsed.body_text(0)?;
+    let other_parts = parsed.text_body_count() > 1
+        || parsed.attachments().any(|part| {
+            // Gmail's rewrite of PGP/MIME keeps the version part as a file.
+            !content_type(part).is_some_and(|(t, s, _)| t == "application" && s == "pgp-encrypted")
+        });
+    let outside = |start: usize, end: usize| {
+        !text[..start].trim().is_empty() || !text[end..].trim().is_empty()
+    };
+    if let Some(start) = text.find(BEGIN_MESSAGE) {
+        let end = text[start..]
+            .find(END_MESSAGE)
+            .map(|e| start + e + END_MESSAGE.len())?;
+        let read = read_pgp_message(text[start..end].as_bytes(), true, &cx, &mut secrets);
+        let entity = read.plain.as_deref().is_some_and(|p| is_mime_entity(p));
+        let (mut signatures, mut headers) = (read.signatures, None);
+        let message = read.plain.map(|plain| {
+            if entity {
+                return entity_message(
+                    &outer,
+                    &plain,
+                    &cx,
+                    &read.own,
+                    &mut signatures,
+                    &mut headers,
+                );
+            }
+            text_message(
+                &outer,
+                &String::from_utf8_lossy(&plain).replace("\r\n", "\n"),
+            )
+        });
+        // A decrypted entity brings its own files, so only stray text counts.
+        let unprotected = message.is_some() && (outside(start, end) || (!entity && other_parts));
+        return Some(Opened {
+            encrypted: read.decryption.is_some(),
+            inline: !entity,
+            unprotected,
+            decryption: read.decryption,
+            signatures,
+            headers,
+            message,
+        });
+    }
+    if let Some(start) = text.find(BEGIN_SIGNED) {
+        let end = text[start..]
+            .find(END_SIGNATURE)
+            .map(|e| start + e + END_SIGNATURE.len())?;
         let (signed, _) = CleartextSignedMessage::from_string(&text[start..end]).ok()?;
         let normalized = signed.signed_text();
         let signatures = signed
             .signatures()
             .iter()
             .map(|sig| {
-                check(sig, keyring, sender, now, |key| {
+                check(sig, &cx, &[], |key| {
                     verify_detached(sig, key, normalized.as_bytes())
                 })
             })
             .collect();
-        let shown = normalized.replace("\r\n", "\n");
-        let message = text_message(
-            &outer,
-            &format!("{}{}{}", &text[..start], shown, &text[end..]),
-        );
+        let message = text_message(&outer, &normalized.replace("\r\n", "\n"));
         return Some(Opened {
             encrypted: false,
             inline: true,
+            unprotected: outside(start, end) || other_parts,
             decryption: None,
             signatures,
+            headers: None,
             message: Some(message),
         });
     }
     None
 }
 
-/// Checks a `multipart/signed` message and unwraps its signed entity.
-fn open_signed(
-    raw: &[u8],
-    keyring: &Keyring,
-    sender: Option<&str>,
-    now: u64,
-) -> Option<(Vec<SignatureCheck>, Zeroizing<Vec<u8>>)> {
+/// A `multipart/signed` message's signature results, its signed entity as
+/// a message, and that entity's header protection.
+struct Signed {
+    signatures: Vec<SignatureCheck>,
+    message: Zeroizing<Vec<u8>>,
+    headers: Option<HeaderCheck>,
+}
+
+/// Checks a `multipart/signed` message and unwraps its signed entity. `own`
+/// are the keys that decrypted it, when it was inside encryption.
+fn open_signed(raw: &[u8], cx: &Context<'_>, own: &[Fingerprint]) -> Option<Signed> {
     let parsed = MessageParser::default().parse(raw)?;
     let root = parsed.parts.first()?;
     let (ctype, subtype, protocol) = content_type(root)?;
@@ -669,11 +941,12 @@ fn open_signed(
             signer: None,
             sender_matches: false,
             created_at: None,
+            forwarded: false,
         }]
     } else {
         sigs.iter()
             .map(|sig| {
-                check(&sig.signature, keyring, sender, now, |key| {
+                check(&sig.signature, cx, own, |key| {
                     verify_detached(&sig.signature, key, &signed[..])
                 })
             })
@@ -681,7 +954,11 @@ fn open_signed(
     };
     let mut message = Zeroizing::new(outer_headers(raw, root.offset_body as usize));
     message.extend_from_slice(&content_only(signed));
-    Some((signatures, message))
+    Some(Signed {
+        signatures,
+        message,
+        headers: header_check(&cx.outer, signed),
+    })
 }
 
 /// How a message is protected, judged from its structure alone (no keys).
@@ -724,29 +1001,42 @@ pub fn protection(parsed: &mail_parser::Message<'_>) -> Protection {
 }
 
 /// Whether an attachment of `parsed` is OpenPGP plumbing rather than a file
-/// the sender attached: the parts of a PGP/MIME encrypted message, and the
-/// signature of a signed one.
+/// the sender attached: the version part and encrypted payload directly under
+/// a PGP/MIME encrypted message, or the signature directly under a signed
+/// one. Files inside the signed content are the sender's, whatever their type.
 pub fn is_protection_part(
     parsed: &mail_parser::Message<'_>,
     part: &mail_parser::MessagePart<'_>,
 ) -> bool {
-    let structural = parsed
+    let Some(root) = parsed.parts.first() else {
+        return false;
+    };
+    let (PartType::Multipart(children), Some((t, s, p))) = (&root.body, content_type(root)) else {
+        return false;
+    };
+    let Some(index) = parsed
         .parts
-        .first()
-        .and_then(content_type)
-        .is_some_and(|(t, s, p)| {
-            t == "multipart"
-                && ((s == "encrypted" && p.as_deref() == Some("application/pgp-encrypted"))
-                    || (s == "signed" && p.as_deref() == Some("application/pgp-signature")))
-        });
-    structural
-        && content_type(part).is_some_and(|(t, s, _)| {
-            t == "application"
-                && matches!(
-                    s.as_str(),
-                    "pgp-encrypted" | "pgp-signature" | "octet-stream"
-                )
-        })
+        .iter()
+        .position(|candidate| std::ptr::eq(candidate, part))
+    else {
+        return false;
+    };
+    let Some(position) = children.iter().position(|child| *child as usize == index) else {
+        return false;
+    };
+    let Some((kind, subtype, _)) = content_type(part) else {
+        return false;
+    };
+    if t != "multipart" || kind != "application" {
+        return false;
+    }
+    match (s.as_str(), p.as_deref()) {
+        ("encrypted", Some("application/pgp-encrypted")) => {
+            matches!(subtype.as_str(), "pgp-encrypted" | "octet-stream")
+        }
+        ("signed", Some("application/pgp-signature")) => position > 0 && subtype == "pgp-signature",
+        _ => false,
+    }
 }
 
 /// Text for search and previews with inline armor taken out: encrypted

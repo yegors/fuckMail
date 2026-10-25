@@ -1281,6 +1281,7 @@ fn pgp_commands_check_scope_and_input_before_storage() {
             "--passphrase-stdin",
         ],
         vec!["pgp", "import", "-", "--passphrase-stdin"],
+        vec!["pgp", "import", "keys.asc", "--preview", "--replace"],
         vec!["pgp", "use"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fm"))

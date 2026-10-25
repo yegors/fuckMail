@@ -246,8 +246,10 @@ pub fn opened_json(opened: &fm_pgp::Opened) -> Value {
     json!({
         "encrypted": opened.encrypted,
         "inline": opened.inline,
+        "unprotected": opened.unprotected,
         "decryption": opened.decryption,
         "signatures": opened.signatures,
+        "headers": opened.headers,
     })
 }
 
@@ -278,6 +280,9 @@ pub struct PgpPlan {
     keyring: Keyring,
     /// The account's address, for methods scoped to one.
     account_email: Option<String>,
+    /// Every account's address, lowercased: a public key claiming one of
+    /// them needs the person's say-so.
+    own_addresses: Vec<String>,
 }
 
 impl PgpPlan {
@@ -287,6 +292,16 @@ impl PgpPlan {
         (self.method == "pgp_key_import")
             .then(|| self.params["path"].as_str())
             .flatten()
+    }
+
+    /// Where `pgp_key_export` should write its key, and whether it may
+    /// replace a file there. The engine writes it; the reply then carries the
+    /// path instead of the key.
+    pub fn export_path(&self) -> Option<(&str, bool)> {
+        (self.method == "pgp_key_export")
+            .then(|| self.params["path"].as_str())
+            .flatten()
+            .map(|path| (path, self.params["replace"] == true))
     }
 }
 
@@ -313,8 +328,22 @@ pub const METHODS: &[&str] = &[
     "pgp_recipients",
 ];
 
-fn mutating(method: &str) -> bool {
-    !matches!(method, "pgp_keys" | "pgp_key_export" | "pgp_recipients")
+/// Whether a request changes the keyring; an import `preview` doesn't.
+fn mutating(method: &str, p: &Value) -> bool {
+    let preview = method == "pgp_key_import" && p["preview"] == true;
+    !preview && !matches!(method, "pgp_keys" | "pgp_key_export" | "pgp_recipients")
+}
+
+/// An optional boolean parameter, false when absent.
+fn flag(p: &Value, key: &str) -> Result<bool> {
+    match p.get(key) {
+        None => Ok(false),
+        Some(Value::Bool(on)) => Ok(*on),
+        Some(_) => Err(err(
+            "invalid_request",
+            &format!("{key} must be true or false"),
+        )),
+    }
 }
 
 /// The request's receipt fingerprint. Passphrases never enter it, and key
@@ -367,10 +396,11 @@ impl Store {
         self.pgp_kek.clone()
     }
 
-    /// The whole keyring and every account's choice.
+    /// The whole keyring and every account's choice. Keys come in the order
+    /// they were first stored, which is the order the person accepted them.
     pub fn pgp_keyring(&self) -> Result<Keyring> {
         let mut statement = self.db.prepare(
-            "SELECT fingerprint,public_key,secret_key,origin,added_at,updated_at FROM pgp_keys ORDER BY added_at,fingerprint",
+            "SELECT fingerprint,public_key,secret_key,origin,added_at,updated_at FROM pgp_keys ORDER BY rowid",
         )?;
         let keys = statement
             .query_map([], |r| {
@@ -461,8 +491,16 @@ impl Store {
                 "account",
                 "request_id",
             ],
-            "pgp_key_import" => &["text", "path", "passphrase", "request_id"],
-            "pgp_key_export" => &["fingerprint", "kind", "passphrase"],
+            "pgp_key_import" => &[
+                "text",
+                "path",
+                "passphrase",
+                "request_id",
+                "preview",
+                "public_only",
+                "replace",
+            ],
+            "pgp_key_export" => &["fingerprint", "kind", "passphrase", "path", "replace"],
             "pgp_key_expiry" => &["fingerprint", "expires_days", "request_id"],
             "pgp_key_delete" => &["fingerprint", "request_id"],
             "pgp_account" => &[
@@ -499,7 +537,20 @@ impl Store {
         if method == "pgp_account" {
             self.require_active_account(account.unwrap())?;
         }
-        if mutating(method) {
+        for key in ["preview", "public_only", "replace"] {
+            flag(p, key)?;
+        }
+        if method == "pgp_key_export" {
+            if let Some(path) = p.get("path") {
+                if !path
+                    .as_str()
+                    .is_some_and(|path| std::path::Path::new(path).is_absolute())
+                {
+                    return Err(err("invalid_request", "path must be an absolute file path"));
+                }
+            }
+        }
+        if mutating(method, p) {
             if let Some(result) = self.pgp_receipt(method, p)? {
                 return Ok(PgpStep::Reply(result));
             }
@@ -515,12 +566,18 @@ impl Store {
         if method == "pgp_key_import" && p.get("text").is_some() == p.get("path").is_some() {
             return Err(err("invalid_request", "Give either text or path"));
         }
+        let own_addresses = self
+            .db
+            .prepare("SELECT DISTINCT lower(email) FROM accounts")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
         Ok(PgpStep::Prepare(PgpPlan {
             method: method.into(),
             account: account.map(str::to_owned),
             params: p.clone(),
             keyring: self.pgp_keyring()?,
             account_email,
+            own_addresses,
         }))
     }
 
@@ -534,7 +591,7 @@ impl Store {
             delete,
             result,
         } = proof;
-        if !mutating(&plan.method) {
+        if !mutating(&plan.method, &plan.params) {
             return Ok(result);
         }
         if let Some(result) = self.pgp_receipt(&plan.method, &plan.params)? {
@@ -639,11 +696,16 @@ impl Store {
     }
 
     /// Runs a keyring request in place: begin, prepare and finish on this
-    /// thread. The engine runs the prepare step on a worker instead.
+    /// thread. The engine runs the prepare step on a worker instead. Only the
+    /// engine writes exported keys to a `path`.
     pub fn pgp_handle(&mut self, method: &str, account: Option<&str>, p: &Value) -> Result<Value> {
         let kek = self.pgp_kek();
         match self.pgp_begin(method, account, p)? {
             PgpStep::Reply(value) => Ok(value),
+            PgpStep::Prepare(plan) if plan.export_path().is_some() => Err(err(
+                "invalid_request",
+                "Exported keys are written to a file by the engine",
+            )),
             PgpStep::Prepare(plan) => {
                 let input = match plan.import_path() {
                     Some(path) => Some(read_key_file(path)?),
@@ -697,11 +759,17 @@ fn write_for(
     now: u64,
 ) -> Result<KeyWrite> {
     let info = fm_pgp::inspect(cert, secret.is_some(), now);
+    let public = cert
+        .to_bytes()
+        .map_err(|_| err("internal", "The key can't be written"))?;
+    // Imports keep only self-signed material, so this bounds what repeated
+    // updates of one key can store.
+    if public.len() > fm_pgp::MAX_KEY_BYTES {
+        return Err(err("limit_exceeded", "A key can be at most 1 MiB"));
+    }
     Ok(KeyWrite {
         fingerprint: info.fingerprint,
-        public: cert
-            .to_bytes()
-            .map_err(|_| err("internal", "The key can't be written"))?,
+        public,
         secret,
         origin,
         addresses: info.addresses,
@@ -795,15 +863,33 @@ pub fn pgp_prepare(plan: PgpPlan, input: Option<Vec<u8>>, kek: &dyn KekSource) -
                 (None, None) => return Err(err("invalid_request", "Give either text or path")),
             };
             let passphrase = p["passphrase"].as_str();
+            let preview = p["preview"] == true;
             let parsed = fm_pgp::parse_keys(&bytes).map_err(pgp_error)?;
+            // A key file from a message may only add other people's public
+            // keys: a secret key in it would become one of the person's own.
+            if p["public_only"] == true
+                && parsed.iter().any(|key| matches!(key, ParsedKey::Secret(_)))
+            {
+                return Err(err(
+                    "secret_key_not_allowed",
+                    "This file holds a secret key. Import your own keys in Settings → Encryption, not from mail.",
+                ));
+            }
             let mut merged: BTreeMap<String, Merged> = BTreeMap::new();
             let existing = |fingerprint: &str| keyring.key(fingerprint).ok();
             let mut revocations = Vec::new();
             let mut imported = Vec::new();
+            let mut with_secret = std::collections::BTreeSet::new();
             let mut kek_cache: Option<Zeroizing<[u8; KEK_LEN]>> = None;
             for key in parsed {
                 let (cert, secret) = match key {
                     ParsedKey::Public(cert) => (cert, None),
+                    // A preview lists a secret key without unlocking it.
+                    ParsedKey::Secret(secret) if preview => {
+                        let cert = secret.to_public_key();
+                        with_secret.insert(fm_pgp::inspect(&cert, true, now).fingerprint);
+                        (cert, None)
+                    }
                     ParsedKey::Secret(secret) => {
                         let unlocked = fm_pgp::unlock(&secret, passphrase).map_err(|e| {
                             let mut error = pgp_error(e);
@@ -840,6 +926,7 @@ pub fn pgp_prepare(plan: PgpPlan, input: Option<Vec<u8>>, kek: &dyn KekSource) -
                 });
                 entry.0 = fm_pgp::merge(&entry.0, &cert);
                 if let Some(secret) = secret {
+                    with_secret.insert(fingerprint.clone());
                     if kek_cache.is_none() {
                         kek_cache = Some(require_kek(kek)?);
                     }
@@ -881,8 +968,36 @@ pub fn pgp_prepare(plan: PgpPlan, input: Option<Vec<u8>>, kek: &dyn KekSource) -
                     "Nothing in this file applies to a key in the keyring",
                 ));
             }
+            revoked.sort();
+            revoked.dedup();
+            let conflicts = import_conflicts(&proof.plan, &merged, &with_secret, now);
+            if preview {
+                let keys: Vec<Value> = merged
+                    .iter()
+                    .map(|(fingerprint, (cert, _, expected))| {
+                        let info = fm_pgp::inspect(cert, with_secret.contains(fingerprint), now);
+                        let mut value = serde_json::to_value(info).unwrap_or_default();
+                        value["action"] = json!(if expected.is_some() { "update" } else { "add" });
+                        value
+                    })
+                    .collect();
+                proof.result = json!({"keys":keys,"revoked":revoked,"conflicts":conflicts});
+                return Ok(proof);
+            }
+            if !conflicts.is_empty() && p["replace"] != true {
+                let mut error = err(
+                    "pgp_key_conflict",
+                    "A key in this file names an address another key already has. Compare its fingerprint with its owner's, then import it to use it instead.",
+                );
+                error.details = json!({"conflicts":conflicts});
+                return Err(error);
+            }
             let mut added = Vec::new();
             let mut updated = Vec::new();
+            // Keys new together are stored oldest first, so the newest of
+            // them is the one their address uses.
+            let mut merged: Vec<(String, Merged)> = merged.into_iter().collect();
+            merged.sort_by_key(|(_, (cert, _, _))| fm_pgp::inspect(cert, false, now).created_at);
             for (fingerprint, (cert, secret, expected)) in merged {
                 if expected.is_some() {
                     updated.push(fingerprint.clone());
@@ -894,8 +1009,6 @@ pub fn pgp_prepare(plan: PgpPlan, input: Option<Vec<u8>>, kek: &dyn KekSource) -
                     .writes
                     .push(write_for(&cert, secret, "imported", expected, now)?);
             }
-            revoked.sort();
-            revoked.dedup();
             proof.result = json!({"added":added,"updated":updated,"revoked":revoked});
         }
         "pgp_key_export" => {
@@ -1057,27 +1170,83 @@ pub fn pgp_prepare(plan: PgpPlan, input: Option<Vec<u8>>, kek: &dyn KekSource) -
     Ok(proof)
 }
 
-/// Certificates for `address` that can encrypt now, newest first.
+/// The addresses keys in an import would newly name that another stored key
+/// already names, or that belong to one of the person's accounts (unless the
+/// key is their own, with its secret). Whichever key was imported last is
+/// the one mail to an address is encrypted to, so taking an address over
+/// needs the person's say-so: `{address, fingerprint, holders, own}`.
+fn import_conflicts(
+    plan: &PgpPlan,
+    merged: &BTreeMap<String, Merged>,
+    with_secret: &std::collections::BTreeSet<String>,
+    now: u64,
+) -> Vec<Value> {
+    let stored: Vec<(&StoredKey, Vec<String>)> = plan
+        .keyring
+        .keys
+        .iter()
+        .map(|key| {
+            let addresses = parse_public(key)
+                .map(|cert| fm_pgp::inspect(&cert, false, now).addresses)
+                .unwrap_or_default();
+            (key, addresses)
+        })
+        .collect();
+    let mut conflicts = Vec::new();
+    for (fingerprint, (cert, _, _)) in merged {
+        let before = stored
+            .iter()
+            .find(|(key, _)| &key.fingerprint == fingerprint)
+            .map(|(_, addresses)| addresses.clone())
+            .unwrap_or_default();
+        let own_key = with_secret.contains(fingerprint)
+            || stored
+                .iter()
+                .any(|(key, _)| &key.fingerprint == fingerprint && key.secret.is_some());
+        for address in fm_pgp::inspect(cert, false, now).addresses {
+            if before.contains(&address) {
+                continue;
+            }
+            let holders: Vec<&str> = stored
+                .iter()
+                .filter(|(key, addresses)| {
+                    &key.fingerprint != fingerprint && addresses.contains(&address)
+                })
+                .map(|(key, _)| key.fingerprint.as_str())
+                .collect();
+            let own = !own_key && plan.own_addresses.contains(&address);
+            if !holders.is_empty() || own {
+                conflicts.push(json!({"address":address,"fingerprint":fingerprint,"holders":holders,"own":own}));
+            }
+        }
+    }
+    conflicts
+}
+
+/// Certificates for `address` that can encrypt now, the one the person
+/// stored last first. A key's own creation time is its maker's to choose, so
+/// it only orders keys imported together from one file.
 pub(crate) fn encryption_certs(
     keyring: &Keyring,
     address: &str,
     now: u64,
 ) -> Vec<(String, SignedPublicKey)> {
     let wanted = address.trim().to_lowercase();
-    let mut found: Vec<(i64, String, SignedPublicKey)> = keyring
+    let mut found: Vec<(usize, String, SignedPublicKey)> = keyring
         .keys
         .iter()
-        .filter_map(|k| {
+        .enumerate()
+        .filter_map(|(stored, k)| {
             let cert = SignedPublicKey::from_bytes(&k.public[..]).ok()?;
             let info = fm_pgp::inspect(&cert, k.secret.is_some(), now);
             (info.addresses.contains(&wanted) && info.can_encrypt).then_some((
-                info.created_at as i64,
+                stored,
                 info.fingerprint,
                 cert,
             ))
         })
         .collect();
-    found.sort_by_key(|(created, _, _)| std::cmp::Reverse(*created));
+    found.sort_by_key(|(stored, _, _)| std::cmp::Reverse(*stored));
     found.into_iter().map(|(_, f, c)| (f, c)).collect()
 }
 

@@ -3,16 +3,20 @@
 //! The message's own `Content-*` header fields and body become the protected
 //! MIME entity; every other header (From, To, Subject, Date, Message-ID,
 //! threading) stays outside, so Gmail can thread and deliver it. The Subject
-//! is therefore not encrypted. The entity must already be 7-bit with CRLF line
-//! endings, as the composer's MIME builder writes it (every part base64).
+//! is therefore not encrypted. The entity also carries header protection
+//! (RFC 9788): copies of those outer fields except Bcc, so a reader can tell
+//! when one was changed after sending. The entity must already be 7-bit with
+//! CRLF line endings, as the composer's MIME builder writes it (every part
+//! base64).
 use crate::{
     cert::{encryption_keys, KeyRef, SecretRef},
     PgpError, Result,
 };
 use pgp::{
-    composed::{ArmorOptions, DetachedSignature, MessageBuilder, SignedPublicKey},
+    composed::{ArmorOptions, DetachedSignature, MessageBuilder, SignedPublicKey, SubpacketConfig},
     crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},
-    types::Password,
+    packet::{Subpacket, SubpacketData},
+    types::{KeyDetails, KeyVersion, Password, Timestamp},
 };
 use rand::RngCore;
 
@@ -29,8 +33,12 @@ fn internal(error: pgp::errors::Error) -> PgpError {
 }
 
 /// Splits a message into its outer header fields and its MIME entity (the
-/// `Content-*` fields, a blank line and the body).
-fn split(raw: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
+/// `Content-*` fields, a blank line and the body). The entity gets header
+/// protection: copies of the outer fields except `MIME-Version` and `Bcc`
+/// (Bcc recipients stay hidden from the others), `hp` on its Content-Type
+/// (`clear` when signed only, `cipher` when encrypted) and, when encrypted,
+/// `HP-Outer` copies of what stays visible outside.
+fn split(raw: &[u8], hp: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     let invalid = || PgpError::new("invalid_message", "The message has no header block");
     let end = raw
         .windows(4)
@@ -47,21 +55,56 @@ fn split(raw: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
             "The message must use CRLF line endings",
         ));
     }
-    let mut outer = Vec::new();
-    let mut entity = Vec::new();
-    let mut content = false;
+    // Whole fields, each with its folded continuation lines.
+    let mut fields: Vec<Vec<u8>> = Vec::new();
     for line in head.split_inclusive(|b| *b == b'\n') {
-        if !line.starts_with(b" ") && !line.starts_with(b"\t") {
-            content = line.len() >= 8 && line[..8].eq_ignore_ascii_case(b"content-");
-        }
-        if content {
-            entity.extend_from_slice(line);
-        } else {
-            outer.extend_from_slice(line);
+        match fields.last_mut() {
+            Some(field) if line.starts_with(b" ") || line.starts_with(b"\t") => {
+                field.extend_from_slice(line)
+            }
+            _ => fields.push(line.to_vec()),
         }
     }
-    if entity.is_empty() {
-        entity.extend_from_slice(b"Content-Type: text/plain; charset=us-ascii\r\n");
+    let mut outer = Vec::new();
+    let mut content = Vec::new();
+    let mut copies = Vec::new();
+    for field in fields {
+        let name = field
+            .split(|b| *b == b':')
+            .next()
+            .unwrap_or_default()
+            .trim_ascii()
+            .to_ascii_lowercase();
+        if name.starts_with(b"content-") {
+            content.push(field);
+            continue;
+        }
+        if !matches!(name.as_slice(), b"mime-version" | b"bcc") {
+            copies.push(field.clone());
+        }
+        outer.extend_from_slice(&field);
+    }
+    let mut entity = copies.concat();
+    let mut typed = false;
+    for mut field in content {
+        if !typed && field.len() >= 13 && field[..13].eq_ignore_ascii_case(b"content-type:") {
+            // Every field ends in CRLF; the parameter goes before it.
+            field.truncate(field.len() - 2);
+            field.extend_from_slice(format!("; hp=\"{hp}\"\r\n").as_bytes());
+            typed = true;
+        }
+        entity.extend_from_slice(&field);
+    }
+    if !typed {
+        entity.extend_from_slice(
+            format!("Content-Type: text/plain; charset=us-ascii; hp=\"{hp}\"\r\n").as_bytes(),
+        );
+    }
+    if hp == "cipher" {
+        for copy in &copies {
+            entity.extend_from_slice(b"HP-Outer: ");
+            entity.extend_from_slice(copy);
+        }
     }
     entity.extend_from_slice(b"\r\n");
     // RFC 3156 signs and encrypts the canonical form: every line ends in CRLF.
@@ -97,7 +140,7 @@ fn crlf(text: &str) -> String {
 
 /// Signs `raw` with `key` as `multipart/signed`, SHA-512 (`micalg=pgp-sha512`).
 pub fn sign_message(raw: &[u8], key: SecretRef<'_>) -> Result<Vec<u8>> {
-    let (outer, entity) = split(raw)?;
+    let (outer, entity) = split(raw, "clear")?;
     let rng = rand::rngs::OsRng;
     let password = Password::empty();
     let signature = match key {
@@ -159,6 +202,45 @@ fn cipher(recipients: &[Recipient<'_>], now: u64) -> SymmetricKeyAlgorithm {
     }
 }
 
+/// The subpackets of a signature inside encryption. They name every
+/// recipient's primary fingerprint (RFC 9580 intended recipients), so the
+/// signed content can't be re-encrypted to someone else unnoticed. With a
+/// Bcc recipient the list is left out: everyone who decrypts could read it.
+fn intended(
+    signer: &SecretRef<'_>,
+    recipients: &[Recipient<'_>],
+    now: u64,
+) -> Result<SubpacketConfig> {
+    if recipients.iter().any(|recipient| recipient.hidden) {
+        return Ok(SubpacketConfig::Default);
+    }
+    let (fingerprint, version, key_id) = match signer {
+        SecretRef::Primary(key) => (key.fingerprint(), key.version(), key.legacy_key_id()),
+        SecretRef::Sub(key) => (key.fingerprint(), key.version(), key.legacy_key_id()),
+    };
+    let made = Timestamp::from_secs(
+        u32::try_from(now).map_err(|_| PgpError::new("internal", "The clock is out of range"))?,
+    );
+    let mut hashed = vec![
+        Subpacket::regular(SubpacketData::IssuerFingerprint(fingerprint)).map_err(internal)?,
+        Subpacket::regular(SubpacketData::SignatureCreationTime(made)).map_err(internal)?,
+    ];
+    for recipient in recipients {
+        hashed.push(
+            Subpacket::regular(SubpacketData::IntendedRecipientFingerprint(
+                recipient.cert.primary_key.fingerprint(),
+            ))
+            .map_err(internal)?,
+        );
+    }
+    let unhashed = if version <= KeyVersion::V4 {
+        vec![Subpacket::regular(SubpacketData::IssuerKeyId(key_id)).map_err(internal)?]
+    } else {
+        Vec::new()
+    };
+    Ok(SubpacketConfig::UserDefined { hashed, unhashed })
+}
+
 /// Encrypts `raw` to every recipient's valid encryption keys as
 /// `multipart/encrypted`, signing it inside the encryption when `signer` is
 /// given. Fails with `recipient_key_unusable` when a recipient has no key that
@@ -175,7 +257,7 @@ pub fn encrypt_message(
             "An encrypted message needs at least one recipient",
         ));
     }
-    let (outer, entity) = split(raw)?;
+    let (outer, entity) = split(raw, "cipher")?;
     let mut rng = rand::rngs::OsRng;
     let algorithm = cipher(recipients, now);
     let b = boundary("encrypted", &entity);
@@ -198,14 +280,22 @@ pub fn encrypt_message(
             .map_err(internal)?;
         }
     }
-    match signer {
-        Some(SecretRef::Primary(key)) => {
-            builder.sign(key, Password::empty(), HashAlgorithm::Sha512);
-        }
-        Some(SecretRef::Sub(key)) => {
-            builder.sign(key, Password::empty(), HashAlgorithm::Sha512);
-        }
-        None => {}
+    if let Some(signer) = signer {
+        let subpackets = intended(&signer, recipients, now)?;
+        match signer {
+            SecretRef::Primary(key) => builder.sign_with_subpackets(
+                key,
+                Password::empty(),
+                HashAlgorithm::Sha512,
+                subpackets,
+            ),
+            SecretRef::Sub(key) => builder.sign_with_subpackets(
+                key,
+                Password::empty(),
+                HashAlgorithm::Sha512,
+                subpackets,
+            ),
+        };
     }
     let armored = crlf(
         &builder

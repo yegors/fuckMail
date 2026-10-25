@@ -130,17 +130,7 @@ impl KekSource for FileKek {
             Ok(text) => decode(&text)?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && create => {
                 let kek = fm_pgp::new_kek();
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    options.mode(0o600);
-                }
-                use std::io::Write;
-                let mut file = options.open(&self.path).map_err(|_| unavailable())?;
-                file.write_all(encode(&kek).as_bytes())
-                    .and_then(|_| file.sync_all())
+                fm_ipc::write_private_file(&self.path, encode(&kek).as_bytes(), false)
                     .map_err(|_| unavailable())?;
                 kek
             }
@@ -174,7 +164,9 @@ impl Runtime {
     }
 
     /// Handles one keyring request. `cancel` stops the work before its finish
-    /// starts; a finish that has started always records its receipt.
+    /// starts; a finish that has started always records its receipt. An
+    /// export with a `path` is written there as an owner-only file, and the
+    /// reply names the path instead of carrying the key.
     pub(crate) async fn handle(
         &self,
         cancel: CancellationToken,
@@ -191,6 +183,9 @@ impl Runtime {
             PgpStep::Reply(reply) => return Ok(reply),
             PgpStep::Prepare(plan) => plan,
         };
+        let export = plan
+            .export_path()
+            .map(|(path, replace)| (PathBuf::from(path), replace));
         let permit = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Err(failure("cancelled", "Keyring work cancelled")),
@@ -214,6 +209,30 @@ impl Runtime {
         if cancel.is_cancelled() {
             return Err(failure("cancelled", "Keyring work cancelled"));
         }
-        self.core.call(move |store| store.pgp_finish(proof)).await
+        let mut result = self.core.call(move |store| store.pgp_finish(proof)).await?;
+        if let Some((path, replace)) = export {
+            let armored = Zeroizing::new(
+                result
+                    .as_object_mut()
+                    .and_then(|fields| fields.remove("armored"))
+                    .and_then(|armored| armored.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+            );
+            let target = path.clone();
+            tokio::task::spawn_blocking(move || {
+                fm_ipc::write_private_file(&target, armored.as_bytes(), replace)
+            })
+            .await
+            .map_err(|_| failure("internal", "Keyring work failed"))?
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    failure("already_exists", "A file with that name is already there")
+                } else {
+                    failure("storage_error", "The key couldn't be saved there")
+                }
+            })?;
+            result["path"] = Value::String(path.to_string_lossy().into_owned());
+        }
+        Ok(result)
     }
 }

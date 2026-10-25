@@ -21,11 +21,12 @@ pub use generate::{generate, set_expiry, Algorithm, NewKey};
 pub use mime::{encrypt_message, sign_message, Recipient};
 pub use open::{
     inspect_message, is_protection_part, looks_protected, open_message, protection, readable_text,
-    Decryption, Keyring, Opened, Protection, SignatureCheck, SignatureStatus,
+    Decryption, HeaderCheck, Keyring, Opened, Protection, SignatureCheck, SignatureStatus,
 };
 pub use seal::{
-    combine, export_public, export_revocation, export_secret, is_protected, merge, new_kek,
-    parse_keys, revocations, seal, unlock, unseal, ParsedKey, KEK_LEN, MIN_EXPORT_PASSPHRASE,
+    clean, combine, export_public, export_revocation, export_secret, is_protected, merge, new_kek,
+    parse_keys, revocations, seal, unlock, unseal, ParsedKey, EXPORT_S2K_COUNT, KEK_LEN,
+    MIN_EXPORT_PASSPHRASE,
 };
 
 /// Largest key file or pasted key block accepted for import, in bytes (1 MiB).

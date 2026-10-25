@@ -847,6 +847,59 @@ async fn keyring_requests_run_through_the_engine_with_a_private_demo_key() {
         .unwrap();
     assert_eq!(refused["error"]["code"], "passphrase_required", "{refused}");
     assert_eq!(refused["error"]["details"]["fingerprint"], fingerprint);
+    // Given a path, the engine writes the key to a new owner-only file and
+    // the reply carries the path, not the key.
+    let backup = root.path().join("backup.asc");
+    let written = ok(c
+        .call(
+            "pgp_key_export",
+            None,
+            json!({"fingerprint":fingerprint,"kind":"secret","passphrase":"engine test passphrase","path":backup.to_str().unwrap()}),
+        )
+        .await
+        .unwrap());
+    assert!(written["armored"].is_null());
+    assert_eq!(written["path"], backup.to_str().unwrap());
+    assert!(std::fs::read_to_string(&backup)
+        .unwrap()
+        .starts_with("-----BEGIN PGP PRIVATE KEY BLOCK-----"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&backup).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    let exists = c
+        .call(
+            "pgp_key_export",
+            None,
+            json!({"fingerprint":fingerprint,"kind":"public","path":backup.to_str().unwrap()}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(exists["error"]["code"], "already_exists", "{exists}");
+    ok(c.call(
+        "pgp_key_export",
+        None,
+        json!({"fingerprint":fingerprint,"kind":"public","path":backup.to_str().unwrap(),"replace":true}),
+    )
+    .await
+    .unwrap());
+    assert!(std::fs::read_to_string(&backup)
+        .unwrap()
+        .starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----"));
+    // A key file from a message previews without changing anything.
+    let preview = ok(c
+        .call(
+            "pgp_key_import",
+            None,
+            json!({"text":exported["armored"],"preview":true,"public_only":true}),
+        )
+        .await
+        .unwrap());
+    assert_eq!(preview["keys"][0]["action"], "update");
     let scoped = c.call("pgp_keys", Some(&id), json!({})).await.unwrap();
     assert_eq!(scoped["error"]["code"], "invalid_request", "{scoped}");
     let recipients = ok(c

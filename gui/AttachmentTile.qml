@@ -4,7 +4,8 @@
 // a video plays only in AttachmentViewer once opened. Images and videos emit
 // openMedia() for AttachmentViewer; other files go to backend.openAttachment().
 // OpenPGP files (a public key, a signature, encrypted data) get their own
-// card, and a public key imports into the keyring from here.
+// card, and a public key imports into the keyring from here, once its
+// preview has been seen.
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
@@ -22,7 +23,7 @@ Rectangle {
     readonly property size thumbnailSize: Qt.size(Math.ceil(400 * Screen.devicePixelRatio), Math.ceil(250 * Screen.devicePixelRatio))
     readonly property bool isImage: /^image\//i.test(attachment.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(attachment.name || "")
     readonly property bool isVideo: /^video\/(mp4|webm|quicktime|x-matroska|x-m4v)$/i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv)$/i.test(attachment.name || "")
-    readonly property bool popupOpen: false
+    readonly property bool popupOpen: keyPreview.opened
     readonly property string extension: (attachment.name || "").split(".").pop().toUpperCase()
     // "key", "signature" or "encrypted" for an OpenPGP file, else "".
     readonly property string pgpKind: {
@@ -33,7 +34,8 @@ Rectangle {
         return ""
     }
     readonly property string pgpLabel: ({key: "OpenPGP key", signature: "Signature", encrypted: "Encrypted"})[pgpKind] || ""
-    property string importTicket: ""
+    // Who sent the message, so a key that isn't theirs says so before it's imported.
+    property string sender: ""
     readonly property color fileTint: extension === "PDF" ? Theme.error : ["DOC","DOCX","XLS","XLSX","CSV","PPT","PPTX"].indexOf(extension)>=0 ? Theme.ai : ["ZIP","RAR","7Z","TAR","GZ"].indexOf(extension)>=0 ? Theme.accent : Theme.muted
     property string previewTicket: ""
     property string previewUrl: ""
@@ -57,7 +59,8 @@ Rectangle {
         if (pgpKind) { saveFailed=false; feedback=pgpKind === "signature" ? "Signature file · not checked here" : "Encrypted file · download to open it"; return }
         if(isImage || isVideo)openMedia(attachment);else backend.openAttachment(attachment.id)
     }
-    function importKey() { if (available && !importTicket && backend.pgpKeys) { feedback="Importing…"; saveFailed=false; importTicket=backend.pgpKeys.importAttachment(account,attachment.id) } }
+    // Nothing is stored until the person has seen what the key is and chosen Import.
+    function importKey() { if (available && keyPreview.item && !keyPreview.opened) keyPreview.item.show(account, attachment.id, sender) }
     Component.onCompleted: loadPreview()
     onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;loadPreview()}
     onPreviewActiveChanged: loadPreview()
@@ -73,16 +76,19 @@ Rectangle {
         }
         function onAttachmentSaved(ticket,error) {if(ticket!==tile.saveTicket)return;tile.saveTicket="";tile.saveFailed=!!error;tile.feedback=error}
     }
-    Connections {
-        target: tile.importTicket ? backend.pgpKeys : null
-        ignoreUnknownSignals: true
-        function onFinished(ticket, action, result, ok) {
-            if (ticket !== tile.importTicket) return
-            tile.importTicket = ""; tile.saveFailed = !ok
-            const added = (result.added || []).length, updated = (result.updated || []).length
-            tile.feedback = !ok ? result.message || "That key couldn't be imported."
-                : added ? (added === 1 ? "Key imported" : added + " keys imported") + " · see Settings → Encryption"
-                : updated ? "Key updated" : "Already in your keyring"
+    // Only a key card has a preview to show.
+    Loader {
+        id: keyPreview
+        active: tile.pgpKind === "key"
+        readonly property bool opened: !!item && item.opened
+        sourceComponent: PgpKeyPreviewDialog {
+            onImported: function(result, ok) {
+                tile.saveFailed = !ok
+                const added = (result.added || []).length, updated = (result.updated || []).length
+                tile.feedback = !ok ? result.message || "That key couldn't be imported."
+                    : added ? (added === 1 ? "Key imported" : added + " keys imported") + " · see Settings → Encryption"
+                    : updated ? "Key updated" : "Already in your keyring"
+            }
         }
     }
     ColumnLayout {
@@ -128,7 +134,7 @@ Rectangle {
                 onClicked:tile.open()
                 FmToolTip {shown:filenameButton.hovered;text:tile.feedback || tile.attachment.name}
             }
-            MessageHeaderButton {objectName:"attachmentImportKey_"+tile.attachment.id;visible:tile.pgpKind === "key";iconName:"plus";iconSize:13;enabled:tile.available && !tile.importTicket;tip:"Import into your keyring";onClicked:tile.importKey()}
+            MessageHeaderButton {objectName:"attachmentImportKey_"+tile.attachment.id;visible:tile.pgpKind === "key";iconName:"plus";iconSize:13;enabled:tile.available && !keyPreview.opened;tip:"Import into your keyring…";onClicked:tile.importKey()}
             MessageHeaderButton {objectName:"attachmentSave_"+tile.attachment.id;iconName:"download";iconSize:13;enabled:tile.available && !tile.saveTicket;tip:"Download";onClicked:tile.saveTicket=backend.downloadAttachment(tile.account,tile.attachment.id,tile.attachment.name)}
         }
     }

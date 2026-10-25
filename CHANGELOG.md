@@ -2,6 +2,16 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-24
+
+- A key attached to mail now shows what it is before anything is imported: its name, address and fingerprint, a warning if it isn't the sender's, and a warning if it would replace the key you already have for an address. Only public keys import from mail.
+- Importing a key that claims an address another key already has, or one of your own, now asks first, in Settings and in `fm pgp import` (`--preview`, `--replace`).
+- Signed and encrypted mail shows only the part that was actually signed or encrypted, and says when there was more around it.
+- A warning shows when a signed message's subject, sender or recipients were changed after it was sent, or when a signed message meant for someone else was passed on to you.
+- Files inside signed mail are listed again; some were hidden as if they were the signature.
+- **Encrypt** no longer turns itself off when a recipient has no key: sending waits until you import their key or turn Encrypt off yourself. Replying to encrypted mail without encryption shows a warning.
+- Key backups and exports are now readable only by you on Windows too, and are harder to crack if the file is stolen.
+
 ## 2026-10-23
 
 - Encrypted mail opens sealed, its text behind redaction bars, until you click **Decrypt**. Mail you sent encrypted has **Reveal**. It stays readable until fuckMail closes or you click **Hide**, and a message without a key here says which key it needs.

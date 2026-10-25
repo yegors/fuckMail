@@ -1156,12 +1156,21 @@ enum PgpCommand {
         request_id: Option<String>,
     },
     /// Add keys from an armored or binary file, or `-` for stdin: public keys,
-    /// secret keys and revocation certificates.
+    /// secret keys and revocation certificates. A key naming an address that
+    /// another key or one of your accounts already has needs --replace.
     Import {
         file: PathBuf,
         /// Read the secret key's passphrase from standard input.
         #[arg(long)]
         passphrase_stdin: bool,
+        /// List what the file holds, with fingerprints and conflicts, and
+        /// change nothing.
+        #[arg(long, conflicts_with = "replace")]
+        preview: bool,
+        /// Use these keys for addresses another key already has. Compare
+        /// their fingerprints with their owners' first.
+        #[arg(long)]
+        replace: bool,
         /// Unique ID for this import; generated when omitted.
         #[arg(long)]
         request_id: Option<String>,
@@ -3969,10 +3978,16 @@ async fn pgp(
         PgpCommand::Import {
             file,
             passphrase_stdin: ask,
+            preview,
+            replace,
             request_id,
         } => {
             let text = String::from_utf8(read_input(file, 1024 * 1024)?).ok();
-            let mut params = json!({"request_id":request(request_id)});
+            let mut params = if *preview {
+                json!({"preview":true})
+            } else {
+                json!({"request_id":request(request_id),"replace":replace})
+            };
             match text {
                 Some(text) => params["text"] = json!(text),
                 // Binary keys are read by the engine from the file itself.
@@ -4006,26 +4021,13 @@ async fn pgp(
             if *ask {
                 params["passphrase"] = json!(passphrase_stdin()?);
             }
-            let reply = client.call("pgp_key_export", None, params).await?;
-            if let (Some(output), Some(armored)) = (output, reply["result"]["armored"].as_str()) {
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    options.mode(0o600);
-                }
-                let mut file = options.open(output)?;
-                file.write_all(armored.as_bytes())?;
-                file.sync_all()?;
-                let mut written = reply.clone();
-                written["result"]
-                    .as_object_mut()
-                    .map(|o| o.remove("armored"));
-                written["result"]["path"] = json!(output);
-                return Ok(written);
+            // The engine writes the file, new and readable only by you.
+            if let Some(output) = output {
+                params["path"] = json!(std::path::absolute(output)?
+                    .to_str()
+                    .ok_or_else(|| invalid("The output path must be UTF-8"))?);
             }
-            Ok(reply)
+            Ok(client.call("pgp_key_export", None, params).await?)
         }
         PgpCommand::Expiry {
             fingerprint,

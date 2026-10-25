@@ -167,6 +167,35 @@ fn exported_secret_keys_need_a_strong_passphrase_and_round_trip() {
     assert!(armored.starts_with("-----BEGIN PGP PRIVATE KEY BLOCK-----"));
     let imported = one_secret(armored.as_bytes());
     assert!(is_protected(&imported));
+    // AES-256 under the iterated and salted SHA-256 S2K at its highest count,
+    // for the primary key and the subkey alike.
+    use pgp::{
+        crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},
+        types::{S2kParams, SecretParams, StringToKey},
+    };
+    let parts = std::iter::once(imported.primary_key.secret_params()).chain(
+        imported
+            .secret_subkeys
+            .iter()
+            .map(|s| s.key.secret_params()),
+    );
+    for params in parts {
+        let SecretParams::Encrypted(encrypted) = params else {
+            panic!("expected a protected key");
+        };
+        let S2kParams::Cfb { sym_alg, s2k, .. } = encrypted.string_to_key_params() else {
+            panic!("expected CFB protection");
+        };
+        assert_eq!(*sym_alg, SymmetricKeyAlgorithm::AES256);
+        assert!(matches!(
+            s2k,
+            StringToKey::IteratedAndSalted {
+                hash_alg: HashAlgorithm::Sha256,
+                count: fm_pgp::EXPORT_S2K_COUNT,
+                ..
+            }
+        ));
+    }
     assert_eq!(
         unlock(&imported, None).unwrap_err().code,
         "passphrase_required"
@@ -226,6 +255,47 @@ fn public_exports_and_revocation_certificates_import_back() {
     let info = inspect(&revoked, false, now());
     assert_eq!(info.status, KeyStatus::Revoked);
     assert!(!info.can_encrypt);
+}
+
+#[test]
+fn imports_keep_only_what_the_primary_key_vouches_for() {
+    let ann = new_key(None).to_public_key();
+    let mallory = generate(&NewKey {
+        name: "Mallory".into(),
+        email: "mallory@example.test".into(),
+        algorithm: Algorithm::Curve25519,
+        expires_in: None,
+    })
+    .unwrap()
+    .to_public_key();
+    // A copy of Ann's key padded with Mallory's user ID and subkey (signed by
+    // Mallory, not Ann) and Mallory's self-signature on Ann's user ID.
+    let mut padded = ann.clone();
+    padded.details.users.push(mallory.details.users[0].clone());
+    padded
+        .public_subkeys
+        .push(mallory.public_subkeys[0].clone());
+    padded.details.users[0]
+        .signatures
+        .push(mallory.details.users[0].signatures[0].clone());
+    let merged = merge(&ann, &padded);
+    assert_eq!(merged, ann);
+    let info = inspect(&merged, false, now());
+    assert_eq!(info.user_ids, ["Ann Example <ann@example.test>"]);
+    assert_eq!(info.subkeys.len(), 1);
+    // A new user ID Ann did sign still merges in.
+    let renewed = set_expiry(&new_key(None), Some(400 * 86_400), now()).unwrap();
+    let both = merge(
+        &renewed.to_public_key(),
+        &set_expiry(&renewed, None, now() + 10)
+            .unwrap()
+            .to_public_key(),
+    );
+    assert_eq!(
+        both.details.users[0].signatures.len(),
+        2,
+        "both self-signatures are kept"
+    );
 }
 
 #[test]

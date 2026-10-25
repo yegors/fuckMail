@@ -160,7 +160,7 @@ pub(crate) fn created(sig: &Signature) -> Option<u64> {
 }
 
 /// Whether `sig` names `key` as its issuer, or names no issuer at all.
-fn issued_by(sig: &Signature, key: &packet::PublicKey) -> bool {
+pub(crate) fn issued_by(sig: &Signature, key: &packet::PublicKey) -> bool {
     let fingerprints = sig.issuer_fingerprint();
     if !fingerprints.is_empty() {
         let own = key.fingerprint();

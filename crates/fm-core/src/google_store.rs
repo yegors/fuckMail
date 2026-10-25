@@ -438,11 +438,7 @@ pub(crate) fn publish_message(
     })?;
     for (position, part) in staged.attachments.iter().enumerate() {
         let index = part.index.unwrap_or(position);
-        let aid = local_id(
-            "attachment",
-            account,
-            &format!("{}:{index}:{}", staged.remote_id, part.hash),
-        );
+        let aid = attachment_id(account, &staged.remote_id, index, &part.hash);
         db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT blob_hash FROM attachments WHERE account=?1 AND id=?2 AND NOT EXISTS(SELECT 1 FROM attachment_sources s WHERE s.account=attachments.account AND s.id=attachments.id)",params![account,aid]).map_err(storage_error)?;
         db.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,?3,?4,?5,?6,'available',?7) ON CONFLICT(account,id) DO UPDATE SET name=excluded.name,mime_type=excluded.mime_type,size=excluded.size,state=excluded.state,blob_hash=excluded.blob_hash",params![account,aid,mid,part.name,part.mime_type,part.size,part.hash]).map_err(storage_error)?;
         db.execute("INSERT INTO attachment_sources(account,id,source_hash,part_index) VALUES(?1,?2,?3,?4) ON CONFLICT(account,id) DO UPDATE SET source_hash=excluded.source_hash,part_index=excluded.part_index",params![account,aid,source_hash,index]).map_err(storage_error)?;
@@ -464,38 +460,20 @@ pub(crate) fn publish_message(
 /// Most attachments a received message may list: Gmail's own limit.
 pub const MAX_RECEIVED_ATTACHMENTS: usize = 500;
 
-pub(crate) fn prepare_message(
-    content: &MessageContent,
-) -> std::result::Result<StagedMessage, GoogleError> {
-    let parsed = mail_parser::MessageParser::default()
-        .parse(&content.source_mime)
-        .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
-    let sender = parsed.from().and_then(|list| list.first());
-    let protection = fm_pgp::protection(&parsed);
-    let mut body = fm_mail::extract_parsed_incoming_contribution(&parsed)
-        .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
-    // Encrypted text is only ever decrypted for reading, so search and
-    // previews see what's around the armor, not ciphertext.
-    if protection != fm_pgp::Protection::None {
-        body = fm_pgp::readable_text(&body);
-    }
-    // The reading copy keeps its first 256 KiB; the source MIME stays whole.
-    if body.len() > 256 * 1024 {
-        let mut end = 256 * 1024;
-        while !body.is_char_boundary(end) {
-            end -= 1;
-        }
-        body.truncate(end);
-    }
+/// The files a parsed message lists, hashed in place. Images the HTML shows
+/// (cid:) are part of the body, and the signature or encrypted payload of
+/// PGP/MIME is plumbing; neither is listed. Fails with `InvalidResponse`
+/// beyond [`MAX_RECEIVED_ATTACHMENTS`] or for an oversized name.
+fn staged_attachments(
+    parsed: &mail_parser::Message<'_>,
+) -> std::result::Result<Vec<StagedAttachment>, GoogleError> {
     let mut attachments = Vec::new();
-    let inline = fm_mail::html_view::inline_content_ids(&parsed);
+    let inline = fm_mail::html_view::inline_content_ids(parsed);
     for (index, part) in parsed.attachments().enumerate() {
-        // Images the HTML shows (cid:) are part of the body, not attachments.
         if fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
             continue;
         }
-        // Nor are a signature or the encrypted payload of PGP/MIME.
-        if fm_pgp::is_protection_part(&parsed, part) {
+        if fm_pgp::is_protection_part(parsed, part) {
             continue;
         }
         if attachments.len() >= MAX_RECEIVED_ATTACHMENTS {
@@ -520,6 +498,43 @@ pub(crate) fn prepare_message(
             index: Some(index),
         });
     }
+    Ok(attachments)
+}
+
+/// An attachment's id: its message, its position among the parts and its
+/// content hash.
+fn attachment_id(account: &str, remote_id: &str, index: usize, hash: &str) -> String {
+    local_id(
+        "attachment",
+        account,
+        &format!("{remote_id}:{index}:{hash}"),
+    )
+}
+
+pub(crate) fn prepare_message(
+    content: &MessageContent,
+) -> std::result::Result<StagedMessage, GoogleError> {
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&content.source_mime)
+        .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
+    let sender = parsed.from().and_then(|list| list.first());
+    let protection = fm_pgp::protection(&parsed);
+    let mut body = fm_mail::extract_parsed_incoming_contribution(&parsed)
+        .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
+    // Encrypted text is only ever decrypted for reading, so search and
+    // previews see what's around the armor, not ciphertext.
+    if protection != fm_pgp::Protection::None {
+        body = fm_pgp::readable_text(&body);
+    }
+    // The reading copy keeps its first 256 KiB; the source MIME stays whole.
+    if body.len() > 256 * 1024 {
+        let mut end = 256 * 1024;
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        body.truncate(end);
+    }
+    let attachments = staged_attachments(&parsed)?;
     let staged = StagedMessage {
         remote_id: content.id.clone(),
         remote_thread_id: content.thread_id.clone(),
@@ -614,11 +629,110 @@ impl Store {
         Ok(more)
     }
 
-    /// Mail synced before OpenPGP support has no protection recorded, lists
-    /// PGP/MIME plumbing as attachments and indexes inline armor. Repairs
-    /// that a batch at a time and says whether more remain. Progress is kept
-    /// in meta, so each profile is checked once.
+    /// Repairs stored mail a batch at a time and says whether more remain:
+    /// first the protection of mail synced before OpenPGP support, then the
+    /// files of signed mail an earlier build took for OpenPGP plumbing.
+    /// Progress is kept in meta, so each profile is checked once per pass.
     pub fn repair_pgp_messages(&mut self, batch: usize) -> Result<bool> {
+        if self.repair_pgp_protection(batch)? {
+            return Ok(true);
+        }
+        self.restore_signed_attachments(batch)
+    }
+
+    /// An earlier build treated every `application/octet-stream` or OpenPGP
+    /// file inside `multipart/signed` mail as plumbing: sync left them out
+    /// and the protection repair deleted them. Lists them again from the
+    /// retained source, leaving rows that exist as they are.
+    fn restore_signed_attachments(&mut self, batch: usize) -> Result<bool> {
+        let after: i64 = self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key='pgp_attachment_repair'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        if after < 0 {
+            return Ok(false);
+        }
+        type Row = (i64, String, String, String, String, String);
+        let rows: Vec<Row> = {
+            let mut stmt = self.db.prepare("SELECT rowid,account,id,conversation_id,remote_id,source_hash FROM messages WHERE rowid>?1 AND pgp=1 ORDER BY rowid LIMIT ?2")?;
+            let rows = stmt
+                .query_map(params![after, batch as i64], |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        let blobs = self.google_blob_store();
+        let tx = self.db.unchecked_transaction()?;
+        let mut last = after;
+        let mut changed = false;
+        for (rowid, account, id, conversation, remote, hash) in &rows {
+            last = *rowid;
+            let Ok(bytes) = crate::local_content::read_source(&blobs, hash) else {
+                continue;
+            };
+            let Some(parsed) = mail_parser::MessageParser::default().parse(&bytes) else {
+                continue;
+            };
+            let signed = parsed
+                .parts
+                .first()
+                .and_then(|root| root.content_type())
+                .is_some_and(|ct| {
+                    ct.ctype().eq_ignore_ascii_case("multipart")
+                        && ct
+                            .subtype()
+                            .is_some_and(|s| s.eq_ignore_ascii_case("signed"))
+                });
+            if !signed {
+                continue;
+            }
+            let Ok(files) = staged_attachments(&parsed) else {
+                continue;
+            };
+            let mut added = 0;
+            for (position, part) in files.iter().enumerate() {
+                let index = part.index.unwrap_or(position);
+                let aid = attachment_id(account, remote, index, &part.hash);
+                added += tx.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,?3,?4,?5,?6,'available',?7) ON CONFLICT(account,id) DO NOTHING",params![account,aid,id,part.name,part.mime_type,part.size,part.hash])?;
+                tx.execute("INSERT INTO attachment_sources(account,id,source_hash,part_index) VALUES(?1,?2,?3,?4) ON CONFLICT(account,id) DO NOTHING",params![account,aid,hash,index])?;
+            }
+            if added > 0 {
+                tx.execute(
+                    "UPDATE messages SET revision=revision+1 WHERE account=?1 AND id=?2",
+                    params![account, id],
+                )?;
+                tx.execute(
+                    "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
+                    params![account, conversation],
+                )?;
+                changed = true;
+            }
+        }
+        let more = rows.len() >= batch;
+        tx.execute("INSERT INTO meta(key,value) VALUES('pgp_attachment_repair',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[if more { last } else { -1 }])?;
+        if changed {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.commit()?;
+        Ok(more)
+    }
+
+    /// Mail synced before OpenPGP support has no protection recorded, lists
+    /// PGP/MIME plumbing as attachments and indexes inline armor.
+    fn repair_pgp_protection(&mut self, batch: usize) -> Result<bool> {
         let after: i64 = self
             .db
             .query_row(

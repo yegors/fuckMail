@@ -5,8 +5,13 @@
 //! OS keychain. Sealing binds the fingerprint as associated data, so a sealed
 //! key can't be swapped for another key's row. On export the key is protected
 //! with a passphrase the person chooses, using the iterated and salted SHA-256
-//! S2K with AES-256 that GnuPG and every other OpenPGP program reads.
-use crate::{hex, PgpError, Result, MAX_KEY_BYTES};
+//! S2K at its highest count with AES-256, which GnuPG and every other OpenPGP
+//! program reads.
+//!
+//! Imported certificates keep only what their primary key vouches for, so a
+//! key file can't fill the keyring with signatures and packets nothing here
+//! uses.
+use crate::{cert::issued_by, hex, PgpError, Result, MAX_KEY_BYTES};
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
@@ -17,9 +22,12 @@ use pgp::{
         ArmorOptions, Deserializable, DetachedSignature, PublicOrSecret, SignedPublicKey,
         SignedSecretKey,
     },
+    crypto::{hash::HashAlgorithm, sym::SymmetricKeyAlgorithm},
     packet::{RevocationCode, Signature, SignatureConfig, SignatureType, Subpacket, SubpacketData},
     ser::Serialize,
-    types::{KeyDetails, Password, S2kParams, SecretParams, Timestamp},
+    types::{
+        KeyDetails, KeyVersion, Password, S2kParams, SecretParams, StringToKey, Tag, Timestamp,
+    },
 };
 use rand::RngCore;
 use zeroize::Zeroizing;
@@ -28,6 +36,9 @@ use zeroize::Zeroizing;
 pub const KEK_LEN: usize = 32;
 /// Shortest passphrase accepted for an exported secret key.
 pub const MIN_EXPORT_PASSPHRASE: usize = 12;
+
+/// The iterated S2K's highest count: 65,011,712 bytes of SHA-256 per guess.
+pub const EXPORT_S2K_COUNT: u8 = 255;
 
 const SEAL_MAGIC: &[u8] = b"FMPGP1";
 const SEAL_CONTEXT: &str = "fuckmail-pgp-secret-v1";
@@ -268,6 +279,24 @@ pub fn export_public(cert: &SignedPublicKey) -> Result<String> {
         .map_err(internal)
 }
 
+/// How an exported secret key part is protected. Version 4 keys use AES-256
+/// with the iterated and salted SHA-256 S2K at [`EXPORT_S2K_COUNT`], which
+/// every OpenPGP program reads; version 6 keys keep rpgp's Argon2 default.
+fn export_s2k(version: KeyVersion) -> S2kParams {
+    let mut rng = rand::rngs::OsRng;
+    if version == KeyVersion::V6 {
+        return S2kParams::new_default(rng, version);
+    }
+    let sym_alg = SymmetricKeyAlgorithm::AES256;
+    let mut iv = vec![0u8; sym_alg.block_size()];
+    rng.fill_bytes(&mut iv);
+    S2kParams::Cfb {
+        sym_alg,
+        s2k: StringToKey::new_iterated(rng, HashAlgorithm::Sha256, EXPORT_S2K_COUNT),
+        iv: iv.into(),
+    }
+}
+
 /// The secret key, ASCII-armored and protected with `passphrase`, for a
 /// backup or another program. Fails with `weak_passphrase` below
 /// [`MIN_EXPORT_PASSPHRASE`] characters.
@@ -280,15 +309,14 @@ pub fn export_secret(key: &SignedSecretKey, passphrase: &str) -> Result<Zeroizin
     }
     let mut key = key.clone();
     let password: Password = passphrase.into();
-    let rng = rand::rngs::OsRng;
     let version = key.primary_key.version();
     key.primary_key
-        .set_password_with_s2k(&password, S2kParams::new_default(rng, version))
+        .set_password_with_s2k(&password, export_s2k(version))
         .map_err(internal)?;
     for sub in &mut key.secret_subkeys {
         let version = sub.key.version();
         sub.key
-            .set_password_with_s2k(&password, S2kParams::new_default(rng, version))
+            .set_password_with_s2k(&password, export_s2k(version))
             .map_err(internal)?;
     }
     Ok(Zeroizing::new(
@@ -355,8 +383,60 @@ pub fn revocations(cert: &mut SignedPublicKey, sigs: &[Signature]) -> bool {
 
 /// `existing` with everything new in `incoming` added: user IDs, subkeys and
 /// their signatures, direct-key signatures and revocations. Both must be the
-/// same primary key.
+/// same primary key. The result keeps only what [`clean`] keeps.
 pub fn merge(existing: &SignedPublicKey, incoming: &SignedPublicKey) -> SignedPublicKey {
+    clean(&merge_all(existing, incoming))
+}
+
+/// Keeps only the packets `cert`'s primary key vouches for: its own key
+/// revocations and direct-key signatures, user IDs and attributes with their
+/// self-signatures and certification revocations, and subkeys with their
+/// bindings and revocations, each signature verified. Third-party
+/// certifications, which nothing here uses, and anything that doesn't
+/// verify are dropped, so an import can't grow a stored key without bound.
+pub fn clean(cert: &SignedPublicKey) -> SignedPublicKey {
+    let primary = &cert.primary_key;
+    let mut out = cert.clone();
+    out.details.revocation_signatures.retain(|sig| {
+        sig.typ() == Some(SignatureType::KeyRevocation)
+            && issued_by(sig, primary)
+            && sig.verify_key(primary).is_ok()
+    });
+    out.details.direct_signatures.retain(|sig| {
+        sig.typ() == Some(SignatureType::Key)
+            && issued_by(sig, primary)
+            && sig.verify_key(primary).is_ok()
+    });
+    for user in &mut out.details.users {
+        let id = user.id.clone();
+        user.signatures.retain(|sig| {
+            issued_by(sig, primary) && sig.verify_certification(primary, Tag::UserId, &id).is_ok()
+        });
+    }
+    out.details.users.retain(|user| !user.signatures.is_empty());
+    for attribute in &mut out.details.user_attributes {
+        let attr = attribute.attr.clone();
+        attribute.signatures.retain(|sig| {
+            issued_by(sig, primary)
+                && sig
+                    .verify_certification(primary, Tag::UserAttribute, &attr)
+                    .is_ok()
+        });
+    }
+    out.details
+        .user_attributes
+        .retain(|attribute| !attribute.signatures.is_empty());
+    for sub in &mut out.public_subkeys {
+        let key = sub.key.clone();
+        sub.signatures.retain(|sig| {
+            issued_by(sig, primary) && sig.verify_subkey_binding(primary, &key).is_ok()
+        });
+    }
+    out.public_subkeys.retain(|sub| !sub.signatures.is_empty());
+    out
+}
+
+fn merge_all(existing: &SignedPublicKey, incoming: &SignedPublicKey) -> SignedPublicKey {
     let mut merged = existing.clone();
     let add = |into: &mut Vec<Signature>, from: &[Signature]| {
         for sig in from {
@@ -377,6 +457,17 @@ pub fn merge(existing: &SignedPublicKey, incoming: &SignedPublicKey) -> SignedPu
         match merged.details.users.iter_mut().find(|u| u.id == user.id) {
             Some(existing) => add(&mut existing.signatures, &user.signatures),
             None => merged.details.users.push(user.clone()),
+        }
+    }
+    for attribute in &incoming.details.user_attributes {
+        match merged
+            .details
+            .user_attributes
+            .iter_mut()
+            .find(|a| a.attr == attribute.attr)
+        {
+            Some(existing) => add(&mut existing.signatures, &attribute.signatures),
+            None => merged.details.user_attributes.push(attribute.clone()),
         }
     }
     for sub in &incoming.public_subkeys {
