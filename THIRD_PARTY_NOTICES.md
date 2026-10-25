@@ -19,8 +19,10 @@ and [crates/fm-calendar/vendor/rrule/FUCKMAIL-PATCH.md](crates/fm-calendar/vendo
 
 ## Rust crates
 
-`fm-engine` and `fm` statically link about 230 crates from crates.io, almost all
-under MIT, Apache-2.0 or similar permissive licenses. The exact list for a build
+`fm-engine` and `fm` statically link about 330 crates from crates.io, almost all
+under MIT, Apache-2.0 or similar permissive licenses; OpenPGP uses
+[rpgp](https://github.com/rpgp/rpgp) (`pgp`, MIT OR Apache-2.0) and its RustCrypto
+dependencies. The exact list for a build
 comes from `Cargo.lock`. [scripts/third_party_notices.py](scripts/third_party_notices.py)
 writes each crate's name, version, license and verbatim license files to
 `THIRD-PARTY-RUST.txt`, which every package includes. To produce it locally:

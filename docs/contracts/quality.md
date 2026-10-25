@@ -1,5 +1,53 @@
 # Quality, performance and release acceptance
 
+## D220 — Account From names (Quality98)
+
+Core107, Gmail48, Mail UI161, CLI68; schema 42, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-core` `composition_tests::from_name_is_the_chosen_one_then_gmail_then_a_display_name_that_is_not_the_address`: a real-name display name is used, one that is only the address sends a bare From address (read back from the sent capture), Gmail's name comes next, the chosen name first (in the capture's From header), earlier drafts keep theirs, a left-out `from_name` is kept, `''` follows Gmail, and control characters, 81 characters or a non-string are `invalid_request`.
+- `fm-core` `fresh_schema_tests::accounts_upgrade_with_no_from_name_of_their_own`: a schema-41 profile upgrades with both names empty and keeps sending under its display name.
+- `fm-google`: `send_as` is in the endpoint inventory (GET `/settings/sendAs`, 1 unit, UserRead); `send_as_reads_the_primary_display_name_and_refuses_oversized_entries`.
+- Engine `labels::tests::label_refresh_keeps_the_gmail_send_as_name_for_the_from_line`: the worker stores the primary name, keeps it after a malformed reply, and clears it when Gmail's is empty.
+- `gui-mail-selection`: Edit account sends the trimmed From name with the display name, retention and access.
+
+Validation (Windows 11, x64): `cargo test --workspace` (980 passed, none failed), strict workspace clippy, formatting and repository hygiene pass; `gui-mail-selection` passed twice on a release build. Not checked: a live account's send-as name and the From line Gmail delivers.
+
+## D219 — OpenPGP audit fixes (Quality97)
+
+Core106, Mail UI160, CLI67, Platform28; schema 41, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-pgp` `messages`: `text_outside_a_clear_signed_block_is_left_out` (and the GnuPG inline fixtures now show only the protected text, with `unprotected` set for the inline one); `only_document_signatures_count` (a real certification over its own hashed bytes, sent as `multipart/signed`, is bad, the binary signature good); `files_inside_signed_content_are_not_plumbing`; `protected_headers_show_changes_made_after_sending` (signed and encrypted: the fields are inside, without Bcc, and an outer subject and sender changed later are reported while the signature stays good); `our_encrypted_mail_rewritten_by_gmail_reads_as_mime` (our entity, which now starts with protected headers); `signatures_name_their_intended_recipients` (each recipient reads a good signature, a Bcc recipient's copy isn't taken for a forward, and a signed message re-encrypted to another key is `forwarded`).
+- `fm-pgp` `keys`: the secret export uses AES-256 with iterated and salted SHA-256 at `EXPORT_S2K_COUNT`; `imports_keep_only_what_the_primary_key_vouches_for` (another key's user ID, subkey and signature on the owner's user ID are dropped; a user ID the owner signed still merges).
+- `fm-core` `pgp_tests`: `a_key_for_an_address_another_key_has_needs_the_persons_say_so` (preview lists the conflict and stores nothing; import fails with `pgp_key_conflict` until `replace`); `the_key_stored_last_wins_whatever_it_says_its_age_is`; `keys_from_mail_are_public_only_and_your_address_is_yours`; `exported_keys_are_written_to_files_only_by_the_engine`; `reads_report_text_outside_the_signed_part`; `files_in_signed_mail_are_listed_and_restored` (the repair pass brings back a dropped file); replies to encrypted mail start encrypted without the recipient's key, aren't due for Gmail upload, can't send, and project `replies_to_encrypted`.
+- `fm-ipc`: `private_files_never_replace_unless_asked_and_leave_nothing_behind`; on Windows `written_private_files_are_the_users_alone` reads the file's access list back as `D:P(A;;FA;;;<user SID>)`.
+- Engine `sessions`: export to a path writes a private key block with no `armored` in the reply (0600 on Unix), refuses an existing file with `already_exists`, replaces it with `replace`; an import preview with `public_only` needs no request ID and reports `update`. CLI `arguments`: `--preview` with `--replace` is a usage error.
+- `gui-mail-selection`: `protectedMail` adds a good signature made for other recipients, with text outside it and a changed subject (notices and amber icon); `encryptedReply` (Encrypt stays on while a key is missing, the clear-reply warning once it's turned off); `keyFromMail` (the preview comes first, public only, shows the fingerprint, sender and conflict warnings, and **Import anyway** imports with `replace`). The GUI self-test saves a backup through the engine over an existing file and checks its armor, permissions on Unix, and that no temporary file is left.
+
+Validation (Windows 11, x64, release build): `cargo test --workspace` (976 passed, none failed), strict workspace clippy, formatting and repository hygiene pass. 37 of 39 GUI tests passed in one sequential ctest run, gui-mail-selection and gui-integration among them. gui-calendar-search failed on its activation-wake timing; run alone it passed three of three with this change and failed two of three with the committed QML. gui-mail-gpu, which runs none of the OpenPGP code, timed out waiting for the Windows clipboard with the committed QML as well. A real mouse click through the key preview wasn't checked.
+
+## D218 — Sealed encrypted mail and Gmail's PGP/MIME rewrite (Quality96)
+
+Core105, Mail UI159; schema 41, fixtures live0/demo3 and protocol1 unchanged.
+
+- `fm-pgp` `messages`: `pgp_mime_rewritten_by_gmail_reads_as_pgp_mime` (the GnuPG fixture rewritten as Gmail delivers it decrypts to MIME with its text, attachment and good signature, and no `Content-Type` lines in the text) and `encrypted_mail_stays_sealed_until_asked` (sealed with recipients for both forms, no text or signatures; signed mail still verifies).
+- `fm-core` `pgp_tests`: sealed `message_source` reads report `can_decrypt` false then true once the key is imported, with no text, files or signatures; signed mail checks without decrypting; sealed `message_html` has no HTML before or after a decrypted view is memoised; `encrypt_by_default_waits_for_every_recipient_key` (no recipients, a recipient without a key, then with it, on the unsaved reply); replies to encrypted mail start unencrypted until the recipient's key is imported, and the unsaved reply projection carries the defaults.
+- `gui-mail-selection` `protectedMail`: an encrypted message opens sealed with bars and an enabled Decrypt, no text, files or decrypt request; Decrypt asks the engine to decrypt and shows the text, "Decrypted · Hide" and the decrypted files; Hide seals it again; a message without a key names it in the hint, offers no Decrypt and marks its lock.
+
+Validation (Windows 11, x64, release build): `cargo test --workspace` and strict workspace clippy pass. 37 of 38 GUI tests passed in one sequential ctest run with gui-mail-gpu left out; gui-mail-selection failed there at an attachment-fold mouse click straight after a relink, then passed three runs out of three on its own. Checked by eye on the release build against the live profile: a received message rewritten by Gmail opens sealed with Decrypt and no TLDR, and decrypts to its text with "Decrypted · Hide"; the sender's copy shows "Encrypted · only you and the recipients can read it" with Reveal and reveals its text; the rewritten signed reply shows its signature.asc as a Signature card; Settings → Encryption lists both keys and the account switches. A real mouse click on Decrypt, the composer's Encrypt gating and the feel of the Settings switches weren't checked: off-screen captures don't take clicks, and the switches would change the founder's real defaults.
+
+## D217 — OpenPGP (Quality95)
+
+Core104, Mail UI158, CLI66; schema 41, fixtures live0/demo3 unchanged.
+
+- `fm-pgp` tests: generation, expiry changes and merges, RSA, user-ID validation, sealing (wrong key, wrong fingerprint, tampering), passphrase export and import, revocation, multi-key files, signing and verifying composer-built MIME (tampering detected, unknown key, another address), encryption to several recipients with a hidden Bcc and the sender, missing and expired keys, and GnuPG-made keys and messages (PGP/MIME encrypted and signed, detached signatures, inline and clear-signed text, OCB to RSA). Two ignored tests repeat the round trips through an installed GnuPG.
+- `fm-core` `pgp_tests`: keyring requests and receipts, imports with passphrases and revocations, exports, expiry and deletion clearing the account, account-key rules and recipient checks, signed and encrypted sends (draft upload exclusion, missing keys refused before freezing, the sender reading their own copy, no journal preview), sync-time marking and plumbing hiding, the repair pass, reader decryption with attachments and their verified ids, signed HTML, encrypted HTML, decrypted attachments and inline pictures kept under `decrypted/` and removed by `forget_decrypted`, and replies defaulting to encrypted.
+- `fm-engine` `sessions`: keyring requests over IPC on a demo profile, the owner-only demo key file, error details and a restart reading the same key.
+- `fm-cli` `arguments`: scope, duration and stdin checks before storage.
+- `gui-integration` settings stage: Create key through the dialog, backup passphrase rules, the backup holding the new key and opening the save dialog with `<key ID>-secret.asc` (Qt's own dialog standing in for the system's), Encrypt by default, CLI readback and the Accounts row.
+- `gui-mail-selection` `protectedMail`: "Encrypted message" and a lock in the list only for encrypted rows, no notice or problem for a decrypted, well-signed message, and the notice and problem badge for a missing key and for a signature that doesn't match.
+
+Validation (macOS 15, arm64): `cargo test --workspace`, strict workspace clippy, formatting and hygiene pass; the `build/dev` GUI ctest suite passes, gui-mail-gpu only when run alone (its 100 ms frame budget fails with three tests at once).
+
 ## D214 — Today grouping (Quality94)
 
 Core101 and Mail UI155; live0/demo3 fixtures unchanged.

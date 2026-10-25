@@ -55,7 +55,10 @@ pub(crate) fn compose_request(
         fm_mail::AccountIdentity {
             account_id: account.into(),
             from: fm_mail::Address {
-                name: Some(draft["from_name"].as_str().unwrap_or("").into()),
+                name: draft["from_name"]
+                    .as_str()
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
                 email: draft["from"]
                     .as_str()
                     .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
@@ -460,17 +463,25 @@ impl Store {
         let (selected, legacy) = selector(p)?;
         let row = if let Some(mut row) = self.stored_composition(account, p)? {
             if row["discarded"] == true {
-                // A discarded draft reopens like a new one, with the current signature.
+                // A discarded draft reopens like a new one, with the current
+                // signature and OpenPGP defaults.
                 let (_, signature, _) = self.draft_identity(account)?;
                 row["body"] = json!(signed_body("", &signature));
                 row["body_html"] = Value::Null;
+                let mut routing: Value =
+                    serde_json::from_str(row["routing_json"].as_str().unwrap_or("{}"))?;
+                let mode = row["mode"].as_str().unwrap_or("reply").to_owned();
+                let source = row["source_message_id"].as_str().map(str::to_owned);
+                self.pgp_defaults(account, source.as_deref(), &mode, &mut routing)?;
+                row["routing_json"] = json!(serde_json::to_string(&routing)?);
             } else {
                 merge_kept_signature(&mut row);
             }
             row
         } else if legacy {
             self.require_active_account(account)?;
-            let (source, hash, routing, _) = self.legacy_routing(account, selected)?;
+            let (source, hash, mut routing, _) = self.legacy_routing(account, selected)?;
+            self.pgp_defaults(account, source.as_deref(), "reply", &mut routing)?;
             let (name, signature, revision) = self.draft_identity(account)?;
             json!({"draft_id":selected,"conversation_id":selected,"mode":"reply","source_message_id":source,"source_hash":hash,
                 "routing_json":serde_json::to_string(&routing)?,"body":signed_body("",&signature),"body_html":null,"attachments_json":"[]",
@@ -480,6 +491,69 @@ impl Store {
             return Err(err("not_found", "Draft is outside this account"));
         };
         self.project_composition(account, row)
+    }
+
+    /// Whether a draft in `mode` answers the encrypted message `source`; a
+    /// forward doesn't.
+    fn replies_to_encrypted(&self, account: &str, source: Option<&str>, mode: &str) -> bool {
+        mode != "forward"
+            && source.is_some_and(|mid| {
+                self.db
+                    .query_row(
+                        "SELECT pgp FROM messages WHERE account=?1 AND id=?2",
+                        params![account, mid],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .is_ok_and(|pgp| pgp == 2)
+            })
+    }
+
+    /// Sets a new draft's OpenPGP choices from its account's defaults. An
+    /// account with a key signs when it signs by default. A reply (not a
+    /// forward) to encrypted mail always starts encrypted: if a recipient has
+    /// no key, sending waits until they do or the person turns Encrypt off,
+    /// and the draft never reaches Gmail Drafts meanwhile. Encrypt by default
+    /// applies only once every recipient has a key to encrypt to; otherwise
+    /// a new message starts unencrypted rather than unsendable.
+    fn pgp_defaults(
+        &self,
+        account: &str,
+        source: Option<&str>,
+        mode: &str,
+        routing: &mut Value,
+    ) -> Result<()> {
+        if let Some(fields) = routing.as_object_mut() {
+            fields.remove("pgp_sign");
+            fields.remove("pgp_encrypt");
+        }
+        let Some((sign, encrypt)) = self
+            .db
+            .query_row(
+                "SELECT sign_by_default,encrypt_by_default FROM pgp_accounts WHERE account=?1",
+                [account],
+                |r| Ok((r.get::<_, bool>(0)?, r.get::<_, bool>(1)?)),
+            )
+            .optional()?
+        else {
+            return Ok(());
+        };
+        let replying_to_encrypted = self.replies_to_encrypted(account, source, mode);
+        if sign {
+            routing["pgp_sign"] = json!(true);
+        }
+        if replying_to_encrypted {
+            routing["pgp_encrypt"] = json!(true);
+        } else if encrypt {
+            let addresses: Vec<String> = ["to_recipients", "cc_recipients", "bcc_recipients"]
+                .iter()
+                .flat_map(|key| routing[*key].as_array().cloned().unwrap_or_default())
+                .filter_map(|r| r["email"].as_str().map(str::to_lowercase))
+                .collect();
+            if self.pgp_can_encrypt_to(&addresses)? {
+                routing["pgp_encrypt"] = json!(true);
+            }
+        }
+        Ok(())
     }
 
     /// Expands a stored draft row for clients: routing fields inlined,
@@ -514,6 +588,12 @@ impl Store {
         row["attachment_ids"] = json!(ids);
         row["attachments"] = json!(attachments);
         row["account"] = json!(account);
+        // The composer warns when such a reply would go out unencrypted.
+        row["replies_to_encrypted"] = json!(self.replies_to_encrypted(
+            account,
+            row["source_message_id"].as_str(),
+            row["mode"].as_str().unwrap_or("reply"),
+        ));
         row["account_archived"] = json!(self.account_lifecycle(account)?["state"] == "removed");
         row["read_only"] =
             json!(row["origin"] == "google_snapshot" || row["account_archived"] == true);
@@ -554,11 +634,12 @@ impl Store {
         Ok(row)
     }
 
-    /// Returns the account's display name, signature and metadata revision.
-    /// A draft records the name and revision when it is first saved, so later
-    /// identity edits do not silently change a draft in progress.
+    /// Returns the name the account's mail goes out under, its signature and
+    /// metadata revision. A draft records the name and revision when it is
+    /// first saved, so later identity edits do not silently change a draft in
+    /// progress.
     pub(crate) fn draft_identity(&self, account: &str) -> Result<(String, String, i64)> {
-        Ok(self.db.query_row("SELECT a.name,m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",
+        Ok(self.db.query_row(&format!("SELECT {},m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",crate::preferences::SENDER_NAME_SQL),
             [account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
     }
 
@@ -858,6 +939,8 @@ impl Store {
             "draft-{:x}",
             Sha256::digest(format!("{account}\0{}", string(p, "request_id")?).as_bytes())
         );
+        let mut routing = routing;
+        self.pgp_defaults(account, mid, mode, &mut routing)?;
         let (name, signature, identity) = self.draft_identity(account)?;
         let timestamp = now()?;
         let body = signed_body(&body, &signature);
@@ -1020,6 +1103,22 @@ impl Store {
         if draft["forward_html"] == true {
             routing["forward_html"] = json!(true);
         }
+        // OpenPGP choices carry over unless this save changes them.
+        for key in ["pgp_sign", "pgp_encrypt"] {
+            let on = match p.get(key) {
+                None => draft[key] == true,
+                Some(Value::Bool(on)) => *on,
+                Some(_) => {
+                    return Err(err(
+                        "invalid_request",
+                        "pgp_sign and pgp_encrypt must be true or false",
+                    ))
+                }
+            };
+            if on {
+                routing[key] = json!(true);
+            }
+        }
         validate_routing(&routing)?;
         // Whether this save changes anything the author wrote. An unchanged
         // save of an adopted Gmail draft must not queue an upload.
@@ -1044,7 +1143,10 @@ impl Store {
             .iter()
             .all(|key| draft[*key] == routing[*key])
             && p.get("signature_text")
-                .is_none_or(|v| original_signature == *v);
+                .is_none_or(|v| original_signature == *v)
+            && ["pgp_sign", "pgp_encrypt"]
+                .iter()
+                .all(|key| (draft[*key] == true) == (routing[*key] == true));
         let timestamp = now()?;
         let next = expected
             .checked_add(1)

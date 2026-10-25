@@ -1,5 +1,9 @@
 # Local mail analysis
 
+## D217 — encrypted mail (Local assistance33)
+
+The model reads stored message text, which never includes what was inside an encryption (Core104). An encrypted message is summarized and labeled only by what was outside it; its plaintext is never sent to the model.
+
 ## D199 — whole-thread summary on request (Local assistance32)
 
 Reverses D111's removal of the thread summary. The queue is unchanged: it never summarizes a thread.

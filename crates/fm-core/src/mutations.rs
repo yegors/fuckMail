@@ -53,6 +53,8 @@ impl Store {
                 "cc_recipients",
                 "bcc_recipients",
                 "recipient_inputs",
+                "pgp_sign",
+                "pgp_encrypt",
                 "expected_revision",
                 "request_id",
             ],

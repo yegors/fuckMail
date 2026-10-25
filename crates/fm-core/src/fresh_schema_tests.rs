@@ -2,6 +2,51 @@
 use crate::{Store, SCHEMA_VERSION};
 use rusqlite::Connection;
 
+/// Removes what version 41 added, so a fresh profile looks like one made
+/// before it.
+pub(crate) fn undo_openpgp_schema(db: &Connection) {
+    undo_from_name_schema(db);
+    db.execute_batch(
+        "DROP TABLE pgp_accounts; DROP TABLE pgp_key_addresses; DROP TABLE pgp_keys; ALTER TABLE messages DROP COLUMN pgp;",
+    )
+    .unwrap();
+}
+/// Takes a current profile back to the schema before account From names.
+fn undo_from_name_schema(db: &Connection) {
+    db.execute_batch(
+        "ALTER TABLE account_metadata DROP COLUMN from_name; ALTER TABLE account_metadata DROP COLUMN gmail_from_name;",
+    )
+    .unwrap();
+}
+
+#[test]
+fn accounts_upgrade_with_no_from_name_of_their_own() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let db = Connection::open(temp.path().join("store.sqlite3")).unwrap();
+    undo_from_name_schema(&db);
+    db.execute_batch(
+        "INSERT INTO accounts(id,name,email,provider) VALUES('a','Alex','a@example.test','google');
+        INSERT INTO account_metadata(account,signature_text) VALUES('a','');
+        INSERT INTO google_accounts(account,google_subject,scopes_json,connection_state,mail_generation) VALUES('a','subject','[]','connected',1);",
+    )
+    .unwrap();
+    db.pragma_update(None, "user_version", 41).unwrap();
+    drop(db);
+
+    let store = Store::open_live(temp.path()).unwrap();
+    let row: (String, String) = store
+        .db
+        .query_row(
+            "SELECT from_name,gmail_from_name FROM account_metadata WHERE account='a'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row, (String::new(), String::new()));
+    assert_eq!(store.draft_identity("a").unwrap().0, "Alex");
+}
+
 #[test]
 fn new_live_profile_has_direct_strict_schema_and_valid_references() {
     let temp = tempfile::tempdir().unwrap();
@@ -19,7 +64,7 @@ fn new_live_profile_has_direct_strict_schema_and_valid_references() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(strict_tables, 68);
+    assert_eq!(strict_tables, 71);
     let fts_content_tables: i64 = store
         .db
         .query_row(
@@ -204,6 +249,7 @@ fn draft_sources_upgrade_drops_the_key_to_their_own_draft() {
     )
     .unwrap();
     // The version before this change.
+    undo_openpgp_schema(&db);
     db.pragma_update(None, "user_version", 38).unwrap();
     drop(db);
 
@@ -265,8 +311,9 @@ fn messages_once_too_large_are_fetched_again_after_upgrade() {
         db.execute("INSERT INTO google_mail_coverage(account,remote_id,observed_generation,source_state,index_state,attachment_state,issue,deleted) VALUES('a',?1,3,'unavailable','unindexed','incomplete',?2,?3)", rusqlite::params![id, issue, deleted])
             .unwrap();
     }
-    db.pragma_update(None, "user_version", SCHEMA_VERSION - 1)
-        .unwrap();
+    // The version before the coverage reset.
+    undo_openpgp_schema(&db);
+    db.pragma_update(None, "user_version", 39).unwrap();
     drop(db);
 
     let store = Store::open_live(temp.path()).unwrap();

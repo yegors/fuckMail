@@ -342,7 +342,7 @@ impl Store {
         self.check_google_draft_deleted_target(account, &source.provider_draft_id)
     }
     fn action_identity(&self, account: &str) -> Result<Value> {
-        Ok(self.db.query_row("SELECT a.email,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok(json!({"email":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"revision":r.get::<_,i64>(2)?})))?)
+        Ok(self.db.query_row(&format!("SELECT a.email,{},m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",crate::preferences::SENDER_NAME_SQL),[account],|r|Ok(json!({"email":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"revision":r.get::<_,i64>(2)?})))?)
     }
     /// Re-checks a frozen context on the writer: same account lifecycle,
     /// profile, source bytes, links, local owners and identity. Fails with

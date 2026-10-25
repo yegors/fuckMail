@@ -303,6 +303,26 @@ Rectangle {
             }
             EditCue { text: signatureRow.signature.length ? "Edit" : "Add"; lit: signatureRow.actionHovered }
         }
+        // OpenPGP: the account's key and what new mail does, or Off. The row
+        // opens Settings → Encryption, where keys are made and chosen.
+        StageRow {
+            id: pgpRow
+            visible: !card.archived
+            actionName: "editPgp_" + card.accountId; actionLabel: "OpenPGP settings"
+            onActivated: card.host.selectPage("Encryption")
+            readonly property var choice: card.modelData.pgp || null
+            StageLabel { iconName: "lock"; text: "OpenPGP"; iconColor: pgpRow.choice ? Theme.inkAlpha(.6) : Theme.inkAlpha(.4) }
+            Text {
+                objectName: "accountPgp_" + card.accountId
+                readonly property string keyId: pgpRow.choice ? pgpRow.choice.fingerprint.slice(-16).match(/.{4}/g).join(" ") : ""
+                readonly property var defaults: pgpRow.choice ? [pgpRow.choice.sign_by_default ? "signs" : "", pgpRow.choice.encrypt_by_default ? "encrypts" : ""].filter(t => t.length) : []
+                readonly property string problem: pgpRow.choice && pgpRow.choice.status && pgpRow.choice.status !== "valid" ? " · key " + pgpRow.choice.status : ""
+                text: pgpRow.choice ? "On · " + keyId + (defaults.length ? " · " + defaults.join(" and ") + " new mail" : "") + problem : "Off"
+                Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                color: problem.length ? Theme.warn : pgpRow.choice ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+            }
+            EditCue { text: pgpRow.choice ? "Edit" : "Set up"; lit: pgpRow.actionHovered }
+        }
         // Local model: silver-blue tint, done and queued as solid and pale segments.
         StageRow {
             id: modelRow

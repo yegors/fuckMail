@@ -419,10 +419,10 @@ impl Store {
                 |r| r.get(0),
             )?;
             let counts = self.account_counts(&account)?;
-            let (metadata_revision, signature_text, mail_retention, mail_since): (i64, String, String, Option<i64>) = self.db.query_row(
-                "SELECT revision,signature_text,mail_retention,mail_since FROM account_metadata WHERE account=?1",
+            let (metadata_revision, signature_text, mail_retention, mail_since, from_name, default_from_name): (i64, String, String, Option<i64>, String, String) = self.db.query_row(
+                &format!("SELECT m.revision,m.signature_text,m.mail_retention,m.mail_since,m.from_name,{} FROM account_metadata m JOIN accounts a ON a.id=m.account WHERE m.account=?1",crate::preferences::DEFAULT_SENDER_NAME_SQL),
                 [&account],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
             )?;
             // Events stored for this account's calendars, for the Accounts card.
             let calendar_events: i64 = self.db.query_row(
@@ -432,6 +432,9 @@ impl Store {
             )?;
             let color = crate::preferences::account_color(&self.db, &account)?;
             out.push(json!({"color":color,"calendar_events":calendar_events,"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"inbox_review_count":counts["inbox_review_count"],"inbox_held_count":counts["inbox_held_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            // `from_name` is the person's choice (empty follows the default).
+            out.last_mut().unwrap()["from_name"] = json!(from_name);
+            out.last_mut().unwrap()["default_from_name"] = json!(default_from_name);
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let oldest: Option<String> = self.db.query_row(
@@ -446,6 +449,8 @@ impl Store {
                 |r| r.get(0),
             )?;
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
+            // The OpenPGP key this account signs and decrypts with, if any.
+            out.last_mut().unwrap()["pgp"] = self.pgp_account_json(&account)?;
             out.last_mut().unwrap()["last_mail_sync_at"] =
                 json!(self.google_last_mail_sync(&account)?);
             // Both names describe the oldest locally retained message.
@@ -1627,10 +1632,10 @@ impl Store {
             let selected = matching
                 .first()
                 .ok_or_else(|| err("storage_error", "Search result has no matching member"))?;
-            let (sender_name, sender_email, body, recipient): (String, String, String, String) = self.db.query_row(
-                "SELECT sender_name,sender_email,body,recipient FROM messages WHERE account=?1 AND id=?2",
+            let (sender_name, sender_email, body, recipient, pgp): (String, String, String, String, i64) = self.db.query_row(
+                "SELECT sender_name,sender_email,body,recipient,pgp FROM messages WHERE account=?1 AND id=?2",
                 params![account, selected],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )?;
             let mut categories = self.db.prepare_cached("SELECT DISTINCT c.id,c.name FROM message_categories mc JOIN messages m ON m.account=mc.account AND m.id=mc.message_id JOIN categories c ON c.account=mc.account AND c.id=mc.category_id WHERE m.account=?1 AND m.conversation_id=?2 ORDER BY c.id")?;
             let categories = categories
@@ -1648,7 +1653,7 @@ impl Store {
             let attachment_count:i64=self.db.prepare_cached("SELECT COUNT(*) FROM messages m JOIN attachments a ON a.account=m.account AND a.message_id=m.id WHERE m.account=?1 AND m.conversation_id=?2")?.query_row(params![account,cid],|r|r.get(0))?;
             let summary = self.local_model_preview(account, cid, selected)?;
             let (others, other_names) = self.conversation_others(account, cid, &sender_email)?;
-            out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&snippet_phrases),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
+            out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&snippet_phrases),"pgp":pgp_name(pgp),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
         }
         // Today, This Week, This Month, then newest month first; undated last.
         let done_months = month_zone.map(|_| {
@@ -1718,8 +1723,8 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| err("not_found", "Conversation not found in this account"))?;
-        let mut stmt=self.db.prepare("SELECT m.id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,m.source_hash,COALESCE(k.kind,'unknown'),m.sent FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),m.id LIMIT 201")?;
-        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?,"kind":r.get::<_,String>(11)?,"sent":r.get::<_,bool>(12)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut stmt=self.db.prepare("SELECT m.id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,m.source_hash,COALESCE(k.kind,'unknown'),m.sent,m.pgp FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),m.id LIMIT 201")?;
+        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?,"kind":r.get::<_,String>(11)?,"sent":r.get::<_,bool>(12)?,"pgp":pgp_name(r.get(13)?)})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         if messages.is_empty() || messages.len() > 200 {
             return Err(err(
                 "limit_exceeded",
@@ -2258,6 +2263,15 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
         ""
     };
     format!("WITH bindings AS (SELECT {bindings}) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column}{text_columns} FROM {source} WHERE {predicate}")
+}
+
+/// The stored protection code as replies name it.
+pub(crate) fn pgp_name(code: i64) -> Value {
+    match code {
+        1 => json!("signed"),
+        2 => json!("encrypted"),
+        _ => Value::Null,
+    }
 }
 
 #[cfg(test)]

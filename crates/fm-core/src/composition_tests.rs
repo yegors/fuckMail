@@ -880,3 +880,95 @@ fn html_forwards_send_the_original_as_received() {
         .unwrap()
         .contains("> Original retained text"));
 }
+
+#[test]
+fn from_name_is_the_chosen_one_then_gmail_then_a_display_name_that_is_not_the_address() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let mut revision = 0;
+    let mut update = |store: &mut Store, p: Value| -> Result<Value> {
+        let mut p = p;
+        p["signature_text"] = json!("");
+        p["expected_revision"] = json!(revision);
+        p["request_id"] = json!(format!("from-name-{revision}"));
+        let row = store.handle("account_update", Some(ACCOUNT), p)?;
+        revision += 1;
+        Ok(row)
+    };
+    // Sends a new draft as a local capture and returns its From mailbox.
+    let sent_from = |store: &mut Store, request: &str| -> (Option<String>, String) {
+        let id = create(store, request)["draft_id"].clone();
+        call(
+            store,
+            "draft_save",
+            json!({"draft_id":id,"expected_revision":1,"request_id":format!("{request}-save"),
+                "body":"Hello","subject":"From name","to_recipients":[{"email":"ada@fixture.example"}]}),
+        );
+        let captured = call(
+            store,
+            "draft_capture",
+            json!({"draft_id":id,"expected_revision":2,"request_id":format!("{request}-capture"),"outcome":"unknown"}),
+        );
+        let bytes = std::fs::read(captured["path"].as_str().unwrap()).unwrap();
+        let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+        let from = parsed.from().unwrap().first().unwrap();
+        (
+            from.name().map(str::to_owned),
+            from.address().unwrap().to_owned(),
+        )
+    };
+
+    // Without a choice or a Gmail name, a display name that is a real name is used...
+    let row = update(&mut store, json!({"name":"Alex at work"})).unwrap();
+    assert_eq!(row["from_name"], "");
+    assert_eq!(row["default_from_name"], "Alex at work");
+    assert_eq!(create(&mut store, "display")["from_name"], "Alex at work");
+    // ...but one that is only the address leaves the name out.
+    update(&mut store, json!({"name":"YOU@windscribe.example"})).unwrap();
+    assert_eq!(
+        sent_from(&mut store, "address-only"),
+        (None, "you@windscribe.example".to_owned())
+    );
+
+    // Gmail's send-as name comes before the display name.
+    assert!(store.google_send_as_name(ACCOUNT, " Alex Gmail ").unwrap());
+    assert!(!store.google_send_as_name(ACCOUNT, "Alex Gmail").unwrap());
+    let before_choice = create(&mut store, "gmail");
+    assert_eq!(before_choice["from_name"], "Alex Gmail");
+
+    // The person's choice comes first, and drafts already started keep theirs.
+    let row = update(
+        &mut store,
+        json!({"name":"Work","from_name":"  Alex Example "}),
+    )
+    .unwrap();
+    assert_eq!(row["from_name"], "Alex Example");
+    assert_eq!(row["default_from_name"], "Alex Gmail");
+    assert_eq!(
+        sent_from(&mut store, "chosen"),
+        (
+            Some("Alex Example".to_owned()),
+            "you@windscribe.example".to_owned()
+        )
+    );
+    assert_eq!(
+        call(
+            &mut store,
+            "draft_get",
+            json!({"draft_id":before_choice["draft_id"]})
+        )["from_name"],
+        "Alex Gmail"
+    );
+    // Leaving `from_name` out keeps it; an empty one follows Gmail again.
+    assert_eq!(
+        update(&mut store, json!({"name":"Work"})).unwrap()["from_name"],
+        "Alex Example"
+    );
+    update(&mut store, json!({"name":"Work","from_name":""})).unwrap();
+    assert_eq!(create(&mut store, "cleared")["from_name"], "Alex Gmail");
+
+    for bad in [json!("Tab\there"), json!("x".repeat(81)), json!(7)] {
+        let error = update(&mut store, json!({"name":"Work","from_name":bad})).unwrap_err();
+        assert_eq!(error.code, "invalid_request");
+    }
+}

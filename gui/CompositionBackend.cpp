@@ -374,6 +374,14 @@ void MailBackend::setDraftSubject(const QString &text) {
     emit draftChanged(); m_draftTimer.start();
 }
 
+void MailBackend::setDraftProtection(bool sign, bool encrypt) {
+    if (draftLocked() || m_draft.isEmpty()) return;
+    if (m_draft.value("pgp_sign").toBool() == sign && m_draft.value("pgp_encrypt").toBool() == encrypt) return;
+    m_draft["pgp_sign"] = sign; m_draft["pgp_encrypt"] = encrypt;
+    m_draftDirty = true; m_draftStatus = "Saving…";
+    emit draftChanged(); m_draftTimer.start();
+}
+
 bool MailBackend::draftHasContent() const {
     if (m_draft.isEmpty()) return false;
     for (const auto field : {"to_recipients", "cc_recipients", "bcc_recipients", "attachment_ids"})

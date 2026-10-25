@@ -83,6 +83,16 @@ class MailSelectionTest {
         QHash<QString,QJsonObject> senderChecks;
         // Every draft_create request, in order.
         QList<QJsonObject> creations;
+        // OpenPGP results the engine reports for a message's source, by id,
+        // with the text read in its place; the conversation marks the same
+        // messages with their stored protection.
+        QHash<QString,QJsonObject> pgpSources;
+        QHash<QString,QString> pgpTexts, pgpKinds;
+        // Message ids whose source was read with decrypt asked for.
+        QStringList decryptedReads;
+        // Every keyring import request, and the preview one answers with.
+        QList<QJsonObject> keyImports;
+        QJsonObject keyPreview;
         // Core's Done group for a row: Today, then This Week from the requested weekday,
         // the rest of this month, then its month. Row times here are midday UTC.
         static QString doneGroup(const QVariantMap &row, const QJsonObject &params) {
@@ -172,6 +182,21 @@ class MailSelectionTest {
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},
                             {"metadata",sourceMetadata.value(params["id"].toString(),QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}})}};
                         if (senderChecks.contains(params["id"].toString())) result["sender_check"] = senderChecks.value(params["id"].toString());
+                        if (pgpSources.contains(params["id"].toString())) {
+                            // As the engine does: encrypted mail reads sealed unless
+                            // decrypting is asked for.
+                            const auto pgp = pgpSources.value(params["id"].toString());
+                            if (pgp["encrypted"].toBool() && !params["decrypt"].toBool()) {
+                                result["pgp"] = QJsonObject{{"encrypted",true},{"inline",false},{"signatures",QJsonArray{}},
+                                    {"decryption",QJsonObject{{"state","sealed"},{"recipients",QJsonArray{"89ABCDEF01234567"}},{"can_decrypt",pgp["decryption"].toObject()["state"] == "decrypted"}}}};
+                                result["body_text"] = "";
+                            } else {
+                                if (params["decrypt"].toBool()) decryptedReads.append(params["id"].toString());
+                                result["pgp"] = pgp;
+                                result["body_text"] = pgpTexts.value(params["id"].toString());
+                            }
+                            result.remove("body_html");
+                        }
                     }
                     else if (method == "attachment" && request["params"].toObject()["preview"].toBool()) {
                         // As the engine does: an image's preview is a PNG with its size,
@@ -185,6 +210,16 @@ class MailSelectionTest {
                         result.remove("path"); result.remove("sha256");
                     }
                     else if (method == "attachment") result = attachments.value(request["params"].toObject()["id"].toString());
+                    else if (method == "pgp_key_import") {
+                        const auto params = request["params"].toObject(); keyImports.append(params);
+                        result = params["preview"].toBool() ? keyPreview : QJsonObject{{"added",QJsonArray{keyPreview["keys"].toArray().first().toObject()["fingerprint"]}},{"updated",QJsonArray{}},{"revoked",QJsonArray{}}};
+                    }
+                    else if (method == "pgp_recipients") {
+                        // No recipient has a key here.
+                        QJsonArray recipients;
+                        for (const auto &address : request["params"].toObject()["addresses"].toArray()) recipients.append(QJsonObject{{"address",address},{"status","missing"}});
+                        result = {{"recipients",recipients}};
+                    }
                     else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}},
                         QJsonObject{{"id","s0"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","First"},{"internal_date_ms",1789210700123LL},{"unread",false}}}},{"next_page_token",QJsonValue()}};
                     else if (method == "google_bin_counts") result = {{"folder",request["params"].toObject()["folder"]},{"messages",2},{"conversations",1}};
@@ -241,7 +276,8 @@ class MailSelectionTest {
                             ids=QJsonArray::fromVariantList(row.toMap().value("message_ids").toList()); revision=row.toMap().value("revision").toLongLong();
                             if (texts.contains(id)) subject=row.toMap().value("subject").toString();
                         }
-                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",!originalRead},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text",texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",sourceFiles}}}},
+                        result = {{"id",id},{"revision",revision},{"message_ids",ids},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",!originalRead},{"starred",false},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text",pgpKinds.value(id+"-original")=="encrypted" ? QString() : texts.value(id,"Retained plain body")},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false},{"attachments",sourceFiles},
+                                {"pgp",pgpKinds.contains(id+"-original") ? QJsonValue(pgpKinds.value(id+"-original")) : QJsonValue()}}}},
                             {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",unsubscribed}}}};
                         if (!subject.isEmpty()) result["subject"]=subject;
                         if (!laterMessages.isEmpty() && (laterThread.isEmpty() || laterThread==id)) {
@@ -1786,11 +1822,12 @@ public:
         await([&]{return editor->property("opened").toBool();},"account editor opens");
         capture("account-editor");
         find(window->contentItem(),"editAccountName")->setProperty("text","Renamed account");
+        find(window->contentItem(),"editAccountFromName")->setProperty("text","  Alex Example ");
         find(window->contentItem(),"editAccountRetention")->setProperty("currentIndex",2);
         find(window->contentItem(),"editAccountMailMode")->setProperty("currentIndex",0);
         QMetaObject::invokeMethod(find(window->contentItem(),"saveAccountEdit"),"clicked");
         await([&]{return !savedAccount.isEmpty();},"account edit reaches shared command");
-        require(savedAccount["name"]=="Renamed account" && savedAccount["mail_retention"]=="2_years" && savedAccount["sync"].toObject()["mail_access"]=="read","name, retention and access saved together");
+        require(savedAccount["name"]=="Renamed account" && savedAccount["from_name"]=="Alex Example" && savedAccount["mail_retention"]=="2_years" && savedAccount["sync"].toObject()["mail_access"]=="read","name, From name, retention and access saved together");
         await([&]{return !editor->property("opened").toBool();},"saved editor closes");
         // Missing Calendar grant opens reconnect; close it before shortcut recording.
         if(auto dialog=window->findChild<QObject *>("googleSignInDialog"))QMetaObject::invokeMethod(dialog,"close");
@@ -2647,6 +2684,167 @@ public:
     }
     // The reader's subject, a sender's name and address, and a summary select
     // with the mouse and copy with the copy key and the text menu.
+    // OpenPGP in the list and the reader: an encrypted row reads "Encrypted
+    // message" with a lock; a decrypted, well-signed message shows a lock, its
+    // signer and its decrypted files and no notice; an undecryptable one and a
+    // bad signature each explain themselves in the notices.
+    static void protectedMail() {
+        Harness h;
+        auto first=h.rows[0].toMap(); first["snippet"]=""; first["pgp"]="encrypted"; h.rows[0]=first;
+        h.backend.publishConversations(h.rows);
+        const QString fingerprint="0123456789ABCDEF0123456789ABCDEF01234567";
+        h.pgpKinds={{"a-original","encrypted"},{"b-original","encrypted"},{"c-original","signed"}};
+        h.pgpSources["a-original"]=QJsonObject{{"encrypted",true},{"inline",false},{"decryption",QJsonObject{{"state","decrypted"}}},
+            {"signatures",QJsonArray{QJsonObject{{"status","good"},{"signer","Sender <sender@example.test>"},{"sender_matches",true},{"fingerprint",fingerprint},{"key_id",fingerprint}}}},
+            {"attachments",QJsonArray{QJsonObject{{"id","pgp:a-original:0:4:"+QString(64,'b')},{"name","plan.txt"},{"mime_type","text/plain"},{"size",4},{"state","available"}}}}};
+        h.pgpTexts["a-original"]="The decrypted plan.";
+        h.pgpSources["b-original"]=QJsonObject{{"encrypted",true},{"inline",false},{"decryption",QJsonObject{{"state","no_key"},{"recipients",QJsonArray{"89ABCDEF01234567"}}}},{"signatures",QJsonArray{}}};
+        h.pgpSources["c-original"]=QJsonObject{{"encrypted",false},{"inline",false},{"decryption",QJsonValue()},
+            {"signatures",QJsonArray{QJsonObject{{"status","bad"},{"signer","Sender <sender@example.test>"},{"sender_matches",true},{"fingerprint",fingerprint},{"key_id",fingerprint}}}}};
+        h.pgpTexts["c-original"]="Signed words, changed.";
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Protected.qml")));
+        require(!qml.rootObjects().isEmpty(),"protected MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"protected window exposed");
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        QQuickItem *preview=nullptr;
+        await([&]{ preview=find(window->contentItem(),"mailPreview_a"); return preview && preview->isVisible(); },"the encrypted row shows");
+        require(preview->property("text").toString().contains("Encrypted message"),"an encrypted row with no outside text reads Encrypted message");
+        require(find(window->contentItem(),"encryptedPreviewIcon_a") && find(window->contentItem(),"encryptedPreviewIcon_a")->isVisible(),"an encrypted row has a lock");
+        auto *plainIcon=find(window->contentItem(),"encryptedPreviewIcon_b");
+        require(plainIcon && !plainIcon->isVisible(),"an unencrypted row has no lock");
+        const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible() ? item : nullptr; };
+        h.backend.selectConversation("a");
+        // Sealed until the person decrypts it: bars and Decrypt, no text or files.
+        QQuickItem *decrypt=nullptr;
+        await([&]{ decrypt=shown("sealedMessageDecrypt_a-original"); return decrypt && decrypt->isEnabled(); },"an encrypted message opens sealed, with Decrypt");
+        require(shown("sealedMessageBars_a-original"),"the sealed message shows redaction bars");
+        require(!shown("messageBody_a-original"),"a sealed message shows no text");
+        require(!shown("attachment_pgp:a-original:0:4:"+QString(64,'b')),"a sealed message lists no files");
+        require(h.decryptedReads.isEmpty(),"nothing is decrypted before Decrypt");
+        require(QMetaObject::invokeMethod(decrypt,"clicked"),"click Decrypt");
+        QQuickItem *badge=nullptr;
+        await([&]{ badge=shown("messagePgp_a-original"); return badge && shown("messageBody_a-original"); },"Decrypt shows the text");
+        require(h.decryptedReads.contains("a-original"),"Decrypt asks the engine to decrypt");
+        require(!shown("sealedMessage_a-original"),"the sealed card goes once decrypted");
+        require(shown("messageDecrypted_a-original"),"a decrypted message says so, with Hide");
+        await([&]{ return shown("attachment_pgp:a-original:0:4:"+QString(64,'b')); },"decrypted files are listed");
+        require(!badge->property("problem").toBool(),"a decrypted, well-signed message is not a problem");
+        require(!shown("pgpNotice_a-original"),"no notice for a decrypted, well-signed message");
+        require(QMetaObject::invokeMethod(shown("messageSealAgain_a-original"),"clicked"),"click Hide");
+        await([&]{ return shown("sealedMessageBars_a-original") && !shown("messageBody_a-original"); },"Hide seals it again");
+        h.backend.selectConversation("b");
+        QQuickItem *hint=nullptr;
+        await([&]{ hint=shown("sealedMessageHint_b-original"); return hint && hint->property("text").toString().contains("isn't here"); },"an undecryptable message explains itself");
+        require(!shown("sealedMessageDecrypt_b-original"),"no Decrypt without a key for it");
+        require(shown("messagePgp_b-original") && shown("messagePgp_b-original")->property("problem").toBool(),"its lock shows the problem");
+        QQuickItem *notice=nullptr;
+        h.backend.selectConversation("c");
+        await([&]{ notice=shown("pgpNoticeText_c-original"); return notice != nullptr; },"a bad signature explains itself");
+        require(notice->property("text").toString().contains("doesn't match"),"the notice says the signature doesn't match");
+        // A good signature still needs a look when it was made for other
+        // recipients, when text sits outside the encrypted block, or when the
+        // subject changed after sending. Now that a key can open it, decrypt
+        // the message that had none.
+        h.pgpSources["b-original"]=QJsonObject{{"encrypted",true},{"inline",true},{"unprotected",true},{"decryption",QJsonObject{{"state","decrypted"}}},
+            {"headers",QJsonObject{{"subject","The real subject"},{"altered",QJsonArray{"subject"}}}},
+            {"signatures",QJsonArray{QJsonObject{{"status","good"},{"signer","Sender <sender@example.test>"},{"sender_matches",true},{"forwarded",true},{"fingerprint",fingerprint},{"key_id",fingerprint}}}}};
+        h.pgpTexts["b-original"]="Encrypted words.";
+        h.backend.selectConversation("b");
+        h.backend.setUnsealed("b-original",true);
+        await([&]{ notice=shown("pgpNoticeText_b-original"); return notice && notice->property("text").toString().contains("signed for other recipients"); },"a signature made for someone else explains itself");
+        require(h.decryptedReads.contains("b-original"),"the message was decrypted to read it");
+        const auto warnings=notice->property("text").toString();
+        require(!warnings.contains("doesn't match"),"a good signature isn't called a mismatch");
+        require(warnings.contains("Only part of this message is encrypted"),"text outside the encrypted block is called out");
+        require(warnings.contains("The subject was changed after the message was sent") && warnings.contains(QString::fromUtf8("“The real subject”")),"a changed subject shows the sender's");
+        require(shown("messagePgp_b-original") && shown("messagePgp_b-original")->property("problem").toBool(),"its lock shows the problem");
+        qInfo()<<"Encrypted rows, decrypted files, signatures and OpenPGP notices show in the list and reader.";
+    }
+    static void encryptedReply() {
+        Harness h;
+        h.drafts["a"] = {{"account","personal"},{"draft_id","a"},{"conversation_id","a"},{"mode","reply"},{"source_message_id","a-original"},
+            {"revision",1},{"discarded",false},{"body",""},{"subject","Re: Labeled message a"},{"to_recipients",QJsonArray{QJsonObject{{"email","sender@example.test"},{"name","Sender"}}}},
+            {"cc_recipients",QJsonArray{}},{"bcc_recipients",QJsonArray{}},{"attachment_ids",QJsonArray{}},{"attachments",QJsonArray{}},
+            {"pgp_sign",false},{"pgp_encrypt",true},{"replies_to_encrypted",true}};
+        // The recipient check opens its own connection to the fake engine.
+        h.backend.m_enginePid=QCoreApplication::applicationPid();
+        // Only an account with a key starts replies to encrypted mail encrypted.
+        auto accounts=h.backend.m_allAccounts; auto account=accounts.first().toMap();
+        account["pgp"]=QVariantMap{{"fingerprint","0123456789ABCDEF0123456789ABCDEF01234567"},{"sign_by_default",false},{"encrypt_by_default",false},{"status","valid"}};
+        accounts[0]=account; h.backend.m_allAccounts=accounts; h.backend.publishAccounts(accounts);
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("EncryptedReply.qml")));
+        require(!qml.rootObjects().isEmpty(),"encrypted-reply MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"encrypted-reply window exposed");
+        const auto settle=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible(); };
+        const auto press=[&](const QString &name){ auto *item=find(window->contentItem(),name); require(item && item->isVisible() && item->isEnabled(),qPrintable("visible control "+name)); require(QMetaObject::invokeMethod(item,"clicked"),"control handler"); };
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{return h.backend.m_draft.value("draft_id")=="a" && !h.backend.m_conversation.value("messages").toList().isEmpty();},"the thread and its reply load");
+        press("replyButton"); await([&]{ return mail->property("replyOpen").toBool() && shown("replyPanel"); },"Reply opens the encrypted reply");
+        // No key for the recipient can be found here: Encrypt stays on, and
+        // the composer says what sending waits for.
+        await([&]{ return shown("draftPgpMissing"); },"a recipient without a key is named");
+        settle(400);
+        require(h.backend.m_draft.value("pgp_encrypt").toBool(),"Encrypt doesn't turn itself off for a missing key");
+        require(!shown("draftPgpReplyClear"),"no unencrypted-reply warning while Encrypt is on");
+        press("draftPgpEncrypt");
+        await([&]{ return shown("draftPgpReplyClear"); },"turning Encrypt off on a reply to encrypted mail warns");
+        require(!h.backend.m_draft.value("pgp_encrypt").toBool(),"the person can still turn Encrypt off");
+        qInfo()<<"A reply to encrypted mail stays encrypted while a key is missing, and warns once Encrypt is turned off.";
+    }
+    static void keyFromMail() {
+        Harness h;
+        // Keyring calls open their own connection to the fake engine.
+        h.backend.m_enginePid=QCoreApplication::applicationPid();
+        QTemporaryDir copy; copyModule(copy);
+        const auto keyPath=copy.filePath("publickey.asc");
+        QFile keyFile(keyPath); require(keyFile.open(QIODevice::WriteOnly) && keyFile.write("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nsynthetic\n-----END PGP PUBLIC KEY BLOCK-----\n")>0,"synthetic key file"); keyFile.close();
+        const QJsonObject file{{"id","key"},{"name","publickey.asc"},{"mime_type","application/pgp-keys"},{"size",64},{"state","available"}};
+        h.sourceFiles={file};
+        auto stored=file; stored["account"]="personal"; stored["path"]=keyPath; h.attachments["key"]=stored;
+        // The key names someone other than the sender, and an address another key has.
+        const QString fingerprint="FEDCBA9876543210FEDCBA9876543210FEDCBA98";
+        h.keyPreview={{"keys",QJsonArray{QJsonObject{{"fingerprint",fingerprint},{"key_id",fingerprint.right(16)},{"algorithm","Ed25519"},{"user_ids",QJsonArray{"Someone <someone@example.test>"}},
+            {"addresses",QJsonArray{"someone@example.test"}},{"created_at",1790000000},{"status","valid"},{"secret",false},{"action","add"}}}},
+            {"revoked",QJsonArray{}},{"conflicts",QJsonArray{QJsonObject{{"address","someone@example.test"},{"fingerprint",fingerprint},{"holders",QJsonArray{"0123456789ABCDEF0123456789ABCDEF01234567"}},{"own",false}}}}};
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("KeyFromMail.qml")));
+        require(!qml.rootObjects().isEmpty(),"key-from-mail MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"key-from-mail window exposed");
+        const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible() ? item : nullptr; };
+        const auto press=[&](const QString &name){ auto *item=shown(name); require(item && item->isEnabled(),qPrintable("visible control "+name)); require(QMetaObject::invokeMethod(item,"clicked"),"control handler"); };
+        h.backend.m_folder="inbox"; h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==3;},"Inbox loads");
+        h.backend.selectConversation("a");
+        await([&]{ return shown("attachmentImportKey_key"); },"a key attached to mail offers Import");
+        press("attachmentImportKey_key");
+        // Nothing is stored until the person has seen the key and chosen Import.
+        await([&]{ return shown("pgpKeyPreviewImport"); },"Import shows the key first");
+        require(h.keyImports.size()==1 && h.keyImports[0]["preview"].toBool() && h.keyImports[0]["public_only"].toBool() && h.keyImports[0]["path"]==keyPath,"the preview reads the attachment's public keys only");
+        require(shown("pgpKeyPreviewFingerprint_0") && shown("pgpKeyPreviewFingerprint_0")->property("text").toString()=="FEDC BA98 7654 3210 FEDC BA98 7654 3210 FEDC BA98","the preview shows the fingerprint to compare");
+        require(shown("pgpKeyPreviewNotSender_0") && shown("pgpKeyPreviewNotSender_0")->property("text").toString().contains("sender@example.test"),"a key that isn't the sender's says so");
+        require(shown("pgpKeyPreviewConflicts") && shown("pgpKeyPreviewConflicts")->property("text").toString().contains("someone@example.test already has a key"),"an address another key has is called out");
+        require(shown("pgpKeyPreviewImport")->property("text").toString()=="Import anyway","taking an address asks for Import anyway");
+        press("pgpKeyPreviewImport");
+        QQuickItem *status=nullptr;
+        await([&]{ status=shown("attachmentStatus_key"); return status && status->property("text").toString().startsWith("Key imported") && !shown("pgpKeyPreviewImport"); },"Import anyway imports and closes");
+        require(h.keyImports.size()==2 && !h.keyImports[1]["preview"].toBool() && h.keyImports[1]["public_only"].toBool() && h.keyImports[1]["replace"].toBool() && h.keyImports[1]["path"]==keyPath,"the import stores the previewed public key, replacing only as agreed");
+        qInfo()<<"A key attached to mail shows its fingerprint and warnings before anything is imported.";
+    }
     static void headerCopies() {
         Harness h;
         h.laterMessages={QJsonObject{{"id","a-reply"},{"unread",false},{"starred",false},{"sender_name","Nicole Doutre"},{"sender_email","nicole@example.test"},
@@ -3097,6 +3295,6 @@ public:
         require(boundary.of("2026-11-01T03:59:59Z")=="done:2026-10" && boundary.of("2026-11-01T04:00:00Z")=="done:today"
             && boundary.of("2026-11-02T04:59:59Z")=="done:today" && boundary.of("2026-11-02T05:00:00Z")=="done:week", "Today follows local midnight across the 25-hour daylight-saving day");
     }
-    static void run(){longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){protectedMail();encryptedReply();keyFromMail();longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}

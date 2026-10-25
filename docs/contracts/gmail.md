@@ -1,5 +1,20 @@
 # Gmail provider
 
+## D220 — the send-as name (Gmail48)
+
+- `GmailCall::send_as` (`settings.sendAs.list`, 1 unit, UserRead) returns `GmailSendAsList`; `primary_name()` is the trimmed display name of the entry with `isPrimary`, or none. Addresses over 320 bytes or names over 1 KiB are refused.
+- The labels worker reads it after each catalog refresh (every ten minutes) and passes it to `Store::google_send_as_name`. A failed read keeps the saved name. Mail read access (`gmail.readonly` or full mail) is enough.
+
+Consumers: Core107.
+
+## D217 — protected mail through Gmail (Gmail47)
+
+- A draft that will be encrypted is never uploaded to Gmail Drafts; an earlier upload stays until the send replaces it. Sending submits the frozen PGP/MIME bytes through `messages.send` or `drafts.send` as before (Core104).
+- The Subject stays outside the encryption, since the Gmail API threads a message only when its subject matches the thread's.
+- Received PGP/MIME and inline PGP are stored as Gmail sends them; decryption happens only when reading.
+
+Consumers: Core104, Mail UI158.
+
 ## D212 — unsubscribe email needs a confirmed address at the sender's own domain (Gmail46)
 
 - `google_unsubscribe_mail` requires `address`, the address the person confirmed, and refuses unless it equals the address the message's unsubscribe would go to (Core99). The GUI sends it only from its confirmation, including the `fallback` after a refused one-click POST.

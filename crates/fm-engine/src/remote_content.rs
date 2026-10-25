@@ -294,7 +294,9 @@ impl Runtime {
         let plan = self
             .core
             .call(move |store| {
-                store.message_html_begin(&begin_account, &params, &["resource", "cached_only"])
+                store
+                    .message_html_begin(&begin_account, &params, &["resource", "cached_only"])
+                    .map(|plan| plan.decrypting())
             })
             .await?;
         let version = plan.version.clone();

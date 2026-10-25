@@ -35,6 +35,8 @@ impl UiChanges {
             | "google_draft_sources"
             | "google_draft_inventory" => ACCOUNTS | DRAFTS,
             "capture_operations" => CAPTURES | DRAFTS,
+            // Accounts show their key; the reader re-checks signatures.
+            "pgp_keys" | "pgp_key_addresses" | "pgp_accounts" => ACCOUNTS | READER,
             "unsubscribes"
             | "assist_results"
             | "assist_policies"

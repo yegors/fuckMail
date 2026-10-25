@@ -10,6 +10,7 @@ pub struct ReadPlan {
     /// The sending draft's attachments stored here, so the frozen message's
     /// attachments can be previewed before Gmail's copy arrives.
     stored: Vec<Value>,
+    pgp: crate::pgp::ReadKeys,
 }
 
 impl Store {
@@ -132,6 +133,7 @@ impl Store {
                 hash: op.upload_sha256,
                 size: op.size,
             },
+            pgp: self.pgp_read_keys()?,
         })
     }
 }
@@ -144,8 +146,10 @@ impl Store {
 /// altered or unparseable.
 pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     let bytes = load_google_send_upload(plan.upload, cancel)?;
+    // An encrypted send is to the sender too, so it reads as written.
+    let readable = plan.pgp.readable(bytes);
     let parsed = mail_parser::MessageParser::default()
-        .parse(&bytes)
+        .parse(&readable.bytes[..])
         .ok_or_else(|| {
             err(
                 "content_unavailable",
@@ -153,6 +157,9 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
             )
         })?;
     let mut result = plan.metadata;
+    if let Some(pgp) = readable.pgp_json() {
+        result["pgp"] = pgp;
+    }
     let text = parsed.body_text(0).unwrap_or_default();
     // Bound the escaped JSON contribution as well as UTF-8, preserving characters.
     let mut preview = String::new();

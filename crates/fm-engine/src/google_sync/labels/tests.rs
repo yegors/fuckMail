@@ -23,6 +23,9 @@ struct Http {
     release: Notify,
     creates: AtomicUsize,
     lose_create: AtomicBool,
+    /// The send-as list Gmail answers, and how often it was read.
+    send_as: Mutex<Value>,
+    send_as_reads: AtomicUsize,
 }
 impl HttpTransport for Http {
     fn execute<'a>(
@@ -31,6 +34,16 @@ impl HttpTransport for Http {
         cancel: &'a CancellationToken,
     ) -> HttpFuture<'a> {
         Box::pin(async move {
+            if request.url() == "https://gmail.googleapis.com/gmail/v1/users/me/settings/sendAs" {
+                assert_eq!(request.method(), HttpMethod::Get);
+                self.send_as_reads.fetch_add(1, Ordering::SeqCst);
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&*self.send_as.lock().unwrap()).unwrap(),
+                    retry_after_secs: None,
+                    etag: None,
+                });
+            }
             assert_eq!(
                 request.url(),
                 "https://gmail.googleapis.com/gmail/v1/users/me/labels"
@@ -125,6 +138,10 @@ impl Harness {
             release: Notify::new(),
             creates: AtomicUsize::new(0),
             lose_create: AtomicBool::new(false),
+            send_as: Mutex::new(
+                json!({"sendAs":[{"sendAsEmail":"reader@example.test","displayName":"Reader Example","isPrimary":true}]}),
+            ),
+            send_as_reads: AtomicUsize::new(0),
         });
         let ctx = SyncContext::for_test(
             CoreBridge::new(sender, Arc::new(Semaphore::new(8))),
@@ -400,6 +417,43 @@ async fn invalid_complete_response_cannot_replace_the_last_good_catalog() {
     assert!(refresh(&h.ctx).await.is_err());
     assert_eq!(h.cached().await, previous);
     assert_eq!(h.ctx.preparation.available_permits(), 1);
+    h.close();
+}
+
+#[tokio::test]
+async fn label_refresh_keeps_the_gmail_send_as_name_for_the_from_line() {
+    let h = Harness::new();
+    let from_name = || async {
+        let account = h.ctx.account.as_str().to_owned();
+        h.ctx
+            .core
+            .call(move |s| {
+                let rows = s.handle("accounts", None, json!({}))?;
+                Ok(rows["accounts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|row| row["id"] == account)
+                    .unwrap()["default_from_name"]
+                    .clone())
+            })
+            .await
+            .unwrap()
+    };
+    let mut worker = LabelsWorker::default();
+    assert_eq!(worker.step(&h.ctx, 0).await.unwrap(), Step::Progress);
+    assert_eq!(h.http.send_as_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(from_name().await, "Reader Example");
+    // A failed read keeps the saved name.
+    *h.http.send_as.lock().unwrap() = json!({"sendAs":[{"sendAsEmail":"","isPrimary":true}]});
+    worker.step(&h.ctx, REFRESH_INTERVAL_MS).await.unwrap();
+    assert_eq!(from_name().await, "Reader Example");
+    // A name removed in Gmail is removed here; the display name is only the address.
+    *h.http.send_as.lock().unwrap() =
+        json!({"sendAs":[{"sendAsEmail":"reader@example.test","displayName":"","isPrimary":true}]});
+    worker.step(&h.ctx, 2 * REFRESH_INTERVAL_MS).await.unwrap();
+    assert_eq!(h.http.send_as_reads.load(Ordering::SeqCst), 3);
+    assert_eq!(from_name().await, "");
     h.close();
 }
 

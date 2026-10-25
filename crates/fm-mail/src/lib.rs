@@ -22,7 +22,7 @@ pub use incoming::{
 };
 use lettre::message::{
     header::{self as mime_header, ContentTransferEncoding, ContentType},
-    Attachment, Mailbox, Mailboxes, Message, MultiPart, SinglePart,
+    Attachment, Body, Mailbox, Mailboxes, Message, MultiPart, SinglePart,
 };
 pub use reply_text::reply_contribution;
 use sha2::{Digest, Sha256};
@@ -476,7 +476,12 @@ fn attachment_part(part: &StagedAttachment) -> Result<SinglePart, ComposeError> 
     } else {
         Attachment::new(part.filename.clone())
     };
-    Ok(builder.body(part.bytes.clone(), content_type))
+    // Always base64, like the text parts: a short ASCII file would otherwise
+    // go out as 7bit with its own line endings, which transport may rewrite
+    // and which breaks an OpenPGP signature over the message.
+    let body = Body::new_with_encoding(part.bytes.clone(), ContentTransferEncoding::Base64)
+        .map_err(|_| ComposeError::MimeBuildFailed)?;
+    Ok(builder.body(body, content_type))
 }
 
 /// Reduces the composer's rich-text export to basic formatting, links and

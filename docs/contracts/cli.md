@@ -1,5 +1,28 @@
 # CLI and external agent interface
 
+## D220 — From name (CLI68)
+
+- `fm account-update --from-name NAME` sets the name mail is sent under; `--from-name ""` follows the Gmail send-as name. Left out, the saved one stays.
+
+Consumers: Core107.
+
+## D219 — OpenPGP import preview and engine-written exports (CLI67)
+
+- `fm pgp import FILE --preview` prints what the file holds (each key's fingerprint, user IDs and `add` or `update`, revocations and conflicts) and changes nothing; it needs no request ID. `--replace` imports keys that take an address another key or one of your accounts has; without it they fail with `pgp_key_conflict`. The two flags conflict.
+- `fm pgp export … --output FILE` sends the absolute path to the engine, which writes a new file readable only by you on every platform (`already_exists` if it is there); the reply has `path` instead of `armored`.
+
+Consumers: Core106; Quality97.
+
+## D217 — OpenPGP keys (CLI66)
+
+- `fm pgp keys` lists the keyring: fingerprint, algorithm, primary user ID, yours or public, status, expiry and the accounts using it.
+- `fm pgp generate [--email E] [--name N] [--algorithm curve25519|rsa4096] [--expires 3y|18m|90d|never]`; with `--account`, the account's name and address are the defaults and the key becomes its key.
+- `fm pgp import FILE|-` reads armored or binary keys (binary only from a file); `--passphrase-stdin` unlocks a protected secret key, and then the key must come from a file.
+- `fm pgp export FINGERPRINT [--secret --passphrase-stdin | --revocation] [--output FILE]` writes armor to stdout or a new owner-only file.
+- `fm pgp expiry FINGERPRINT --expires …`, `fm pgp delete FINGERPRINT`, `fm --account A pgp use FINGERPRINT|--off [--sign on|off] [--encrypt on|off]`, `fm --account A pgp recipients ADDRESS…`.
+- `fm draft save --sign on|off --encrypt on|off` sets the draft's flags.
+- Durations and the stdin rule are checked before any engine starts (exit 2).
+
 ## D216 — forward format (CLI65)
 
 - `fm draft create --mode forward --forward-format html|text` passes `forward_format` (Core103). Without it a forward quotes the original's text, as before.

@@ -166,6 +166,13 @@ fn endpoint_inventory_has_documented_costs_and_fixed_mutation_classes() {
             WorkClass::UserRead,
         ),
         (
+            GmailCall::send_as(&a).unwrap(),
+            HttpMethod::Get,
+            "/settings/sendAs",
+            1,
+            WorkClass::UserRead,
+        ),
+        (
             GmailCall::message_state(&a, "m").unwrap(),
             HttpMethod::Get,
             "/messages/m",
@@ -972,4 +979,35 @@ async fn deletion_certainty_distinguishes_completion_absence_and_accepted_only()
         };
         assert_eq!(reply.result, DraftDeletionResult::NoDefinitiveResponse);
     }
+}
+
+#[tokio::test]
+async fn send_as_reads_the_primary_display_name_and_refuses_oversized_entries() {
+    let (fake, api) = setup();
+    let a = account("a");
+    let cancel = CancellationToken::new();
+    let call = || GmailCall::send_as(&a).unwrap();
+    fake.respond(
+        200,
+        json!({"sendAs":[
+            {"sendAsEmail":"alias@example.test","displayName":"Alias","isPrimary":false},
+            {"sendAsEmail":"me@example.test","displayName":" Alex Example ","isPrimary":true}]}),
+    );
+    let GmailReply::SendAs(list) = api.execute(call(), "token", &cancel).await.unwrap() else {
+        panic!("send-as list");
+    };
+    assert_eq!(list.primary_name(), Some("Alex Example"));
+    fake.respond(
+        200,
+        json!({"sendAs":[{"sendAsEmail":"me@example.test","displayName":"","isPrimary":true}]}),
+    );
+    let GmailReply::SendAs(list) = api.execute(call(), "token", &cancel).await.unwrap() else {
+        panic!("send-as list");
+    };
+    assert_eq!(list.primary_name(), None);
+    fake.respond(
+        200,
+        json!({"sendAs":[{"sendAsEmail":"me@example.test","displayName":"x".repeat(1025),"isPrimary":true}]}),
+    );
+    assert!(api.execute(call(), "token", &cancel).await.is_err());
 }

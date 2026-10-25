@@ -1,0 +1,114 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
+
+// "Import key": a key file or pasted armored text, holding public keys, a
+// secret key or a revocation certificate. A protected secret key asks for its
+// passphrase once; it is then kept sealed in the keyring, not with that
+// passphrase. A key naming an address another key already has, or one of
+// your own, waits until the person imports it anyway.
+FmDialog {
+    id: dialog
+    objectName: "pgpImportDialog"
+    property url file: ""
+    property string ticket: ""
+    property string error: ""
+    property var protectedKey: null
+    // Addresses the keys would take from other keys, from the engine's refusal.
+    property var conflicts: []
+    readonly property bool working: ticket.length > 0
+    title: "Import key"
+    width: Math.min(560, parent ? parent.width - 48 : 560)
+    closePolicy: working ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    function show() { file = ""; pasted.text = ""; passphrase.text = ""; protectedKey = null; conflicts = []; error = ""; ticket = ""; open() }
+    function run() {
+        if (working) return
+        error = ""
+        ticket = backend.pgpKeys.importKeys(pasted.text, file, passphrase.text, conflicts.length > 0)
+    }
+    function holder(fingerprint) { const key = backend.pgpKeys.key(fingerprint); return (key.user_ids || [])[0] || backend.pgpKeys.grouped(fingerprint) }
+    function conflictText(conflict) {
+        const key = backend.pgpKeys.grouped(conflict.fingerprint)
+        if (conflict.own) return conflict.address + " is one of your own addresses, and key " + key + " isn't yours."
+        return conflict.address + " already has a key: " + conflict.holders.map(dialog.holder).join(", ")
+            + ". Importing " + key + " makes it the key used to encrypt to " + conflict.address + "."
+    }
+    Connections {
+        target: backend.pgpKeys
+        function onFinished(ticket, action, result, ok) {
+            if (ticket !== dialog.ticket) return
+            dialog.ticket = ""
+            if (ok) { passphrase.text = ""; dialog.close(); return }
+            if (result.code === "passphrase_required" || result.code === "wrong_passphrase") {
+                dialog.protectedKey = result.details || dialog.protectedKey || {}
+                if (result.code === "wrong_passphrase") dialog.error = result.message
+                passphrase.forceActiveFocus()
+                return
+            }
+            if (result.code === "pgp_key_conflict") { dialog.conflicts = (result.details || {}).conflicts || []; return }
+            dialog.error = result.message || "Nothing was imported."
+        }
+    }
+    FileDialog {
+        id: picker
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["OpenPGP keys (*.asc *.gpg *.pgp *.key *.pub *.sec)", "All files (*)"]
+        onAccepted: { dialog.file = selectedFile; pasted.text = ""; dialog.protectedKey = null; dialog.conflicts = []; dialog.error = "" }
+    }
+    contentItem: ColumnLayout {
+        spacing: 12
+        RowLayout {
+            Layout.fillWidth: true; spacing: 10
+            FmButton { objectName: "pgpImportChoose"; text: "Choose file…"; outlined: true; enabled: !dialog.working; onClicked: picker.open() }
+            Text {
+                Layout.fillWidth: true; elide: Text.ElideMiddle; textFormat: Text.PlainText
+                text: dialog.file.toString().length ? decodeURIComponent(dialog.file.toString().replace(/^file:\/\//, "")) : "or paste a key below"
+                color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+            }
+        }
+        ScrollView {
+            Layout.fillWidth: true; Layout.preferredHeight: 150
+            visible: !dialog.file.toString().length
+            ScrollBar.vertical: FmScrollBar {}
+            TextArea {
+                id: pasted
+                objectName: "pgpImportText"
+                ContextMenu.menu: null
+                TextMenuHandler {}
+                enabled: !dialog.working
+                placeholderText: "-----BEGIN PGP PUBLIC KEY BLOCK-----"; placeholderTextColor: Theme.faint
+                // Armor's runs of dashes stay plain dashes, not the mono font's ligatures.
+                padding: 10; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(11); font.features: {"calt": 0, "liga": 0}
+                textFormat: TextEdit.PlainText; wrapMode: TextEdit.WrapAnywhere; selectByMouse: true
+                background: Rectangle { color: Theme.canvas; radius: 5; border.color: pasted.activeFocus ? Theme.focusBorder : Theme.line2 }
+                onTextChanged: { dialog.protectedKey = null; dialog.conflicts = []; dialog.error = "" }
+                Accessible.name: "Key text"
+            }
+        }
+        ColumnLayout {
+            visible: !!dialog.protectedKey
+            Layout.fillWidth: true; spacing: 6
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: "The secret key of " + (((dialog.protectedKey || {}).user_ids || [])[0] || "this key") + " is protected. Enter its passphrase to import it."
+                color: Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+            }
+            FmTextField { id: passphrase; objectName: "pgpImportPassphrase"; Layout.fillWidth: true; echoMode: TextInput.Password; enabled: !dialog.working; placeholderText: "Passphrase"; Keys.onReturnPressed: dialog.run(); Keys.onEnterPressed: dialog.run(); Accessible.name: "Passphrase of the secret key" }
+        }
+        Text {
+            objectName: "pgpImportConflicts"
+            visible: dialog.conflicts.length > 0
+            Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+            text: dialog.conflicts.map(dialog.conflictText).join("
+") + "
+Compare the fingerprint with its owner's before you import it."
+            color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+        }
+        Text { objectName: "pgpImportError"; visible: dialog.error.length > 0; text: dialog.error; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.error; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
+    }
+    footer: FmDialogFooter {
+        FmDialogFooter.Button { text: "Cancel"; enabled: !dialog.working; onClicked: { passphrase.text = ""; dialog.close() } }
+        FmDialogFooter.Button { objectName: "pgpImportRun"; primary: true; text: dialog.working ? "Importing…" : dialog.conflicts.length ? "Import anyway" : "Import"; enabled: backend.connected && !dialog.working && (dialog.file.toString().length > 0 || pasted.text.trim().length > 0) && (!dialog.protectedKey || passphrase.text.length > 0); onClicked: dialog.run() }
+    }
+}

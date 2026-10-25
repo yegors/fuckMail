@@ -93,7 +93,7 @@ enum Command {
         #[command(subcommand)]
         command: Preferences,
     },
-    /// Update display name and signature, preserving existing draft snapshots.
+    /// Update display name, From name and signature, preserving existing draft snapshots.
     AccountUpdate {
         /// How far back to keep this account's mail; shortening it removes older local copies.
         #[arg(long, value_parser=["1_month","3_months","90_days","1_year","2_years","5_years","all"])]
@@ -114,6 +114,10 @@ enum Command {
         /// Display name, 1–80 characters.
         #[arg(long)]
         name: String,
+        /// Name mail is sent under, up to 80 characters; an empty value uses
+        /// the Gmail send-as name. Unchanged when left out.
+        #[arg(long)]
+        from_name: Option<String>,
         /// File with the signature text, or `-` for stdin; at most 16 KiB.
         #[arg(long)]
         signature_file: PathBuf,
@@ -192,6 +196,12 @@ enum Command {
     Proxy {
         #[command(subcommand)]
         command: ProxyCommand,
+    },
+    /// OpenPGP keys: create, import, export and renew them, and choose which
+    /// one each account signs and decrypts with.
+    Pgp {
+        #[command(subcommand)]
+        command: PgpCommand,
     },
     /// Exercise a documented protocol method with JSON read from a file or '-'.
     Call {
@@ -1127,6 +1137,105 @@ enum ProxyCommand {
 }
 
 #[derive(Subcommand)]
+enum PgpCommand {
+    /// Every key in the keyring: your own and other people's.
+    Keys,
+    /// Create a new key. With --account, it is made for that account's name
+    /// and address and becomes the account's key.
+    Generate {
+        /// Address in the key; defaults to the --account's address.
+        #[arg(long)]
+        email: Option<String>,
+        /// Name in the key; defaults to the --account's name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Ed25519 with Curve25519 (any current program), or RSA 4096 for older ones.
+        #[arg(long, default_value = "curve25519", value_parser = ["curve25519", "rsa4096"])]
+        algorithm: String,
+        /// How long until it expires: such as 3y, 18m or 90d, or never.
+        #[arg(long, default_value = "3y", value_parser = parse_expiry)]
+        expires: Expiry,
+        /// Unique ID for this key; generated when omitted.
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Add keys from an armored or binary file, or `-` for stdin: public keys,
+    /// secret keys and revocation certificates. A key naming an address that
+    /// another key or one of your accounts already has needs --replace.
+    Import {
+        file: PathBuf,
+        /// Read the secret key's passphrase from standard input.
+        #[arg(long)]
+        passphrase_stdin: bool,
+        /// List what the file holds, with fingerprints and conflicts, and
+        /// change nothing.
+        #[arg(long, conflicts_with = "replace")]
+        preview: bool,
+        /// Use these keys for addresses another key already has. Compare
+        /// their fingerprints with their owners' first.
+        #[arg(long)]
+        replace: bool,
+        /// Unique ID for this import; generated when omitted.
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Write a key as armored text, to --output or standard output.
+    Export {
+        fingerprint: String,
+        /// Your secret key, protected with a passphrase read from standard input.
+        #[arg(long, conflicts_with = "revocation", requires = "passphrase_stdin")]
+        secret: bool,
+        /// A revocation certificate for your key.
+        #[arg(long)]
+        revocation: bool,
+        /// Read the new passphrase from standard input (at least 12 characters).
+        #[arg(long)]
+        passphrase_stdin: bool,
+        /// Write to a new file; never overwrites an existing one.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Move your key's expiry date, or remove it.
+    Expiry {
+        fingerprint: String,
+        /// Such as 3y, 18m or 90d from today, or never.
+        #[arg(long, value_parser = parse_expiry)]
+        expires: Expiry,
+        /// Unique ID for this change; generated when omitted.
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Remove a key. Export your secret key first if you may need it again.
+    Delete {
+        fingerprint: String,
+        /// Unique ID for this change; generated when omitted.
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Choose the --account's key and whether new mail is signed or
+    /// encrypted by default.
+    Use {
+        /// One of your keys made for the account's address.
+        #[arg(required_unless_present = "off")]
+        fingerprint: Option<String>,
+        /// Stop using OpenPGP for this account.
+        #[arg(long, conflicts_with = "fingerprint")]
+        off: bool,
+        /// Sign new mail by default.
+        #[arg(long, default_value = "on", value_parser = ["on", "off"])]
+        sign: String,
+        /// Encrypt new mail by default.
+        #[arg(long, default_value = "off", value_parser = ["on", "off"])]
+        encrypt: String,
+        /// Unique ID for this change; generated when omitted.
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Whether mail to these addresses can be encrypted from the --account.
+    Recipients { addresses: Vec<String> },
+}
+
+#[derive(Subcommand)]
 enum Preferences {
     /// Show the saved preferences and their revision.
     Show,
@@ -1388,6 +1497,12 @@ enum Draft {
         /// Remove every attachment from the draft.
         #[arg(long)]
         clear_attachments: bool,
+        /// Sign with the account's OpenPGP key when sent; omit to keep the saved choice.
+        #[arg(long, value_parser = ["on", "off"])]
+        sign: Option<String>,
+        /// Encrypt to every recipient when sent; the draft then stays out of Gmail Drafts.
+        #[arg(long, value_parser = ["on", "off"])]
+        encrypt: Option<String>,
         /// Draft revision you last read; defaults to the current one.
         #[arg(long)]
         expected_revision: Option<u64>,
@@ -2075,6 +2190,14 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Call { .. }
             | Command::Preferences { .. }
             | Command::Proxy { .. }
+            | Command::Pgp {
+                command: PgpCommand::Keys
+                    | PgpCommand::Generate { .. }
+                    | PgpCommand::Import { .. }
+                    | PgpCommand::Export { .. }
+                    | PgpCommand::Expiry { .. }
+                    | PgpCommand::Delete { .. }
+            }
             | Command::Links {
                 command: LinkCommand::Blocked
                     | LinkCommand::Block { .. }
@@ -2105,6 +2228,22 @@ async fn run(args: &Args) -> Result<(), Failure> {
         }
     ) {
         account(args)?;
+    }
+    // Standard input can carry the key or its passphrase, not both.
+    if let Command::Pgp {
+        command:
+            PgpCommand::Import {
+                file,
+                passphrase_stdin: true,
+                ..
+            },
+    } = &args.command
+    {
+        if file == Path::new("-") {
+            return Err(invalid(
+                "Read the key from a file when the passphrase comes from stdin",
+            ));
+        }
     }
     // profile-init, Google, account and retained Google draft commands must
     // name their profile explicitly and cannot use the demo profile.
@@ -2928,6 +3067,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             analyze_history,
             color,
             name,
+            from_name,
             signature_file,
             expected_revision,
             request_id,
@@ -2938,6 +3078,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
             if let Some(analyze)=analyze_history {params["analyze_history"]=json!(analyze);}
             if let Some(color)=color {params["color"]=json!(color);}
+            if let Some(from_name)=from_name {params["from_name"]=json!(from_name);}
             // clap requires both access flags together. `none` turns that service
             // off; the engine still wants an access level for it, so read is sent.
             if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {
@@ -3391,6 +3532,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 signature_file,
                 attachment,
                 clear_attachments,
+                sign,
+                encrypt,
                 expected_revision,
                 request_id,
             } => {
@@ -3450,6 +3593,12 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 if *clear_attachments || !attachment.is_empty() {
                     params["attachment_ids"] = json!(attachment);
                 }
+                if let Some(sign) = sign {
+                    params["pgp_sign"] = json!(sign == "on");
+                }
+                if let Some(encrypt) = encrypt {
+                    params["pgp_encrypt"] = json!(encrypt == "on");
+                }
                 client.call("draft_save", scope, params).await?
             }
         },
@@ -3489,6 +3638,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         }
         Command::Links { command } => links(&mut client, scope, command).await?,
         Command::Proxy { command } => proxy(&mut client, command).await?,
+        Command::Pgp { command } => pgp(&mut client, scope, command).await?,
         Command::Call {
             method,
             params_file,
@@ -3753,6 +3903,180 @@ async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Fai
     }
 }
 
+/// A key's lifetime in days, or `None` for never.
+#[derive(Clone)]
+struct Expiry(Option<u64>);
+
+/// Parses a duration such as `3y`, `18m` or `90d`, or `never`.
+fn parse_expiry(text: &str) -> Result<Expiry, String> {
+    let text = text.trim().to_lowercase();
+    if text == "never" {
+        return Ok(Expiry(None));
+    }
+    let bad = || "give the expiry as 3y, 18m, 90d or never".to_owned();
+    let (count, unit) = text.split_at(text.len().saturating_sub(1));
+    let count: u64 = count.parse().map_err(|_| bad())?;
+    let days = match unit {
+        "y" => count.checked_mul(365),
+        "m" => count.checked_mul(30),
+        "d" => Some(count),
+        _ => None,
+    }
+    .ok_or_else(bad)?;
+    if !(1..=11_000).contains(&days) {
+        return Err("a key must last from a day to 30 years".into());
+    }
+    Ok(Expiry(Some(days)))
+}
+
+/// Reads a secret from standard input, without the trailing line ending.
+fn passphrase_stdin() -> Result<String, Failure> {
+    let mut value = String::new();
+    io::stdin().take(4096).read_to_string(&mut value)?;
+    Ok(value.trim_end_matches(['\r', '\n']).to_owned())
+}
+
+/// Runs a `pgp` subcommand. Passphrases are read from standard input and
+/// never printed; exported secret keys are written only to a new private file
+/// or standard output.
+async fn pgp(
+    client: &mut Client,
+    scope: Option<&str>,
+    command: &PgpCommand,
+) -> Result<Value, Failure> {
+    let request = |id: &Option<String>| json!(id.clone().unwrap_or_else(fm_ipc::random_token));
+    match command {
+        PgpCommand::Keys => Ok(client.call("pgp_keys", None, json!({})).await?),
+        PgpCommand::Generate {
+            email,
+            name,
+            algorithm,
+            expires,
+            request_id,
+        } => {
+            let account = match scope {
+                Some(scope) => {
+                    let accounts = result(client.call("accounts", None, json!({})).await?)?;
+                    accounts["accounts"]
+                        .as_array()
+                        .and_then(|rows| rows.iter().find(|a| a["id"] == scope).cloned())
+                }
+                None => None,
+            };
+            let email = email
+                .clone()
+                .or_else(|| account.as_ref().and_then(|a| a["email"].as_str().map(str::to_owned)))
+                .ok_or_else(|| invalid("Give --email, or --account to make a key for it"))?;
+            let name = name
+                .clone()
+                .or_else(|| account.as_ref().and_then(|a| a["name"].as_str().map(str::to_owned)))
+                .unwrap_or_default();
+            let mut params = json!({"name":name,"email":email,"algorithm":algorithm,
+                "expires_days":expires.0,"request_id":request(request_id)});
+            if let Some(scope) = scope {
+                params["account"] = json!(scope);
+            }
+            // RSA keys can take a while to generate.
+            Ok(client
+                .call_within("pgp_key_generate", None, params, Duration::from_secs(120))
+                .await?)
+        }
+        PgpCommand::Import {
+            file,
+            passphrase_stdin: ask,
+            preview,
+            replace,
+            request_id,
+        } => {
+            let text = String::from_utf8(read_input(file, 1024 * 1024)?).ok();
+            let mut params = if *preview {
+                json!({"preview":true})
+            } else {
+                json!({"request_id":request(request_id),"replace":replace})
+            };
+            match text {
+                Some(text) => params["text"] = json!(text),
+                // Binary keys are read by the engine from the file itself.
+                None if file != Path::new("-") => {
+                    params["path"] = json!(std::path::absolute(file)?
+                        .to_str()
+                        .ok_or_else(|| invalid("The key file path must be UTF-8"))?)
+                }
+                None => return Err(invalid("Binary keys must come from a file, not stdin")),
+            }
+            if *ask {
+                params["passphrase"] = json!(passphrase_stdin()?);
+            }
+            Ok(client.call("pgp_key_import", None, params).await?)
+        }
+        PgpCommand::Export {
+            fingerprint,
+            secret,
+            revocation,
+            passphrase_stdin: ask,
+            output,
+        } => {
+            let kind = if *secret {
+                "secret"
+            } else if *revocation {
+                "revocation"
+            } else {
+                "public"
+            };
+            let mut params = json!({"fingerprint":fingerprint,"kind":kind});
+            if *ask {
+                params["passphrase"] = json!(passphrase_stdin()?);
+            }
+            // The engine writes the file, new and readable only by you.
+            if let Some(output) = output {
+                params["path"] = json!(std::path::absolute(output)?
+                    .to_str()
+                    .ok_or_else(|| invalid("The output path must be UTF-8"))?);
+            }
+            Ok(client.call("pgp_key_export", None, params).await?)
+        }
+        PgpCommand::Expiry {
+            fingerprint,
+            expires,
+            request_id,
+        } => Ok(client
+            .call(
+                "pgp_key_expiry",
+                None,
+                json!({"fingerprint":fingerprint,"expires_days":expires.0,"request_id":request(request_id)}),
+            )
+            .await?),
+        PgpCommand::Delete {
+            fingerprint,
+            request_id,
+        } => Ok(client
+            .call(
+                "pgp_key_delete",
+                None,
+                json!({"fingerprint":fingerprint,"request_id":request(request_id)}),
+            )
+            .await?),
+        PgpCommand::Use {
+            fingerprint,
+            off,
+            sign,
+            encrypt,
+            request_id,
+        } => Ok(client
+            .call(
+                "pgp_account",
+                scope,
+                json!({"fingerprint":if *off { Value::Null } else { json!(fingerprint) },
+                    "sign_by_default":sign == "on","encrypt_by_default":encrypt == "on",
+                    "request_id":request(request_id)}),
+            )
+            .await?),
+        PgpCommand::Recipients { addresses } => Ok(client
+            .call("pgp_recipients", scope, json!({"addresses":addresses}))
+            .await?),
+    }
+}
+
 /// The reader's image states for one message. Remote images are fetched only
 /// with `load`; otherwise only the disk cache and the message's own parts are used.
 async fn message_images(
@@ -3818,6 +4142,50 @@ fn write_reply(out: &mut impl Write, json: bool, reply: &Value) -> io::Result<()
         // Sync status also has an `accounts` array; print it whole rather than
         // as an account list.
         write_pretty(out, result)
+    } else if let Some(armored) = result["armored"].as_str() {
+        out.write_all(armored.as_bytes())
+    } else if let Some(keys) = result["keys"].as_array() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        for key in keys {
+            let expiry = match key["expires_at"].as_u64() {
+                None => "no expiry".to_owned(),
+                Some(at) if at <= now => "expired".to_owned(),
+                Some(at) => format!("expires in {} days", (at - now).div_ceil(86_400)),
+            };
+            let accounts: Vec<String> = key["accounts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(line)
+                .collect();
+            writeln!(
+                out,
+                "{}  {}  {}  {}{} · {}{}",
+                line(&key["fingerprint"]),
+                line(&key["algorithm"]),
+                key["user_ids"].get(0).map(line).unwrap_or_default(),
+                if key["secret"] == true {
+                    "yours"
+                } else {
+                    "public"
+                },
+                if key["status"] == "valid" {
+                    String::new()
+                } else {
+                    format!(" · {}", line(&key["status"]))
+                },
+                expiry,
+                if accounts.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · used by {}", accounts.join(", "))
+                }
+            )?;
+        }
+        Ok(())
     } else if let Some(accounts) = result["accounts"].as_array() {
         for a in accounts {
             writeln!(

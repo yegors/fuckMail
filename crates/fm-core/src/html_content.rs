@@ -36,18 +36,30 @@ pub struct HtmlPlan {
     /// The view keeps quoted reply history (`quotes: true` in the request).
     /// Its image and link ids are its own.
     pub quotes: bool,
+    pgp: crate::pgp::ReadKeys,
+}
+
+impl HtmlPlan {
+    /// Decrypts encrypted mail whatever the request said: image requests come
+    /// from a view that was already decrypted.
+    pub fn decrypting(mut self) -> Self {
+        self.pgp = self.pgp.decrypting(true);
+        self
+    }
 }
 
 impl Store {
     /// Validate that `id` is this account's message at exactly `source_version`.
-    /// An optional `quotes` boolean asks for the view with reply history kept.
+    /// An optional `quotes` boolean asks for the view with reply history kept,
+    /// and `decrypt` for encrypted mail to be decrypted rather than left
+    /// without HTML.
     pub fn message_html_begin(
         &self,
         account: &str,
         request: &Value,
         extra: &[&str],
     ) -> Result<HtmlPlan> {
-        let mut allowed = vec!["id", "source_version", "quotes"];
+        let mut allowed = vec!["id", "source_version", "quotes", "decrypt"];
         allowed.extend_from_slice(extra);
         fields(request, &allowed)?;
         let quotes = match request.get("quotes") {
@@ -55,6 +67,7 @@ impl Store {
             Some(Value::Bool(v)) => *v,
             _ => return Err(err("invalid_request", "quotes must be true or false")),
         };
+        let decrypt = crate::message_source::decrypt_flag(request)?;
         let mid = id(string(request, "id")?)?;
         let found: Option<(String, String)> = self
             .db
@@ -79,6 +92,7 @@ impl Store {
             version,
             sender: sender.trim().to_ascii_lowercase(),
             quotes,
+            pgp: self.pgp_read_keys()?.decrypting(decrypt),
         })
     }
 }
@@ -94,11 +108,14 @@ fn inline_key(plan: &HtmlPlan, resource: usize) -> String {
     view_cache::key(&[kind, &plan.version, &resource.to_string()])
 }
 
-fn parse_source(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Vec<u8>> {
+/// The message's source, decrypted when it is encrypted. A message that
+/// can't be decrypted shows no HTML.
+fn parse_source(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<crate::pgp::Readable> {
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));
     }
-    crate::local_content::read_source(&plan.blobs, &plan.version)
+    let raw = crate::local_content::read_source(&plan.blobs, &plan.version)?;
+    Ok(plan.pgp.readable(raw))
 }
 
 fn unparsable() -> crate::CoreError {
@@ -108,23 +125,35 @@ fn unparsable() -> crate::CoreError {
     )
 }
 
-/// The sanitised view of a source, shared by the reader and image requests.
-/// The last 16 views are memoised by source hash and `quotes`, so image
-/// requests right after a read do not re-parse the message.
-fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlView>>> {
-    type Manifest = (String, bool, Option<Arc<HtmlView>>);
+/// The sanitised view of a source, shared by the reader and image requests,
+/// and whether it came from decrypting. The last 16 views are memoised by
+/// source hash and `quotes`, so image requests right after a read do not
+/// re-parse the message. A message that couldn't be decrypted isn't kept, so
+/// it is tried again once its key is available.
+fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<(Option<Arc<HtmlView>>, bool)> {
+    type Manifest = (String, bool, Option<Arc<HtmlView>>, bool);
     static MANIFESTS: Mutex<VecDeque<Manifest>> = Mutex::new(VecDeque::new());
     if let Ok(cache) = MANIFESTS.lock() {
-        if let Some((_, _, view)) = cache
+        if let Some((_, _, view, decrypted)) = cache
             .iter()
-            .find(|(v, q, _)| v == &plan.version && *q == plan.quotes)
+            .find(|(v, q, _, _)| v == &plan.version && *q == plan.quotes)
         {
-            return Ok(view.clone());
+            // A view decrypted earlier isn't shown to a read that leaves the
+            // message sealed.
+            if *decrypted && !plan.pgp.decrypts() {
+                return Ok((None, false));
+            }
+            return Ok((view.clone(), *decrypted));
         }
     }
-    let bytes = parse_source(plan, cancel)?;
+    let readable = parse_source(plan, cancel)?;
+    let decrypted = readable.decrypted();
+    let undecrypted = readable.opened.as_ref().is_some_and(|o| o.encrypted) && !decrypted;
+    if undecrypted {
+        return Ok((None, false));
+    }
     let parsed = mail_parser::MessageParser::default()
-        .parse(&bytes)
+        .parse(&readable.bytes[..])
         .ok_or_else(unparsable)?;
     let sanitize = if plan.quotes {
         html_view::sanitize_with_quotes
@@ -146,10 +175,10 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
         return Err(err("cancelled", "Message read cancelled"));
     }
     if let Ok(mut cache) = MANIFESTS.lock() {
-        cache.push_front((plan.version.clone(), plan.quotes, view.clone()));
+        cache.push_front((plan.version.clone(), plan.quotes, view.clone(), decrypted));
         cache.truncate(MANIFESTS_KEPT);
     }
-    Ok(view)
+    Ok((view, decrypted))
 }
 
 /// Builds the sanitised HTML view off the writer and returns it with its image
@@ -162,7 +191,7 @@ fn view(plan: &HtmlPlan, cancel: &CancellationToken) -> Result<Option<Arc<HtmlVi
 pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) -> Result<Value> {
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
         "sanitizer":html_view::SANITIZER_VERSION,"sender":plan.sender,"quotes":plan.quotes});
-    let view = match view(&plan, cancel) {
+    let (view, decrypted) = match view(&plan, cancel) {
         Ok(view) => view,
         Err(e) if e.code == "too_large" => {
             result["has_html"] = true.into();
@@ -178,7 +207,13 @@ pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) 
     result["has_html"] = true.into();
     result["too_large"] = false.into();
     // Measure the JSON-escaped size: quotes and backslashes grow on the wire.
-    if serde_json::to_vec(&view.html)?.len() > INLINE_HTML_BYTES {
+    let size = serde_json::to_vec(&view.html)?.len();
+    // Decrypted HTML never goes to the disk cache; the reader shows the text.
+    if decrypted && size > INLINE_HTML_BYTES {
+        result["too_large"] = true.into();
+        return Ok(result);
+    }
+    if size > INLINE_HTML_BYTES {
         let quotes = if plan.quotes { "-quotes" } else { "" };
         let name = format!("{}-{}{quotes}", plan.version, html_view::SANITIZER_VERSION);
         let path = cache.html_file(&name, &view.html)?;
@@ -201,15 +236,21 @@ pub fn read_html(plan: HtmlPlan, cache: &ViewCache, cancel: &CancellationToken) 
                 item["height"] = h.into();
             }
             // Already decoded images need no request: remote ones fetched
-            // earlier, and this version's own inline images.
-            let key = match r.kind {
-                ResourceKind::Remote => Some(view_cache::key(&["remote", &r.source])),
-                ResourceKind::Cid | ResourceKind::Data => Some(inline_key(&plan, r.id)),
+            // earlier, and this version's own inline images, which for
+            // decrypted mail are kept apart from the image cache.
+            let hit = match r.kind {
+                ResourceKind::Remote => {
+                    cache.cached_image(&plan.account, &view_cache::key(&["remote", &r.source]))
+                }
+                ResourceKind::Cid | ResourceKind::Data if decrypted => {
+                    cache.cached_decrypted(&inline_key(&plan, r.id))
+                }
+                ResourceKind::Cid | ResourceKind::Data => {
+                    cache.cached_image(&plan.account, &inline_key(&plan, r.id))
+                }
                 ResourceKind::Insecure => None,
             };
-            if let Some((path, width, height)) =
-                key.and_then(|k| cache.cached_image(&plan.account, &k))
-            {
+            if let Some((path, width, height)) = hit {
                 item["image"] =
                     json!({"path":path.to_string_lossy(),"width":width,"height":height});
             }
@@ -253,8 +294,8 @@ pub fn resolve_image(
     cache: &ViewCache,
     cancel: &CancellationToken,
 ) -> Result<ImageSource> {
-    let view =
-        view(plan, cancel)?.ok_or_else(|| err("not_found", "This message has no HTML images"))?;
+    let (view, decrypted) = view(plan, cancel)?;
+    let view = view.ok_or_else(|| err("not_found", "This message has no HTML images"))?;
     let item = view
         .resources
         .iter()
@@ -269,7 +310,12 @@ pub fn resolve_image(
         }),
         ResourceKind::Cid | ResourceKind::Data => {
             let key = inline_key(plan, resource);
-            if let Some((path, width, height)) = cache.cached_image(&plan.account, &key) {
+            let cached = if decrypted {
+                cache.cached_decrypted(&key)
+            } else {
+                cache.cached_image(&plan.account, &key)
+            };
+            if let Some((path, width, height)) = cached {
                 return Ok(ImageSource::Ready {
                     path: path.to_string_lossy().into_owned(),
                     width,
@@ -283,7 +329,11 @@ pub fn resolve_image(
             };
             let image = fm_mail::image_view::normalize_image(&bytes)
                 .map_err(|e| err(e.code(), "This image cannot be shown"))?;
-            let path = cache.store_image(&plan.account, &key, &image.png)?;
+            let path = if decrypted {
+                cache.store_decrypted(&key, &image.png)?
+            } else {
+                cache.store_image(&plan.account, &key, &image.png)?
+            };
             Ok(ImageSource::Ready {
                 path: path.to_string_lossy().into_owned(),
                 width: image.width,
@@ -294,9 +344,9 @@ pub fn resolve_image(
 }
 
 fn inline_part(plan: &HtmlPlan, cid: &str, cancel: &CancellationToken) -> Result<Vec<u8>> {
-    let bytes = parse_source(plan, cancel)?;
+    let readable = parse_source(plan, cancel)?;
     let parsed = mail_parser::MessageParser::default()
-        .parse(&bytes)
+        .parse(&readable.bytes[..])
         .ok_or_else(unparsable)?;
     let part = parsed
         .parts

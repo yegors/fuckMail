@@ -2,8 +2,33 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-24
+
+- Each account has its own **From name**, the name people see when you write to them, in Settings → Accounts → Edit account and `fm account-update --from-name`. It starts as the name you set in Gmail. The display name is now only what fuckMail shows, and an account whose display name is just its address no longer sends mail under the address as a name.
+- A key attached to mail now shows what it is before anything is imported: its name, address and fingerprint, a warning if it isn't the sender's, and a warning if it would replace the key you already have for an address. Only public keys import from mail.
+- Importing a key that claims an address another key already has, or one of your own, now asks first, in Settings and in `fm pgp import` (`--preview`, `--replace`).
+- Signed and encrypted mail shows only the part that was actually signed or encrypted, and says when there was more around it.
+- A warning shows when a signed message's subject, sender or recipients were changed after it was sent, or when a signed message meant for someone else was passed on to you.
+- Files inside signed mail are listed again; some were hidden as if they were the signature.
+- **Encrypt** no longer turns itself off when a recipient has no key: sending waits until you import their key or turn Encrypt off yourself. Replying to encrypted mail without encryption shows a warning.
+- Key backups and exports are now readable only by you on Windows too, and are harder to crack if the file is stolen.
+
+## 2026-10-23
+
+- Encrypted mail opens sealed, its text behind redaction bars, until you click **Decrypt**. Mail you sent encrypted has **Reveal**. It stays readable until fuckMail closes or you click **Hide**, and a message without a key here says which key it needs.
+- Encrypted mail sent between Gmail mailboxes now opens as written. Gmail rewrites it on delivery, and the reader showed its raw MIME instead.
+- OpenPGP attachments (public keys, signatures, encrypted files) have their own card, and a public key imports with a click.
+- **Encrypt** is dimmed until every recipient has a key, and hovering it says who is missing one. Encrypt by default turns on only when every recipient has a key, and Sign and Encrypt defaults now apply to the reply box under a conversation too.
+- Settings → Encryption: the Sign and Encrypt switches change at once, without the page reloading around them.
+
 ## 2026-10-22
 
+- OpenPGP: sign and encrypt mail with your own keys. **Settings → Encryption** creates keys (Ed25519 by default, or RSA 4096), imports keys from GnuPG and other apps, and backs up, exports, renews or revokes them. Pick each account's key and whether new mail signs or encrypts by default there.
+- The Accounts page shows which accounts have OpenPGP on, with the key and its defaults.
+- The composer has Sign and Encrypt buttons for accounts with a key, and names any recipient whose key you don't have. Encrypted mail is also encrypted to you, so your Sent copy stays readable, and its drafts stay on this computer instead of Gmail Drafts.
+- Encrypted mail you receive opens decrypted, attachments included, and signed mail shows whether the signature is good and really from the sender. Its text is never stored decrypted or made searchable, and pictures or attachments you open from it are cleared when fuckMail closes.
+- Secret keys are sealed with a key kept in your system keychain. Back them up from Settings → Encryption: a copy of the profile on another computer can't open them.
+- `fm pgp` lists, creates, imports, exports, renews and deletes keys, sets an account's key, and checks recipients; `fm draft save --sign/--encrypt` turns protection on or off for a draft.
 - Forwarding a message you read as HTML sends it as received, layout and images included, below what you write. The message area shows it under your words, read-only. Messages you read as text still forward as quoted text.
 - Hover a recipient in To, Cc or Bcc to see their contact card, with their address, as you can for names in the reader. Click to open it at once.
 - A forward opens at its top with two empty lines above the forwarded message, even without a signature, so you can start typing straight away.

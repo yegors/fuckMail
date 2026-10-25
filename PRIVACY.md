@@ -29,7 +29,9 @@ Everything stays on your computer, in the profile folder:
 
 It holds your mail (including original messages and attachments), calendar events, drafts, labels, settings, local model summaries and labels, cached images and sender pictures, and logs. **The app does not encrypt this folder**; it relies on your operating system account and disk encryption.
 
-Google sign-in tokens and the optional proxy password are stored in your operating system's credential store (Windows Credential Manager, the macOS Keychain or the Linux Secret Service), not in the folder.
+Google sign-in tokens, the optional proxy password and the key that seals your OpenPGP secret keys are stored in your operating system's credential store (Windows Credential Manager, the macOS Keychain or the Linux Secret Service), not in the folder.
+
+OpenPGP keys you create or import are kept in the folder, secret keys only in sealed form. The app never looks keys up on keyservers or other people's domains; it uses only keys you import. Encrypted mail is stored as received and decrypted only in memory while you read it.
 
 ## What the logs contain
 

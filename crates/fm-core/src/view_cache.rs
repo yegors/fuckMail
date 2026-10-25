@@ -6,7 +6,9 @@
 //! `<profile>/cache/images/senders/`, with an empty `<key>.none` marker for a
 //! picture recently found missing. The whole image cache stays under
 //! [`IMAGE_CACHE_LIMIT`]; the oldest files go first. Only pixels are kept,
-//! never response headers.
+//! never response headers. Pictures from decrypted mail are kept apart, under
+//! `<profile>/decrypted/images`, which the engine empties whenever it starts
+//! or stops ([`crate::pgp::forget_decrypted`]).
 use crate::content::{create_stage, private_directory, sync_directory};
 use crate::{err, Result};
 use sha2::{Digest, Sha256};
@@ -91,6 +93,22 @@ impl ViewCache {
         cached_in(&self.senders_dir(false).ok()?, key)
     }
 
+    fn decrypted_dir(&self, create: bool) -> Result<PathBuf> {
+        let root = private_directory(&self.profile, crate::pgp::DECRYPTED_DIR, create)?;
+        private_directory(&root, "images", create)
+    }
+
+    /// A picture from decrypted mail: an inline image or an attachment preview.
+    pub fn cached_decrypted(&self, key: &str) -> Option<(PathBuf, u32, u32)> {
+        cached_in(&self.decrypted_dir(false).ok()?, key)
+    }
+
+    /// Writes a picture from decrypted mail outside the image cache, so it
+    /// lasts only until the engine stops.
+    pub fn store_decrypted(&self, key: &str, png: &[u8]) -> Result<PathBuf> {
+        write_png(&self.decrypted_dir(true)?, key, png)
+    }
+
     /// Stores a sender picture shared by all accounts and clears any
     /// "missing" marker for it.
     pub fn store_sender(&self, key: &str, png: &[u8]) -> Result<PathBuf> {
@@ -129,13 +147,7 @@ impl ViewCache {
     }
 
     fn store_in(&self, directory: &Path, key: &str, png: &[u8]) -> Result<PathBuf> {
-        let destination = directory.join(format!("{key}.png"));
-        let (temporary, mut file) = create_stage(directory)?;
-        file.write_all(png)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, &destination)?;
-        sync_directory(directory)?;
+        let destination = write_png(directory, key, png)?;
         self.account_bytes(png.len() as u64);
         Ok(destination)
     }
@@ -271,6 +283,18 @@ impl ViewCache {
         prune(&directory, &destination);
         Ok(destination)
     }
+}
+
+/// Atomically writes `<key>.png` in `directory`.
+fn write_png(directory: &Path, key: &str, png: &[u8]) -> Result<PathBuf> {
+    let destination = directory.join(format!("{key}.png"));
+    let (temporary, mut file) = create_stage(directory)?;
+    file.write_all(png)?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&temporary, &destination)?;
+    sync_directory(directory)?;
+    Ok(destination)
 }
 
 /// A cached PNG and its size, touched so eviction keeps recently shown images.
