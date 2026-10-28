@@ -997,18 +997,17 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
     for (qsizetype i = 0; i < sections.size(); ++i) {
         const auto &section = sections[i];
         m_inboxSections.append(QVariantMap{{"key", section.key}, {"count", section.count}});
-        const bool empty = section.open && section.count == 0 && section.rows.isEmpty();
         if (i > through) {
-            if (more) m_unloadedItems += 1 + (section.open ? std::max(section.count, empty ? 1 : 0) : 0);
+            if (more) m_unloadedItems += 1 + (section.open ? section.count : 0);
             continue;
         }
-        items.append(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}});
-        if (empty) items.append(QVariantMap{{"id", u"empty:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("empty")}});
-        // The last row folding out of a section that stays turns into its
-        // empty line in place rather than collapsing, so nothing below moves.
-        if (section.open && section.stays && section.loaded == 0 && section.leavingKept > 0 && section.count - section.leavingKept <= 0) {
-            for (const auto &value : section.rows) { auto row = value.toMap(); row["leaves_empty"] = true; items.append(row); }
-        } else items += section.rows;
+        // An open section with no mail says so under its header, in the
+        // header's item. So does one whose last row is folding out, while the
+        // row folds away below it.
+        const bool empty = section.open && ((section.count == 0 && section.rows.isEmpty())
+            || (section.stays && section.loaded == 0 && section.leavingKept > 0 && section.count - section.leavingKept <= 0));
+        items.append(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}, {"empty", empty}});
+        items += section.rows;
         if (i == through && more && section.open) m_unloadedItems += std::max(0, section.count - section.loaded);
     }
     // No counts from Core yet: the rest of the view by its total.

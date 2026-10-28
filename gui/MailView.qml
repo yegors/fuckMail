@@ -88,7 +88,13 @@ Item {
     }
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
-    readonly property int rowHeight: Math.ceil((backend.preferences.density === "compact" ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
+    // Inbox and All mail list conversations as framed cards; Sent, Drafts,
+    // Spam and Trash keep plain rows. A card's item is the card, then the
+    // gap to the next; its legend stands above it, in the gap before.
+    readonly property bool cardRows: !binMode && !dateGroups
+    readonly property bool compactRows: backend.preferences.density === "compact"
+    readonly property int cardHeight: Math.ceil((compactRows ? Theme.compactCardHeight : Theme.comfortableCardHeight) * Theme.fontScale)
+    readonly property int rowHeight: cardRows ? cardHeight + Theme.cardGap : Math.ceil((compactRows ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
     readonly property bool filtering: backend.query.length > 0 || Object.keys(backend.filters).length > 0 || backend.category.length > 0
     readonly property var matchingIds: {
         const row = mail.rows.find(function(c) { return c.id === backend.selectedId })
@@ -468,18 +474,23 @@ Item {
         leftPadding: 14; rightPadding: 14
         font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
     }
-    // Folder tab: a 15px lowercase name, dimmed until chosen.
+    // Folder tab: a 12px mono caps name, dimmed until chosen; the chosen one
+    // stands on a 2px amber rule along the foot of the 30px header row.
     component ScopeTab: FmButton {
+        id: scopeTab
         property string folder: ""
         selected: backend.folder === folder
-        font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium
-        implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
+        font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+        font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(12) * .1
+        implicitWidth: contentItem.implicitWidth; implicitHeight: 30; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
         hoverBrightness: 1
-        foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); textAlignment: Text.AlignLeft; background: Item {}
+        foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); textAlignment: Text.AlignLeft
+        background: Item { Rectangle { y: parent.height - 2; width: parent.width; height: 2; color: Theme.amber; visible: scopeTab.selected } }
         onHoveredChanged: if (hovered && !selected) backend.prefetchFolder(folder)
         onClicked: mail.leaveComposerFor(function() { backend.folder = folder })
     }
-    // A folder's count right after its name, at the same size; hidden at zero.
+    // A folder's count 7px after its name, in the same type; hidden at zero.
+    // Inside the chosen tab, so the amber rule runs under both.
     component ScopeCount: Item {
         id: scopeCount
         property int count: 0
@@ -487,14 +498,29 @@ Item {
         property string folder: ""
         property string tip: ""
         visible: count > 0
-        implicitWidth: countText.implicitWidth; implicitHeight: 22
-        Text { id: countText; anchors.verticalCenter: parent.verticalCenter; text: scopeCount.count; color: scopeCount.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium; font.features: {"tnum": 1} }
+        implicitWidth: countText.implicitWidth; implicitHeight: 30
+        Text { id: countText; anchors.verticalCenter: parent.verticalCenter; text: scopeCount.count; color: scopeCount.tone; font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; font.features: {"tnum": 1} }
+        Rectangle { y: parent.height - 2; x: -7; width: parent.width + 7; height: 2; color: Theme.amber; visible: backend.folder === scopeCount.folder }
         HoverHandler { id: countHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: mail.leaveComposerFor(function() { backend.folder = scopeCount.folder }) }
         FmToolTip { shown: countHover.hovered; text: scopeCount.tip }
     }
-    // Filter toggle as plain text: #, the lowercase name and a small count;
-    // an amber # and rule under it while on.
+    // A header stat: its number, then 7px on its caption in dimmed mono caps.
+    component ScopeStat: Row {
+        id: scopeStat
+        property int count: 0
+        property string label: ""
+        property color tone: Theme.text
+        property string tip: ""
+        spacing: 7
+        Text { anchors.baseline: statCaption.baseline; text: scopeStat.count; color: scopeStat.tone; font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1} }
+        Text { id: statCaption; text: scopeStat.label; color: Theme.inkAlpha(.42); font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08 }
+        HoverHandler { id: statHover }
+        FmToolTip { shown: statHover.hovered; text: scopeStat.tip }
+    }
+    // Filter toggle in mono caps: a dot, the name and a small count, set on
+    // the canvas so the rule through the rail breaks around it. The dot and
+    // name turn amber while on.
     component RailToggle: AbstractButton {
         id: railToggle
         property string label: ""
@@ -502,34 +528,40 @@ Item {
         property bool selected: false
         property string tip: ""
         hoverEnabled: true
-        implicitWidth: toggleRow.implicitWidth; implicitHeight: 22
-        topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
+        implicitWidth: toggleRow.implicitWidth + 16; implicitHeight: 20
+        topPadding: 0; bottomPadding: 0; leftPadding: 8; rightPadding: 8
         Accessible.name: label + ", " + count + (selected ? ", on" : ", off")
         FmToolTip { shown: railToggle.hovered && railToggle.tip.length > 0; text: railToggle.tip }
         contentItem: Item {
             Row {
-                id: toggleRow; spacing: 4; y: 2
-                Text { id: toggleName; textFormat: Text.StyledText; text: "<font color=\"" + (railToggle.selected ? Theme.amber : Theme.inkAlpha(.28)) + "\">#</font>" + mail.escapeHtml(String(railToggle.label).toLowerCase()); color: railToggle.selected || railToggle.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                Text { anchors.baseline: toggleName.baseline; text: railToggle.count; color: railToggle.selected ? Theme.accentAlpha(.85) : Theme.inkAlpha(.3); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum": 1} }
+                id: toggleRow; spacing: 6; anchors.verticalCenter: parent.verticalCenter
+                Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 4; height: 4; radius: 2; color: railToggle.selected ? Theme.amber : "transparent" }
+                Text { id: toggleName; anchors.verticalCenter: parent.verticalCenter; text: railToggle.label; textFormat: Text.PlainText; color: railToggle.hovered ? Theme.text : railToggle.selected ? Theme.amber : Theme.inkAlpha(.55); font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08 }
+                Text { anchors.baseline: toggleName.baseline; text: railToggle.count; color: railToggle.selected ? Theme.accentAlpha(.85) : Theme.inkAlpha(.3); font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
             }
-            Rectangle { y: toggleRow.y + toggleRow.height + 2; width: toggleRow.width; height: Theme.ruleWidth; color: railToggle.selected ? Theme.amber : "transparent" }
         }
-        background: Rectangle { color: "transparent"; radius: 5; border.width: railToggle.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+        background: Rectangle { color: Theme.canvas; radius: 3; border.width: railToggle.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+    }
+    // A card legend's text: 10px mono caps with even figures.
+    component LegendText: Text {
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10); font.capitalization: Font.AllUppercase
+        font.letterSpacing: Theme.fontSize(10) * .08; font.features: {"tnum": 1}; textFormat: Text.PlainText
     }
     // To review and Delayed title their sections in full ink; Done months and
     // Sent and Drafts days stay dimmed.
     function primaryGroup(group) { return backend.folder === "inbox" && !dateGroups && (group === "review" || group === "held") }
     function headerHeight(group) { return 32 }
-    // Every section header: a 32px row with the 11px uppercase title, its count
-    // right after it (amber for To review), a hairline running to the chevron.
-    // They scroll with the list.
+    // Every section header: a 32px row with the 10.5px mono caps title, its
+    // count right after it (amber for To review), a hairline running to the
+    // chevron. They scroll with the list.
     component GroupHeader: ItemDelegate {
         id: heading
         required property string group
         readonly property bool collapsed: mail.groupCollapsed(group)
         readonly property bool primary: mail.primaryGroup(group)
         objectName: "mailGroup_" + group
-        height: mail.headerHeight(group); leftPadding: 16; rightPadding: 16; topPadding: 0; bottomPadding: 0; hoverEnabled: true
+        height: mail.headerHeight(group); leftPadding: 13; rightPadding: 13; topPadding: 0; bottomPadding: 0; hoverEnabled: true
         enabled: backend.folder === "inbox" || mail.dateGroups
         onClicked: mail.toggleGroup(group, heading)
         // A collapsed section's rows load on hover, so its click shows them at once.
@@ -542,51 +574,50 @@ Item {
             Text {
                 objectName: "mailGroupTitle_" + heading.group
                 text: mail.dateGroups ? mail.groupTitle(heading.group) : backend.folder === "sent" ? "Sent" : backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : mail.groupTitle(heading.group)
-                color: heading.primary ? Theme.text : heading.tone; font.family: Theme.fontFamily
-                font.pointSize: Theme.fontPoints(11); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(11) * .08
+                color: heading.primary ? Theme.text : heading.tone; font.family: Theme.monoFamily
+                font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08
             }
             Text {
                 objectName: "mailGroupCount_" + heading.group
                 visible: backend.folder === "inbox" || mail.dateGroups
                 text: mail.groupCount(heading.group)
                 color: heading.group === "review" && heading.primary ? Theme.amber : heading.tone
-                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1}
+                font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum":1}
             }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             FmIcon { visible: backend.folder === "inbox" || mail.dateGroups; name: "down"; size: 10; color: heading.tone; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: Theme.ms(180); easing.type: Theme.enterEasing } } }
         }
     }
-    // The Inbox list's items besides rows. Each is one row high, as a row
-    // is, so the list's length and scrollbar are exact however its sections
-    // fold: a section's header, drawn at the foot of its item, and the line
-    // saying an open section is empty.
+    // A section header's place in its item: centred, so sections sit evenly
+    // apart, and the first one starts the list.
+    readonly property int headerTop: Math.round((rowHeight - headerHeight("")) / 2)
+    // An Inbox section's header. It is one row high, as a row is, so the
+    // list's length and scrollbar are exact however its sections fold. An
+    // open section with no mail says so below its header, in the same item;
+    // a last row folding out of its section fades the line in as it goes.
     component SectionItem: Item {
         id: sectionItem
         required property var rowData
         required property int index
         readonly property bool header: true
         readonly property string group: rowData ? rowData.section || "" : ""
-        // Room above the header, after the section before.
-        readonly property real gap: height - mail.headerHeight(group)
+        readonly property bool empty: !!(rowData && rowData.empty)
         visible: index >= 0; enabled: index >= 0
         width: list.width; height: mail.rowHeight
-        GroupHeader { group: sectionItem.group; width: parent.width; y: sectionItem.gap }
+        GroupHeader { id: sectionHeader; group: sectionItem.group; width: parent.width; y: mail.headerTop }
+        EmptyLine {
+            objectName: "mailSectionEmpty_" + sectionItem.group
+            group: sectionItem.group
+            y: Math.round((sectionHeader.y + sectionHeader.height + sectionItem.height - height) / 2)
+            // It fades in, and goes at once when a row arrives under the header.
+            visible: sectionItem.empty; opacity: sectionItem.empty ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Theme.ms(Theme.baseMs); easing.type: Theme.enterEasing } }
+        }
     }
-    component SectionEmpty: Item {
-        id: emptyItem
-        required property var rowData
-        required property int index
-        readonly property string group: rowData ? rowData.section || "" : ""
-        objectName: "mailSectionEmpty_" + group
-        visible: index >= 0
-        width: list.width; height: mail.rowHeight
-        EmptyLine { group: emptyItem.group }
-    }
-    // The line an open, empty section shows. A last row folding out of its
-    // section fades into the same line, so the swap moves nothing.
+    // The line an open, empty section shows under its header.
     component EmptyLine: Row {
         property string group
-        x: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+        x: 16; spacing: 8
         FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "check"; size: 12; color: Theme.accent }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -793,9 +824,16 @@ Item {
         if (list.moving) return
         list.forceLayout()
         // The saved offset is from the list's origin, which moves as rows above
-        // change. A shorter result set must remain visible. Keep the saved
-        // offset so clearing the query can restore the longer mailbox's place.
+        // change. A shorter result set must remain visible.
         list.contentY = Math.max(listTop(),Math.min(listBottom(),list.originY + (backend.presentation.listY||0)))
+    }
+    // What the list shows. Another account, folder, search, label or sender
+    // kind is a new list: it starts at its top, and so does every later
+    // restore of it until it is scrolled, whatever offset was saved before.
+    readonly property string listIdentity: JSON.stringify([backend.account, backend.folder, backend.query, backend.category, backend.filters])
+    onListIdentityChanged: {
+        list.contentY = listTop()
+        backend.remember("listY", 0)
     }
     // One time format for rows, the reader and sender cards: "22 min ago" and
     // "3 hrs ago" within a day, then "Yday 14:02", the weekday earlier this
@@ -1357,34 +1395,37 @@ Item {
             }
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
-                // The list's head: a 40px row of folders (inbox · sent · drafts,
-                // Spam and Trash behind ▾), the stats and New, then a 30px row
-                // of label filters and the people / automated toggle, over a rule.
+                // The list's head, in mono caps: a 30px row of folders (inbox ·
+                // sent · drafts, Spam and Trash behind ▾), the stats and New,
+                // then a 20px rail of label filters and the people / automated
+                // toggle on a rule that runs across the pane, over a rule.
                 Item {
                     id: listHead
                     Layout.fillWidth: true
-                    implicitHeight: listHeadColumn.implicitHeight + 1
+                    implicitHeight: listHeadColumn.implicitHeight + 23
                     Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
+                    // The rail's rule, edge to edge behind its toggles.
+                    Rectangle { visible: railRow.visible; y: Theme.snapY(parent, listHeadColumn.y + railRow.y + railRow.height / 2); width: parent.width; height: Theme.ruleWidth; color: Theme.inkAlpha(.12) }
                     ColumnLayout {
                         id: listHeadColumn
-                        x: 16; width: parent.width - 32; spacing: 0
+                        x: 12; y: 12; width: parent.width - 24; spacing: 8
                         Text {
                             objectName: "accountArchiveNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
-                            Layout.fillWidth: true; Layout.topMargin: 12; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
                             text: (backend.currentAccount.email || "") + (backend.unsavedAccountBuffer ? " · unsaved edits retained in this editor" : " · read-only account archive")
                             color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
                         }
                         RowLayout {
                             id: scopeHeader
                             objectName: "scopeHeader"
-                            Layout.fillWidth: true; Layout.preferredHeight: 40; spacing: 16
+                            Layout.fillWidth: true; Layout.preferredHeight: 30; spacing: 8
                             // The stats give way first when the pane is narrow.
-                            readonly property bool roomy: width >= scopeTabs.implicitWidth + scopeStats.implicitWidth + newMessageButton.implicitWidth + 48
+                            readonly property bool roomy: width >= scopeTabs.implicitWidth + scopeStats.implicitWidth + newMessageButton.implicitWidth + 40
                             RowLayout {
                                 id: scopeTabs
-                                spacing: 16
+                                spacing: 18
                                 RowLayout {
-                                    spacing: 6
+                                    spacing: 7
                                     ScopeTab { objectName: "inboxScopeButton"; text: "inbox"; folder: "inbox" }
                                     ScopeCount {
                                         objectName: "inboxCount"; folder: "inbox"; tone: Theme.amber
@@ -1394,7 +1435,7 @@ Item {
                                 }
                                 ScopeTab { objectName: "sentScopeButton"; text: "sent"; folder: "sent" }
                                 RowLayout {
-                                    spacing: 6
+                                    spacing: 7
                                     ScopeTab { objectName: "draftsScopeButton"; text: "drafts"; folder: "drafts" }
                                     ScopeCount {
                                         objectName: "draftsCount"; folder: "drafts"; tone: Theme.inkAlpha(.5)
@@ -1406,55 +1447,50 @@ Item {
                                     id: binMenuButton; objectName: "binMenuButton"
                                     visible: !backend.syntheticProfile
                                     text: mail.spamMode ? "spam" : backend.folder === "trash" ? "trash" : ""
-                                    iconName: "chevronDown"; iconSize: 10; iconTrailing: true; iconSpacing: 5
-                                    implicitHeight: 22; leftPadding: 6; rightPadding: 6; topPadding: 0; bottomPadding: 0; radius: 5
-                                    font.pointSize: Theme.fontPoints(12); font.weight: Font.Normal; hoverBrightness: 1
+                                    iconName: "chevronDown"; iconSize: 10; iconTrailing: true; iconSpacing: 6
+                                    implicitHeight: 24; leftPadding: 8; rightPadding: 8; topPadding: 0; bottomPadding: 0; radius: 4
+                                    font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(11); font.weight: Font.Normal; hoverBrightness: 1
+                                    font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(11) * .08
                                     foreground: mail.binMode || hovered ? Theme.text : Theme.inkAlpha(.4)
                                     tip: "Spam and Trash"
-                                    background: Rectangle { radius: 5; color: binMenu.opened || binMenuButton.hovered ? Theme.bg4 : "transparent"; border.width: binMenuButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                                    background: Rectangle { radius: 4; color: binMenu.opened || binMenuButton.hovered ? Theme.bg4 : "transparent"; border.width: binMenuButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
                                     // The press that reached this button already closed the menu.
                                     property bool pressClosedMenu: false
                                     onPressed: pressClosedMenu = !binMenu.opened && Date.now() - binMenu.closedAt < 50
                                     onClicked: { if (binMenu.opened) binMenu.close(); else if (!pressClosedMenu) binMenu.open(); pressClosedMenu = false }
                                 }
-                                Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
+                                Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08 }
                             }
                             Item { Layout.fillWidth: true }
-                            // "6 to review · 6 delayed": the numbers in ink, the words dimmed.
+                            // "6 TO REVIEW  6 DELAYED": the numbers in ink (To review's in
+                            // amber while any wait), the words in dimmed caps.
                             RowLayout {
                                 id: scopeStats
                                 visible: scopeHeader.roomy
-                                spacing: 14
-                                Text {
+                                spacing: 16
+                                ScopeStat {
                                     objectName: "scopeStat"
-                                    readonly property int count: mail.binMode ? mail.binCount : mail.draftsMode ? mail.rows.length : backend.folder === "sent" ? mail.sentThisWeek : (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0
-                                    readonly property string label: mail.spamMode ? "in spam" : mail.binMode ? "in trash" : mail.draftsMode ? (count === 1 ? "draft" : "drafts") : backend.folder === "sent" ? "sent this week" : "to review"
-                                    textFormat: Text.StyledText
-                                    text: "<font color=\"" + Theme.text + "\">" + count + "</font> " + label
-                                    color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
-                                    HoverHandler { id: scopeStatHover }
-                                    FmToolTip {
-                                        shown: scopeStatHover.hovered
-                                        text: mail.spamMode ? "Messages Google marked as spam · auto-deleted after 30 days" : mail.binMode ? "Deleted messages · auto-deleted after 30 days"
-                                            : mail.draftsMode ? "Unsent messages from " + (backend.currentAccount.name || "this account") : backend.folder === "sent" ? "Sent from " + (backend.currentAccount.name || "this account") + " this week"
-                                            : "Unread, or open and not yet decided on"
-                                    }
+                                    count: mail.binMode ? mail.binCount : mail.draftsMode ? mail.rows.length : backend.folder === "sent" ? mail.sentThisWeek : (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0
+                                    label: mail.spamMode ? "in spam" : mail.binMode ? "in trash" : mail.draftsMode ? (count === 1 ? "draft" : "drafts") : backend.folder === "sent" ? "sent this week" : "to review"
+                                    tone: backend.folder === "inbox" && count > 0 ? Theme.amber : Theme.text
+                                    tip: mail.spamMode ? "Messages Google marked as spam · auto-deleted after 30 days" : mail.binMode ? "Deleted messages · auto-deleted after 30 days"
+                                        : mail.draftsMode ? "Unsent messages from " + (backend.currentAccount.name || "this account") : backend.folder === "sent" ? "Sent from " + (backend.currentAccount.name || "this account") + " this week"
+                                        : "Unread, or open and not yet decided on"
                                 }
-                                Text {
+                                ScopeStat {
                                     objectName: "scopeStatHeld"
                                     visible: backend.folder === "inbox"
-                                    textFormat: Text.StyledText
-                                    text: "<font color=\"" + Theme.text + "\">" + ((backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0) + "</font> delayed"
-                                    color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
-                                    HoverHandler { id: heldStatHover }
-                                    FmToolTip { shown: heldStatHover.hovered; text: "Delayed · stays until you mark it Done" }
+                                    count: (backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0
+                                    label: "delayed"
+                                    tip: "Delayed · stays until you mark it Done"
                                 }
                             }
                             FmButton {
                                 id: newMessageButton; objectName: "newMessageButton"
-                                text: "New"; iconName: "plus"; iconSize: 12; iconSpacing: 7; prominent: true; hoverBrightness: 1
-                                implicitHeight: 28; leftPadding: 10; rightPadding: 12; topPadding: 0; bottomPadding: 0; radius: 6
-                                font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+                                text: "New"; iconName: "plus"; iconSize: 11; iconSpacing: 7; prominent: true; hoverBrightness: 1
+                                implicitHeight: 30; leftPadding: 11; rightPadding: 13; topPadding: 0; bottomPadding: 0; radius: 6
+                                font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(11); font.weight: Font.Medium
+                                font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(11) * .08
                                 opacity: hovered ? .88 : 1
                                 enabled: mail.newMessageAvailable
                                 tip: "New message — " + ShortcutRegistry.label(ShortcutRegistry.sequence("compose", backend.preferences)).toLowerCase()
@@ -1462,12 +1498,21 @@ Item {
                             }
                         }
                         RowLayout {
+                            id: railRow
                             visible: !mail.binMode
-                            Layout.fillWidth: true; Layout.preferredHeight: 30; Layout.topMargin: -4; Layout.bottomMargin: 4; spacing: 16
+                            Layout.fillWidth: true; Layout.preferredHeight: 20; spacing: 0
                             Flickable {
-                                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                                id: railFlick
+                                // Each toggle's 8px padding sits in the pane's margin.
+                                Layout.fillWidth: true; Layout.fillHeight: true; Layout.leftMargin: -8; clip: true
                                 contentWidth: categoryRow.width; contentHeight: height; boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
-                                // Plain-text toggles. Inbox labels match any chosen label
+                                // The last 28px fade out while more toggles run past the edge.
+                                Rectangle {
+                                    parent: railFlick; anchors.right: parent.right; width: 28; height: parent.height
+                                    visible: railFlick.contentX + railFlick.width < railFlick.contentWidth - 1
+                                    gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: Theme.canvasAlpha(0) } GradientStop { position: 1; color: Theme.canvas } }
+                                }
+                                // Toggles in mono caps. Inbox labels match any chosen label
                                 // (none chosen shows all mail); Sent and Drafts filter by day.
                                 Row {
                                     id: categoryRow; spacing: 14; anchors.verticalCenter: parent.verticalCenter
@@ -1492,24 +1537,31 @@ Item {
                                             onClicked: mail.toggleCategory(modelData.id)
                                         }
                                     }
-                                    FmButton { id: allLabels; objectName: "allCategoriesButton"; visible: backend.folder !== "sent" && !mail.draftsMode && backend.categories.length > 7; iconName: "more"; implicitHeight: 20; implicitWidth: 22; tip: "All labels"; onClicked: railCategories.open() }
+                                    FmButton { id: allLabels; objectName: "allCategoriesButton"; visible: backend.folder !== "sent" && !mail.draftsMode && backend.categories.length > 7; iconName: "more"; implicitHeight: 20; implicitWidth: 22; tip: "All labels"; onClicked: railCategories.open()
+                                        background: Rectangle { radius: 3; color: allLabels.hovered ? Theme.hover : Theme.canvas }
+                                    }
                                 }
                             }
-                            // People or automated senders: two bare 22×20 toggles.
-                            Row {
-                                id: kindButtons; spacing: 2
+                            // People or automated senders: two bare 22×18 toggles on the
+                            // canvas, 8px clear of the rail's rule.
+                            Rectangle {
+                                color: Theme.canvas
+                                implicitWidth: kindButtons.implicitWidth + 8; implicitHeight: 20
                                 enabled: backend.folder === "inbox"; opacity: enabled ? 1 : 0
                                 Behavior on opacity { NumberAnimation { duration: Theme.ms(150); easing.type: Theme.enterEasing } }
-                                Repeater { model: ["people", "automated"]
-                                    FmButton {
-                                        id: kindButton; required property string modelData
-                                        objectName: "senderKind_" + modelData; iconName: mail.kindIcon(modelData); iconSize: 11
-                                        width: 22; height: 20; implicitWidth: 22; implicitHeight: 20; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                                        selected: backend.filters.kind === modelData; foreground: selected ? Theme.canvas : Theme.inkAlpha(.55)
-                                        tip: (modelData === "people" ? "People only" : "Automated only") + (selected ? " · click again to show all kinds" : "")
-                                        background: Rectangle { radius: 5; color: kindButton.selected ? Theme.text : kindButton.hovered ? Theme.hover : "transparent"; border.width: kindButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
-                                        onHoveredChanged: if (hovered) backend.prefetchFilters(mail.kindFilters(modelData))
-                                        onClicked: mail.setKind(modelData)
+                                Row {
+                                    id: kindButtons; x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                    Repeater { model: ["people", "automated"]
+                                        FmButton {
+                                            id: kindButton; required property string modelData
+                                            objectName: "senderKind_" + modelData; iconName: mail.kindIcon(modelData); iconSize: 11
+                                            width: 22; height: 18; implicitWidth: 22; implicitHeight: 18; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                            selected: backend.filters.kind === modelData; foreground: selected ? Theme.canvas : Theme.inkAlpha(.55)
+                                            tip: (modelData === "people" ? "People only" : "Automated only") + (selected ? " · click again to show all kinds" : "")
+                                            background: Rectangle { radius: 3; color: kindButton.selected ? Theme.text : kindButton.hovered ? Theme.hover : "transparent"; border.width: kindButton.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                                            onHoveredChanged: if (hovered) backend.prefetchFilters(mail.kindFilters(modelData))
+                                            onClicked: mail.setKind(modelData)
+                                        }
                                     }
                                 }
                             }
@@ -1547,9 +1599,13 @@ Item {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
+                    // Qt's 320px of delegates kept past each edge, in rows: six, as
+                    // with 52px rows, so taller cards keep a moving row's delegate
+                    // through a refresh just as far.
+                    cacheBuffer: 6 * mail.rowHeight
                     // The first Inbox header sits at the top, without the room
                     // its item keeps above it after another section.
-                    topMargin: backend.folder === "inbox" && mail.inboxSections.length ? mail.headerHeight(mail.inboxSections[0].key) - mail.rowHeight : 0
+                    topMargin: backend.folder === "inbox" && mail.inboxSections.length ? -mail.headerTop : 0
                     ScrollBar.vertical: FmScrollBar { id: listBar; autoHide: true }
                     HoverHandler { onPointChanged: listBar.pointerMoved(point.scenePosition) }
                     // When a new search, filter or label's mail is still on the
@@ -1610,7 +1666,6 @@ Item {
                     delegate: DelegateChooser {
                         role: "itemType"
                         DelegateChoice { roleValue: "header"; SectionItem {} }
-                        DelegateChoice { roleValue: "empty"; SectionEmpty {} }
                         DelegateChoice {
                             roleValue: "row"
                             Item {
@@ -1638,37 +1693,41 @@ Item {
                                 // row of a group draws its heading.
                                 readonly property int headingHeight: firstInGroup && !mail.binMode && backend.folder !== "inbox" && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 ? 0 : 10) + mail.headerHeight(group) : 0
                                 // A row read in To review folds away once another opens: 170 ms,
-                                // faded by 70% of the way. The last row of its section keeps its
-                                // height and fades into the section's empty line instead.
+                                // faded by 70% of the way. The last row of its section folds the
+                                // same way while its header fades in the section's empty line.
                                 // Done, Delay and filing fold the open row the same way, and
                                 // it drifts toward where it goes: Done and filing to the left,
                                 // Delay to the right ("later").
                                 readonly property bool leaving: !!modelData.leaving
                                 readonly property real leaveDrift: modelData.leave_kind === "done" || modelData.leave_kind === "filed" ? -18 : modelData.leave_kind === "delay" ? 18 : 0
-                                readonly property bool leavesEmpty: leaving && !!modelData.leaves_empty
                                 property real leave: 0
                                 NumberAnimation on leave { id: leaveAnimation; running: false; from: 0; to: 1; duration: Theme.ms(170); easing.type: Easing.InQuad }
                                 onLeavingChanged: { if (leaving) leaveAnimation.restart(); else { leaveAnimation.stop(); leave = 0 } }
                                 Component.onCompleted: if (leaving) leaveAnimation.restart()
-                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (leavesEmpty ? 1 : 1 - leave))
-                                GroupHeader { group: groupedRow.group; visible: groupedRow.headingHeight > 0; width: parent.width; y: groupedRow.headingHeight - height }
+                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (1 - leave))
+                                // Built only for a row that draws its group's heading.
                                 Loader {
-                                    active: groupedRow.leavesEmpty
-                                    y: groupedRow.headingHeight; width: parent.width; height: mail.rowHeight
-                                    opacity: groupedRow.leave
-                                    sourceComponent: Item { EmptyLine { group: groupedRow.group } }
+                                    active: groupedRow.headingHeight > 0
+                                    width: parent.width; height: mail.headerHeight(groupedRow.group); y: groupedRow.headingHeight - height
+                                    sourceComponent: GroupHeader { group: groupedRow.group }
                                 }
                                 ItemDelegate {
                                     id: row
                                     objectName: "conversationRow_"+groupedRow.modelData.id
+                                    // A card starts its item, 12px in from the pane's sides.
+                                    readonly property bool card: mail.cardRows
+                                    readonly property bool unread: !!groupedRow.modelData.unread
+                                    readonly property bool multi: mail.isSelected(groupedRow.modelData.id)
+                                    readonly property bool opened: !mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id
                                     visible: !groupedRow.collapsed
-                                    y: groupedRow.headingHeight; width: parent.width; height: parent.height-y
+                                    x: card ? 12 : 0; y: groupedRow.headingHeight
+                                    width: parent.width - 2 * x; height: card ? Math.max(0, Math.min(mail.cardHeight, parent.height - y)) : parent.height - y
                                     opacity: Math.max(0, 1 - groupedRow.leave / .7); clip: groupedRow.leaving
                                     transform: Translate { x: groupedRow.leave * groupedRow.leaveDrift }
-                                    leftPadding: 16; rightPadding: 16; topPadding: 0; bottomPadding: 0; hoverEnabled: true
+                                    leftPadding: card ? 14 : 16; rightPadding: 16; topPadding: card ? 2 : 0; bottomPadding: 0; hoverEnabled: true
                                     Accessible.name: groupedRow.modelData.subject+", "+groupedRow.modelData.sender_name+(groupedRow.modelData.unread ? ", unread" : ", reviewed")+(groupedRow.modelData.starred ? ", action held" : "")
                                     onClicked: mail.rowClick(groupedRow.modelData.id, 0)
-                                    Accessible.selected: mail.isSelected(groupedRow.modelData.id) || (!mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id)
+                                    Accessible.selected: multi || opened
                                     MouseArea {
                                         id: rowMouse; anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; hoverEnabled: true
                                         onEntered: { if (!mail.keyboardNavigation) mail.pointerRow = groupedRow.modelData.id; if (!mail.draftsMode) backend.prefetchConversation(groupedRow.modelData.id) }
@@ -1687,26 +1746,91 @@ Item {
                                             mail.showRowMenu(groupedRow.modelData.id,row,24,row.height); event.accepted = true
                                         }
                                     }
-                                    background: Rectangle {
-                                        objectName: "rowHighlight_" + groupedRow.modelData.id
-                                        readonly property bool multi: mail.isSelected(groupedRow.modelData.id)
-                                        readonly property bool opened: !mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id
-                                        color: multi ? Theme.bg4 : opened ? Theme.accentAlpha(.08) : mail.highlightedRow === groupedRow.modelData.id ? Theme.surface : "transparent"
-                                        Rectangle { width: parent.multi ? 2 : 3; height: parent.height; color: parent.multi ? Theme.accentAlpha(.55) : Theme.accent; visible: parent.multi || parent.opened }
-                                        // A hairline above every row but a group's first, inset to the text.
+                                    // Cards are frames on the canvas: amber for the open one (with
+                                    // a 3px halo) and the chosen ones, brighter ink unread and under
+                                    // the pointer or keyboard. Rows shade the open one, with a 3px
+                                    // amber bar, and rule off all but a group's first.
+                                    background: Item {
                                         Rectangle {
-                                            objectName: "rowSeparator_" + groupedRow.modelData.id
-                                            x: 16; y: Theme.snapY(parent, 0); width: parent.width - 32; height: Theme.ruleWidth
-                                            color: (mail.groupPositions[groupedRow.modelData.id] || 0) > 0 ? Theme.inkAlpha(.07) : "transparent"
+                                            visible: row.card && row.opened
+                                            anchors.fill: parent; anchors.margins: -3; radius: 9
+                                            color: "transparent"; border.width: 3; border.color: Theme.accentAlpha(.07)
+                                        }
+                                        Rectangle {
+                                            objectName: "rowHighlight_" + groupedRow.modelData.id
+                                            anchors.fill: parent; radius: row.card ? 6 : 0
+                                            color: row.card ? "transparent" : row.multi ? Theme.bg4 : row.opened ? Theme.accentAlpha(.08) : mail.highlightedRow === groupedRow.modelData.id ? Theme.surface : "transparent"
+                                            border.width: row.card ? 1 : 0
+                                            border.color: row.opened ? Theme.accentAlpha(rowMouse.containsMouse ? .8 : .7)
+                                                : row.multi ? Theme.accentAlpha(rowMouse.containsMouse ? .5 : .4)
+                                                : mail.highlightedRow === groupedRow.modelData.id ? Theme.inkAlpha(.3)
+                                                : Theme.inkAlpha(row.unread ? .17 : .07)
+                                            Behavior on border.color { ColorAnimation { duration: Theme.ms(Theme.quickMs) } }
+                                            Rectangle { width: row.multi ? 2 : 3; height: parent.height; color: row.multi ? Theme.accentAlpha(.55) : Theme.accent; visible: !row.card && (row.multi || row.opened) }
+                                            // A hairline above every row but a group's first, inset to the text.
+                                            Rectangle {
+                                                objectName: "rowSeparator_" + groupedRow.modelData.id
+                                                visible: !row.card
+                                                x: 16; y: Theme.snapY(parent, 0); width: parent.width - 32; height: Theme.ruleWidth
+                                                color: (mail.groupPositions[groupedRow.modelData.id] || 0) > 0 ? Theme.inkAlpha(.07) : "transparent"
+                                            }
                                         }
                                     }
-                                    // Inbox rows: avatar, sender, subject over preview, first label
-                                    // and time on a 16px-gapped grid. Sent and Drafts rows lead with
-                                    // an arrow or pencil and carry the recipient instead.
+                                    // A card's legend, set into its top border on the canvas: its
+                                    // first label, the thread's size and its attachments on the
+                                    // left; the time on the right, after an amber dot while unread.
+                                    readonly property color legendTone: opened ? Theme.amber : Theme.inkAlpha(unread ? .6 : .35)
+                                    Rectangle {
+                                        visible: row.card && (legendLabel.visible || legendThread.visible || legendFiles.visible)
+                                        x: 10; y: -7; width: legendRow.implicitWidth + 12; height: 13; color: Theme.canvas
+                                        Row {
+                                            id: legendRow; x: 6; height: parent.height; spacing: 6
+                                            LegendText {
+                                                id: legendLabel; objectName: row.card ? "mailLabel_" + groupedRow.modelData.id : ""
+                                                visible: (groupedRow.modelData.categories || []).length > 0
+                                                width: Math.min(implicitWidth, row.width * .4); elide: Text.ElideRight
+                                                text: String(((groupedRow.modelData.categories || [])[0] || {}).name || ""); color: row.legendTone
+                                            }
+                                            LegendText {
+                                                id: legendThread; objectName: row.card ? "mailThreadCount_" + groupedRow.modelData.id : ""
+                                                visible: groupedRow.modelData.message_count > 1
+                                                text: groupedRow.modelData.message_count + " msgs"; color: Theme.inkAlpha(.38)
+                                                HoverHandler { id: legendThreadHover }
+                                                FmToolTip { shown: legendThreadHover.hovered; text: groupedRow.modelData.message_count + " messages in this thread" }
+                                            }
+                                            Row {
+                                                id: legendFiles; objectName: row.card ? "mailAttachmentCount_" + groupedRow.modelData.id : ""
+                                                visible: (groupedRow.modelData.attachment_count || 0) > 0
+                                                anchors.verticalCenter: parent.verticalCenter; spacing: 3
+                                                FmIcon { name: "attachment"; size: 9; color: Theme.inkAlpha(.38); anchors.verticalCenter: parent.verticalCenter }
+                                                LegendText { text: groupedRow.modelData.attachment_count || 0; color: Theme.inkAlpha(.38) }
+                                                HoverHandler { id: legendFilesHover }
+                                                FmToolTip { shown: legendFilesHover.hovered; text: (groupedRow.modelData.attachment_count === 1 ? "1 attachment" : (groupedRow.modelData.attachment_count || 0) + " attachments") + " in this thread" }
+                                            }
+                                        }
+                                    }
+                                    Rectangle {
+                                        visible: row.card
+                                        anchors.right: parent.right; anchors.rightMargin: 10; y: -7; width: timeRow.implicitWidth + 12; height: 13; color: Theme.canvas
+                                        Row {
+                                            id: timeRow; x: 6; height: parent.height; spacing: 6
+                                            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 5; height: 5; radius: 2.5; color: row.unread ? Theme.amber : "transparent" }
+                                            LegendText {
+                                                objectName: row.card ? "mailTime_" + groupedRow.modelData.id : ""
+                                                text: mail.relativeTime(groupedRow.modelData.latest_at)
+                                                color: row.opened ? Theme.amber : row.unread ? Theme.text : Theme.inkAlpha(.38)
+                                            }
+                                        }
+                                    }
+                                    // Cards: avatar, sender over address, subject over preview,
+                                    // the sender part 28% of the card (180px at least). Spam and
+                                    // Trash rows: the same with the first label and time after, on a
+                                    // 16px-gapped grid. Sent and Drafts rows lead with an arrow or
+                                    // pencil and carry the recipient instead.
                                     readonly property bool outgoingScope: mail.draftsMode || backend.folder === "sent"
                                     readonly property bool narrow: leftPane.width < 520
                                     contentItem: RowLayout {
-                                        spacing: row.outgoingScope ? 14 : 16
+                                        spacing: row.outgoingScope ? 14 : row.card ? 0 : 16
                                         Item {
                                             visible: row.outgoingScope
                                             implicitWidth: 12; implicitHeight: 12
@@ -1715,7 +1839,7 @@ Item {
                                         SenderAvatar {
                                             objectName: "mailAvatar_" + groupedRow.modelData.id
                                             visible: !row.outgoingScope
-                                            Layout.alignment: Qt.AlignTop; Layout.topMargin: 7
+                                            Layout.alignment: row.card ? Qt.AlignVCenter : Qt.AlignTop; Layout.topMargin: row.card ? 0 : 7
                                             diameter: 24; tipEnabled: true
                                             own: !!groupedRow.modelData.is_outgoing
                                             name: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || ""
@@ -1727,14 +1851,16 @@ Item {
                                         ColumnLayout {
                                             objectName: "mailSenderColumn_" + groupedRow.modelData.id
                                             visible: !row.outgoingScope && !row.narrow
-                                            readonly property real columnWidth: Math.max(150, row.availableWidth * .24)
-                                            Layout.minimumWidth: columnWidth; Layout.preferredWidth: columnWidth; Layout.maximumWidth: columnWidth; spacing: 3
+                                            // A card's sender part also holds its 14px inset, the avatar,
+                                            // a 10px gap and 8px before the subject.
+                                            readonly property real columnWidth: row.card ? Math.max(180, row.width * .28) - 56 : Math.max(150, row.availableWidth * .24)
+                                            Layout.minimumWidth: columnWidth; Layout.preferredWidth: columnWidth; Layout.maximumWidth: columnWidth; Layout.leftMargin: row.card ? 10 : 0; spacing: 3
                                             // The name elides before its kind glyph, which follows it. Its cap is
                                             // rounded up: fractional (macOS) text widths otherwise lose a sub-pixel
                                             // to layout rounding and elide a name that fits.
                                             RowLayout {
                                                 Layout.fillWidth: true; spacing: 6
-                                                Text { objectName: "mailSender_" + groupedRow.modelData.id; text: Theme.oneLine(groupedRow.modelData.sender_name || groupedRow.modelData.sender_email) || "Unknown sender"; maximumLineCount: 1; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); elide: Text.ElideRight; textFormat: Text.PlainText }
+                                                Text { objectName: "mailSender_" + groupedRow.modelData.id; text: Theme.oneLine(groupedRow.modelData.sender_name || groupedRow.modelData.sender_email) || "Unknown sender"; maximumLineCount: 1; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: row.card && row.unread ? Font.Medium : Font.Normal; Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); elide: Text.ElideRight; textFormat: Text.PlainText }
                                                 Text {
                                                     objectName: "mailOthers_" + groupedRow.modelData.id
                                                     readonly property int others: groupedRow.modelData.others || 0
@@ -1747,10 +1873,11 @@ Item {
                                                 FmIcon { objectName: "mailSenderKind_" + groupedRow.modelData.id; visible: groupedRow.modelData.is_outgoing || groupedRow.starred || mail.kindKnown(groupedRow.modelData.kind); name: groupedRow.modelData.is_outgoing ? "send" : groupedRow.starred ? "contactStarFilled" : mail.kindIcon(groupedRow.modelData.kind); size: 10; color: groupedRow.starred ? Theme.amber : Theme.inkAlpha(.3) }
                                                 Item { Layout.fillWidth: true }
                                             }
-                                            Text { objectName: "mailSenderAddress_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_email || ""; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                            Text { objectName: "mailSenderAddress_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_email || ""; color: Theme.inkAlpha(row.card ? .38 : .45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                                         }
                                         ColumnLayout {
-                                            Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: row.outgoingScope ? 2 : 3
+                                            Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.leftMargin: row.card ? (row.narrow ? 10 : 16) : 0
+                                            spacing: row.card ? 4 : row.outgoingScope ? 2 : 3
                                             Item {
                                                 Layout.fillWidth: true; implicitHeight: subjectText.implicitHeight
                                                 // A result from the server that is not on this machine.
@@ -1767,24 +1894,25 @@ Item {
                                                     x: remoteMark.visible ? remoteMark.width+8 : 0
                                                     width: Math.max(0,Math.min(implicitWidth,parent.width-x-(threadCount.visible ? threadCount.width+8 : 0)-(attachmentCount.visible ? attachmentCount.width+8 : 0)))
                                                     text: Theme.oneLine(groupedRow.modelData.subject); maximumLineCount: 1
-                                                    color: row.outgoingScope ? Theme.inkAlpha(groupedRow.modelData.subject === "(No subject)" ? .5 : .9) : Theme.text
-                                                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: row.outgoingScope ? Font.Medium : Font.Normal
+                                                    color: row.outgoingScope ? Theme.inkAlpha(groupedRow.modelData.subject === "(No subject)" ? .5 : .9) : row.card && !row.unread ? Theme.inkAlpha(.68) : Theme.text
+                                                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.card ? 13.5 : 13); font.weight: row.outgoingScope || (row.card && row.unread) ? Font.Medium : Font.Normal
                                                     elide: Text.ElideRight; textFormat: Text.PlainText
                                                     MatchMarks { objectName: "mailSubjectMatch_" + groupedRow.modelData.id; phrases: mail.subjectPhrases }
                                                 }
-                                                // "(3)" for the thread, then a paperclip and count.
+                                                // Rows: "(3)" for the thread, then a paperclip and count.
+                                                // Cards carry both in their legend.
                                                 Text {
-                                                    id: threadCount; objectName: "mailThreadCount_"+groupedRow.modelData.id
+                                                    id: threadCount; objectName: row.card ? "" : "mailThreadCount_"+groupedRow.modelData.id
                                                     x: subjectText.x+subjectText.width+8; anchors.baseline: subjectText.baseline
-                                                    visible: groupedRow.modelData.message_count>1
+                                                    visible: !row.card && groupedRow.modelData.message_count>1
                                                     text: "(" + groupedRow.modelData.message_count + ")"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum":1}
                                                     HoverHandler {id:threadCountHover}
                                                     FmToolTip {shown:threadCountHover.hovered;text:groupedRow.modelData.message_count+" messages in this thread"}
                                                 }
                                                 Row {
-                                                    id: attachmentCount; objectName: "mailAttachmentCount_"+groupedRow.modelData.id
+                                                    id: attachmentCount; objectName: row.card ? "" : "mailAttachmentCount_"+groupedRow.modelData.id
                                                     x: subjectText.x+subjectText.width+(threadCount.visible ? threadCount.width+16 : 8); anchors.verticalCenter: subjectText.verticalCenter; spacing: 2
-                                                    visible: (groupedRow.modelData.attachment_count || 0)>0
+                                                    visible: !row.card && (groupedRow.modelData.attachment_count || 0)>0
                                                     FmIcon {name:"attachment";size:10;color:Theme.inkAlpha(.5);anchors.verticalCenter:parent.verticalCenter}
                                                     Text {text:groupedRow.modelData.attachment_count || 0;color:Theme.inkAlpha(.5);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11);font.features:{"tnum":1};anchors.verticalCenter:parent.verticalCenter}
                                                     HoverHandler {id:attachmentCountHover}
@@ -1802,14 +1930,14 @@ Item {
                                                 }
                                                 FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary && groupedRow.modelData.pgp !== "encrypted"; name:"summary"; size:10; color:Theme.ai; Layout.rightMargin: 6 }
                                                 FmIcon { objectName:"encryptedPreviewIcon_"+groupedRow.modelData.id; visible:groupedRow.modelData.pgp === "encrypted"; name:"lock"; size:10; color:Theme.inkAlpha(.45); Layout.rightMargin: 6 }
-                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + (groupedRow.modelData.pgp === "encrypted" ? Theme.oneLine(groupedRow.modelData.snippet) || "Encrypted message" : Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet)); maximumLineCount: 1; color: row.outgoingScope ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
+                                                Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : row.narrow ? Theme.oneLine(groupedRow.modelData.sender_name) + " · " : "") + (groupedRow.modelData.pgp === "encrypted" ? Theme.oneLine(groupedRow.modelData.snippet) || "Encrypted message" : Theme.oneLine(groupedRow.modelData.summary || groupedRow.modelData.snippet)); maximumLineCount: 1; color: row.outgoingScope || row.card ? Theme.inkAlpha(.5) : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(row.outgoingScope ? 11.5 : 12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
                                                     MatchMarks { objectName: "mailPreviewMatch_" + groupedRow.modelData.id; phrases: mail.bodyPhrases }
                                                 }
                                             }
                                         }
                                         Text {
-                                            objectName: "mailLabel_" + groupedRow.modelData.id
-                                            visible: !row.outgoingScope && (groupedRow.modelData.categories||[]).length>0
+                                            objectName: row.card ? "" : "mailLabel_" + groupedRow.modelData.id
+                                            visible: !row.outgoingScope && !row.card && (groupedRow.modelData.categories||[]).length>0
                                             Layout.alignment: Qt.AlignTop; Layout.topMargin: 10; Layout.maximumWidth: row.narrow ? 68 : 120
                                             text: "#" + String(((groupedRow.modelData.categories||[])[0] || {}).name || "").toLowerCase()
                                             color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); elide: Text.ElideRight; textFormat: Text.PlainText
@@ -1822,7 +1950,8 @@ Item {
                                             color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText
                                         }
                                         Text {
-                                            objectName: "mailTime_" + groupedRow.modelData.id
+                                            objectName: row.card ? "" : "mailTime_" + groupedRow.modelData.id
+                                            visible: !row.card
                                             Layout.alignment: row.outgoingScope ? Qt.AlignVCenter : Qt.AlignTop; Layout.topMargin: row.outgoingScope ? 0 : 10
                                             Layout.preferredWidth: row.outgoingScope ? 68 : 76
                                             text: mail.relativeTime(groupedRow.modelData.latest_at)
@@ -1852,11 +1981,14 @@ Item {
                                     required property int index
                                     readonly property int place: unloadedRows.first + index
                                     readonly property real nameWidth: Math.min(160, width * .2)
+                                    // A card's frame, or a row's line, around the avatar and bars.
+                                    readonly property real middle: mail.cardRows ? mail.cardHeight / 2 : height / 2
                                     visible: (place + 1) * mail.rowHeight <= unloadedRows.height
                                     y: place * mail.rowHeight; width: unloadedRows.width; height: mail.rowHeight
-                                    Rectangle { x: 16; y: 7; width: 24; height: 24; radius: 12; color: Theme.inkAlpha(.04) }
-                                    Rectangle { x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.nameWidth; height: 8; radius: 4; color: Theme.inkAlpha(.05) }
-                                    Rectangle { x: 72 + parent.nameWidth; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - x - 108); height: 8; radius: 4; color: Theme.inkAlpha(.035) }
+                                    Rectangle { visible: mail.cardRows; x: 12; width: parent.width - 24; height: mail.cardHeight; radius: 6; color: "transparent"; border.width: 1; border.color: Theme.inkAlpha(.05) }
+                                    Rectangle { x: mail.cardRows ? 26 : 16; y: mail.cardRows ? parent.middle - 12 : 7; width: 24; height: 24; radius: 12; color: Theme.inkAlpha(.04) }
+                                    Rectangle { x: mail.cardRows ? 60 : 56; y: parent.middle - 4; width: parent.nameWidth; height: 8; radius: 4; color: Theme.inkAlpha(.05) }
+                                    Rectangle { x: (mail.cardRows ? 76 : 72) + parent.nameWidth; y: parent.middle - 4; width: Math.max(0, parent.width - x - (mail.cardRows ? 44 : 108)); height: 8; radius: 4; color: Theme.inkAlpha(.035) }
                                 }
                             }
                             FmButton { objectName: "retryLoadingConversations"; visible: !!backend.listError; y: 8; anchors.horizontalCenter: parent.horizontalCenter; text: "Retry loading"; tip: backend.listError; onClicked: backend.loadMore() }

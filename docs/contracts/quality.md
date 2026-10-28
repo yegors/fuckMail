@@ -1,5 +1,17 @@
 # Quality, performance and release acceptance
 
+## D221 — Conversation cards and new lists at their top (Quality99)
+
+Mail UI162; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection` `reviewTransitions`: Inbox cards are unfilled and 6 px round with no rules between them; a reviewed card's frame is 7% ink and the open card's is amber. Delaying a To review row folds it away while Delayed's title glides up exactly one row, no more than a third of a row a frame. When To review's last row folds out, its title's item says it is empty from the start, "Inbox zero" shows once under the title and stays when the refresh lands, and Delayed's title ends one row higher, so an empty section is one row; this replaces Mail UI136's check that nothing moves.
+- `controls`: the card legend reads "3 msgs", then the attachment count, on the card's top border; the avatar sits 10 px before the sender column.
+- `listGeometry` (also `gui-mail-gpu`): scrolled three screens down, choosing People, showing every kind again and starting a search each put the list at its top with a saved offset that restores there, and restoring the view keeps it there. Switching to an account whose list is in memory and whose saved view is three screens down, from a list already at its top, opens it at its top. With the `listIdentity` handler removed, both the sender-kind and the account checks fail. The list stays its exact length in 76 px card rows (68 compact). Its exact-length check counts only delegates the list has placed, not ones still being built past its edge.
+- `monthFoldFrames` uses two To review rows and two rows a month, so three month headers still fit its 800 px window under cards. A grouped row builds its in-row heading only when it draws one, so the check finds each month's one header.
+- `gui-mail-navigation-cache`: the open row keeps its delegate through a refresh that moves it six rows, now that the list keeps six rows of delegates past each edge.
+
+Validation (Windows 11, x64, release build): all 38 `gui-` tests pass in one run. `gui-mail-gpu` sometimes failed on a delegate still being built past the list's edge ("item 20 is 0 high"); with the check counting only placed delegates it passed five runs in a row. `gui-mail-navigation-cache` passed three in a row. Demo-profile captures checked the Inbox cards, Sent rows under the new head, the narrow layout, and an empty To review alone and with an empty Delayed. Not checked: the Paper theme, compact density and large text on screen, and a live account.
+
 ## D220 — Account From names (Quality98)
 
 Core107, Gmail48, Mail UI161, CLI68; schema 42, fixtures live0/demo3 and protocol1 unchanged.

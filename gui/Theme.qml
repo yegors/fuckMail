@@ -56,6 +56,8 @@ QtObject {
     // Root text 12.5 / 13 / 14.5px; every design size scales with it.
     readonly property real fontScale: textSize === "small" ? 12.5 / 13 : textSize === "large" ? 14.5 / 13 : 1
     readonly property string fontFamily: "Geist"
+    // Labels set in caps: folder tabs, list stats, filters and section titles.
+    readonly property string monoFamily: "Geist Mono"
     // Design sizes include half pixels (12.5px). QFont pixel sizes are whole
     // numbers, so fonts use fontPoints(); fontSize() stays exact for geometry.
     function fontSize(base) { return Math.max(1, base * fontScale) }
@@ -225,5 +227,9 @@ QtObject {
     readonly property int keyHintHeight: 24
     readonly property int comfortableRowHeight: 52
     readonly property int compactRowHeight: 44
+    // Inbox conversations are framed cards, cardGap apart.
+    readonly property int comfortableCardHeight: 62
+    readonly property int compactCardHeight: 54
+    readonly property int cardGap: 14
     function accountIcon(id) { return id === "windscribe" ? "wind" : id === "personal" ? "person" : "sliders" }
 }
