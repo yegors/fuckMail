@@ -2,6 +2,13 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-28
+
+- Inbox conversations are framed cards. A card's first label, message count and attachments sit in its top edge, with the time on the right after an amber dot while unread. Unread cards have a brighter frame and bolder sender and subject, and the open one is framed in amber. Sent, Drafts, Spam and Trash keep their rows.
+- The list's folder tabs, counts, label filters and section titles are set in monospace capitals. The chosen folder is underlined in amber, and the label filters sit on a line across the list.
+- An empty To review or Delayed takes one row, its title with a single line under it, and section titles sit evenly between cards. When the last conversation leaves To review, the sections below now slide up rather than staying put.
+- Switching accounts, folders, searches, labels or People/Automated always starts the list at its top. It could reopen where that list was last scrolled, so older mail looked as if it were still waiting in To review.
+
 ## 2026-10-24
 
 - Each account has its own **From name**, the name people see when you write to them, in Settings → Accounts → Edit account and `fm account-update --from-name`. It starts as the name you set in Gmail. The display name is now only what fuckMail shows, and an account whose display name is just its address no longer sends mail under the address as a name.

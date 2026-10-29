@@ -24,8 +24,8 @@ public:
     /// `rowData` is the row's whole QVariantMap. `previousGroup` is the group
     /// of the row above it ("" for the first row), which QML compares with
     /// the row's own group to decide whether to draw a section header.
-    /// `itemType` is the row's `item_type`: "header" or "empty" for the
-    /// Inbox's section items, otherwise "row".
+    /// `itemType` is the row's `item_type`: "header" for the Inbox's section
+    /// items, otherwise "row".
     enum Role { RowDataRole = Qt::UserRole + 1, PreviousGroupRole, ItemTypeRole };
     explicit ConversationListModel(QObject *parent = nullptr);
     int rowCount(const QModelIndex &parent = {}) const override;

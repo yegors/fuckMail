@@ -36,7 +36,7 @@
 #include <QtMath>
 using namespace GoogleOperationFixture;
 
-// Conversation rows the list shows, not its section headers and empty lines.
+// Conversation rows the list shows, not its section headers.
 static int shownRows(MailBackend &backend) {
     int n=0; auto *model=backend.conversationModel();
     for (int i=0;i<model->rowCount();++i) if (model->data(model->index(i,0),ConversationListModel::ItemTypeRole).toString()=="row") ++n;
@@ -69,6 +69,8 @@ class MailSelectionTest {
         // Saved views; one naming missingMember is refused as Core refuses a removed message.
         QList<QJsonObject> viewSaves;
         QString missingMember;
+        // The view Core has saved for an account, by account; none is empty.
+        QHash<QString,QJsonObject> savedViews;
         // Plain-text bodies by conversation, served without HTML.
         QHash<QString,QString> texts;
         // Files on each thread's message; a forward starts with them, as in Core.
@@ -234,6 +236,7 @@ class MailSelectionTest {
                     else if (method == "message_unsubscribe") { result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","one_click"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "google_unsubscribe_mail") { unsubscribeMails.append(request["params"].toObject()); result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}}; unsubscribed = QJsonObject{{"method","mailto"},{"at","2026-09-25T10:00:00Z"}}; }
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
+                    else if (method == "view_get" && savedViews.contains(request["account"].toString())) result = {{"view",savedViews.value(request["account"].toString())},{"revision",1}};
                     else if (method == "view_save") {
                         const auto params = request["params"].toObject(); viewSaves.append(params);
                         if (!missingMember.isEmpty() && params["view"].toObject()["selectedMember"] == missingMember) {
@@ -739,12 +742,17 @@ class MailSelectionTest {
         settle();
         require(ids()==QStringList{"r3","h1","r1","r2","d1"} && unsplit(),("the last kept row stays above Delayed: "+ids().join(',')).toUtf8().constData());
         require(count("review")==1 && shownCount("mailGroup_review")==1 && shownCount("mailSectionEmpty_review")==0,"the last kept row shows To review 1, not 'All reviewed'");
-        // A hairline divides rows, none above a group's first; no row is shaded.
+        // Inbox conversations are unfilled 6px-round cards with no rules: a
+        // faint frame once reviewed, an amber one for the open conversation.
         {
-            const auto rule=[&](const QString &id){ auto *item=find(window->contentItem(),"rowSeparator_"+id); require(item,"row separator exists"); return item->property("color").value<QColor>().alphaF(); };
-            const auto shade=[&](const QString &id){ auto *item=find(window->contentItem(),"rowHighlight_"+id); require(item,"row highlight exists"); return item->property("color").value<QColor>().alphaF(); };
-            require(rule("r1")==0 && qAbs(rule("r2")-.07)<.005 && qAbs(rule("d1")-.07)<.005 && rule("h1")==0 && rule("r3")==0,"Done's later rows have a rule; each group's first row has none");
-            require(shade("r2")==0,"rows carry no alternating shade");
+            const auto frame=[&](const QString &id){ auto *item=find(window->contentItem(),"rowHighlight_"+id); require(item,"card frame exists"); return item; };
+            const auto edge=[&](const QString &id){ auto *pen=frame(id)->property("border").value<QObject *>(); require(pen,"card border"); return pen->property("color").value<QColor>(); };
+            // The pointer may rest on the open card, which brightens it to 80%.
+            const auto accent=edge("r3");
+            require(frame("r2")->property("color").value<QColor>().alphaF()==0 && qAbs(frame("r2")->property("radius").toReal()-6)<.01,"cards carry no fill");
+            require(qAbs(edge("r2").alphaF()-.07)<.005 && qAbs(edge("d1").alphaF()-.07)<.005,"a reviewed card has a faint frame");
+            require((qAbs(accent.alphaF()-.7)<.005 || qAbs(accent.alphaF()-.8)<.005) && accent.rgb()!=edge("r2").rgb(),"the open card is framed in amber");
+            require(!find(window->contentItem(),"rowSeparator_r2")->isVisible(),"cards draw no rule between them");
         }
         // Drafts in the corner follow Settings' Show/Hide.
         {
@@ -759,9 +767,10 @@ class MailSelectionTest {
             h.backend.m_draftChips.clear(); emit h.backend.draftChipsChanged();
         }
         // Delay it: it moves to Delayed at once and the view says all reviewed.
-        // The empty line takes the row's place, so the Delayed header is drawn
-        // where it was in every frame.
+        // To review's header takes the empty line, and the Delayed header
+        // glides up the folding row's height, never jumping.
         auto *heldHeader=find(window->contentItem(),"mailGroup_held"); require(heldHeader,"Delayed header");
+        const int itemHeight=mail->property("rowHeight").toInt();
         const auto heldTop=heldHeader->mapToScene({0,0}).y(); QList<qreal> heldDrawn; QMutex heldLock;
         const auto heldFrames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ QMutexLocker lock(&heldLock); heldDrawn.append(qAbs(heldHeader->mapToScene({0,0}).y()-heldTop)); },Qt::DirectConnection);
         h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
@@ -773,8 +782,9 @@ class MailSelectionTest {
         QObject::disconnect(heldFrames);
         {
             QMutexLocker lock(&heldLock);
-            const auto jump=heldDrawn.isEmpty() ? 0 : *std::max_element(heldDrawn.cbegin(),heldDrawn.cend());
-            if (jump>.5) { qWarning()<<"Delayed header moved by"<<jump<<"over"<<heldDrawn.size()<<"frames"; require(false,"Delay's swap to the empty line moves nothing below it"); }
+            qreal step=0; for (int i=1;i<heldDrawn.size();++i) step=std::max(step,qAbs(heldDrawn[i]-heldDrawn[i-1]));
+            const auto moved=qAbs(heldHeader->mapToScene({0,0}).y()-heldTop);
+            if (step>itemHeight/3. || qAbs(moved-itemHeight)>.5) { qWarning()<<"Delayed header moved by"<<moved<<"in steps up to"<<step<<"over"<<heldDrawn.size()<<"frames"; require(false,"Delay folds the row away and Delayed glides up one row"); }
         }
         require(!h.backend.conversations()[1].toMap()["pinned"].toBool() && h.backend.conversations()[1].toMap()["section"]=="held" && unsplit(),"a delayed conversation is not kept in To review");
         require(count("review")==0 && count("held")==2 && shownCount("mailSectionEmpty_review")==1 && shownCount("mailGroup_review")==1,"after Delay To review shows its empty state once");
@@ -865,24 +875,25 @@ class MailSelectionTest {
             kept["pinned"]=true; kept["display_group"]="review"; kept["pinned_from"]="done"; rows[0]=kept;
             h.backend.publishConversations(rows); emit h.backend.conversationsChanged(); settle();
             require(shownCount("mailSectionEmpty_review")==0,"the read one still stands in To review");
-            // Nothing below the folding row moves: it fades into the empty line.
+            // The header shows the empty line at once, and Delayed glides up
+            // as the row folds away, never jumping.
             auto *delayed=find(window->contentItem(),"mailGroup_held"); require(delayed,"Delayed header");
             const auto delayedY=[&]{ return delayed->mapToScene({0,0}).y(); };
             const auto before=delayedY(); qreal moved=0;
             // Read where Delayed is drawn in every frame rendered, not between them.
             QList<qreal> drawn; QMutex drawnLock;
             const auto frames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ QMutexLocker lock(&drawnLock); drawn.append(qAbs(delayedY()-before)); },Qt::DirectConnection);
-            const auto watch=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,2); QMutexLocker lock(&drawnLock); for (const auto d:drawn) moved=std::max(moved,d); };
+            const auto watch=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,2); QMutexLocker lock(&drawnLock); for (int i=1;i<drawn.size();++i) moved=std::max(moved,qAbs(drawn[i]-drawn[i-1])); };
             h.holdLists=true;
             h.backend.startLeaving(h.backend.conversations()[0].toMap(),0);
-            require(h.backend.conversationModel()->data(h.backend.conversationModel()->index(1,0),ConversationListModel::RowDataRole).toMap()["leaves_empty"].toBool(),"the last row of To review turns into its empty line");
+            require(h.backend.conversationModel()->data(h.backend.conversationModel()->index(0,0),ConversationListModel::RowDataRole).toMap()["empty"].toBool(),"To review's header says it is empty while its last row folds");
             watch(330);
             require(shownCount("mailSectionEmpty_review")==1,"Inbox zero shows once the last row has folded away");
             h.holdLists=false; h.releaseLists(); await([&]{return !h.backend.m_loading;},"the refresh after it lands");
             watch(150);
             require(shownCount("mailSectionEmpty_review")==1,"and stays when the refresh lands");
             QObject::disconnect(frames);
-            if (moved>.5 || drawn.size()<5) { qWarning()<<"Delayed header moved by"<<moved<<"over"<<drawn.size()<<"frames"; require(false,"the last row's fold moves nothing below it"); }
+            if (moved>itemHeight/3. || drawn.size()<5 || qAbs(delayedY()-before+itemHeight)>.5) { qWarning()<<"Delayed header ended"<<delayedY()-before<<"from where it was, in steps up to"<<moved<<"over"<<drawn.size()<<"frames"; require(false,"the last row folds away and Delayed glides up one row"); }
         }
         // Collapsing the only loaded month while older mail isn't loaded keeps
         // the headers, and refreshes never show a loading text.
@@ -1004,9 +1015,16 @@ class MailSelectionTest {
         h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         await([&]{auto *preview=find(window->contentItem(),"mailPreview_a");return preview && preview->property("text")=="Review the design by Friday.";},"summary replaces source preview");
         {
+            const auto legendOrdered=[&]{
+                auto *thread=shown(window->contentItem(),"mailThreadCount_a"), *attachments=shown(window->contentItem(),"mailAttachmentCount_a");
+                return thread && attachments && attachments->mapToScene({0,0}).x()>thread->mapToScene({thread->width(),0}).x();
+            };
+            QElapsedTimer laid; laid.start(); while (!legendOrdered() && laid.elapsed()<2000) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
             auto *others=shown(window->contentItem(),"mailOthers_a"), *thread=shown(window->contentItem(),"mailThreadCount_a"), *attachments=shown(window->contentItem(),"mailAttachmentCount_a");
+            if (!legendOrdered()) qWarning()<<"legend"<<thread<<attachments<<(thread ? thread->mapToScene({0,0}) : QPointF())<<(thread ? thread->width() : -1)<<(attachments ? attachments->mapToScene({0,0}) : QPointF());
             require(others && others->property("text")=="+2","other people on the thread follow the sender");
-            require(thread && attachments && attachments->x()>thread->x()+thread->width(),"thread and attachment counts follow the subject in order");
+            require(legendOrdered(),"the card's legend gives the thread's size, then its attachments");
+            require(thread->property("text")=="3 msgs" && thread->mapToScene({0,0}).y()<find(window->contentItem(),"conversationRow_a")->mapToScene({0,0}).y(),"the legend sits on the card's top border");
             require(!find(window->contentItem(),"mailOthers_b")->isVisible() && !find(window->contentItem(),"mailThreadCount_b")->isVisible(),"single-person, single-message rows show neither");
         }
         require(find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"summary preview has assistance icon");
@@ -1017,7 +1035,7 @@ class MailSelectionTest {
         require(senderColumn->mapToScene(QPointF(senderColumn->width(),0)).x() < sourcePreview->mapToScene(QPointF()).x(),"sender column precedes subject/preview without overlap");
         {
             auto *avatar=shown(window->contentItem(),"mailAvatar_a");
-            require(avatar && qFuzzyCompare(avatar->width(),24.) && qAbs(senderColumn->mapToScene(QPointF()).x()-avatar->mapToScene(QPointF(avatar->width(),0)).x()-16)<.5,"a 24px sender avatar sits 16px before the sender column");
+            require(avatar && qFuzzyCompare(avatar->width(),24.) && qAbs(senderColumn->mapToScene(QPointF()).x()-avatar->mapToScene(QPointF(avatar->width(),0)).x()-10)<.5,"a 24px sender avatar sits 10px before the sender column");
             require(avatar->property("initials").toString()=="S" && !avatar->property("imageShown").toBool() && avatar->property("sourceLabel").toString()==QString::fromUtf8("No photo · initials"),"a synthetic profile shows initials and asks for no picture");
         }
         summaryRow["recipient"]="teammate@example.test";h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
@@ -2298,9 +2316,9 @@ public:
         const auto real=[&](const char *name){ return list->property(name).toReal(); };
         const auto top=[&]{ return real("originY")-real("topMargin"); };
         const auto bottom=[&]{ return std::max(top(), real("originY")+real("contentHeight")+real("bottomMargin")-real("height")); };
-        // Headers, empty lines and rows, each one row high: To review's 6 rows,
-        // Delayed's empty line, three months of 60 and 37 folded months.
-        const auto items=[&](int foldedRows){ return (1+6)+(1+1)+3*(1+60)+37-foldedRows; };
+        // Headers and rows, each one row high: To review's 6 rows, Delayed
+        // (empty, its line in its header), three months of 60 and 37 folded months.
+        const auto items=[&](int foldedRows){ return (1+6)+1+3*(1+60)+37-foldedRows; };
         QStringList problems;
         // The list's length is its items and what is still to load, exactly,
         // and every delegate is one row high.
@@ -2314,9 +2332,13 @@ public:
             // Each item near the view is where its index puts it from the
             // list's origin, so the list's estimate of what it has not built is
             // exact. (Qt keeps its current item, index 0, alive far away.)
+            // Delegates still being built off screen are children already, but
+            // not yet the list's items, and not yet sized.
             for (auto *item : content->childItems()) {
                 const auto index=item->property("index");
                 if (!index.isValid() || index.toInt()<0 || !item->isVisible()) continue;
+                QQuickItem *owned=nullptr; QMetaObject::invokeMethod(list,"itemAtIndex",Q_RETURN_ARG(QQuickItem*,owned),Q_ARG(int,index.toInt()));
+                if (owned!=item) continue;
                 if (item->y()+item->height()<real("contentY")-real("height") || item->y()>real("contentY")+2*real("height")) continue;
                 if (std::abs(item->height()-rowHeight)>0.5) { problems<<QString("%1: item %2 is %3 high").arg(where).arg(index.toInt()).arg(item->height()); break; }
                 if (std::abs(item->y()-real("originY")-index.toInt()*rowHeight)>0.5) { problems<<QString("%1: item %2 at %3 from origin %4").arg(where).arg(index.toInt()).arg(item->y()).arg(real("originY")); break; }
@@ -2475,12 +2497,43 @@ public:
         exact("kept row's month open",-1);
         check("a kept row folds with its month and its header shows once");
         QObject::disconnect(frame);
+        // Another sender kind, label, search or account is a new list: one
+        // scrolled down goes back to its top, and restoring the saved view
+        // afterwards keeps it there.
+        // The saved offset puts the list at its top when restored.
+        const auto savedAtTop=[&]{ return std::abs(std::max(top(),real("originY")+h.backend.presentation().value("listY").toDouble())-top())<0.5; };
+        {
+            list->setProperty("contentY",top()+3*list->height()); settle(200);
+            require(real("contentY")>top()+list->height() && !savedAtTop(),"the list is scrolled down");
+            h.backend.applyFilters({{"kind","people"}}); await([&]{return !h.backend.m_loading;},"the people-only list"); settle(200);
+            require(std::abs(real("contentY")-top())<0.5 && savedAtTop(),"choosing a sender kind starts the list at its top");
+            QMetaObject::invokeMethod(mail,"restorePosition"); settle(200);
+            require(std::abs(real("contentY")-top())<0.5,"restoring the view keeps the new list at its top");
+            list->setProperty("contentY",top()+3*list->height()); settle(200);
+            h.backend.applyFilters({}); await([&]{return !h.backend.m_loading;},"every kind again"); settle(200);
+            require(std::abs(real("contentY")-top())<0.5,"showing every kind again starts at the top too");
+            list->setProperty("contentY",top()+3*list->height()); settle(200);
+            h.backend.setQuery("Geometry"); await([&]{return !h.backend.m_loading && !h.backend.m_searchTimer.isActive();},"the search's list"); settle(200);
+            require(std::abs(real("contentY")-top())<0.5,"a search starts at the top");
+            h.backend.setQuery({}); await([&]{return !h.backend.m_loading && !h.backend.m_searchTimer.isActive();},"the mailbox again"); settle(200);
+        }
         // Switching accounts during a search: the next account starts with its own folds.
         h.backend.setQuery("Geometry"); require(h.backend.allSectionsOpen(),"a search opens every month");
         auto second=h.backend.m_allAccounts.first().toMap(); second["id"]="second"; second["name"]="Second"; second["email"]="second@example.test";
         h.backend.m_allAccounts.append(second); h.backend.publishAccounts(h.backend.m_allAccounts);
+        // The other account was left scrolled far down, and its list is in
+        // memory, as other accounts' are: it still opens at its top, also from
+        // a list already at its top, whose reset moves nothing.
+        h.savedViews["second"]=QJsonObject{{"folder","inbox"},{"listY",3*list->height()}};
+        h.backend.m_views["second"]=h.savedViews["second"].toVariantMap();
+        h.backend.m_mailViewCache.insert("second",new MailBackend::MailViewSnapshot{
+            {{"folder","inbox"},{"query",""},{"category",""},{"filters",QVariantMap{}},{"collapsed_groups",QStringList{}},{"open_sections",QStringList{}}},
+            h.summary.toVariantMap(),h.rows,{},h.backend.lifecycleAccount("second").value("lifecycle").toMap().value("revision").toLongLong(),-1,{}});
+        list->setProperty("contentY",top()); settle(200);
         h.backend.selectAccount("second");
         require(!h.backend.allSectionsOpen() && h.backend.collapsedGroups().isEmpty(),"another account does not keep the search's open months");
+        await([&]{return h.backend.account()=="second" && !h.backend.m_loading && h.backend.m_accountViewRestorationGeneration<0;},"the other account's view arrives"); settle(300);
+        require(std::abs(real("contentY")-top())<0.5 && savedAtTop(),"another account opens at its top, whatever offset it saved");
         if (!qmlWarnings.isEmpty()) { qWarning()<<qmlWarnings.mid(0,6); require(false,"the list has no QML warnings"); }
         require(frames>40,"the list painted while it changed");
         qInfo()<<"The Inbox list is its exact length through scrolling, paging and folds, and never blank, over"<<frames<<"frames.";
@@ -2496,15 +2549,16 @@ public:
                 {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
                 {"group",group},{"kind","people"},{"unread",unread},{"starred",false}}); };
         h.rows.clear();
-        for (int n=0; n<4; ++n) h.rows.append(make(QString("r%1").arg(n),"review",true,"2026-09-14T12:00:00Z"));
+        // Few rows a section, so three month headers fit on screen under cards.
+        for (int n=0; n<2; ++n) h.rows.append(make(QString("r%1").arg(n),"review",true,"2026-09-14T12:00:00Z"));
         QJsonArray months; QStringList monthKeys;
         // Three open months, then many folded ones, as years of mail are.
         for (int m=0; m<30; ++m) {
             const auto date=QDate(2026,8,15).addMonths(-m);
-            months.append(QJsonObject{{"month",date.toString("yyyy-MM")},{"count",3}}); monthKeys.append("done:"+date.toString("yyyy-MM"));
-            for (int n=0; n<3; ++n) h.rows.append(make(QString("d%1-%2").arg(m).arg(n),"done",false,date.toString("yyyy-MM-dd")+"T12:00:00Z"));
+            months.append(QJsonObject{{"month",date.toString("yyyy-MM")},{"count",2}}); monthKeys.append("done:"+date.toString("yyyy-MM"));
+            for (int n=0; n<2; ++n) h.rows.append(make(QString("d%1-%2").arg(m).arg(n),"done",false,date.toString("yyyy-MM-dd")+"T12:00:00Z"));
         }
-        h.summary={{"filtered_group_counts",QJsonObject{{"review",4},{"held",0}}},{"done_months",months}};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",2},{"held",0}}},{"done_months",months}};
         QTemporaryDir copy; copyModule(copy);
         QQmlApplicationEngine qml; FmIconItem::registerType();
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
@@ -2517,13 +2571,13 @@ public:
         h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
         await([&]{return !h.backend.m_loading && h.backend.conversations().size()==h.rows.size();},"every month loads");
         h.backend.setSections({},monthKeys.mid(0,3));
-        await([&]{return !h.backend.m_loading && shownRows(h.backend)==4+9;},"older months fold");
+        await([&]{return !h.backend.m_loading && shownRows(h.backend)==2+6;},"older months fold");
         settle(300);
         auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"mail view");
         auto *list=find(window->contentItem(),"conversationList"); require(list,"fold list");
         // Painted items only: retired delegates can linger hidden.
         const auto paintedRow=[&](const QString &id)->QQuickItem* { QQuickItem *found=nullptr; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){ if(found || !item->isVisible() || item->opacity()==0) return; if(item->objectName()=="conversationRow_"+id && item->height()>0) { found=item; return; } for(auto *c:item->childItems()) walk(c); }; walk(window->contentItem()); return found; };
-        QStringList stayers{"r0","r1","r2","r3"};
+        QStringList stayers{"r0","r1"};
         QHash<QString, QPair<QQuickItem*, qreal>> baseline;
         for (const auto &id : stayers) { auto *row=paintedRow(id); require(row,"a To review row is painted"); baseline[id]={row,row->mapToScene({0,0}).y()}; }
         // Month headers other than the toggled one, on screen before: they may
@@ -2572,7 +2626,7 @@ public:
         // Scrolled far down with many months open: no frame of a fold or an
         // opening is blank.
         h.backend.setSections({},monthKeys.mid(0,12));
-        await([&]{return !h.backend.m_loading && shownRows(h.backend)==4+36;},"twelve months open");
+        await([&]{return !h.backend.m_loading && shownRows(h.backend)==2+24;},"twelve months open");
         settle(300);
         QMetaObject::invokeMethod(list,"positionViewAtEnd"); settle(300);
         const auto shownInList=[&]{ int n=0; const auto top=list->mapToScene({0,0}).y(), bottom=top+list->height();
@@ -2600,7 +2654,7 @@ public:
         await([&]{return !h.backend.m_loading;},"one older month open below folded ones");
         // As after a launch: the folded months above were never loaded.
         h.backend.m_sectionRows.clear(); h.backend.loadConversations(false,true);
-        await([&]{return !h.backend.m_loading && shownRows(h.backend)==4+3;},"only the open month's rows are listed");
+        await([&]{return !h.backend.m_loading && shownRows(h.backend)==2+2;},"only the open month's rows are listed");
         settle(300);
         // The open month's first row at the bottom of the view, the folded
         // headers above it on screen.
@@ -2615,7 +2669,7 @@ public:
                 auto *item=headerItem(it.key());
                 if (!item) rebuilt<<it.key()+" missing";
                 else if (item!=it.value().first) rebuilt<<it.key()+" rebuilt";
-                else if (std::abs(item->mapToScene({0,0}).y()-it.value().second)>1) rebuilt<<it.key()+" moved";
+                else if (std::abs(item->mapToScene({0,0}).y()-it.value().second)>1) rebuilt<<it.key()+QString(" moved %1").arg(item->mapToScene({0,0}).y()-it.value().second);
             }
         });
         for (int round=0; round<2; ++round) {
