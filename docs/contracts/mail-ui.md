@@ -1,5 +1,17 @@
 # Mail UI, reader and human composer
 
+## D222 — Inbox list in slices; section titles 52 px apart (Mail UI163)
+
+Replaces Mail UI162's item heights, title placement and empty-section item. Cards, legend, head and new-list rules are unchanged; Sent, Drafts, Spam and Trash are unchanged.
+
+- **Slices.** Every Inbox list item is one slice high, so Qt's estimate of the items it has not built stays exact. A slice is a third of a card and its gap, rounded up: `sliceHeight` is `ceil((cardHeight + 14) / 3)`, 26 px (23 compact, scaled with text size). A card's place, `rowHeight`, is three slices: 78 px (69 compact), so the gap under a card is 16 px (15 compact). All mail cards use the same `rowHeight`, in one item each.
+- **Items.** `MailBackend::listItems` lists a section as its `header` item and one `slice` item, then each row of an open section as its `row` item and two `slice` items (`slice:<n>:<id>`). A slice copies its row's `leaving`, so a folding card's three slices fold together. `listIndex` names an item's first slice. `unloadedItems` counts slices.
+- **Section titles** take two slices: the 32 px title is centred in them, 10 px above the section's first card (7 compact) and 26 px below the card above it, its gap included (22 compact). Folded sections stack 52 px apart (46 compact). The list's top margin still hides the room above the first title.
+- **Empty sections.** An open section with no mail lists one `empty` item (`empty:<key>`) after its title's two slices: one more slice, with the empty line centred in the room under the title. An empty section is three slices, one card's place. When the last row folds out of a section that stays shown, the `empty` item is listed with `emerging` and grows over the fold while the line fades in, so what is below glides up two slices. A row arriving takes it away at once. Header items no longer carry `empty`.
+- **Drawing.** A title and a card draw over the slices after their own item, and the list shows items up to two slices past its top (`displayMarginBeginning`), so a card cut by the top edge still draws. Keyboard moves and the row menu bring a card's last slice into view as well as its first.
+
+Consumers: `MailView` (`sliceHeight`, `SectionItem`, `SliceItem`, `EmptyItem`, `FoldingItem`, conversation delegate, `revealRow`, `unloadedHeight`), `MailBackend::listItems`, `ConversationListModel` (`itemType`), `Theme` (card comment); Quality100; `gui-mail-selection`, `gui-mail-gpu`.
+
 ## D221 — Conversation cards, mono caps head, new lists at their top (Mail UI162)
 
 From the founder's 2026-10-28 terminal prototype. Replaces the Inbox row layout of Mail UI124 and the list head of earlier revisions; Sent, Drafts, Spam and Trash rows are unchanged.

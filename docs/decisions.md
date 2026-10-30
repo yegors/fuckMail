@@ -2658,3 +2658,15 @@ The founder supplied an updated terminal prototype (a standalone export, as the 
 - **Verification.** On Windows 11 (x64, release build), all 38 GUI tests pass. `gui-mail-selection` checks the cards, the legend, an empty section being one row, and the list returning to its top for a sender kind, a search and an account switch; without the fix, the sender-kind and account checks fail. Not checked: the Paper theme, compact density and large text on screen, and a live account.
 
 Mail UI162, Quality99.
+
+## D222 — The Inbox list in slices, so section titles sit 52 px apart (2026-10-30T21:23:41Z)
+
+The founder reported that the month sections in the Inbox were too far apart after the card change: folded months stacked 76 px apart, where they had been 52 px with rows.
+
+- **Why.** D175 makes every Inbox list item one row high, because Qt's ListView sizes the items it has not built from the average of those it has; equal items keep the list's length and scrollbar exact. D221 kept that, so a title's item became a card's 76 px. Shorter title items alone would bring back the moving scrollbar D175 fixed. Asked to choose, the founder picked keeping the list exact over a small change with an estimated scrollbar.
+- **Change.** The unit is a slice, a third of a card and its gap rounded up: 26 px (23 compact). A card takes three slices and a title two, each slice an item of its own; a card and a title draw over their later slices. Titles now stack 52 px apart and sit 10 px above their first card, as the prototype has them. Cards move 78 px apart, two pixels more, to make the three slices whole.
+- **Empty sections.** The empty line moves from the title's item to one more slice under it, so an empty section is still one card's place. When the last row folds out, that slice grows while the row folds, and what is below glides up two slices instead of one row.
+- **Cost.** The Inbox model holds three items per loaded conversation instead of one; the extra ones are bare items. A card's first slice can sit above the view while the rest of it shows, so the list draws two slices past its top.
+- **Verification.** On macOS (arm64, debug build), `gui-conversation-list-model`, `gui-mail-selection`, `gui-mail-gpu` and `gui-mail-navigation-cache` pass with `listGeometry` checking that every item is one slice and the length is exact, in both densities. Of the 38 GUI tests, 37 pass; `gui-integration` stops at its OpenPGP backup permission check, as it does on the unchanged code. Screenshots of the demo profile show folded sections 52 px apart and a card cut by the top edge drawn whole. Not checked on screen: the empty line's place, compact density, large text, Windows and Linux, and a live account.
+
+Mail UI163, Quality100.

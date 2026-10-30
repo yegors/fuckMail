@@ -227,7 +227,8 @@ QtObject {
     readonly property int keyHintHeight: 24
     readonly property int comfortableRowHeight: 52
     readonly property int compactRowHeight: 44
-    // Inbox conversations are framed cards, cardGap apart.
+    // Inbox conversations are framed cards, at least cardGap apart: the list
+    // rounds a card and its gap up to three equal slices.
     readonly property int comfortableCardHeight: 62
     readonly property int compactCardHeight: 54
     readonly property int cardGap: 14

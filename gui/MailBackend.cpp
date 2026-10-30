@@ -993,25 +993,36 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
             if (sections[i].open && sections[i].count > sections[i].loaded) { through = i; break; }
     }
     QVariantList items;
-    items.reserve(rows.size() + sections.size() * 2);
+    items.reserve(rows.size() * cardSlices + sections.size() * (titleSlices + 1));
+    // An item and the empty slices after it, which it draws over. A row's
+    // slices fold with it.
+    const auto sliced = [&](const QVariantMap &item, int count) {
+        items.append(item);
+        const auto id = item.value("id").toString();
+        for (int n = 1; n < count; ++n)
+            items.append(QVariantMap{{"id", u"slice:" + QString::number(n) + u':' + id}, {"account", m_account}, {"section", item.value("section")},
+                {"item_type", QStringLiteral("slice")}, {"leaving", item.value("leaving").toBool()}});
+    };
     for (qsizetype i = 0; i < sections.size(); ++i) {
         const auto &section = sections[i];
         m_inboxSections.append(QVariantMap{{"key", section.key}, {"count", section.count}});
         if (i > through) {
-            if (more) m_unloadedItems += 1 + (section.open ? section.count : 0);
+            if (more) m_unloadedItems += titleSlices + (!section.open ? 0 : section.count > 0 ? section.count * cardSlices : 1);
             continue;
         }
-        // An open section with no mail says so under its header, in the
-        // header's item. So does one whose last row is folding out, while the
-        // row folds away below it.
+        sliced(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}}, titleSlices);
+        // An open section with no mail says so under its title, in one more
+        // slice. So does one whose last row is folding out: the slice grows
+        // as the row folds away below it.
         const bool empty = section.open && ((section.count == 0 && section.rows.isEmpty())
             || (section.stays && section.loaded == 0 && section.leavingKept > 0 && section.count - section.leavingKept <= 0));
-        items.append(QVariantMap{{"id", u"section:" + section.key}, {"account", m_account}, {"section", section.key}, {"item_type", QStringLiteral("header")}, {"empty", empty}});
-        items += section.rows;
-        if (i == through && more && section.open) m_unloadedItems += std::max(0, section.count - section.loaded);
+        if (empty) items.append(QVariantMap{{"id", u"empty:" + section.key}, {"account", m_account}, {"section", section.key},
+            {"item_type", QStringLiteral("empty")}, {"emerging", !section.rows.isEmpty()}});
+        for (const auto &row : section.rows) sliced(row.toMap(), cardSlices);
+        if (i == through && more && section.open) m_unloadedItems += std::max(0, section.count - section.loaded) * cardSlices;
     }
     // No counts from Core yet: the rest of the view by its total.
-    if (more && sections.isEmpty()) m_unloadedItems = std::max(0, m_querySummary.value("filtered_conversation_count").toInt() - int(rows.size()));
+    if (more && sections.isEmpty()) m_unloadedItems = std::max(0, m_querySummary.value("filtered_conversation_count").toInt() - int(rows.size())) * cardSlices;
     return items;
 }
 

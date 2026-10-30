@@ -767,10 +767,12 @@ class MailSelectionTest {
             h.backend.m_draftChips.clear(); emit h.backend.draftChipsChanged();
         }
         // Delay it: it moves to Delayed at once and the view says all reviewed.
-        // To review's header takes the empty line, and the Delayed header
-        // glides up the folding row's height, never jumping.
+        // To review's empty line takes a slice under its header, and the
+        // Delayed header glides up the folding row's height less that slice,
+        // never jumping.
         auto *heldHeader=find(window->contentItem(),"mailGroup_held"); require(heldHeader,"Delayed header");
-        const int itemHeight=mail->property("rowHeight").toInt();
+        const int itemHeight=mail->property("rowHeight").toInt(), sliceHeight=mail->property("sliceHeight").toInt();
+        require(itemHeight==3*sliceHeight && sliceHeight>0,"a card's row is three slices");
         const auto heldTop=heldHeader->mapToScene({0,0}).y(); QList<qreal> heldDrawn; QMutex heldLock;
         const auto heldFrames=QObject::connect(window,&QQuickWindow::beforeSynchronizing,window,[&]{ QMutexLocker lock(&heldLock); heldDrawn.append(qAbs(heldHeader->mapToScene({0,0}).y()-heldTop)); },Qt::DirectConnection);
         h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
@@ -784,7 +786,7 @@ class MailSelectionTest {
             QMutexLocker lock(&heldLock);
             qreal step=0; for (int i=1;i<heldDrawn.size();++i) step=std::max(step,qAbs(heldDrawn[i]-heldDrawn[i-1]));
             const auto moved=qAbs(heldHeader->mapToScene({0,0}).y()-heldTop);
-            if (step>itemHeight/3. || qAbs(moved-itemHeight)>.5) { qWarning()<<"Delayed header moved by"<<moved<<"in steps up to"<<step<<"over"<<heldDrawn.size()<<"frames"; require(false,"Delay folds the row away and Delayed glides up one row"); }
+            if (step>itemHeight/3. || qAbs(moved-(itemHeight-sliceHeight))>.5) { qWarning()<<"Delayed header moved by"<<moved<<"in steps up to"<<step<<"over"<<heldDrawn.size()<<"frames"; require(false,"Delay folds the row away and Delayed glides up the row less the empty line's slice"); }
         }
         require(!h.backend.conversations()[1].toMap()["pinned"].toBool() && h.backend.conversations()[1].toMap()["section"]=="held" && unsplit(),"a delayed conversation is not kept in To review");
         require(count("review")==0 && count("held")==2 && shownCount("mailSectionEmpty_review")==1 && shownCount("mailGroup_review")==1,"after Delay To review shows its empty state once");
@@ -875,8 +877,8 @@ class MailSelectionTest {
             kept["pinned"]=true; kept["display_group"]="review"; kept["pinned_from"]="done"; rows[0]=kept;
             h.backend.publishConversations(rows); emit h.backend.conversationsChanged(); settle();
             require(shownCount("mailSectionEmpty_review")==0,"the read one still stands in To review");
-            // The header shows the empty line at once, and Delayed glides up
-            // as the row folds away, never jumping.
+            // The empty line's slice comes at once and grows as the row folds
+            // away, and Delayed glides up, never jumping.
             auto *delayed=find(window->contentItem(),"mailGroup_held"); require(delayed,"Delayed header");
             const auto delayedY=[&]{ return delayed->mapToScene({0,0}).y(); };
             const auto before=delayedY(); qreal moved=0;
@@ -886,14 +888,18 @@ class MailSelectionTest {
             const auto watch=[&](int ms){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,2); QMutexLocker lock(&drawnLock); for (int i=1;i<drawn.size();++i) moved=std::max(moved,qAbs(drawn[i]-drawn[i-1])); };
             h.holdLists=true;
             h.backend.startLeaving(h.backend.conversations()[0].toMap(),0);
-            require(h.backend.conversationModel()->data(h.backend.conversationModel()->index(0,0),ConversationListModel::RowDataRole).toMap()["empty"].toBool(),"To review's header says it is empty while its last row folds");
+            {
+                // To review's header, its second slice, then its empty line ahead of the folding row.
+                const auto item=h.backend.conversationModel()->data(h.backend.conversationModel()->index(2,0),ConversationListModel::RowDataRole).toMap();
+                require(item["item_type"]=="empty" && item["section"]=="review" && item["emerging"].toBool(),"To review's empty line is listed while its last row folds");
+            }
             watch(330);
             require(shownCount("mailSectionEmpty_review")==1,"Inbox zero shows once the last row has folded away");
             h.holdLists=false; h.releaseLists(); await([&]{return !h.backend.m_loading;},"the refresh after it lands");
             watch(150);
             require(shownCount("mailSectionEmpty_review")==1,"and stays when the refresh lands");
             QObject::disconnect(frames);
-            if (moved>itemHeight/3. || drawn.size()<5 || qAbs(delayedY()-before+itemHeight)>.5) { qWarning()<<"Delayed header ended"<<delayedY()-before<<"from where it was, in steps up to"<<moved<<"over"<<drawn.size()<<"frames"; require(false,"the last row folds away and Delayed glides up one row"); }
+            if (moved>itemHeight/3. || drawn.size()<5 || qAbs(delayedY()-before+itemHeight-sliceHeight)>.5) { qWarning()<<"Delayed header ended"<<delayedY()-before<<"from where it was, in steps up to"<<moved<<"over"<<drawn.size()<<"frames"; require(false,"the last row folds away and Delayed glides up the row less the empty line's slice"); }
         }
         // Collapsing the only loaded month while older mail isn't loaded keeps
         // the headers, and refreshes never show a loading text.
@@ -2271,9 +2277,9 @@ public:
         if (!problems.isEmpty()) { qWarning()<<problems; require(false,"a long body paints wherever the reader is scrolled"); }
         qInfo()<<"A long plain-text body paints all its text wherever the reader is scrolled.";
     }
-    // The Inbox list is exact however it changes. Every item is one row high,
-    // so its length (and the scrollbar) is what it holds plus what is still to
-    // load. Scrolling, paging, folding and opening months never change it by
+    // The Inbox list is exact however it changes. Every item is one slice
+    // high, so its length (and the scrollbar) is what it holds plus what is
+    // still to load. Scrolling, paging, folding and opening months never change it by
     // more than what they fold, never blank the view and never paint a header
     // twice; a kept row stays in its own month.
     static void listGeometry() {
@@ -2312,22 +2318,24 @@ public:
         h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
         await([&]{return !h.backend.m_loading && h.backend.hasMore();},"the first page loads");
         settle(300);
-        int rowHeight=mail->property("rowHeight").toInt();
+        int sliceHeight=mail->property("sliceHeight").toInt();
+        require(sliceHeight>0 && mail->property("rowHeight").toInt()==3*sliceHeight,"a card's row is three slices");
         const auto real=[&](const char *name){ return list->property(name).toReal(); };
         const auto top=[&]{ return real("originY")-real("topMargin"); };
         const auto bottom=[&]{ return std::max(top(), real("originY")+real("contentHeight")+real("bottomMargin")-real("height")); };
-        // Headers and rows, each one row high: To review's 6 rows, Delayed
-        // (empty, its line in its header), three months of 60 and 37 folded months.
-        const auto items=[&](int foldedRows){ return (1+6)+1+3*(1+60)+37-foldedRows; };
+        // Slices: two for each header and three for each row. To review's 6
+        // rows, Delayed (empty: one more slice for its line), three months of
+        // 60 and 37 folded months.
+        const auto items=[&](int foldedRows, int addedRows=0){ return (2+6*3)+(2+1)+3*(2+60*3)+37*2+3*(addedRows-foldedRows); };
         QStringList problems;
         // The list's length is its items and what is still to load, exactly,
-        // and every delegate is one row high.
+        // and every delegate is one slice high.
         const auto exact=[&](const QString &where, int expectedItems){
             const auto count=list->property("count").toInt();
             auto *footer=list->property("footerItem").value<QQuickItem*>();
             const auto unloaded=h.backend.unloadedItems();
-            if (!footer || std::abs(footer->height()-unloaded*rowHeight)>0.5) problems<<QString("%1: the footer is %2 high for %3 rows still to load (more %4, loading %5)").arg(where).arg(footer ? footer->height() : -1).arg(unloaded).arg(h.backend.hasMore()).arg(h.backend.m_loading);
-            if (std::abs(real("contentHeight")-(count+unloaded)*rowHeight)>0.5) problems<<QString("%1: length %2 for %3 items and %4 to load").arg(where).arg(real("contentHeight")).arg(count).arg(unloaded);
+            if (!footer || std::abs(footer->height()-unloaded*sliceHeight)>0.5) problems<<QString("%1: the footer is %2 high for %3 slices still to load (more %4, loading %5)").arg(where).arg(footer ? footer->height() : -1).arg(unloaded).arg(h.backend.hasMore()).arg(h.backend.m_loading);
+            if (std::abs(real("contentHeight")-(count+unloaded)*sliceHeight)>0.5) problems<<QString("%1: length %2 for %3 items and %4 to load").arg(where).arg(real("contentHeight")).arg(count).arg(unloaded);
             if (expectedItems>=0 && count+unloaded!=expectedItems) problems<<QString("%1: %2 items and %3 to load, not %4").arg(where).arg(count).arg(unloaded).arg(expectedItems);
             // Each item near the view is where its index puts it from the
             // list's origin, so the list's estimate of what it has not built is
@@ -2340,8 +2348,8 @@ public:
                 QQuickItem *owned=nullptr; QMetaObject::invokeMethod(list,"itemAtIndex",Q_RETURN_ARG(QQuickItem*,owned),Q_ARG(int,index.toInt()));
                 if (owned!=item) continue;
                 if (item->y()+item->height()<real("contentY")-real("height") || item->y()>real("contentY")+2*real("height")) continue;
-                if (std::abs(item->height()-rowHeight)>0.5) { problems<<QString("%1: item %2 is %3 high").arg(where).arg(index.toInt()).arg(item->height()); break; }
-                if (std::abs(item->y()-real("originY")-index.toInt()*rowHeight)>0.5) { problems<<QString("%1: item %2 at %3 from origin %4").arg(where).arg(index.toInt()).arg(item->y()).arg(real("originY")); break; }
+                if (std::abs(item->height()-sliceHeight)>0.5) { problems<<QString("%1: item %2 is %3 high").arg(where).arg(index.toInt()).arg(item->height()); break; }
+                if (std::abs(item->y()-real("originY")-index.toInt()*sliceHeight)>0.5) { problems<<QString("%1: item %2 at %3 from origin %4").arg(where).arg(index.toInt()).arg(item->y()).arg(real("originY")); break; }
             }
         };
         // Every frame, as the scene graph takes it: the view is filled, inside
@@ -2459,18 +2467,18 @@ public:
             h.rows.insert(0,make("arrived","review",true,"2026-09-15T12:00:00Z"));
             auto counts=h.summary["filtered_group_counts"].toObject(); counts["review"]=7; h.summary["filtered_group_counts"]=counts;
             h.backend.loadConversations(false,true); await([&]{return !h.backend.m_loading && h.backend.listIndex("arrived")>=0;},"new mail arrives"); settle(200);
-            exact("new mail",items(0)+1);
+            exact("new mail",items(0,1));
             row=find(window->contentItem(),"conversationRow_d0-30");
             require(row && std::abs(row->mapToScene({0,0}).y()-at)<0.5,"the rows on screen stay where they were");
-            // Compact rows: every item is one compact row high, still exact.
+            // Compact rows: every item is one compact slice high, still exact.
             h.backend.m_preferences["density"]="compact"; emit h.backend.preferencesChanged(); settle(300);
-            require(mail->property("rowHeight").toInt()<rowHeight,"compact rows are shorter");
-            const int comfortable=rowHeight;
-            rowHeight=mail->property("rowHeight").toInt();
-            exact("compact",items(0)+1);
+            require(mail->property("sliceHeight").toInt()<sliceHeight,"compact rows are shorter");
+            const int comfortable=sliceHeight;
+            sliceHeight=mail->property("sliceHeight").toInt();
+            exact("compact",items(0,1));
             h.backend.m_preferences.remove("density"); emit h.backend.preferencesChanged(); settle(300);
-            rowHeight=comfortable;
-            exact("comfortable again",items(0)+1);
+            sliceHeight=comfortable;
+            exact("comfortable again",items(0,1));
             h.rows.removeFirst(); counts["review"]=6; h.summary["filtered_group_counts"]=counts;
             h.backend.loadConversations(false,true); await([&]{return !h.backend.m_loading && h.backend.listIndex("arrived")<0;},"the new mail is filed"); settle(200);
             check("new mail and density changes keep the list exact");

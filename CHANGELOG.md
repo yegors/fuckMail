@@ -2,6 +2,10 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-10-30
+
+- Inbox sections sit closer together: folded months are 52 px apart again, as before cards, and a section title sits just above its first card. The scrollbar still keeps its size as months fold and open. Cards are a pixel or two further apart.
+
 ## 2026-10-28
 
 - Inbox conversations are framed cards. A card's first label, message count and attachments sit in its top edge, with the time on the right after an amber dot while unread. Unread cards have a brighter frame and bolder sender and subject, and the open one is framed in amber. Sent, Drafts, Spam and Trash keep their rows.

@@ -94,7 +94,12 @@ Item {
     readonly property bool cardRows: !binMode && !dateGroups
     readonly property bool compactRows: backend.preferences.density === "compact"
     readonly property int cardHeight: Math.ceil((compactRows ? Theme.compactCardHeight : Theme.comfortableCardHeight) * Theme.fontScale)
-    readonly property int rowHeight: cardRows ? cardHeight + Theme.cardGap : Math.ceil((compactRows ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
+    // The Inbox lists equal slices, so Qt's estimate of the items it has not
+    // built is exact: a card and its gap take three (the gap rounds them up
+    // to whole pixels), a section title two and an empty line one.
+    readonly property bool sliced: backend.folder === "inbox"
+    readonly property int sliceHeight: Math.ceil((cardHeight + Theme.cardGap) / 3)
+    readonly property int rowHeight: cardRows ? 3 * sliceHeight : Math.ceil((compactRows ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
     readonly property bool filtering: backend.query.length > 0 || Object.keys(backend.filters).length > 0 || backend.category.length > 0
     readonly property var matchingIds: {
         const row = mail.rows.find(function(c) { return c.id === backend.selectedId })
@@ -447,11 +452,11 @@ Item {
     }
     // The height the rows not loaded yet will take, from Core's counts, so the
     // list is its full length from the start and its scrollbar never jumps as
-    // older pages arrive. Inbox items are all one row high, so its count is
+    // older pages arrive. Inbox items are all one slice high, so its count is
     // exact; Sent's day headers are estimated from the rows already shown.
     readonly property real unloadedHeight: {
         if (!backend.hasMore) return 0
-        if (backend.folder === "inbox") return backend.unloadedItems * mail.rowHeight
+        if (backend.folder === "inbox") return backend.unloadedItems * mail.sliceHeight
         let rowCount = 0
         for (const row of mail.rows) if (!row.leaving) ++rowCount
         const left = Math.max(0, Number(backend.querySummary.filtered_conversation_count || 0) - rowCount)
@@ -588,30 +593,56 @@ Item {
             FmIcon { visible: backend.folder === "inbox" || mail.dateGroups; name: "down"; size: 10; color: heading.tone; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: Theme.ms(180); easing.type: Theme.enterEasing } } }
         }
     }
-    // A section header's place in its item: centred, so sections sit evenly
-    // apart, and the first one starts the list.
-    readonly property int headerTop: Math.round((rowHeight - headerHeight("")) / 2)
-    // An Inbox section's header. It is one row high, as a row is, so the
-    // list's length and scrollbar are exact however its sections fold. An
-    // open section with no mail says so below its header, in the same item;
-    // a last row folding out of its section fades the line in as it goes.
+    // A section header's place in its two slices: centred, 10px above the
+    // section's first card, and the first one starts the list.
+    readonly property int headerTop: Math.round((2 * sliceHeight - headerHeight("")) / 2)
+    // An Inbox section's header: its first slice, drawing over the second.
     component SectionItem: Item {
         id: sectionItem
         required property var rowData
         required property int index
         readonly property bool header: true
         readonly property string group: rowData ? rowData.section || "" : ""
-        readonly property bool empty: !!(rowData && rowData.empty)
         visible: index >= 0; enabled: index >= 0
-        width: list.width; height: mail.rowHeight
-        GroupHeader { id: sectionHeader; group: sectionItem.group; width: parent.width; y: mail.headerTop }
+        width: list.width; height: mail.sliceHeight
+        GroupHeader { group: sectionItem.group; width: parent.width; y: mail.headerTop }
+    }
+    // An item that folds with its row, over 170 ms once the row is leaving.
+    component FoldingItem: Item {
+        property bool leaving
+        property real leave: 0
+        NumberAnimation on leave { id: fold; running: false; from: 0; to: 1; duration: Theme.ms(170); easing.type: Easing.InQuad }
+        onLeavingChanged: { if (leaving) fold.restart(); else { fold.stop(); leave = 0 } }
+        Component.onCompleted: if (leaving) fold.restart()
+    }
+    // A header's or a card's further slice: empty, as the item before it
+    // draws over it. A card's slices fold with it.
+    component SliceItem: FoldingItem {
+        required property var rowData
+        required property int index
+        leaving: !!(rowData && rowData.leaving)
+        visible: index >= 0; enabled: index >= 0
+        width: list.width; height: mail.sliceHeight * (1 - leave)
+    }
+    // An open section with no mail: one more slice, with the empty line in
+    // the room under the title. When the last row folds out of its section,
+    // the slice grows and the line fades in as the row goes; a row arriving
+    // takes it away at once.
+    component EmptyItem: FoldingItem {
+        id: emptyItem
+        required property var rowData
+        required property int index
+        readonly property string group: rowData ? rowData.section || "" : ""
+        leaving: !!(rowData && rowData.emerging)
+        visible: index >= 0; enabled: index >= 0
+        width: list.width; height: mail.sliceHeight * (leaving ? leave : 1)
         EmptyLine {
-            objectName: "mailSectionEmpty_" + sectionItem.group
-            group: sectionItem.group
-            y: Math.round((sectionHeader.y + sectionHeader.height + sectionItem.height - height) / 2)
-            // It fades in, and goes at once when a row arrives under the header.
-            visible: sectionItem.empty; opacity: sectionItem.empty ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: Theme.ms(Theme.baseMs); easing.type: Theme.enterEasing } }
+            objectName: "mailSectionEmpty_" + emptyItem.group
+            group: emptyItem.group
+            // The title ends in the header's slices, above this one.
+            readonly property int titleBottom: mail.headerTop + mail.headerHeight("") - 2 * mail.sliceHeight
+            y: Math.round((titleBottom + mail.sliceHeight - height) / 2)
+            opacity: emptyItem.leaving ? emptyItem.leave : 1
         }
     }
     // The line an open, empty section shows under its header.
@@ -1113,11 +1144,11 @@ Item {
             const id = target; target = ""
             const index = backend.listIndex(id)
             if (!mail.visible || !id || index < 0) return
-            // The first row of an Inbox section brings its header into view too.
+            // The first row of an Inbox section brings its header's two slices into view too.
             const row = mail.rows.find(function(row) { return row.id === id })
             const header = backend.folder === "inbox" && row ? backend.listIndex("section:" + mail.groupOf(row)) : -1
-            if (header >= 0 && header === index - 1) list.positionViewAtIndex(header, ListView.Contain)
-            list.positionViewAtIndex(index, ListView.Contain)
+            if (header >= 0 && header === index - 2) list.positionViewAtIndex(header, ListView.Contain)
+            mail.revealRow(index)
             backend.remember("listY", list.contentY - list.originY)
             if (openReader) mail.openRow(id)
         }
@@ -1126,9 +1157,15 @@ Item {
         const id = selectionCursor || (draftsMode ? backend.activeDraftId : backend.selectedId)
         const index = backend.listIndex(id)
         if (index < 0) return
-        list.positionViewAtIndex(index,ListView.Contain)
+        revealRow(index)
         const item = list.itemAtIndex(index)
-        if (item) showRowMenu(id,item,24,item.height)
+        if (item) showRowMenu(id,item,24,item.headingHeight + item.span)
+    }
+    // Brings a row wholly into view: in the Inbox its card runs over the two
+    // slices after its item.
+    function revealRow(index) {
+        if (sliced) list.positionViewAtIndex(index + 2, ListView.Contain)
+        list.positionViewAtIndex(index, ListView.Contain)
     }
     function setReplyOpen(value) {
         const identity = composerIdentity
@@ -1603,6 +1640,9 @@ Item {
                     // with 52px rows, so taller cards keep a moving row's delegate
                     // through a refresh just as far.
                     cacheBuffer: 6 * mail.rowHeight
+                    // A card or title draws over the slices after its own, so
+                    // it stays shown while they are, up to two slices past the top.
+                    displayMarginBeginning: mail.sliced ? 2 * mail.sliceHeight : 0
                     // The first Inbox header sits at the top, without the room
                     // its item keeps above it after another section.
                     topMargin: backend.folder === "inbox" && mail.inboxSections.length ? -mail.headerTop : 0
@@ -1661,14 +1701,16 @@ Item {
                     Connections { target: backend; function onLoadingChanged() { if (!backend.loading) prefetchTimer.restart() } }
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY - originY)
                     onMovementStarted: mail.anchoredSection = ""
-                    // Headers and empty lines are light items of their own; only
-                    // conversation rows build a row's content.
+                    // Headers, empty lines and slices are light items of their
+                    // own; only conversation rows build a row's content.
                     delegate: DelegateChooser {
                         role: "itemType"
                         DelegateChoice { roleValue: "header"; SectionItem {} }
+                        DelegateChoice { roleValue: "slice"; SliceItem {} }
+                        DelegateChoice { roleValue: "empty"; EmptyItem {} }
                         DelegateChoice {
                             roleValue: "row"
-                            Item {
+                            FoldingItem {
                                 id: groupedRow
                                 required property var rowData
                                 required property string previousGroup
@@ -1694,17 +1736,16 @@ Item {
                                 readonly property int headingHeight: firstInGroup && !mail.binMode && backend.folder !== "inbox" && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 ? 0 : 10) + mail.headerHeight(group) : 0
                                 // A row read in To review folds away once another opens: 170 ms,
                                 // faded by 70% of the way. The last row of its section folds the
-                                // same way while its header fades in the section's empty line.
+                                // same way while the section's empty line grows in under its title.
                                 // Done, Delay and filing fold the open row the same way, and
                                 // it drifts toward where it goes: Done and filing to the left,
                                 // Delay to the right ("later").
-                                readonly property bool leaving: !!modelData.leaving
+                                leaving: !!modelData.leaving
                                 readonly property real leaveDrift: modelData.leave_kind === "done" || modelData.leave_kind === "filed" ? -18 : modelData.leave_kind === "delay" ? 18 : 0
-                                property real leave: 0
-                                NumberAnimation on leave { id: leaveAnimation; running: false; from: 0; to: 1; duration: Theme.ms(170); easing.type: Easing.InQuad }
-                                onLeavingChanged: { if (leaving) leaveAnimation.restart(); else { leaveAnimation.stop(); leave = 0 } }
-                                Component.onCompleted: if (leaving) leaveAnimation.restart()
-                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : mail.rowHeight * (1 - leave))
+                                // The row's own height, below any heading: in the Inbox it
+                                // runs over the slices after its item.
+                                readonly property real span: collapsed ? 0 : mail.rowHeight * (1 - leave)
+                                width: list.width; height: dayHidden ? 0 : headingHeight + (collapsed ? 0 : (mail.sliced ? mail.sliceHeight : mail.rowHeight) * (1 - leave))
                                 // Built only for a row that draws its group's heading.
                                 Loader {
                                     active: groupedRow.headingHeight > 0
@@ -1721,7 +1762,7 @@ Item {
                                     readonly property bool opened: !mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id
                                     visible: !groupedRow.collapsed
                                     x: card ? 12 : 0; y: groupedRow.headingHeight
-                                    width: parent.width - 2 * x; height: card ? Math.max(0, Math.min(mail.cardHeight, parent.height - y)) : parent.height - y
+                                    width: parent.width - 2 * x; height: card ? Math.max(0, Math.min(mail.cardHeight, groupedRow.span)) : groupedRow.span
                                     opacity: Math.max(0, 1 - groupedRow.leave / .7); clip: groupedRow.leaving
                                     transform: Translate { x: groupedRow.leave * groupedRow.leaveDrift }
                                     leftPadding: card ? 14 : 16; rightPadding: 16; topPadding: card ? 2 : 0; bottomPadding: 0; hoverEnabled: true

@@ -270,7 +270,8 @@ public:
     bool allSectionsOpen() const { return m_searchFolds; }
     QVariantList inboxSections() const { return m_inboxSections; }
     int unloadedItems() const { return m_unloadedItems; }
-    // Where the list shows the row or section item with `id`, or -1.
+    // Where the list shows the row or section item with `id` (its first
+    // slice in the Inbox), or -1.
     Q_INVOKABLE int listIndex(const QString &id) const { return m_conversationModel.indexOf(id); }
     QVariantMap searchTerms() const { return m_searchTerms; }
     QString searchError() const { return m_searchError; }
@@ -960,9 +961,13 @@ private:
     QString rowSection(const QVariantMap &row, const DoneSections &done) const;
     // What the native list shows for `rows`. In the Inbox: a header item
     // before each section, an empty item for an open section with no mail,
-    // and the rows of open sections, every item one row high. Headers of
-    // sections below the loaded rows wait with them in m_unloadedItems.
+    // and the rows of open sections. Every item is one slice high, so Qt's
+    // estimate of the items it has not built is exact: a header takes two
+    // slices, a row three and an empty line one, and the extra slices are
+    // items of their own. Headers of sections below the loaded rows wait with
+    // them in m_unloadedItems, counted in slices.
     QVariantList listItems(const QVariantList &rows);
+    static constexpr int titleSlices = 2, cardSlices = 3;
     QVariantList m_inboxSections;
     int m_unloadedItems = 0;
     QJsonObject listParams(const QStringList &collapsed, const QStringList &open) const;

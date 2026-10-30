@@ -1,5 +1,12 @@
 # Quality, performance and release acceptance
 
+## D222 — Inbox list in slices (Quality100)
+
+Mail UI163; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection` `listGeometry` (also `gui-mail-gpu`): every Inbox delegate near the view is one slice high and at its index's place, and the list's length is its items plus the slices still to load, in comfortable and compact density. A card's row is three slices. This replaces Quality99's "exact length in 76 px card rows (68 compact)".
+- `reviewTransitions`: Delaying the last To review row, and reading and leaving it, lists To review's `empty` item at once with `emerging`; Delayed's title glides up the row less one slice, no more than a third of a row a frame, and "Inbox zero" shows once and stays when the refresh lands. This replaces Quality99's "glides up exactly one row".
+
 ## D221 — Conversation cards and new lists at their top (Quality99)
 
 Mail UI162; no engine, schema, fixture or protocol change.
