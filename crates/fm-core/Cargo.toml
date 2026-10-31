@@ -8,7 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.1"
 chrono = "0.4"
 fm-assist = { path = "../fm-assist" }
 fm-calendar = { path = "../fm-calendar" }
@@ -16,12 +16,12 @@ fm-google = { path = "../fm-google" }
 fm-mail = { path = "../fm-mail" }
 fm-pgp = { path = "../fm-pgp" }
 fs2 = "0.4.3"
-mail-parser = "0.11"
+mail-parser = "1.0"
 pgp = "=0.21.0"
-rusqlite = { version = "0.32.1", features = ["bundled", "hooks"] }
+rusqlite = { version = "0.41.1", features = ["bundled", "hooks"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10.8"
+sha2 = "0.11.1"
 url = "2.5"
 zeroize = "1.8.1"
 
