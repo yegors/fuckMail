@@ -1,5 +1,11 @@
 # Quality, performance and release acceptance
 
+## D223 — Refreshed Inbox cards (Quality101)
+
+Mail UI164; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection` `refreshedInboxCards`: two scripted refreshes that take mail out of To review, bring new mail in and reorder the rest, then 150 random lists from a pool of 30 threads across To review, Delayed and Done, labelled or not, with Done folded or open, scrolled or not, each landing within 40 ms of the last or after 400 ms. After each settled one, every delegate that Qt has not culled is the list's own for its index, sits at its index's slice and holds that index's item, and no painted card is painted twice or over another. With the list laid out from the model's change signals, it fails.
+
 ## D222 — Inbox list in slices (Quality100)
 
 Mail UI163; no engine, schema, fixture or protocol change.

@@ -2670,3 +2670,14 @@ The founder reported that the month sections in the Inbox were too far apart aft
 - **Verification.** On macOS (arm64, debug build), `gui-conversation-list-model`, `gui-mail-selection`, `gui-mail-gpu` and `gui-mail-navigation-cache` pass with `listGeometry` checking that every item is one slice and the length is exact, in both densities. Of the 38 GUI tests, 37 pass; `gui-integration` stops at its OpenPGP backup permission check, as it does on the unchanged code. Screenshots of the demo profile show folded sections 52 px apart and a card cut by the top edge drawn whole. Not checked on screen: the empty line's place, compact density, large text, Windows and Linux, and a live account.
 
 Mail UI163, Quality100.
+
+## D223 — The mail list lays out each change after Qt has seen it (2026-11-03T17:06:06Z)
+
+The founder opened the app to the Personal account's Inbox and found To review drawn wrong: cards for mail no longer in To review sat in some places, the right cards were pushed down a slice and overlapped them, and labels were missing. Switching to another account and back fixed it.
+
+- **Found.** Since D039 (September) the list calls `forceLayout()` from the model's own `rowsRemoved`, `rowsMoved` and `rowsInserted` signals, so each change is laid out before the next one in the same update. Those QML handlers run before Qt's delegate model for the list has handled the same signal: a probe in all 141 handler calls of a test run found the list's count still at its old value. The list then laid out the new rows against its old bookkeeping and could build or keep a card for the wrong row. A new test of random Inbox refreshes fails this way with the D222 slices within 4 to 201 refreshes, and with the code from before them within 5 to 168 (three seeds each, macOS). So the fault predates the slices; they triple the moves in a refresh and made it easier to hit. That would explain why a refresh soon after launch could show it.
+- **Change.** `ConversationListModel` emits `structureChanged()` after each removal, insert or move, once everything connected to that change has seen it, and the list lays out on that signal instead. Each change is still laid out before the next.
+- **Not done.** Dropping the layout calls also passed the random test, but D039 added them for a stale-row case on Windows, so they stay, moved.
+- **Verification.** On macOS (arm64, debug build), the random test passes 300 refreshes for each of five seeds on a GPU window, and fails with the old handlers. `gui-mail-selection` now runs it (two scripted refreshes and 150 random ones, offscreen); the list, navigation-cache, mailbox-switch and model tests pass, and 37 of the 38 GUI tests (`gui-integration` stops at its OpenPGP backup permission check, as before). The test reads Qt Quick's private culling flag so that only painted cards count, and links `Qt6::QuickPrivate` for it. Not checked: Windows, Linux and the founder's mailbox.
+
+Mail UI164, Quality101.
