@@ -77,6 +77,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
         structural = true;
         m_rows.remove(first, last - first + 1);
         endRemoveRows();
+        emit structureChanged();
         last = first - 1;
     }
     QHash<Key, int> positions;
@@ -96,6 +97,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             structural = true;
             for (int added = i; added <= last; ++added) m_rows.insert(added, next[added]);
             endInsertRows();
+            emit structureChanged();
             for (int changed = i; changed < m_rows.size(); ++changed)
                 positions.insert(m_rows[changed].key, changed);
             i = last;
@@ -108,6 +110,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             structural = true;
             m_rows.move(source, i);
             endMoveRows();
+            emit structureChanged();
             for (int changed = i; changed <= source; ++changed)
                 positions.insert(m_rows[changed].key, changed);
         }

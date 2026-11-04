@@ -521,7 +521,7 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
         auto editor=find(window->contentItem(),"replyComposer"), original=find(window->contentItem(),"forwardedOriginal"), header=find(window->contentItem(),"forwardedOriginalHeader");
         await([&]{return original && original->isVisible();},"the forwarded original shows in the message area");
         require(original->parentItem()==editor,"the original is part of the message area");
-        require(header && header->property("text").toString()=="---------- Forwarded message ----------\nFrom: News@Example.test\nDate: 2026-10-22T22:05:06Z\nSubject: Quarterly numbers","the original is headed as a plain forward is");
+        require(header && header->property("text").toString()=="---------- Forwarded message ----------\nFrom: News@Example.test\nDate: 2026-10-22T22:05:06Z\nSubject: Quarterly numbers",qPrintable("the original is headed as a plain forward is: "+(header ? header->property("text").toString() : QString("no header"))));
         require(editor->property("text").toString().isEmpty() || editor->property("length").toInt()==0,"the author's words stay apart from it");
         require(original->y() > editor->property("topPadding").toReal() && editor->implicitHeight() >= original->y()+original->height(),"the message area makes room for it under the author's words");
         backend.m_preferences["html_senders"]=QVariantList{}; created={};

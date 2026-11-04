@@ -55,7 +55,8 @@ jobs:
       matrix:
         os: [macos-15, windows-2022, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Windows takes 49 to 57 minutes; 60 left no room for a slow runner.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -82,7 +83,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libgl1-mesa-dev libegl1 libopengl0 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0
+          sudo apt-get install -y build-essential libgl1-mesa-dev libegl1 libopengl0 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0 libpulse0
       - name: Bootstrap (Unix)
         id: bootstrap_unix
         if: runner.os != 'Windows'

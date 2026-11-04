@@ -14,7 +14,7 @@ find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2
 qt_standard_project_setup(REQUIRES 6.8)
 include(CTest)
 if(BUILD_TESTING)
-    find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Test)
+    find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Test QuickPrivate)
 endif()
 option(FM_GUI_ONLY "Compile only the Qt client while editing UI; not an installable app" OFF)
 if(FM_GUI_ONLY)

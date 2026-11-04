@@ -1673,11 +1673,12 @@ Item {
                     // Consume each structural batch before the next can reuse
                     // delegate indexes. Retaining an old layout across several
                     // remove/move batches leaves retired rows over replacements.
+                    // The layout waits for the model's own notice that a batch is
+                    // done: from the batch's signal it could run before the list's
+                    // delegate model has seen it, and build cards for the wrong rows.
                     Connections {
                         target: backend.conversationModel
-                        function onRowsRemoved() { list.forceLayout() }
-                        function onRowsMoved() { list.forceLayout() }
-                        function onRowsInserted() { list.forceLayout() }
+                        function onStructureChanged() { list.forceLayout() }
                     }
                     onContentHeightChanged: { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
                     onContentYChanged: {

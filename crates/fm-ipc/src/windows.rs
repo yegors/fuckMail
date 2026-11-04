@@ -331,11 +331,9 @@ mod tests {
 
     /// The DACL of `path`, as SDDL.
     fn dacl(path: &Path) -> String {
-        use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
         let name = wide(path.as_os_str());
-        // SAFETY: `name` is NUL-terminated and outlives the calls. Windows
-        // allocates `descriptor` and `text` with LocalAlloc; `text` is read
-        // only up to its terminator, and both are freed once after use.
+        // SAFETY: `name` is NUL-terminated and outlives the call. Windows
+        // allocates `descriptor` with LocalAlloc; it is freed once after use.
         unsafe {
             let mut descriptor = ptr::null_mut();
             assert_eq!(
@@ -351,33 +349,69 @@ mod tests {
                 ),
                 0
             );
-            let mut text = ptr::null_mut();
+            let out = dacl_text(descriptor);
+            LocalFree(descriptor);
+            out
+        }
+    }
+
+    /// `sddl`'s DACL as Windows writes it back, which can use an alias for
+    /// a well-known account (`LA` for the built-in Administrator) where
+    /// `sddl` has its SID.
+    fn written(sddl: &str) -> String {
+        let text = wide(std::ffi::OsStr::new(sddl));
+        // SAFETY: `text` is NUL-terminated and outlives the call. Windows
+        // allocates `descriptor` with LocalAlloc; it is freed once after use.
+        unsafe {
+            let mut descriptor = ptr::null_mut();
             assert_ne!(
-                ConvertSecurityDescriptorToStringSecurityDescriptorW(
-                    descriptor,
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    text.as_ptr(),
                     SDDL_REVISION_1,
-                    DACL_SECURITY_INFORMATION,
-                    &mut text,
+                    &mut descriptor,
                     ptr::null_mut()
                 ),
                 0
             );
-            let mut len = 0;
-            while *text.add(len) != 0 {
-                len += 1;
-            }
-            let out = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
-            LocalFree(text as _);
+            let out = dacl_text(descriptor);
             LocalFree(descriptor);
             out
         }
+    }
+
+    /// The DACL in `descriptor`, as SDDL.
+    ///
+    /// # Safety
+    /// `descriptor` must point to a valid security descriptor.
+    unsafe fn dacl_text(descriptor: *mut c_void) -> String {
+        use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+        let mut text = ptr::null_mut();
+        assert_ne!(
+            ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &mut text,
+                ptr::null_mut()
+            ),
+            0
+        );
+        // SAFETY: Windows allocates `text` with LocalAlloc as a NUL-terminated
+        // UTF-16 buffer. It is read only up to its terminator and freed once.
+        let mut len = 0;
+        while *text.add(len) != 0 {
+            len += 1;
+        }
+        let out = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
+        LocalFree(text as _);
+        out
     }
 
     #[test]
     fn written_private_files_are_the_users_alone() {
         // An ordinary folder, whose inherited permissions must not apply.
         let temp = tempfile::tempdir().unwrap();
-        let only_user = format!("D:P(A;;FA;;;{})", user_sid().unwrap());
+        let only_user = written(&format!("D:P(A;;FA;;;{})", user_sid().unwrap()));
         let new = temp.path().join("new.asc");
         crate::write_private_file(&new, b"one", false).unwrap();
         assert_eq!(dacl(&new), only_user);

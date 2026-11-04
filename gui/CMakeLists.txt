@@ -324,7 +324,9 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-draft-transfer COMMAND gui-draft-transfer-test)
     set_tests_properties(gui-draft-transfer PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
-    target_link_libraries(gui-mail-selection-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Test)
+    # Qt Quick's private item state tells the list checks which delegates Qt
+    # has culled, so only painted ones count.
+    target_link_libraries(gui-mail-selection-test PRIVATE Qt6::Quick Qt6::QuickPrivate Qt6::QuickControls2 Qt6::Network Qt6::Test)
     target_compile_features(gui-mail-selection-test PRIVATE cxx_std_20)
     target_compile_definitions(gui-mail-selection-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     if(WIN32)

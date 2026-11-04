@@ -34,6 +34,9 @@
 #include <QImageReader>
 #include <QTest>
 #include <QtMath>
+#include <QRandomGenerator>
+#include <QtQuick/private/qquickitem_p.h>
+#include <random>
 using namespace GoogleOperationFixture;
 
 // Conversation rows the list shows, not its section headers.
@@ -3259,6 +3262,116 @@ public:
         }
         qInfo()<<"A refreshed row that moves is shown once.";
     }
+    // Refreshes that take mail out of To review, bring new mail in and reorder
+    // the rest, as a sync does after launch, paint every card once and in its
+    // own place: no card for an earlier list stays over the new ones or
+    // pushes them down a slice. Laying the list out from the model's change
+    // signals, before the list's delegate model had seen them, failed this.
+    static void refreshedInboxCards() {
+        Harness h;
+        const auto make=[](const QString &id,const QString &group,const QString &at){
+            return QVariant(QVariantMap{{"id",id},{"subject","Thread "+id},{"sender_name","Sender "+id},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",group},{"kind","automated"},{"unread",group=="review"},{"starred",false}}); };
+        const auto at=[](int day,int hour){ return QString("2026-09-%1T%2:00:00Z").arg(day,2,10,QChar('0')).arg(hour,2,10,QChar('0')); };
+        // To review in order, then Done in September, newest first.
+        const auto publish=[&](const QStringList &review,const QStringList &done){
+            h.rows.clear();
+            for (int n=0; n<review.size(); ++n) h.rows.append(make(review[n],"review",at(28,23-n)));
+            for (int n=0; n<done.size(); ++n) h.rows.append(make(done[n],"done",at(20,23-n)));
+            h.summary={{"filtered_group_counts",QJsonObject{{"review",int(review.size())},{"held",0}}},{"done_months",QJsonArray{QJsonObject{{"month","2026-09"},{"count",int(done.size())}}}}};
+        };
+        QStringList review, done;
+        for (int n=0; n<10; ++n) review<<QString("r%1").arg(n);
+        for (int n=0; n<10; ++n) done<<QString("d%1").arg(n);
+        publish(review,done);
+        QTemporaryDir copy; copyModule(copy);
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Cards.qml")));
+        require(!qml.rootObjects().isEmpty(),"refreshed-cards MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"refreshed-cards window exposed");
+        const auto settle=[&](int ms=150){ QElapsedTimer t; t.start(); while(t.elapsed()<ms) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"refreshed-cards mail view");
+        auto *list=find(window->contentItem(),"conversationList"); require(list,"refreshed-cards list");
+        auto *content=list->property("contentItem").value<QQuickItem*>(); require(content,"refreshed-cards list content");
+        h.backend.m_openSections={"done:2026-09"};
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==20;},"the Inbox loads");
+        settle(300);
+        auto *model=h.backend.conversationModel();
+        const auto check=[&](const QString &when){
+            QStringList problems;
+            const auto slice=mail->property("sliceHeight").toReal(), originY=list->property("originY").toReal();
+            // Each delegate shown is the list's own for its index, where the
+            // index puts it, holding that index's item. Culled ones aren't painted.
+            for (auto *item : content->childItems()) {
+                const auto index=item->property("index");
+                if (!index.isValid() || !item->isVisible() || QQuickItemPrivate::get(item)->culled) continue;
+                QQuickItem *owned=nullptr; QMetaObject::invokeMethod(list,"itemAtIndex",Q_RETURN_ARG(QQuickItem*,owned),Q_ARG(int,index.toInt()));
+                const auto id=item->property("rowData").toMap().value("id").toString();
+                // Qt keeps its current item, index 0, alive while it is out of view.
+                if (!owned && item==list->property("currentItem").value<QQuickItem*>()) continue;
+                if (index.toInt()<0 || owned!=item) { problems<<QString("a retired delegate for %1 (index %2) is shown").arg(id).arg(index.toInt()); continue; }
+                const auto listed=model->data(model->index(index.toInt(),0),ConversationListModel::RowDataRole).toMap().value("id").toString();
+                if (id!=listed) problems<<QString("item %1 shows %2, not %3").arg(index.toInt()).arg(id,listed);
+                if (std::abs(item->y()-originY-index.toInt()*slice)>0.5) problems<<QString("item %1 (%2) at %3, not %4").arg(index.toInt()).arg(id).arg(item->y()-originY).arg(index.toInt()*slice);
+            }
+            // Painted cards: each once, none over another.
+            QHash<QString,QRectF> cards;
+            std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){
+                if (!item->isVisible() || item->opacity()==0 || QQuickItemPrivate::get(item)->culled) return;
+                if (item->objectName().startsWith("conversationRow_") && item->height()>0) {
+                    const auto rect=item->mapRectToScene(item->boundingRect());
+                    if (cards.contains(item->objectName())) problems<<item->objectName()+" painted twice";
+                    for (auto it=cards.cbegin(); it!=cards.cend(); ++it) if (it.value().intersects(rect)) problems<<item->objectName()+" over "+it.key();
+                    cards.insert(item->objectName(),rect);
+                }
+                for (auto *child : item->childItems()) walk(child); };
+            walk(list);
+            if (!problems.isEmpty()) { problems.removeDuplicates(); qWarning()<<when<<problems.mid(0,12); require(false,"every card is painted once, in its own place, after a refresh"); }
+        };
+        check("loaded");
+        // Mail read elsewhere goes to Done, new mail arrives in To review and
+        // a reply brings an older thread to the top; then back again.
+        for (int round=0; round<2; ++round) {
+            QStringList nextReview{QString("n%1a").arg(round),"r8","r0",QString("n%1b").arg(round),"r2","r3","r7",QString("n%1c").arg(round),"r9"};
+            QStringList nextDone{"r1","d0","r4","d1","r5","r6","d2","d3","d4","d5","d6","d7","d8","d9"};
+            publish(nextReview,nextDone);
+            h.backend.refreshState(true,false,true); settle(300); check(QString("refreshed, round %1").arg(round));
+            publish(review,done);
+            h.backend.refreshState(true,false,true); settle(300); check(QString("refreshed back, round %1").arg(round));
+        }
+        // Lists drawn at random from a pool: mail leaving and arriving,
+        // reordered, labelled, in To review, Delayed or Done, and the next one
+        // landing within a few frames or after the list has settled.
+        QRandomGenerator random(7);
+        for (int round=0; round<150; ++round) {
+            QVariantList rows; int counts[3]={0,0,0};
+            const char *groups[3]={"review","held","done"};
+            for (int n=0; n<30; ++n) {
+                if (random.bounded(3)==0) continue;
+                const int group=random.bounded(3);
+                auto row=make(QString("p%1").arg(n),groups[group],group==2 ? at(10+random.bounded(10),random.bounded(24)) : at(28,random.bounded(24))).toMap();
+                if (random.bounded(2)) row["categories"]=QVariantList{QVariantMap{{"id","c1"},{"name","Label"}}};
+                row["message_count"]=1+random.bounded(4);
+                rows.append(row); ++counts[group];
+            }
+            std::shuffle(rows.begin(),rows.end(),std::mt19937(random.generate()));
+            std::stable_sort(rows.begin(),rows.end(),[](const QVariant &a,const QVariant &b){ const QStringList order{"review","held","done"}; return order.indexOf(a.toMap()["group"].toString())<order.indexOf(b.toMap()["group"].toString()); });
+            h.rows=rows;
+            h.summary={{"filtered_group_counts",QJsonObject{{"review",counts[0]},{"held",counts[1]}}},{"done_months",QJsonArray{QJsonObject{{"month","2026-09"},{"count",counts[2]}}}}};
+            if (random.bounded(6)==0) h.backend.m_openSections=random.bounded(2) ? QStringList{"done:2026-09"} : QStringList{};
+            if (random.bounded(4)==0) list->setProperty("contentY",list->property("originY").toReal()+random.bounded(400));
+            h.backend.refreshState(true,false,true);
+            const int gap=random.bounded(5)==0 ? 400 : random.bounded(40);
+            settle(gap);
+            if (gap==400) check(QString("random round %1").arg(round));
+        }
+        settle(400); check("after random rounds");
+        qInfo()<<"Refreshes that reshape the Inbox paint every card once, in its place.";
+    }
     static void danglingViewReference() {
         Harness h;
         h.missingMember="gone-member";
@@ -3357,6 +3470,6 @@ public:
         require(boundary.of("2026-11-01T03:59:59Z")=="done:2026-10" && boundary.of("2026-11-01T04:00:00Z")=="done:today"
             && boundary.of("2026-11-02T04:59:59Z")=="done:today" && boundary.of("2026-11-02T05:00:00Z")=="done:week", "Today follows local midnight across the 25-hour daylight-saving day");
     }
-    static void run(){protectedMail();encryptedReply();keyFromMail();longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){protectedMail();encryptedReply();keyFromMail();longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();refreshedInboxCards();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}
