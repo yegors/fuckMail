@@ -484,11 +484,16 @@ async fn simultaneous_launches_elect_one_writer() {
     let profile = temp.path().join("profile");
     let (mut a, mut b, mut c) = tokio::join!(client(&profile), client(&profile), client(&profile));
     // Refresh generations keep moving while startup work finishes, so the
-    // clients compare the store's epoch rather than those counters.
+    // clients compare the store's epoch rather than those counters, and
+    // leave out the mail and calendar generations.
     let status = |mut value: Value| {
         let epoch = value["ui_generations"]["epoch"].take();
         assert!(epoch.is_string());
         value["ui_generations"] = json!({ "epoch": epoch });
+        for counter in ["mail_generation", "calendar_generation"] {
+            assert!(value[counter].is_u64(), "status reports {counter}");
+            value.as_object_mut().unwrap().remove(counter);
+        }
         value
     };
     let astatus = status(ok(a.call("status", None, json!({})).await.unwrap()));

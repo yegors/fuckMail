@@ -2,6 +2,10 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-04
+
+- Security updates for HTML sanitising (ammonia) and TLS (rustls, rustls-webpki), and a tokio fix.
+
 ## 2026-11-03
 
 - The mail list no longer draws old conversations over new ones after it refreshes. A refresh soon after opening the app could leave cards for mail that had left To review, with the right cards pushed down and overlapping them, until you switched away and back.

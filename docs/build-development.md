@@ -15,7 +15,7 @@ Every platform needs Git, Python 3.9 or newer, and internet access for the first
 ```sh
 sudo apt-get install -y build-essential python3-venv libgl1-mesa-dev libegl1 libopengl0 \
   libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
-  libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0
+  libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0 libpulse0
 ```
 
 Other Linux distributions, including Arch, are untested.
