@@ -383,7 +383,10 @@ void GuiSettingsSelfTest::step() {
         QFile backup(m_backupPath);
         if (!backup.open(QIODevice::ReadOnly) || !backup.readAll().startsWith("-----BEGIN PGP PRIVATE KEY BLOCK-----")) { finish("The saved backup is not the protected secret key."); return; }
 #ifndef Q_OS_WIN
-        if (backup.permissions() != (QFileDevice::ReadOwner | QFileDevice::WriteOwner)) { finish("The saved backup is readable by others."); return; }
+        // Only its owner may read it. Qt also reports the owner's rights as
+        // the current user's, so those flags don't count here.
+        const auto others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+        if ((backup.permissions() & others) || !(backup.permissions() & QFileDevice::ReadOwner)) { finish("The saved backup is readable by others."); return; }
 #endif
         if (!QDir(m_profile).entryList({".backup-secret.asc.*"}, QDir::Files | QDir::Hidden).isEmpty()) { finish("Saving the backup left a temporary file behind."); return; }
         if ((save && save->property("visible").toBool()) || !m_window->isActive() || !click("pgpEncryptDefault_windscribe")) return;

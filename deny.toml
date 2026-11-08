@@ -1,0 +1,7 @@
+# cargo-deny settings for CI's advisories check. Every advisory fails the
+# check except the ones listed here, each with why it can't be fixed yet.
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 (Marvin timing attack) comes in through pgp 0.21 for OpenPGP, and no rsa release fixes it. Decryption runs locally, not as a service an attacker can time. Revisit when rsa ships a fix." },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 (timing variability) comes in through pgp 0.21's curve crates; the fix is only in 0.7, which pgp 0.21 can't use. Revisit with a pgp release on crypto-bigint 0.7." },
+]

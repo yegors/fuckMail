@@ -49,6 +49,13 @@ public:
     /// The index of the row with `id`, or -1.
     int indexOf(const QString &id) const;
 
+signals:
+    /// Emitted after each row removal, insert or move that replace() makes,
+    /// once everything connected to that change has seen it. A view lays the
+    /// change out here, before the next one: laying it out from the change's
+    /// own signal can run before the view's delegate model has recorded it.
+    void structureChanged();
+
 private:
     using Key = QPair<QString, QString>;
     struct Row {

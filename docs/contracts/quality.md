@@ -1,5 +1,22 @@
 # Quality, performance and release acceptance
 
+## D224 — CI allowances and checks that could not pass (Quality102)
+
+No engine, schema, fixture or protocol change.
+
+- The native CI jobs have 75 minutes, up from D048's 60; the Windows job takes 49 to 57. Every test assertion, watchdog and performance target is unchanged.
+- The advisories check fails on every RustSec advisory except the two `deny.toml` lists with their reasons (RUSTSEC-2023-0071, RUSTSEC-2026-0387).
+- `gui-integration`: a saved OpenPGP key backup gives the group and others no access and its owner read access; Qt's user flags, which repeat the owner's on Unix, don't count.
+- `fm-ipc` `written_private_files_are_the_users_alone` compares the file's DACL with the expected one as Windows writes it, aliases included.
+- `fm-engine` `simultaneous_launches_elect_one_writer` leaves the mail and calendar generations, which move during startup, out of its comparison.
+- `gui-debug-console`: the warm console slide still finishes within 300 ms, now timed to within a few milliseconds instead of a 50 ms poll.
+
+## D223 — Refreshed Inbox cards (Quality101)
+
+Mail UI164; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection` `refreshedInboxCards`: two scripted refreshes that take mail out of To review, bring new mail in and reorder the rest, then 150 random lists from a pool of 30 threads across To review, Delayed and Done, labelled or not, with Done folded or open, scrolled or not, each landing within 40 ms of the last or after 400 ms. After each settled one, every delegate that Qt has not culled is the list's own for its index, sits at its index's slice and holds that index's item, and no painted card is painted twice or over another. With the list laid out from the model's change signals, it fails.
+
 ## D222 — Inbox list in slices (Quality100)
 
 Mail UI163; no engine, schema, fixture or protocol change.

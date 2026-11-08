@@ -1,5 +1,11 @@
 # Mail UI, reader and human composer
 
+## D223 — Each list change laid out after Qt has seen it (Mail UI164)
+
+- **Layout.** `ConversationListModel` emits `structureChanged()` after each row removal, insert or move that `replace()` makes, once every receiver of that change's own signal has run. The conversation list calls `forceLayout()` on it, so each change is laid out before the next, after the list's delegate model has recorded it. The list no longer lays out from `rowsRemoved`, `rowsMoved` or `rowsInserted`.
+
+Consumers: `ConversationListModel`, `MailView` (conversation list); Quality101; `gui-mail-selection`.
+
 ## D222 — Inbox list in slices; section titles 52 px apart (Mail UI163)
 
 Replaces Mail UI162's item heights, title placement and empty-section item. Cards, legend, head and new-list rules are unchanged; Sent, Drafts, Spam and Trash are unchanged.

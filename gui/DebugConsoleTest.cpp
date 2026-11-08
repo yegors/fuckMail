@@ -349,7 +349,11 @@ ApplicationWindow {
         slide.start();
         QTest::keyClick(window, Qt::Key_QuoteLeft);
         QVERIFY(console->property("y").toDouble() < 0);
-        QTRY_VERIFY_WITH_TIMEOUT(console->property("opened").toBool() && console->property("y").toDouble() == 0.0, 1000);
+        // Checked every few milliseconds, so the time is the slide's, not a
+        // 50 ms polling step's.
+        const auto slid = [&] { return console->property("opened").toBool() && console->property("y").toDouble() == 0.0; };
+        while (!slid() && slide.elapsed() < 1000) QTest::qWait(2);
+        QVERIFY2(slid(), qPrintable(popupState()));
         QVERIFY2(slide.elapsed() < 300, qPrintable(QString::number(slide.elapsed())));
         QCOMPARE(console->property("x").toDouble(), 0.0);
         QCOMPARE(console->property("width").toDouble(), 1280.0);
