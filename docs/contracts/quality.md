@@ -1,5 +1,12 @@
 # Quality, performance and release acceptance
 
+## D225 — Reply all, search strip and All mail checks (Quality103)
+
+Mail UI165; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection`: a thread whose message has someone on Cc, with no draft, shows Reply all before Reply and Forward, filled, and again after a forward is discarded.
+- `gui-mailbox-switch`: a query raises the search strip with its text; Clear empties the query and hides it; clearing a search in All mail returns to Sent when started there and otherwise to the Inbox; a saved view on All mail with no query opens the Inbox.
+
 ## D224 — CI allowances and checks that could not pass (Quality102)
 
 No engine, schema, fixture or protocol change.

@@ -2,6 +2,13 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-10
+
+- **Reply all** is the first, filled button under a thread whenever others are on it. It could be missing until a reply had been started, leaving only the … menu.
+- A search in force shows a gold strip over the list: what is searched, the words, how many matched, and **Clear**. The search box is framed in gold too.
+- Clearing a search that the sender card's "All N with …" link started returns to the mailbox. The list used to stay on All mail, which has no tab, and reopened there.
+- To review cards are a shade lighter than the canvas and Delayed cards have a faint gold wash, so both stand apart from Done mail.
+
 ## 2026-11-04
 
 - Security updates for HTML sanitising (ammonia) and TLS (rustls, rustls-webpki), and a tokio fix.

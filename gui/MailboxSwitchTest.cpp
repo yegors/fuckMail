@@ -48,8 +48,10 @@ static void run() {
     require(backend.publishAccounts(backend.m_allAccounts), "three accounts");
     // Once set, the third account's replies wait until released, as behind a busy store.
     bool holdThird = false; QList<Held> held;
+    // Once set, saved views come back on all mail.
+    bool allMailView = false;
     const auto answer = [&](QLocalSocket *peer, const QString &id, const QString &method, const QString &account) {
-        if (method == "view_get") peer->write(reply(id, {{"revision", 1}, {"view", QJsonObject{{"folder", "inbox"}}}}));
+        if (method == "view_get") peer->write(reply(id, {{"revision", 1}, {"view", QJsonObject{{"folder", allMailView ? "all" : "inbox"}}}}));
         else if (method == "conversations") peer->write(reply(id, {{"conversations", rows(account)}, {"filtered_conversation_count", 3}, {"next_offset", QJsonValue::Null}}));
         else if (method == "conversation") peer->write(reply(id, {{"id", account + "-0"}, {"account", account}, {"revision", 1}, {"subject", "Mail 0"}, {"message_ids", QJsonArray{"m"}},
             {"messages", QJsonArray{QJsonObject{{"id", account + "-m"}, {"account", account}, {"sender_name", "Sender"}, {"sender_email", "sender@example.test"}, {"text", "Hello"}, {"sent", false}, {"unread", false}, {"sent_at", "2026-09-28T09:00:00Z"}}}}}));
@@ -130,8 +132,31 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     // Back to the first account: seen this session, so at once again.
     backend.selectAccount("first");
     require(backend.m_conversations.size() == 3 && backend.m_conversations.first().toMap().value("account") == "first", "a visited account shows at once");
+
+    // A search says so over the list, and its Clear shows the mailbox again.
+    require(!shown("searchStrip"), "no strip while browsing");
+    backend.setQuery("mail");
+    await([&] { return shown("searchStrip") && !backend.loading(); }, "a search raises the strip");
+    require(item("searchStripQuery")->property("text").toString() == "mail", "the strip names the search");
+    require(QMetaObject::invokeMethod(item("searchStripClear"), "clicked"), "Clear");
+    await([&] { return backend.query().isEmpty() && !shown("searchStrip") && backend.folder() == "inbox"; }, "Clear ends the search");
+
+    // All mail is only a search's scope: clearing the search goes back to
+    // the folder it was started from.
+    backend.setFolder("sent"); backend.setFolder("all"); backend.setQuery("sender@example.test");
+    await([&] { return shown("searchStrip") && backend.folder() == "all"; }, "an all-mail search");
+    require(QMetaObject::invokeMethod(item("searchStripClear"), "clicked"), "Clear in all mail");
+    await([&] { return backend.query().isEmpty() && backend.folder() == "sent"; }, "clearing an all-mail search returns to Sent");
+    backend.setFolder("inbox"); backend.setFolder("all"); backend.setQuery("x"); backend.setQuery("");
+    require(backend.folder() == "inbox", "and to the Inbox from anywhere else");
+
+    // A view saved on all mail with no search reopens the Inbox.
+    allMailView = true; backend.m_mailViewCache.remove("second"); backend.m_views.remove("second");
+    backend.selectAccount("second");
+    await([&] { return backend.m_accountViewRestorationGeneration == -1 && !backend.loading(); }, "the saved view arrives");
+    require(backend.folder() == "inbox", "a bare all-mail view opens the Inbox");
     require(!warnings, "production QML has no warnings");
-    qInfo() << "PASS: warmed and visited mailboxes switch at once; a loading one never claims to be empty";
+    qInfo() << "PASS: warmed and visited mailboxes switch at once; a loading one never claims to be empty; a search shows its strip and all mail never outlives it";
 }
 };
 int main(int argc, char **argv) { QGuiApplication app(argc, argv); QGuiApplication::setFont(QFont("Geist", 10)); QQuickStyle::setStyle("Basic"); MailboxSwitchTest::run(); return 0; }

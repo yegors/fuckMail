@@ -2698,3 +2698,17 @@ The founder asked for the failing CI on the list-refresh pull request to be fixe
 - **Verification.** On macOS (arm64), `cargo clippy` and the whole Rust workspace pass with the updated crates; the engine test passes three runs in a row; `gui-integration`, `gui-debug-console` and `gui-composer-input` pass. A local run of every test four at a time also failed engine-startup and console tests on time limits; CI runs tests one at a time. The advisories check, the Windows private-file test and the Ubuntu and Windows jobs are verified by CI on the pull request.
 
 Quality102. No product behaviour, schema, fixture or protocol change.
+
+## D225 — Reply all first, a strip over searched lists, no bare All mail, tinted waiting cards (2026-11-10T23:09:58Z)
+
+The founder reported four things from daily use: Reply all was sometimes missing under a thread with several recipients, so the … menu had to be used; To review and Delayed cards looked too much like read ones; the list sometimes showed "All mail", which has no tab; and after leaving a searched mailbox and coming back it wasn't clear a search was still on.
+
+- **Reply all, found.** The button showed only once a reply draft for the thread had reported `reply_all_available`. A thread never replied to had no draft, so it showed Reply alone.
+- **Reply all, change.** With no draft to say, the recipients of the message a reply would answer decide, by the rule the message's own … menu already used. When Reply all shows it is the first button and the filled one. Keys are unchanged.
+- **All mail, found.** The sender card's "All N with …" link searches All mail. Clearing that search left the list on All mail with no search, and the saved view reopened there after a restart.
+- **All mail, change.** Clearing a search in All mail returns to Sent if the search was started there, else the Inbox. A saved view on All mail with no search reopens the Inbox. All mail as a search's scope is unchanged.
+- **Search.** A strip over a searched list names the folder searched, the words and the match count, with Clear. The search box is framed in amber while it holds a query. Considered and not done: clearing a search when the account or workspace changes, which would throw away a search the founder may be going back to.
+- **Cards.** To review cards get a 4% ink fill and Delayed cards a 5.5% amber fill with an amber frame; Done cards stay unfilled.
+- **Verification.** On macOS (arm64, debug build): `gui-mail-selection` checks Reply all shown, first and filled with no draft; `gui-mailbox-switch` checks the strip, its Clear, the return from All mail to Sent and to the Inbox, and a saved bare All mail view reopening the Inbox. The card fills were looked at in a demo-profile screenshot on Graphite. Not checked: the strip's look in a screenshot, the Paper, Terminal and Harbour themes, Windows and Linux.
+
+Mail UI165, Quality103.

@@ -1,5 +1,18 @@
 # Mail UI, reader and human composer
 
+## D225 — Reply all first, a strip over searched lists, no bare All mail, tinted waiting cards (Mail UI165)
+
+Changes Mail UI164's reader actions, card frame and fill, and search presentation. Everything else is unchanged.
+
+- **Reply all.** The thread's Reply all button shows when the open reply or reply-all draft says it is available; otherwise when an earlier draft of this thread said so; otherwise, with no draft yet, when the message a reply would answer (`backend.replySource`) has someone on To or Cc besides you and its sender (Cc alone for your own message). The recipients come from the message's parsed source, so a collapsed, unread message offers it once it has been opened.
+- **Order.** When Reply all shows it is the first button, before Reply and Forward, and it is the filled one while nothing is written. Reply is filled when nothing is written only where Reply all doesn't show. The kind being written is still the filled one. Keys and the … menu are unchanged.
+- **Search strip.** While the search box holds anything but spaces, a 32 px strip sits between the list's head and the list, 12 px in from the pane's sides and 10 px under the head: 6 px corners, amber at 8% with a 32% amber frame. It reads, left to right: a search icon and "SEARCHING INBOX" (or SENT, DRAFTS, TRASH, SPAM, ALL MAIL) in amber mono caps; the query on one line, elided; "N MATCHES" from `filtered_conversation_count` (hidden while the list is pending or the strip is under 380 px); and **Clear**, which empties the query. Labels and the people / automated toggle don't raise it.
+- **Search box.** Its frame is 55% amber while it holds a query, in Mail and Calendar.
+- **All mail.** All mail is only ever a search's scope. `setFolder("all")` remembers whether the list came from Sent or elsewhere; when a query is cleared in All mail the list returns to Sent or the Inbox. A saved view on All mail with no query reopens the Inbox.
+- **Waiting cards.** A card in To review is filled with 4% ink and a reviewed one there is framed at 11% ink. A card in Delayed is filled with 5.5% amber and framed at 20% amber, 30% unread. Done cards stay unfilled at 7% ink. The pointer, multi-select and open frames are unchanged and keep the fill. The half of a legend chip inside the card takes the card's fill.
+
+Consumers: `MailView` (reader actions, list head, cards), `Main` (search box), `MailBackend` (`replySource`, `setQuery`, `setFolder`, view restore); Quality103.
+
 ## D223 — Each list change laid out after Qt has seen it (Mail UI164)
 
 - **Layout.** `ConversationListModel` emits `structureChanged()` after each row removal, insert or move that `replace()` makes, once every receiver of that change's own signal has run. The conversation list calls `forceLayout()` on it, so each change is laid out before the next, after the list's delegate model has recorded it. The list no longer lays out from `rowsRemoved`, `rowsMoved` or `rowsInserted`.

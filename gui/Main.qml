@@ -476,7 +476,8 @@ ApplicationWindow {
                     Layout.preferredWidth: 300; Layout.minimumWidth: 140; Layout.maximumWidth: 300
                     Layout.fillWidth: true; implicitHeight: 30
                     color: Theme.surface; radius: 6
-                    border.color: window.searchPopupOpen || search.activeFocus ? Theme.line3 : Theme.line
+                    // Amber while a search is in force, so a narrowed list is never a surprise.
+                    border.color: search.text.trim().length > 0 ? Theme.accentAlpha(.55) : window.searchPopupOpen || search.activeFocus ? Theme.line3 : Theme.line
                     Behavior on border.color { ColorAnimation { duration: Theme.ms(150) } }
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8

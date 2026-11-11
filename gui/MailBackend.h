@@ -65,6 +65,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString folder READ folder WRITE setFolder NOTIFY queryChanged)
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY queryChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY conversationChanged)
+    // The message a reply to the open thread answers.
+    Q_PROPERTY(QString replySource READ threadReplySource NOTIFY conversationChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(QString profilePath READ profilePath CONSTANT)
     Q_PROPERTY(QVariantMap debugRuntime READ debugRuntime)
@@ -1019,6 +1021,9 @@ private:
     bool m_notificationPolling = false;
     bool m_mailNotificationPolling = false;
     QString m_profile, m_engine, m_token, m_account, m_query, m_selected, m_error, m_category;
+    // Where the list was before a search took it to all mail; clearing the
+    // search goes back there.
+    QString m_folderBeforeAll = "inbox";
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
     QVariantMap m_googleAuth;

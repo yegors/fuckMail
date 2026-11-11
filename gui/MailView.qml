@@ -329,7 +329,7 @@ Item {
     // reply already goes to its To.
     function replyAllFor(message) {
         const own = String(backend.currentAccount.email || "").toLowerCase(), sender = String(message.sender_email || "").toLowerCase()
-        for (const row of participantMetadata[message.id] || []) {
+        for (const row of message.metadata || participantMetadata[message.id] || []) {
             if (row.label !== "Cc" && (row.label !== "To" || message.sent)) continue
             for (const person of row.people) {
                 const email = String(person.email || "").toLowerCase()
@@ -1190,13 +1190,19 @@ Item {
     // The kind of message being written under this thread, if any.
     readonly property string composingMode: replyOpen && members.length > 0 ? (backend.draft.mode || "reply") : ""
     // Reply all shows while the thread's reply offers it; writing a forward,
-    // whose draft cannot say, does not hide it.
+    // whose draft cannot say, does not hide it. Before any reply is begun,
+    // the recipients of the message a reply would answer decide.
     property var replyAllThreads: ({})
     readonly property bool replyAllAvailable: {
-        const mode = backend.draft.mode || "reply"
+        const mode = backend.draft.mode || "reply", known = replyAllThreads[backend.account + "/" + backend.selectedId]
         if (backend.draft.reply_all_available !== undefined && (mode === "reply" || mode === "reply_all")) return backend.draft.reply_all_available === true
-        return replyAllThreads[backend.account + "/" + backend.selectedId] === true
+        if (known !== undefined) return known === true
+        const source = backend.replySource || latest.id
+        const message = members.find(function(member) { return member.id === source })
+        return !!message && replyAllFor(message)
     }
+    // With others on the thread, Reply all is the reply offered first.
+    readonly property bool replyAllFirst: replyAllAvailable && backend.folder !== "sent"
     function noteReplyAll() {
         const mode = backend.draft.mode || "reply", key = backend.account + "/" + backend.selectedId
         if (backend.draft.reply_all_available === undefined || (mode !== "reply" && mode !== "reply_all") || replyAllThreads[key] === (backend.draft.reply_all_available === true)) return
@@ -1605,6 +1611,47 @@ Item {
                         }
                     }
                 }
+                // A search in force says so over the list it narrowed: what is
+                // searched, the words, how many matched, and the way back.
+                Rectangle {
+                    id: searchStrip; objectName: "searchStrip"
+                    readonly property var matches: backend.querySummary.filtered_conversation_count
+                    visible: backend.query.trim().length > 0
+                    Layout.fillWidth: true; Layout.leftMargin: 12; Layout.rightMargin: 12; Layout.topMargin: 10
+                    implicitHeight: 32; radius: 6
+                    color: Theme.accentAlpha(.08); border.width: 1; border.color: Theme.accentAlpha(.32)
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 11; anchors.rightMargin: 5; spacing: 8
+                        FmIcon { name: "search"; size: 11; color: Theme.amber }
+                        Text {
+                            text: "Searching " + (backend.folder === "all" ? "all mail" : backend.folder)
+                            color: Theme.amber; font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5)
+                            font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08
+                        }
+                        Text {
+                            objectName: "searchStripQuery"
+                            Layout.fillWidth: true; elide: Text.ElideRight; maximumLineCount: 1; textFormat: Text.PlainText
+                            text: Theme.oneLine(backend.query); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                        }
+                        Text {
+                            visible: searchStrip.matches !== undefined && !backend.listPending && searchStrip.width >= 380
+                            text: searchStrip.matches + (searchStrip.matches === 1 ? " match" : " matches")
+                            color: Theme.inkAlpha(.5); font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5)
+                            font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08; font.features: {"tnum": 1}
+                        }
+                        FmButton {
+                            id: searchStripClear; objectName: "searchStripClear"
+                            text: "Clear"; iconName: "close"; iconSize: 9; iconSpacing: 6
+                            implicitHeight: 22; leftPadding: 8; rightPadding: 8; topPadding: 0; bottomPadding: 0; radius: 4; hoverBrightness: 1
+                            font.family: Theme.monoFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium
+                            font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .08
+                            foreground: Theme.amber
+                            background: Rectangle { radius: 4; color: searchStripClear.hovered ? Theme.accentAlpha(.16) : "transparent"; border.width: searchStripClear.visualFocus ? 1 : 0; border.color: Theme.focusBorder }
+                            tip: backend.folder === "all" ? "Clear the search and go back to the mailbox" : "Clear the search and show the whole mailbox"
+                            onClicked: backend.query = ""
+                        }
+                    }
+                }
                 RowLayout {
                     visible: mail.hasSelection
                     Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16; spacing: 6
@@ -1759,6 +1806,10 @@ Item {
                                     // A card starts its item, 12px in from the pane's sides.
                                     readonly property bool card: mail.cardRows
                                     readonly property bool unread: !!groupedRow.modelData.unread
+                                    // Cards still waiting stand off the canvas: To review a shade
+                                    // lighter, Delayed under a faint amber wash. Done ones stay bare.
+                                    readonly property color tint: !card ? "transparent" : groupedRow.tier === "held" ? Theme.accentAlpha(.055)
+                                        : groupedRow.tier === "review" ? Theme.inkAlpha(.04) : "transparent"
                                     readonly property bool multi: mail.isSelected(groupedRow.modelData.id)
                                     readonly property bool opened: !mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id
                                     visible: !groupedRow.collapsed
@@ -1801,12 +1852,13 @@ Item {
                                         Rectangle {
                                             objectName: "rowHighlight_" + groupedRow.modelData.id
                                             anchors.fill: parent; radius: row.card ? 6 : 0
-                                            color: row.card ? "transparent" : row.multi ? Theme.bg4 : row.opened ? Theme.accentAlpha(.08) : mail.highlightedRow === groupedRow.modelData.id ? Theme.surface : "transparent"
+                                            color: row.card ? row.tint : row.multi ? Theme.bg4 : row.opened ? Theme.accentAlpha(.08) : mail.highlightedRow === groupedRow.modelData.id ? Theme.surface : "transparent"
                                             border.width: row.card ? 1 : 0
                                             border.color: row.opened ? Theme.accentAlpha(rowMouse.containsMouse ? .8 : .7)
                                                 : row.multi ? Theme.accentAlpha(rowMouse.containsMouse ? .5 : .4)
                                                 : mail.highlightedRow === groupedRow.modelData.id ? Theme.inkAlpha(.3)
-                                                : Theme.inkAlpha(row.unread ? .17 : .07)
+                                                : groupedRow.tier === "held" ? Theme.accentAlpha(row.unread ? .3 : .2)
+                                                : Theme.inkAlpha(row.unread ? .17 : groupedRow.tier === "review" ? .11 : .07)
                                             Behavior on border.color { ColorAnimation { duration: Theme.ms(Theme.quickMs) } }
                                             Rectangle { width: row.multi ? 2 : 3; height: parent.height; color: row.multi ? Theme.accentAlpha(.55) : Theme.accent; visible: !row.card && (row.multi || row.opened) }
                                             // A hairline above every row but a group's first, inset to the text.
@@ -1825,6 +1877,8 @@ Item {
                                     Rectangle {
                                         visible: row.card && (legendLabel.visible || legendThread.visible || legendFiles.visible)
                                         x: 10; y: -7; width: legendRow.implicitWidth + 12; height: 13; color: Theme.canvas
+                                        // The half inside the card takes the card's tint.
+                                        Rectangle { y: 7; width: parent.width; height: parent.height - 7; color: row.tint }
                                         Row {
                                             id: legendRow; x: 6; height: parent.height; spacing: 6
                                             LegendText {
@@ -1854,6 +1908,7 @@ Item {
                                     Rectangle {
                                         visible: row.card
                                         anchors.right: parent.right; anchors.rightMargin: 10; y: -7; width: timeRow.implicitWidth + 12; height: 13; color: Theme.canvas
+                                        Rectangle { y: 7; width: parent.width; height: parent.height - 7; color: row.tint }
                                         Row {
                                             id: timeRow; x: 6; height: parent.height; spacing: 6
                                             Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 5; height: 5; radius: 2.5; color: row.unread ? Theme.amber : "transparent" }
@@ -2678,8 +2733,8 @@ Item {
                             Rectangle { width: parent.width; height: 1; color: Theme.inkAlpha(.07) }
                             Flow {
                                 id: readerButtons; y: 25; width: parent.width; spacing: 6
-                                ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; prominent: mail.composingMode === "" || mail.composingMode === "reply"; outlined: !prominent; visible: backend.folder !== "sent"; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply") }
-                                ReaderAction { objectName: "replyAllButton"; visible: mail.replyAllAvailable && backend.folder !== "sent"; text: "Reply all"; iconName: "replyAll"; prominent: mail.composingMode === "reply_all"; outlined: !prominent; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply_all") }
+                                ReaderAction { objectName: "replyAllButton"; visible: mail.replyAllFirst; text: "Reply all"; iconName: "replyAll"; prominent: mail.composingMode === "" || mail.composingMode === "reply_all"; outlined: !prominent; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply_all") }
+                                ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; prominent: mail.composingMode === "reply" || (mail.composingMode === "" && !mail.replyAllFirst); outlined: !prominent; visible: backend.folder !== "sent"; enabled: mail.newMessageAvailable; onClicked: mail.compose("reply") }
                                 ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; prominent: mail.composingMode === "forward"; outlined: !prominent; enabled: mail.newMessageAvailable; onClicked: mail.compose("forward") }
                                 Item { width: 13; height: 32; Rectangle { x: 6; y: 6; width: 1; height: 20; color: Theme.line2 } }
                                 ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred && backend.folder !== "sent"; text: "Delay"; iconName: "clock"; outlined: true; enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later · D"; onClicked: backend.setStarred(true) }

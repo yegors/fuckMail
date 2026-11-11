@@ -3007,7 +3007,11 @@ public:
         await([&]{return h.backend.draftStatus()=="Draft discarded" && !mail->property("replyOpen").toBool();},"a second discard closes the reply");
         const auto shown=[&](const QString &name){ auto *item=find(window->contentItem(),name); return item && item->isVisible(); };
         const auto prominent=[&](const QString &name){ return find(window->contentItem(),name)->property("prominent").toBool(); };
-        require(shown("replyButton") && shown("forwardButton") && prominent("replyButton"),"closing leaves Reply and Forward, Reply first");
+        // The message has someone on Cc, so with no draft to say so Reply all is
+        // offered, ahead of Reply and filled.
+        const auto left=[&](const QString &name){ return find(window->contentItem(),name)->x(); };
+        require(shown("replyAllButton") && shown("replyButton") && shown("forwardButton") && prominent("replyAllButton") && !prominent("replyButton")
+            && left("replyAllButton")<left("replyButton") && left("replyButton")<left("forwardButton"),"closing leaves Reply all, Reply and Forward, Reply all first");
         // Reply, then Forward: the words move into the forward, the reply is
         // retired, and the thread stays on screen throughout.
         press("replyButton"); await(panelShown,"Reply reopens");
@@ -3041,7 +3045,7 @@ public:
         settle(300); press("discardReply"); await([&]{return find(window->contentItem(),"confirmDiscardDraft");},"discard asks");
         settle(100); press("confirmDiscardDraft");
         await([&]{return !mail->property("replyOpen").toBool() && !panelShown();},"Discard closes the forward");
-        require(shown("replyButton") && prominent("replyButton"),"back to Reply and Forward");
+        require(shown("replyButton") && shown("replyAllButton") && prominent("replyAllButton") && !prominent("replyButton"),"back to Reply all, Reply and Forward");
         // A new message discarded returns to the thread it was started from.
         QMetaObject::invokeMethod(mail,"newMessage");
         await([&]{return h.backend.m_draft.value("mode")=="new" && panelShown();},"New message opens");

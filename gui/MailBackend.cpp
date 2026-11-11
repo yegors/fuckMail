@@ -604,6 +604,8 @@ void MailBackend::selectAccount(const QString &id) {
             && std::any_of(m_conversations.cbegin(), m_conversations.cend(), [&](const QVariant &row) { return row.toMap().value("id") == previousSelected; });
         m_query = view["query"].toString(); m_selected = shown ? previousSelected : saved;
         m_folder = view.value("folder", "inbox").toString();
+        // A saved view left on all mail with no search reopens the Inbox.
+        if (m_folder == u"all" && m_query.trimmed().isEmpty()) { m_folder = "inbox"; remember("folder", m_folder); }
         m_category = view.value("category").toString();
         m_filters = view.value("filters").toMap();
         QStringList sections, open;
@@ -645,6 +647,9 @@ void MailBackend::setQuery(const QString &value) {
     // Rows on screen follow the search's folds at once.
     if (!m_queryShown && m_folder == u"inbox" && !m_query.trimmed().isEmpty() != wasSearching && publishConversations(m_conversations)) emit conversationsChanged();
     emit queryChanged(); m_searchTimer.start();
+    // All mail has no tab of its own: it is only ever a search's scope, so
+    // the mailbox comes back when the search is cleared.
+    if (m_folder == u"all" && wasSearching && m_query.trimmed().isEmpty()) setFolder(m_folderBeforeAll);
 }
 void MailBackend::setFolder(const QString &value) {
     if (!accountNavigationAllowed()) return;
@@ -652,6 +657,7 @@ void MailBackend::setFolder(const QString &value) {
     if (m_folder == value) return;
     m_queryActivity.start();
     const auto view = folderView(value);
+    if (value == u"all") m_folderBeforeAll = m_folder == u"sent" ? QStringLiteral("sent") : QStringLiteral("inbox");
     m_folder = value; m_pinnedRow.clear(); m_pinnedIndex = -1;
     m_filters = view.filters; m_category = view.category; remember("filters", m_filters); remember("category", m_category);
     // Spam is read live each visit, so it is not the view a restart reopens.
