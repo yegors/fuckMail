@@ -1086,3 +1086,121 @@ fn done_months_count_in_the_client_zone_and_collapse_independently() {
         );
     }
 }
+
+#[test]
+fn slash_separated_words_must_all_appear_and_subject_matches_lead() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let picked: Vec<(i64, String)> = store
+        .db
+        .prepare("SELECT rowid,conversation_id FROM messages WHERE account=?1 AND inbox=1 AND sent=0 AND trashed=0 AND conversation_id IN (SELECT conversation_id FROM messages WHERE account=?1 GROUP BY conversation_id HAVING COUNT(*)=1) ORDER BY id LIMIT 5")
+        .unwrap()
+        .query_map([ACCOUNT], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(picked.len(), 5);
+    for ((rowid, _), (subject, body, sent_at)) in picked.iter().zip([
+        (
+            "Notion invoice for March",
+            "Attached.",
+            "2026-08-10T09:00:00Z",
+        ),
+        (
+            "Receipt",
+            "Your Notion invoice is ready.",
+            "2026-08-20T09:00:00Z",
+        ),
+        ("Invoice", "Sent by Notion Labs.", "2026-08-25T09:00:00Z"),
+        ("Notion update", "Nothing to pay.", "2026-08-26T09:00:00Z"),
+        (
+            "Invoice from Notion",
+            "See the portal.",
+            "2026-07-05T09:00:00Z",
+        ),
+    ]) {
+        store.db.execute("UPDATE messages SET subject=?2,body=?3,sent_at=?4,unread=0,starred=0,sender_name='Sender',sender_email='sender@fixture.example' WHERE rowid=?1", params![rowid, subject, body, sent_at]).unwrap();
+        store
+            .db
+            .execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Sender sender@fixture.example',?2,?3)",
+                params![rowid, subject, body],
+            )
+            .unwrap();
+    }
+    let [a, b, c, _, e] = [0, 1, 2, 3, 4].map(|i| picked[i].1.clone());
+    let ids = |store: &mut Store, request: Value| -> Vec<String> {
+        let mut request = request;
+        let mut ids = Vec::new();
+        loop {
+            let page = store
+                .handle("conversations", Some(ACCOUNT), request.clone())
+                .unwrap();
+            ids.extend(
+                page["conversations"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| r["id"].as_str().unwrap().to_owned()),
+            );
+            if page["next_cursor"].is_null() {
+                return ids;
+            }
+            request["cursor"] = page["next_cursor"].clone();
+        }
+    };
+    // Words typed together are still one phrase.
+    assert_eq!(
+        ids(
+            &mut store,
+            json!({"query":"notion invoice","folder":"inbox","limit":100})
+        ),
+        [a.clone(), b.clone()]
+    );
+    // Slashes ask for each word anywhere in the subject or text of one
+    // message. Subject matches come first, then the newest.
+    let plain = json!({"query":"notion / invoice","folder":"inbox","limit":100});
+    assert_eq!(
+        ids(&mut store, plain.clone()),
+        [a.clone(), e.clone(), c.clone(), b.clone()]
+    );
+    let result = store.handle("conversations", Some(ACCOUNT), plain).unwrap();
+    assert_eq!(result["filtered_conversation_count"], 4);
+    assert_eq!(result["search_terms"]["words"], "notion / invoice");
+    assert_eq!(
+        result["search_terms"]["phrases"],
+        json!([{"text":"notion","field":"any"},{"text":"invoice","field":"any"}])
+    );
+    // In the Inbox's sections they lead within a month, never across months,
+    // and a page at a time gives the same order.
+    for limit in [100, 1] {
+        assert_eq!(
+            ids(
+                &mut store,
+                json!({"query":"notion / invoice","folder":"inbox","grouped":true,"month_zone":"UTC","limit":limit,"live_paging":true})
+            ),
+            [a.clone(), c.clone(), b.clone(), e.clone()],
+            "limit {limit}"
+        );
+        assert_eq!(
+            ids(
+                &mut store,
+                json!({"query":"notion / invoice","folder":"inbox","limit":limit,"live_paging":true})
+            ),
+            [a.clone(), e.clone(), c.clone(), b.clone()],
+            "limit {limit}"
+        );
+    }
+    // A subject: phrase is not ranked; newest first as before.
+    assert_eq!(
+        ids(
+            &mut store,
+            json!({"query":"subject:invoice","folder":"inbox","limit":100})
+        ),
+        [c, a, e]
+    );
+}

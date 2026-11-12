@@ -543,7 +543,7 @@ class CalendarSearchTest {
         auto textOf = [&](const char *name) { auto *item = named(window, name); return item ? item->property("text").toString() : QString(); };
         auto accessibleName = [&](const char *name) { auto *item = named(window, name); auto *face = item ? QAccessible::queryAccessibleInterface(item) : nullptr; return face ? face->text(QAccessible::Name) : QString(); };
         // Empty query: the three advertised operators, and no recent searches yet.
-        require(shown("mailSearchOperator_subject") && shown("mailSearchOperator_body") && shown("mailSearchOperator_from") && shown("mailSearchOperator_to"), "Narrow it down offers subject:, body:, from: and to:");
+        require(shown("mailSearchOperator_subject") && shown("mailSearchOperator_body") && shown("mailSearchOperator_from") && shown("mailSearchOperator_to") && shown("mailSearchOperator_all"), "Narrow it down offers subject:, body:, from:, to: and the slash");
         require(textOf("mailSearchAddressHint") == "An address on its own finds mail from or to it.", "the help says a bare address finds mail from or to it");
         require(!shown("mailSearchOperator_label") && !shown("mailSearchOperator_is") && !shown("mailRecentSearch_0"), "label:, is: and recents are not offered on a new account");
         pressSearch("mailSearchOperator_from");

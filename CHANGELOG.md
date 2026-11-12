@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-11
+
+- Search: a slash between words finds mail with all of them, in any order, in the subject or text: `notion / invoice`. Words typed together still match side by side. The search dropdown lists it under **Narrow it down**.
+- Search results whose subject matches come first, within each section of the list.
+
 ## 2026-11-10
 
 - **Reply all** is the first, filled button under a thread whenever others are on it. It could be missing until a reply had been started, leaving only the … menu.

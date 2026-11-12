@@ -2712,3 +2712,14 @@ The founder reported four things from daily use: Reply all was sometimes missing
 - **Verification.** On macOS (arm64, debug build): `gui-mail-selection` checks Reply all shown, first and filled with no draft; `gui-mailbox-switch` checks the strip, its Clear, the return from All mail to Sent and to the Inbox, and a saved bare All mail view reopening the Inbox. The card fills were looked at in a demo-profile screenshot on Graphite. Not checked: the strip's look in a screenshot, the Paper, Terminal and Harbour themes, Windows and Linux.
 
 Mail UI165, Quality103.
+
+## D226 — A slash between search words asks for all of them; subject matches come first (2026-11-11T22:54:52Z)
+
+The founder couldn't find an invoice from Notion: "notion invoice" finds only mail with those two words side by side (D129). They asked for a convention, slashes, meaning every word must appear in the subject or body, with subject matches first.
+
+- **Separator.** A `/` standing alone between words starts a new phrase. Each phrase must appear in the subject or text of the same message, which is how phrases split by an address or operator already worked, so matching itself is unchanged. A slash inside a word stays text, so dates and "and/or" still search as written.
+- **Order.** Conversations whose subject holds every bare phrase come first. In the Inbox, which lists a search under To review, Delayed and Done by month, they lead within each section rather than across them, so the sections stay in date order. This applies to any bare-word search, one phrase included.
+- **Not done.** Words are matched in the subject and text only, as asked; the sender's name does not count, so mail from Notion that never says "Notion" in its subject or text needs `from:notion invoice`. Typed-together words were not changed to mean "all of these", which would undo D129's exact matching.
+- **Verification.** On macOS (arm64): a Core test covers the separator, the match set, the plain and sectioned orders and a page at a time; parser tests cover slashes inside words and stray separators. Not checked: the founder's mailbox, and timing on a large profile (ranking reads each match's subject).
+
+Search 13, Mail UI166.

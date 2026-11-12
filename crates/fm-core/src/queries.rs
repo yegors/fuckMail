@@ -1038,7 +1038,9 @@ impl Store {
             offset = number(&cursor, "offset", 0, 0, 10_000_000)?;
             if live_paging {
                 anchor = cursor["anchor"].clone();
-                if anchor.as_array().is_none_or(|a| a.len() != 3)
+                if anchor
+                    .as_array()
+                    .is_none_or(|a| a.len() != 4 || !a[3].is_boolean())
                     || anchor[0].as_u64().is_none_or(|rank| rank > 2)
                     || anchor[1].as_str().is_none() && anchor[1].as_f64().is_none()
                     || anchor[2]
@@ -1230,6 +1232,14 @@ impl Store {
             .map(|(column, v)| (column, search_query::fold(v)))
             .filter(|(_, v)| search_query::phrase_needs_check(v))
             .collect();
+        // Conversations whose subject holds every bare phrase come before
+        // those matched through the message text.
+        let rank_subject = field == "all" && !text.phrases.is_empty();
+        let ranked_phrases: Vec<String> = if rank_subject {
+            text.phrases.iter().map(|v| search_query::fold(v)).collect()
+        } else {
+            Vec::new()
+        };
         // Previews start near the first phrase that can be in the text.
         let snippet_phrases: Vec<String> = text
             .phrases
@@ -1282,6 +1292,8 @@ impl Store {
             // `sent_at` text of the newest matching message; empty when the
             // order uses the conversation state's date instead.
             latest: String,
+            // A matching message's subject holds every bare phrase.
+            in_subject: bool,
         }
         let states = self.conversation_states(account)?;
         let folder_bit = match folder {
@@ -1311,6 +1323,7 @@ impl Store {
                 people: &person_roles,
                 label: !label_id.is_empty(),
                 texts: !phrase_checks.is_empty(),
+                subject: rank_subject,
             },
         );
         let mut stmt = self.db.prepare_cached(&sql)?;
@@ -1362,8 +1375,8 @@ impl Store {
         // status), then fold each row into its conversation's slot.
         if !simple {
             while let Some(row) = rows.next()? {
+                let mut folded: [Option<String>; 3] = [None, None, None];
                 if !phrase_checks.is_empty() {
-                    let mut folded: [Option<String>; 3] = [None, None, None];
                     let mut found = true;
                     for (column, phrase) in &phrase_checks {
                         let mut has = |index: usize| -> Result<bool> {
@@ -1420,6 +1433,19 @@ impl Store {
                 } {
                     continue;
                 }
+                let in_subject = rank_subject && {
+                    if folded[0].is_none() {
+                        let subject = row
+                            .get_ref(4)?
+                            .as_str_or_null()
+                            .map_err(|_| err("storage_error", "Invalid message text"))?;
+                        folded[0] = Some(search_query::fold(subject.unwrap_or("")));
+                    }
+                    let subject = folded[0].as_deref().unwrap_or("");
+                    ranked_phrases
+                        .iter()
+                        .all(|phrase| search_query::contains_phrase(subject, phrase))
+                };
                 let rowid: i64 = row.get(1)?;
                 let at = if grouped || recent {
                     ""
@@ -1434,10 +1460,12 @@ impl Store {
                             first_row: rowid,
                             other_rows: Vec::new(),
                             latest: at.into(),
+                            in_subject,
                         });
                         page.push((cid.as_str(), state));
                     }
                     Some(entry) => {
+                        entry.in_subject |= in_subject;
                         if at > entry.latest.as_str() {
                             entry.latest = at.into();
                         }
@@ -1474,11 +1502,17 @@ impl Store {
         let folds = !collapsed.is_empty() || !collapsed_months.is_empty() || open_months.is_some();
         let mut done_months: BTreeMap<String, usize> = BTreeMap::new();
         let mut folded = Vec::with_capacity(if folds { page.len() } else { 0 });
+        // Each Done row's section, by position, while subject matches lead:
+        // they lead within a section, never across two.
+        let mut sections: HashMap<usize, DoneSection> = HashMap::new();
         for (_, state) in &page {
             let rank = group_rank(state);
             let mut fold = collapsed.contains(["review", "held", "done"][rank]);
             if let (2, Some(zone)) = (rank, month_zone) {
                 let key = done_key(zone, state.latest, this_week.as_ref());
+                if rank_subject && grouped {
+                    sections.insert(state.position, DoneSection::of(&key));
+                }
                 fold = fold
                     || collapsed_months.contains(key.as_str())
                     || open_months.as_ref().is_some_and(|open| {
@@ -1499,19 +1533,31 @@ impl Store {
             page.retain(|_| !folded.next().unwrap_or(false));
         }
         let expanded_count = page.len();
-        // Review group first when grouped, then newest first, then conversation
-        // ID so ties never reorder between pages. Grouped and `recent` lists
-        // date a conversation by its newest message (a Julian day); plain
-        // lists by its newest matching message's `sent_at`, compared as text.
+        // Review group first when grouped, then subject matches within a
+        // section, then newest first, then conversation ID so ties never
+        // reorder between pages. Grouped and `recent` lists date a
+        // conversation by its newest message (a Julian day); plain lists by
+        // its newest matching message's `sent_at`, compared as text.
+        let in_subject = |s: &ConversationState| {
+            rank_subject && matches[s.position].as_ref().is_some_and(|m| m.in_subject)
+        };
+        // `newest_first` is the two rows' order by date alone.
+        let lead = |a: (usize, Option<&DoneSection>, bool),
+                    b: (usize, Option<&DoneSection>, bool),
+                    newest_first: std::cmp::Ordering| {
+            (if grouped {
+                a.0.cmp(&b.0)
+            } else {
+                std::cmp::Ordering::Equal
+            })
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| b.2.cmp(&a.2))
+            .then(newest_first)
+        };
         let compare = |(aid, a): &(&str, &ConversationState),
                        (bid, b): &(&str, &ConversationState)| {
-            let order = if grouped || recent {
-                (if grouped {
-                    group_rank(a).cmp(&group_rank(b))
-                } else {
-                    std::cmp::Ordering::Equal
-                })
-                .then_with(|| b.latest.total_cmp(&a.latest))
+            let newest_first = if grouped || recent {
+                b.latest.total_cmp(&a.latest)
             } else {
                 matches[b.position]
                     .as_ref()
@@ -1519,7 +1565,12 @@ impl Store {
                     .latest
                     .cmp(&matches[a.position].as_ref().unwrap().latest)
             };
-            order.then_with(|| aid.cmp(bid))
+            lead(
+                (group_rank(a), sections.get(&a.position), in_subject(a)),
+                (group_rank(b), sections.get(&b.position), in_subject(b)),
+                newest_first,
+            )
+            .then_with(|| aid.cmp(bid))
         };
         // Paging. A live-paging anchor replaces the offset: keep only rows that
         // sort after the last row the client saw, so rows inserted ahead of it
@@ -1528,27 +1579,36 @@ impl Store {
         if !anchor.is_null() {
             let rank = anchor[0].as_u64().unwrap() as usize;
             let last_id = anchor[2].as_str().unwrap();
+            let last_in_subject = rank_subject && anchor[3].as_bool().unwrap();
             if (grouped || recent) != anchor[1].is_number() {
                 return Err(err("invalid_request", "Invalid live page ordering"));
             }
+            let last_section = match (rank, month_zone, anchor[1].as_f64()) {
+                (2, Some(zone), Some(latest)) if rank_subject && grouped => {
+                    Some(DoneSection::of(&done_key(zone, latest, this_week.as_ref())))
+                }
+                _ => None,
+            };
             page.retain(|(id, state)| {
-                let order = (if grouped {
-                    group_rank(state).cmp(&rank)
+                let newest_first = if grouped || recent {
+                    anchor[1].as_f64().unwrap().total_cmp(&state.latest)
                 } else {
-                    std::cmp::Ordering::Equal
-                })
-                .then_with(|| {
-                    if grouped || recent {
-                        anchor[1].as_f64().unwrap().total_cmp(&state.latest)
-                    } else {
-                        anchor[1]
-                            .as_str()
-                            .unwrap()
-                            .cmp(&matches[state.position].as_ref().unwrap().latest)
-                    }
-                })
-                .then_with(|| id.cmp(&last_id));
-                order.is_gt()
+                    anchor[1]
+                        .as_str()
+                        .unwrap()
+                        .cmp(&matches[state.position].as_ref().unwrap().latest)
+                };
+                lead(
+                    (
+                        group_rank(state),
+                        sections.get(&state.position),
+                        in_subject(state),
+                    ),
+                    (rank, last_section.as_ref(), last_in_subject),
+                    newest_first,
+                )
+                .then_with(|| id.cmp(&last_id))
+                .is_gt()
             });
         }
         let remaining = page.len();
@@ -1575,7 +1635,8 @@ impl Store {
                         } else {
                             json!(matches[state.position].as_ref().unwrap().latest)
                         },
-                        id
+                        id,
+                        in_subject(state)
                     ])
                 })
                 .unwrap_or(Value::Null)
@@ -2131,6 +2192,27 @@ pub(crate) struct TextPredicates<'a> {
     pub label: bool,
     /// Also return subject, body and sender text (columns 4–6) for phrase checks.
     pub texts: bool,
+    /// Also return the subject (column 4) when `texts` does not, to rank
+    /// subject matches.
+    pub subject: bool,
+}
+
+/// A Done row's section in display order: today, this week, this month, then
+/// months from the newest, then mail without a date.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct DoneSection(u8, std::cmp::Reverse<String>);
+
+impl DoneSection {
+    fn of(key: &str) -> Self {
+        let class = match key {
+            TODAY => 0,
+            THIS_WEEK => 1,
+            THIS_MONTH => 2,
+            UNDATED => 4,
+            _ => 3,
+        };
+        Self(class, std::cmp::Reverse(key.to_owned()))
+    }
 }
 
 /// Where a search phrase must appear.
@@ -2168,7 +2250,8 @@ const EXACT_LISTED: &str = "m.rowid IN (SELECT mp.message_rowid FROM message_peo
 /// folder and attachment choice are written into the SQL, and the caller
 /// applies status, kind and paging, so `?2`, `?5`, `?6`, `?8` and `?9` go
 /// unused. Each row is `conversation_id, rowid, sent_at, exact address`, plus
-/// subject, body and sender text when `text.texts`.
+/// subject, body and sender text when `text.texts`, or the subject alone
+/// when only `text.subject`.
 pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredicates) -> String {
     // Only add predicates actually requested. Bound optional OR expressions kept
     // sender/body columns in the old query's scan even for unfiltered listings.
@@ -2259,6 +2342,8 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
     };
     let text_columns = if text.texts {
         ",m.subject,m.body,m.sender_name||' '||m.sender_email"
+    } else if text.subject {
+        ",m.subject"
     } else {
         ""
     };

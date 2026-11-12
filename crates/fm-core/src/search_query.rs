@@ -7,7 +7,8 @@
 //! take one word. Operators are case-insensitive and count only at the start
 //! of the text or after whitespace. Other text is bare words; words typed
 //! together form a phrase, and a bare email address names a sender or
-//! recipient instead.
+//! recipient instead. A `/` standing alone between words ends a phrase, so
+//! `notion / invoice` asks for both words anywhere rather than side by side.
 //!
 //! Mail search runs in two stages. [`fts_phrase`] turns each phrase into an
 //! FTS5 phrase query that finds candidates by their tokens. The index
@@ -20,13 +21,15 @@ use serde_json::{json, Value};
 /// A query may name at most this many people across from:, to: and bare addresses.
 pub(crate) const MAX_FROM: usize = 4;
 const MAX_FROM_BYTES: usize = 320;
+/// Between bare words, ends one phrase and starts the next.
+const SEPARATOR: &str = "/";
 const OPERATORS: [&str; 7] = ["subject", "body", "from", "to", "label", "has", "is"];
 
 /// How one search text was read. Values keep the user's spelling; matching
 /// is case-insensitive.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct SearchText {
-    /// Bare words, as typed.
+    /// Bare words, as typed, with any `/` separators between them.
     pub words: Vec<String>,
     /// Bare words typed together, without surrounding quotes. Each phrase must
     /// appear as written in the subject or the message text.
@@ -156,7 +159,9 @@ pub(crate) fn segments_with<'a>(
 /// adds nothing. Unsupported values fail clearly instead of becoming words.
 pub(crate) fn parse(text: &str) -> Result<SearchText> {
     let mut query = SearchText::default();
-    // Words typed together form one phrase; an address or an operator ends it.
+    // Words typed together form one phrase; an address, an operator or a
+    // lone `/` ends it. The `/` stays among the words so a client rebuilding
+    // the text keeps the phrases apart.
     let bare = |query: &mut SearchText, text: &str| {
         let mut phrase: Vec<&str> = Vec::new();
         let close = |query: &mut SearchText, phrase: &mut Vec<&str>| {
@@ -171,6 +176,9 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
             if looks_like_email(word) {
                 close(query, &mut phrase);
                 query.people.push(word.to_owned());
+            } else if word == SEPARATOR {
+                close(query, &mut phrase);
+                query.words.push(word.to_owned());
             } else {
                 query.words.push(word.to_owned());
                 phrase.push(word);
@@ -403,6 +411,30 @@ mod tests {
         assert_eq!(read("fr").words, ["fr"]);
         assert_eq!(read("Élodie subject:café").subject, ["café"]);
         assert_eq!(read("Élodie subject:café").words, ["Élodie"]);
+    }
+
+    #[test]
+    fn a_lone_slash_separates_words_that_must_all_appear() {
+        let query = read("keyword / test / john");
+        assert_eq!(query.phrases, ["keyword", "test", "john"]);
+        assert_eq!(query.words, ["keyword", "/", "test", "/", "john"]);
+        assert_eq!(query.terms(None)["words"], "keyword / test / john");
+        assert_eq!(
+            read("notion invoice / march").phrases,
+            ["notion invoice", "march"]
+        );
+        // Only a slash standing alone separates; inside a word it is text.
+        assert_eq!(read("and/or 11/10").phrases, ["and/or 11/10"]);
+        assert_eq!(read("notion /").phrases, ["notion"]);
+        assert_eq!(
+            read("/ notion / / invoice /").phrases,
+            ["notion", "invoice"]
+        );
+        assert!(read("/").phrases.is_empty());
+        assert_eq!(
+            read("label:work notion / invoice").phrases,
+            ["notion", "invoice"]
+        );
     }
 
     #[test]

@@ -1,5 +1,15 @@
 # Mail UI, reader and human composer
 
+## D226 — The slash in the search dropdown (Mail UI166)
+
+Adds to Mail UI165's search; nothing else changes.
+
+- **Narrow it down.** A fifth row after `to:`: a `/` chip, "Every word, in any order", example `notion / invoice` (`mailSearchOperator_all`). A click appends ` / ` to the text and keeps typing at the end. It is not offered as a completion while typing.
+- **Chip.** The bare-words chip reads "All in subject or body" when the words hold a lone `/`, else "Subject or body". Its value shows the words with their slashes, and removing it removes them all.
+- **Order.** The list shows rows in Core's order within each section, so subject matches lead each section of a search (Search 13). Highlighting uses each phrase, as before.
+
+Consumers: `SearchPopup`; Search 13; `gui-calendar-search`.
+
 ## D225 — Reply all first, a strip over searched lists, no bare All mail, tinted waiting cards (Mail UI165)
 
 Changes Mail UI164's reader actions, card frame and fill, and search presentation. Everything else is unchanged.

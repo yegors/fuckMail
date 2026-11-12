@@ -29,7 +29,10 @@ Popup {
         {op: "subject:", description: "Only in subjects", example: "subject:board deck"},
         {op: "body:", description: "Only in message text", example: "body:invoice attached"},
         {op: "from:", description: "Only the sender", example: "from:maya@example.com"},
-        {op: "to:", description: "Recipient name or address", example: "to:finance@example.com"}
+        {op: "to:", description: "Recipient name or address", example: "to:finance@example.com"},
+        // Not an operator with a value: a slash between words asks for each of
+        // them, where words typed together must appear side by side.
+        {op: "/", name: "all", description: "Every word, in any order", example: "notion / invoice"}
     ]
     readonly property string lastToken: { const match = query.match(/(\S*)$/); return match ? match[1].toLowerCase() : "" }
     readonly property var completions: lastToken.length >= 2 && lastToken.indexOf(":") < 0 ? operators.filter(o => o.op.startsWith(lastToken)) : []
@@ -43,7 +46,7 @@ Popup {
         if (!t) return out
         // Bare addresses lead, as textWithout() writes them back.
         ;(t.people || []).forEach((value, index) => out.push({key: draftScope ? "To" : "From or To", value: value, part: "people", index: index}))
-        if (t.words) out.push({key: "Subject or body", value: t.words, part: "words"})
+        if (t.words) out.push({key: / \/ /.test(" " + t.words + " ") ? "All in subject or body" : "Subject or body", value: t.words, part: "words"})
         ;(t.subject || []).forEach((value, index) => out.push({key: "Subject", value: value, part: "subject", index: index}))
         ;(t.body || []).forEach((value, index) => out.push({key: "Body", value: value, part: "body", index: index}))
         ;(t.from || []).forEach((value, index) => out.push({key: draftScope ? "To" : "From", value: value, part: "from", index: index}))
@@ -290,9 +293,9 @@ Popup {
                     SearchRow {
                         id: operatorRow
                         required property var modelData
-                        objectName: "mailSearchOperator_" + modelData.op.slice(0, -1)
+                        objectName: "mailSearchOperator_" + (modelData.name || modelData.op.slice(0, -1))
                         accessibleName: modelData.op + " " + modelData.description
-                        onClicked: popup.edit((popup.query.trim() ? popup.query.trim() + " " : "") + modelData.op)
+                        onClicked: popup.edit((popup.query.trim() ? popup.query.trim() + " " : "") + modelData.op + (modelData.op === "/" ? " " : ""))
                         OperatorChip { text: operatorRow.modelData.op; minimumWidth: 64 }
                         Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true }
                         Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
