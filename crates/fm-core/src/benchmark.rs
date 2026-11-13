@@ -750,11 +750,39 @@ fn inbox_months_ten_years_60k() {
     let open = measure(Vec::new());
     let half = measure(months.iter().step_by(2).cloned().collect());
     let newest_open = measure(months[1..].to_vec());
+    // A refresh of a long list as the Inbox asks for it: the first page and
+    // five cursor pages with only the newest month open, read once with
+    // nothing kept (as after a mail change) and again (as the next refresh).
+    let mut walk = |keep: bool| {
+        if !keep {
+            store.projection_cache.borrow_mut().clear();
+        }
+        let mut request = json!({"folder":"inbox","grouped":true,"live_paging":true,"limit":100,"offset":0,
+            "month_zone":"UTC","collapsed_months":months[1..].to_vec()});
+        let mut pages = Vec::new();
+        for _ in 0..6 {
+            let started = Instant::now();
+            let page = store
+                .handle("conversations", Some("windscribe"), request.clone())
+                .unwrap();
+            pages.push(started.elapsed().as_secs_f64() * 1000.0);
+            let next = page["next_cursor"].clone();
+            if next.is_null() {
+                break;
+            }
+            request.as_object_mut().unwrap().remove("offset");
+            request["cursor"] = next;
+        }
+        json!(pages)
+    };
+    let refresh_after_change_ms = walk(false);
+    let refresh_again_ms = walk(true);
     let report = json!({"experiment":"Inbox page and month counts over ten years of generated mail",
         "generated_conversations":CONVERSATIONS,"months":months.len(),"seed_seconds":seed_seconds,
         "sqlite_version":rusqlite::version(),"target_os":std::env::consts::OS,
         "profile":"fresh generated, warm OS cache, one connection, no concurrent writer",
-        "none_collapsed":open,"half_collapsed":half,"all_but_newest_collapsed":newest_open});
+        "none_collapsed":open,"half_collapsed":half,"all_but_newest_collapsed":newest_open,
+        "refresh_pages_after_change_ms":refresh_after_change_ms,"refresh_pages_again_ms":refresh_again_ms});
     println!("{report}");
     if let Some(path) = std::env::var_os("FM_YEARS_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

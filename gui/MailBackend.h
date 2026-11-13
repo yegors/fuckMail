@@ -961,6 +961,43 @@ private:
     void refreshDoneSections();
     QDate m_mailToday; // Set by tests; otherwise the clock's date.
     QString rowSection(const QVariantMap &row, const DoneSections &done) const;
+    // A row's review group by its own read and star state; empty without them.
+    static QString flagGroup(const QVariantMap &row);
+    // That group for a row the person changed here (marked local_flags), which
+    // shows the change before Core's list says so; empty for any other row.
+    static QString localGroup(const QVariantMap &row);
+    // The section Core's counts hold a row in; empty when they leave it out.
+    QString countedSection(const QVariantMap &row, const DoneSections &done) const;
+    // The group the open conversation is kept in while it stays open.
+    QString pinnedGroup() const;
+    // Puts a row whose group changed here into its new section by date, or
+    // leaves it out when that section is folded or lies below the loaded rows.
+    void placeMovedRow(QVariantList &rows, const QVariantMap &row);
+    // Conversations Core's counts hold in a section the list no longer shows
+    // them in, by section; cleared with each list Core returns.
+    QHash<QString, int> m_sectionAdjust;
+    // What the person did to a conversation that a list read may predate:
+    // its read and star state, or that it left this view. Rows show it at
+    // once and keep showing it over reads started earlier, until a list read
+    // started after the engine confirmed it has replaced them. Keyed by
+    // account and conversation.
+    struct LocalMailChange {
+        bool read = false, unread = false, star = false, starred = false, gone = false;
+        int pending = 0;
+        qint64 confirmed = -1;
+    };
+    QHash<QString, LocalMailChange> m_localMail;
+    qint64 m_listReads = 0, m_listReadStarted = 0;
+    void noteLocalMail(const QString &account, const QString &id, const QString &method, const QJsonObject &params);
+    void confirmLocalMail(const QString &account, const QString &id, bool ok);
+    void applyLocalMail(QVariantList &rows);
+    // One refresh of the shown list runs at a time. Another asked for
+    // meanwhile follows it instead of restarting it, so a busy mailbox still
+    // finishes every refresh it starts.
+    bool m_refreshQueued = false, m_refreshQueuedManual = false;
+    int m_refreshGeneration = -1;
+    QJsonObject m_refreshParams;
+    void finishListLoad();
     // What the native list shows for `rows`. In the Inbox: a header item
     // before each section, an empty item for an open section with no mail,
     // and the rows of open sections. Every item is one slice high, so Qt's
@@ -1107,8 +1144,6 @@ private:
     void leaveReview();
     void startLeaving(const QVariantMap &row, int index);
     bool foldOutMoved(const QString &id, const QString &method, const QJsonObject &params);
-    // A one-row selection action folding the open row: its refresh waits for the fold.
-    bool m_bulkFolding = false;
     QVariantList m_calendarSources, m_captures;
     QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;
     QVariantMap m_calendarSearchResult, m_calendarSearchTerms;
@@ -1209,6 +1244,13 @@ private:
     void openDraftInAccount(const QString &account, const QString &draft);
     std::function<void()> m_afterDraftSave;
     std::function<void()> m_afterConversationMutation;
+    // A conversation read on opening while another change was saving: shown
+    // read at once, and marked read when that change is confirmed even if
+    // another conversation is open by then.
+    struct HeldRead { QString account, id; QJsonObject params; };
+    QList<HeldRead> m_heldReads;
+    // Runs what waited for the mail change that just finished.
+    void runAfterMailMutation();
     QSet<QString> m_viewSaving, m_viewDirty;
     // Remote search: session-only switch, rows for exactly one account/folder/query.
     bool remoteSearch() const { return m_remoteSearch; }

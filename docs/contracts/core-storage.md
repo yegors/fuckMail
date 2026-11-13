@@ -1,5 +1,13 @@
 # Core and storage
 
+## D227 — ordered conversation lists kept between pages (Core108)
+
+- `conversations` for a grouped list with no text, sender, date or attachment filter and no `recent` order keeps the list's order in memory once it has been matched, counted, folded and sorted: the conversation ids in order, `filtered_conversation_count`, the three group counts and the Done month counts. Other pages of the same list (any `offset` or `cursor`) are slices of that order; they no longer read every conversation's state again.
+- A list is the request's fingerprint (folder, fold state, month zone, week start, today and the rest of what shapes it). Each account keeps its four most recent lists, each of at most 20,000 rows; a longer list is ordered for every page as before.
+- The lists are stamped with the search generation, like the cached first page, so any mail change (a flag, a sync, filing) drops them. Nothing is stored in the database; schema, protocol and replies are unchanged.
+
+Consumers: Mail UI167, Quality104; fixtures live0/demo3 and protocol1 unchanged.
+
 ## D220 — account From names (Core107)
 
 - **Schema 42** (migration 042 and the fresh schema): `account_metadata` gains `from_name` (the person's choice, `''` when unset) and `gmail_from_name` (Gmail's send-as display name for the primary address, `''` when Gmail has none). Existing accounts upgrade with both empty.

@@ -1,5 +1,16 @@
 # Quality, performance and release acceptance
 
+## D227 — instant read, Done and Delay; list refresh and model retry checks (Quality104)
+
+Mail UI167, Core108, Local assistance34; no schema, fixture or protocol change.
+
+- `gui-mail-selection` (`readMovesWithoutLists`): with the engine's reply to the read withheld and no list returned, a conversation read on opening shows read and stays in To review; when the next opens it folds out and is in Done · Today in date order, with To review one fewer and Today one more, and no `conversations` request was made. Three refreshes asked for while one is held make one request and one follow-up. A list read before the change does not show the conversation unread again, and the list read after it leaves nothing kept locally. A conversation opened while another change is saving shows read at once and its read is sent after another conversation has opened.
+- `fm-core` `ordered_list_pages_match_uncached_pages_across_cursors_folds_and_flag_changes`: every page of four list shapes (cursor and offset paging, folded groups, Done sections) is identical with and without the kept order; four lists are kept per account; a flag change drops them.
+- `fm-engine` `an_unusable_model_is_asked_less_often_up_to_five_minutes`: the waits are 30, 60, 120, 240, 300, 300 seconds.
+
+**Measurement**
+- `inbox_months_ten_years_60k` (ignored; `FM_YEARS_REPORT`) now also reads an Inbox refresh: the first page and five cursor pages of 100 rows with only the newest month open. On 60,000 generated conversations, release build, warm cache, no concurrent writer: after a mail change the six pages take 64 ms (29, 8, 8, 8, 8, 4) where they took 195 ms (37, 32, 33, 33, 30, 31); with nothing changed, 36 ms where they took 152 ms.
+
 ## D225 — Reply all, search strip and All mail checks (Quality103)
 
 Mail UI165; no engine, schema, fixture or protocol change.

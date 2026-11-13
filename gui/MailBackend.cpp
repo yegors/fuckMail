@@ -90,15 +90,32 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(&m_leavingTimer, &QTimer::timeout, this, [this] {
         const auto leaving = m_leavingRow.value("id").toString();
         m_leavingRow.clear(); m_leavingIndex = -1;
-        // The folded row goes now, so its section shows its final state at
-        // once (the last one in To review leaves "Inbox zero"); the refresh
-        // then reconciles the list with Core.
+        // The folded row takes its new place now, from what is known here, so
+        // both sections show their final state at once (the last one in To
+        // review leaves "Inbox zero"); the refresh then reconciles the list
+        // with Core. Filed mail, and a row this view no longer holds, just go.
         auto rows = m_conversations;
-        const auto before = rows.size();
-        rows.erase(std::remove_if(rows.begin(), rows.end(), [&leaving](const QVariant &value) {
-            const auto row = value.toMap(); return row.value("leaving").toBool() && row.value("id").toString() == leaving; }), rows.end());
-        if (rows.size() != before && publishConversations(std::move(rows))) emit conversationsChanged();
-        if (m_connected && !m_shutdown) loadConversations(false, true);
+        bool changed = false;
+        const auto done = doneSections();
+        for (auto value = rows.begin(); value != rows.end();) {
+            auto row = value->toMap();
+            if (!row.value("leaving").toBool() || row.value("id").toString() != leaving) { ++value; continue; }
+            changed = true;
+            if (row.value("leave_kind").toString() == u"filed" || row.value("uncounted").toBool() || flagGroup(row).isEmpty()) {
+                // Core's counts hold a filed row until its list says it left.
+                const auto counted = countedSection(row, done);
+                if (!counted.isEmpty() && m_localMail.contains(m_account + u'\n' + leaving)) --m_sectionAdjust[counted];
+                value = rows.erase(value); continue;
+            }
+            for (const auto *key : {"leaving", "leave_kind", "pinned", "pinned_from", "display_group", "counted_section"}) row.remove(QLatin1String(key));
+            // Core's list may already count it in its new group.
+            if (const auto from = value->toMap().value("pinned_from").toString(); !from.isEmpty()) row["group"] = from;
+            row["local_flags"] = true;
+            *value = row; ++value;
+        }
+        if (changed && publishConversations(std::move(rows))) emit conversationsChanged();
+        // A change still saving refreshes the list when it is confirmed.
+        if (m_connected && !m_shutdown && !m_mutatingConversation) loadConversations(false, true);
     });
     m_reviewLeaveTimer.setSingleShot(true);
     connect(&m_reviewLeaveTimer, &QTimer::timeout, this, &MailBackend::leaveReview);
@@ -206,6 +223,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         m_googleAuthAttempt.clear();
         if (m_googleAuthBusy) setGoogleAuth({{"phase", "cancelled"}});
         m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear(); m_queuedMailActions.clear();
+        for (const auto &read : std::exchange(m_heldReads, {})) m_localMail.remove(read.account + u'\n' + read.id);
         auto pending = std::move(m_pending); m_pending.clear();
         for (auto &item : pending) item.callback({}, false);
         if (m_shutdown) finishShutdown();
@@ -564,7 +582,7 @@ void MailBackend::selectAccount(const QString &id) {
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
     dropEmptyNewDraft();
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
-    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
+    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_sectionAdjust.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
     // Until its own list arrives, an account without cached rows is loading,
     // never empty: its view is read first, then its list.
     m_searchTerms.clear(); m_searchError.clear(); m_searchPeople.clear(); m_searchPeopleQuery.clear(); ++m_searchPeopleGeneration;
@@ -735,9 +753,90 @@ void MailBackend::refreshDoneSections() {
 }
 QString MailBackend::rowSection(const QVariantMap &row, const DoneSections &done) const {
     auto section = row.value("display_group").toString();
+    if (section.isEmpty()) section = localGroup(row);
     if (section.isEmpty()) section = row.value("group").toString();
     if (section != u"done") return section;
     return done.of(row.value("latest_at").toString());
+}
+QString MailBackend::localGroup(const QVariantMap &row) {
+    return row.value("local_flags").toBool() ? flagGroup(row) : QString();
+}
+QString MailBackend::flagGroup(const QVariantMap &row) {
+    if (!row.contains("unread") || !row.contains("group") || row.value("remote").toBool()) return {};
+    return row.value("unread").toBool() ? QStringLiteral("review") : row.value("starred").toBool() ? QStringLiteral("held") : QStringLiteral("done");
+}
+QString MailBackend::countedSection(const QVariantMap &row, const DoneSections &done) const {
+    if (row.value("uncounted").toBool()) return {};
+    auto group = row.value("pinned_from").toString();
+    if (group.isEmpty()) group = row.value("group").toString();
+    return group == u"done" ? done.of(row.value("latest_at").toString()) : group;
+}
+QString MailBackend::pinnedGroup() const {
+    if (m_pinnedIndex < 0 || m_pinnedRow.isEmpty()) return {};
+    // Where it was shown when opened: Core's group for it may be older.
+    const auto section = m_pinnedRow.value("section").toString();
+    if (!section.isEmpty()) return section.startsWith(u"done:") ? QStringLiteral("done") : section;
+    return m_pinnedRow.value("display_group", m_pinnedRow["group"]).toString();
+}
+void MailBackend::placeMovedRow(QVariantList &rows, const QVariantMap &row) {
+    const auto section = row.value("section").toString(), order = sectionOrder(section), id = row.value("id").toString();
+    const auto latest = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);
+    // Core's order within a section: newest first, then by identity.
+    qsizetype index = 0;
+    for (; index < rows.size(); ++index) {
+        const auto other = rows[index].toMap();
+        const auto otherOrder = sectionOrder(other.value("section").toString());
+        if (otherOrder > order) break;
+        if (otherOrder < order || other.value("pinned").toBool() || other.value("leaving").toBool()) continue;
+        const auto otherLatest = QDateTime::fromString(other.value("latest_at").toString(), Qt::ISODate);
+        if (otherLatest < latest || (otherLatest == latest && other.value("id").toString() > id)) break;
+    }
+    if (!sectionCollapsed(section) && (index < rows.size() || !hasMore())) { rows.insert(index, row); return; }
+    // Not shown: its new section counts it, and the one Core still holds it in does not.
+    const auto counted = row.value("counted_section").toString();
+    if (counted.isEmpty()) return;
+    ++m_sectionAdjust[section]; --m_sectionAdjust[counted];
+}
+void MailBackend::noteLocalMail(const QString &account, const QString &id, const QString &method, const QJsonObject &params) {
+    const bool flags = method == u"flag" && (params.contains("read") || params.contains("starred"));
+    const auto action = params["action"].toString();
+    // Filing that takes the conversation out of the folder being shown.
+    const bool gone = method == u"mail_filing" && account == m_account
+        && (m_folder == u"trash" ? action == u"restore" : action == u"trash" || (action == u"archive" && m_folder == u"inbox"));
+    if (!flags && !gone) return;
+    auto &change = m_localMail[account + u'\n' + id];
+    if (params.contains("read")) { change.read = true; change.unread = !params["read"].toBool(); }
+    if (params.contains("starred")) { change.star = true; change.starred = params["starred"].toBool(); }
+    if (method == u"mail_filing") change.gone = gone;
+    ++change.pending; change.confirmed = -1;
+}
+void MailBackend::confirmLocalMail(const QString &account, const QString &id, bool ok) {
+    const auto change = m_localMail.find(account + u'\n' + id);
+    if (change == m_localMail.end()) return;
+    // A refused change is dropped: the refresh that follows shows what is stored.
+    if (!ok) { m_localMail.erase(change); return; }
+    if (change->pending > 0 && --change->pending == 0) change->confirmed = m_listReads;
+}
+void MailBackend::applyLocalMail(QVariantList &rows) {
+    if (m_localMail.isEmpty()) return;
+    const auto prefix = m_account + u'\n';
+    const bool inbox = m_folder == u"inbox";
+    const auto done = inbox ? doneSections() : DoneSections{};
+    for (auto value = rows.begin(); value != rows.end();) {
+        const auto row = value->toMap();
+        const auto change = m_localMail.constFind(prefix + row.value("id").toString());
+        if (change == m_localMail.cend()) { ++value; continue; }
+        if (change->gone && !row.value("leaving").toBool()) {
+            if (const auto counted = countedSection(row, done); inbox && !counted.isEmpty()) --m_sectionAdjust[counted];
+            value = rows.erase(value); continue;
+        }
+        const bool unread = change->read ? change->unread : row.value("unread").toBool();
+        const bool starred = change->star ? change->starred : row.value("starred").toBool();
+        if (row.contains("unread") && (unread != row.value("unread").toBool() || starred != row.value("starred").toBool() || !row.value("local_flags").toBool())) {
+            auto shown = row; shown["unread"] = unread; shown["starred"] = starred; shown["local_flags"] = true; *value = shown;
+        }
+        ++value;
+    }
 }
 void MailBackend::applyCollapsedSections(const QStringList &previousCollapsed, const QStringList &previousOpen) {
     const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
@@ -889,30 +988,54 @@ QString MailBackend::listScope() const {
 bool MailBackend::publishConversations(QVariantList rows) {
     // Inbox rows name their section; Done rows split by the date of their
     // latest message, in the same zone and week Core counts them in.
+    // What the person just did shows on its rows whatever this list says: it
+    // may have been read before Core applied the change.
+    applyLocalMail(rows);
     if (m_folder == u"inbox") {
         const auto done = doneSections();
+        const auto keptId = pinnedGroup() == u"review" ? m_pinnedRow.value("id").toString() : QString();
         QList<std::pair<QString, QVariant>> ordered;
         ordered.reserve(rows.size());
+        QList<QVariantMap> moved;
         bool sorted = true;
         for (auto &value : rows) {
             auto row = value.toMap();
-            const auto section = rowSection(row, done);
-            if (row.value("section").toString() != section) { row["section"] = section; value = row; }
-            // A kept row still counts in Core's totals for its real section.
-            if (const auto from = row.value("pinned_from").toString(); !from.isEmpty()) {
-                auto counted = from;
-                if (from == u"done") counted = done.of(row.value("latest_at").toString());
-                if (row.value("counted_section").toString() != counted) { row["counted_section"] = counted; value = row; }
+            bool edited = false;
+            const auto local = localGroup(row), group = local.isEmpty() ? row.value("group").toString() : local;
+            bool held = row.value("pinned").toBool() || row.value("leaving").toBool();
+            // The open conversation stays in To review from the moment it is
+            // read, without waiting for a list that says it was.
+            if (!held && !keptId.isEmpty() && !group.isEmpty() && group != u"review" && row.value("id").toString() == keptId) {
+                row["pinned"] = true; row["display_group"] = QStringLiteral("review"); held = edited = true;
             }
+            const auto section = rowSection(row, done), before = row.value("section").toString();
+            if (before != section) { row["section"] = section; edited = true; }
+            // A row still counts in Core's totals for the section Core has it
+            // in. Only a row shown elsewhere than Core's group can differ.
+            QString counted;
+            if (!local.isEmpty() || row.contains("display_group") || row.contains("pinned_from")) {
+                counted = countedSection(row, done);
+                if (counted == section) counted.clear();
+            }
+            if (row.value("counted_section").toString() != counted) {
+                if (counted.isEmpty()) row.remove("counted_section"); else row["counted_section"] = counted;
+                edited = true;
+            }
+            if (edited) value = row;
+            // Read, Done or Delay taken here moved it to another group: it
+            // takes its place there now, and the next list from Core confirms it.
+            const auto was = before.isEmpty() ? row.value("group").toString() : before.startsWith(u"done:") ? QStringLiteral("done") : before;
+            if (!held && !local.isEmpty() && was != local) { moved.append(row); continue; }
             ordered.append({sectionOrder(section), value});
             if (ordered.size() > 1 && ordered[ordered.size() - 2].first > ordered.last().first) sorted = false;
         }
         // A section is never split: a kept row placed among another section's
         // rows joins its own, keeping its place among them.
-        if (!sorted) {
-            std::stable_sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        if (!sorted) std::stable_sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+        if (!sorted || !moved.isEmpty()) {
             rows.clear();
             for (auto &entry : ordered) rows.append(std::move(entry.second));
+            for (const auto &row : std::as_const(moved)) placeMovedRow(rows, row);
         }
     }
     // The protocol-facing list remains authoritative. Only the native view uses
@@ -948,13 +1071,15 @@ QVariantList MailBackend::listItems(const QVariantList &rows) {
         at.insert(key, sections.size());
         sections.append({key, sectionOrder(key), count, !sectionCollapsed(key)});
     };
-    // Core's counts, with the kept conversation counted where it shows.
-    QHash<QString, int> kept;
+    // Core's counts, with each conversation counted where it shows: the kept
+    // one, and those a change made here moved before Core's list says so.
+    auto kept = m_sectionAdjust;
     for (const auto &value : rows) {
         const auto row = value.toMap();
-        if (!row.value("pinned").toBool()) continue;
+        const auto counted = row.value("counted_section").toString();
+        if (counted.isEmpty() && !row.value("uncounted").toBool()) continue;
         ++kept[row.value("section").toString()];
-        if (const auto counted = row.value("counted_section").toString(); !counted.isEmpty()) --kept[counted];
+        if (!counted.isEmpty()) --kept[counted];
     }
     const auto summaryCounts = m_querySummary.value("filtered_group_counts");
     if (summaryCounts.metaType().id() == QMetaType::QVariantMap) {
@@ -1068,7 +1193,7 @@ bool MailBackend::restoreMailView() {
     m_savedCollapsedGroups = m_searchFolds ? view.value("collapsedSections").toStringList() : QStringList{};
     m_savedOpenSections = m_searchFolds ? view.value("openSections").toStringList() : QStringList{};
     m_selected = view.value("selected").toString();
-    m_querySummary = cached->summary; m_categories = cached->categories;
+    m_querySummary = cached->summary; m_sectionAdjust.clear(); m_categories = cached->categories;
     m_nextOffset = cached->nextOffset; m_nextCursor = cached->nextCursor;
     if (!publishConversations(cached->rows)) return false;
     // As a loaded list does, open the first thread when none was open, so the
@@ -1206,7 +1331,7 @@ bool MailBackend::showInstantView(const QVariantMap &previousFilters, const QStr
     if (m_folder == u"drafts" || m_folder == u"spam") return false;
     const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
     if (const auto seen = m_viewRows.object(viewKey()); seen && seen->lifecycle == lifecycle) {
-        m_querySummary = seen->summary; m_nextOffset = seen->nextOffset; m_nextCursor = seen->nextCursor;
+        m_querySummary = seen->summary; m_sectionAdjust.clear(); m_nextOffset = seen->nextOffset; m_nextCursor = seen->nextCursor;
         m_mailScopeCount = seen->scopeCount;
         if (publishConversations(seen->rows)) emit conversationsChanged();
         return true;
@@ -1266,7 +1391,7 @@ void MailBackend::prefetchView(const ListView &view) {
         // Clicked before this arrived: show it now rather than wait for the
         // click's own load, which then reconciles it.
         if (const auto seen = m_viewRows.object(key); seen && key == viewKey() && listPending()) {
-            m_querySummary = seen->summary; m_nextOffset = seen->nextOffset; m_nextCursor = seen->nextCursor;
+            m_querySummary = seen->summary; m_sectionAdjust.clear(); m_nextOffset = seen->nextOffset; m_nextCursor = seen->nextCursor;
             m_mailScopeCount = seen->scopeCount;
             if (publishConversations(seen->rows)) emit conversationsChanged();
             m_rescopeGeneration = -1; emit loadingChanged();
@@ -1281,12 +1406,23 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (m_folder == "drafts") { loadDraftRows(append, preserveLoaded); return; }
     // Spam is read live from Gmail: store refreshes during sync leave it alone.
     if (m_folder == "spam") { if (append || !preserveLoaded) loadSpamRows(append); return; }
+    const int offset = append ? m_nextOffset : 0;
+    if (offset < 0) { ++m_listGeneration; return; }
+    auto params = listParams(m_collapsedGroups, m_openSections);
+    // A refresh of this same list already on its way is not restarted: each
+    // would cancel the one before and none would finish while mail keeps
+    // changing. It completes, and one more follows it.
+    const bool refresh = !append && preserveLoaded;
+    if (refresh && m_loading && m_refreshGeneration == m_listGeneration && params == m_refreshParams) {
+        m_refreshQueued = true; m_refreshQueuedManual |= !m_automaticReadScope; return;
+    }
     const int generation = ++m_listGeneration;
     const QString account = m_account;
-    const int offset = append ? m_nextOffset : 0;
-    if (offset < 0) return;
+    m_refreshQueued = m_refreshQueuedManual = false;
+    m_refreshGeneration = refresh ? generation : -1;
+    m_refreshParams = refresh ? params : QJsonObject{};
+    m_listReadStarted = append ? 0 : ++m_listReads;
     m_listError.clear(); m_loading = true; emit loadingChanged();
-    auto params = listParams(m_collapsedGroups, m_openSections);
     params["offset"] = offset;
     if (append && !m_nextCursor.isEmpty()) { params.remove("offset"); params["cursor"] = m_nextCursor; }
     // Keep visible rows until a refresh has recovered the same page count. Each
@@ -1305,13 +1441,13 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
             if (generation != m_listGeneration || account != m_account) return;
             if (ok) m_mailScopeCount = result["folder_conversation_count"].toInt();
             if (!ok && result["code"].toString() == "stale_cursor") {
-                if (cursorRetries >= 3) { m_listError = "Mail kept changing during pagination. Retry loading more."; m_loading = false; emit loadingChanged(); fail(m_listError); return; }
+                if (cursorRetries >= 3) { m_listError = "Mail kept changing during pagination. Retry loading more."; finishListLoad(); fail(m_listError); return; }
                 params.remove("cursor"); params["offset"] = 0;
                 loadConversationPage(account, generation, params, {}, desiredCount, cursorRetries + 1); return;
             }
             if (!ok && result["code"].toString() == "invalid_request" && !params.contains("cursor") && params["offset"].toInt() == 0
                 && !params["query"].toString().trimmed().isEmpty()) {
-                readSearchResult(result, false); m_loading = false; emit loadingChanged(); return;
+                readSearchResult(result, false); finishListLoad(); return;
             }
             if (ok && collected.isEmpty()) readSearchResult(result, true);
             if (ok) {
@@ -1326,7 +1462,7 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 const auto next = result["next_offset"].isDouble() ? result["next_offset"].toInt() : -1;
                 if (next >= 0 && (list.isEmpty() || (!params["cursor"].toString().isEmpty() && result["next_cursor"] == params["cursor"]))) {
                     m_listError = "Older mail did not advance. Retry loading.";
-                    m_loading = false; emit loadingChanged(); return;
+                    finishListLoad(); return;
                 }
                 if (!list.isEmpty() && next > params["offset"].toInt() && collected.size() < desiredCount) {
                     params["offset"] = next;
@@ -1354,10 +1490,12 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 const auto returned = std::find_if(collected.begin(), collected.end(),
                     [this](const QVariant &row) { return row.toMap().value("id").toString() == m_selected; });
                 if (m_pinnedIndex >= 0 && !m_pinnedRow.isEmpty()) {
-                    const auto shown = m_pinnedRow.value("display_group", m_pinnedRow["group"]).toString();
+                    const auto shown = pinnedGroup();
                     if (returned == collected.end()) {
                         auto pinned = m_pinnedRow;
-                        pinned["display_group"] = shown; pinned["pinned"] = true;
+                        // Core's counts for this view leave it out.
+                        pinned["display_group"] = shown; pinned["pinned"] = true; pinned["uncounted"] = true;
+                        pinned.remove("counted_section");
                         collected.insert(keptRowIndex(collected, previous, pinned), pinned);
                     } else if (shown == u"review" && returned->toMap().value("group").toString() != u"review") {
                         auto fresh = returned->toMap();
@@ -1371,9 +1509,19 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 // headers the list shows and how much it has still to load.
                 const auto previousPaging = std::pair{m_nextOffset, m_nextCursor};
                 m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
+                // A refresh started after the engine confirmed a change holds
+                // it, so the change no longer needs showing over the list.
+                if (m_listReadStarted > 0) {
+                    const auto prefix = m_account + u'\n';
+                    for (auto change = m_localMail.begin(); change != m_localMail.end();) {
+                        const bool held = change->pending == 0 && change->confirmed >= 0 && change->confirmed < m_listReadStarted;
+                        change = held && change.key().startsWith(prefix) ? m_localMail.erase(change) : std::next(change);
+                    }
+                }
+                m_sectionAdjust.clear();
                 if (!publishConversations(std::move(collected))) {
                     std::tie(m_nextOffset, m_nextCursor) = previousPaging;
-                    m_querySummary = previousSummary; m_loading = false; emit loadingChanged(); return;
+                    m_querySummary = previousSummary; finishListLoad(); return;
                 }
                 cacheMailView(); rememberView(m_querySummary);
                 if (!m_accountsWarmed) { m_accountsWarmed = true; QTimer::singleShot(1500, this, &MailBackend::warmOtherAccounts); }
@@ -1382,8 +1530,19 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 if (previous != m_conversations || previousNext != m_nextOffset || previousSummary != m_querySummary) emit conversationsChanged();
             }
             if (!ok) m_listError = result["message"].toString("Could not load older mail. Retry.");
-            m_loading = false; emit loadingChanged();
+            finishListLoad();
         });
+}
+// Ends a list read and starts the refresh asked for while it ran.
+void MailBackend::finishListLoad() {
+    m_loading = false; emit loadingChanged();
+    if (!std::exchange(m_refreshQueued, false)) return;
+    const bool automatic = !std::exchange(m_refreshQueuedManual, false);
+    QMetaObject::invokeMethod(this, [this, automatic] {
+        if (!m_connected || m_shutdown || m_loading) return;
+        QScopedValueRollback<bool> origin(m_automaticReadScope, automatic);
+        loadConversations(false, true);
+    }, Qt::QueuedConnection);
 }
 // Where a kept conversation goes back into a reloaded Inbox: inside its
 // section, after the rows of that section that were above it, so a section
@@ -1735,9 +1894,22 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
         if (reviewOnLoad && accountCapability(account, "mail_write")) {
             const auto members = data.value("messages").toList();
             if (std::any_of(members.cbegin(), members.cend(), [](auto m) { return m.toMap().value("unread").toBool(); })) {
-                if (m_mutatingConversation) m_afterConversationMutation = [this, id, account, generation] {
-                    if (id == m_selected && account == m_account && generation == m_generation) loadConversation(false, true);
-                };
+                if (m_mutatingConversation) {
+                    // Another change is saving. It shows read now, and is
+                    // marked read once that change is confirmed, whichever
+                    // conversation is open by then.
+                    const bool held = std::any_of(m_heldReads.cbegin(), m_heldReads.cend(), [&](const HeldRead &read) { return read.id == id && read.account == account; });
+                    if (!held) {
+                        const QJsonObject read{{"read", true}, {"id", id}, {"message_ids", QJsonArray::fromVariantList(data.value("message_ids").toList())},
+                            {"expected_revision", data.value("revision").toLongLong()}};
+                        noteLocalMail(account, id, QStringLiteral("flag"), read);
+                        showFlagChange({id}, read);
+                        m_heldReads.append({account, id, read});
+                    }
+                    m_afterConversationMutation = [this, id, account, generation] {
+                        if (id == m_selected && account == m_account && generation == m_generation) loadConversation(false, true);
+                    };
+                }
                 else mutateConversation("flag", {{"read", true}}, false);
             }
         }
@@ -1792,9 +1964,18 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
     params["expected_revision"] = m_conversation["revision"].toLongLong();
     const auto id = m_selected, account = m_account;
     m_mutatingConversation = true; emit mutationChanged();
+    // The row shows the change, and Done, Delay or filing moves it, now: the
+    // engine's reply confirms it and a refusal reloads what is stored.
+    noteLocalMail(account, id, method, params);
     if (method == "flag") showFlagChange({id}, params);
+    if (method == "mail_filing" || params.contains("starred")) {
+        const bool folding = foldOutMoved(id, method, params);
+        releasePin();
+        if (!folding && m_localMail.value(account + u'\n' + id).gone && publishConversations(m_conversations)) emit conversationsChanged();
+    }
     const auto undoEpoch = m_mailUndoEpoch;
     requestMailAction(method, account, params, [this, id, account, method, params, undoable, undoEpoch](auto result, bool ok) {
+        confirmLocalMail(account, id, ok);
         if (ok && undoable && undoEpoch == m_mailUndoEpoch) {
             const auto token=mailUndoToken(account,result);
             if (!token.isEmpty()) offerMailUndo(mailActionLabel(method,params), {token});
@@ -1808,9 +1989,7 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             while (m_mailDeliveryOrder.size() > 128) m_mailDelivery.remove(m_mailDeliveryOrder.takeFirst());
             if (id == m_selected && account == m_account) emit mailDeliveryChanged();
         }
-        bool folding = false;
         if (ok && id == m_selected && account == m_account) {
-            if (method == "mail_filing" || params.contains("starred")) { folding = foldOutMoved(id, method, params); releasePin(); }
             m_conversation = retainReaderPresentation(result.toVariantMap());
             cacheConversation(account, id, m_conversation, lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong());
             if (!m_pinnedRow.isEmpty()) {
@@ -1822,7 +2001,7 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
         }
         if (m_shutdown) finishShutdown();
         else {
-            if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
+            runAfterMailMutation();
             if (!ok) { refresh(); return; }
             // The receipt already contains the exact committed reader snapshot.
             // A mail flag/category change does not change a draft, preferences,
@@ -1835,9 +2014,36 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             }
             m_listRefreshPending = false;
             // A folding row's refresh follows its fold.
-            if (!folding) loadConversations(false, true);
+            if (!m_leavingTimer.isActive()) loadConversations(false, true);
         }
     });
+}
+void MailBackend::runAfterMailMutation() {
+    const auto held = std::exchange(m_heldReads, {});
+    const auto next = std::exchange(m_afterConversationMutation, {});
+    for (const auto &read : held) {
+        if (next && read.id == m_selected && read.account == m_account) {
+            // Still open: it is loaded again and read by the usual path, which
+            // notes the change itself.
+            if (const auto change = m_localMail.find(read.account + u'\n' + read.id); change != m_localMail.end() && change->pending > 0 && --change->pending == 0)
+                change->confirmed = m_listReads;
+            continue;
+        }
+        auto params = read.params; params["request_id"] = uuid();
+        requestMailAction(QStringLiteral("flag"), read.account, params, [this, read](const QJsonObject &result, bool ok) {
+            confirmLocalMail(read.account, read.id, ok);
+            if (m_shutdown || !m_connected) return;
+            if (ok && read.id == m_selected && read.account == m_account && !m_mutatingConversation) {
+                // Opened again meanwhile: the reader takes the stored state.
+                m_conversation = retainReaderPresentation(result.toVariantMap());
+                cacheConversation(read.account, read.id, m_conversation, lifecycleAccount(read.account).value("lifecycle").toMap().value("revision").toLongLong());
+                emit conversationChanged();
+            }
+            { QScopedValueRollback<bool> origin(m_automaticReadScope, true); loadAccounts(); }
+            if (!m_mutatingConversation && !m_leavingTimer.isActive()) loadConversations(false, true);
+        });
+    }
+    if (next) next();
 }
 void MailBackend::finishMailMutation() {
     m_mutatingConversation = false; emit mutationChanged();
@@ -1988,8 +2194,26 @@ void MailBackend::applyMailSelection(const QVariantList &rows, const QString &ac
     // The rows themselves show the action; only a problem gets a line.
     m_mutatingConversation = true; m_mailSelectionStatus.clear();
     emit mutationChanged();
-    for (const auto &command : m_bulkCommands)
-        if (command["method"] == "flag") showFlagChange({command["params"].toObject()["id"].toString()}, command["params"].toObject());
+    // Every row shows its change now; each reply confirms one.
+    for (const auto &command : m_bulkCommands) {
+        const auto method = command["method"].toString(); const auto params = command["params"].toObject();
+        if (isMailAction(method)) noteLocalMail(m_bulkAccount, params["id"].toString(), method, params);
+    }
+    bool shown = false;
+    for (const auto &command : m_bulkCommands) {
+        const auto params = command["params"].toObject();
+        if (command["method"] == "flag") showFlagChange({params["id"].toString()}, params);
+        else if (m_localMail.value(m_bulkAccount + u'\n' + params["id"].toString()).gone) shown = true;
+    }
+    // Done, Delay or filing on the open conversation alone folds its row, as the reader's buttons do.
+    if (m_bulkCommands.size() == 1) {
+        const auto method = m_bulkCommands.first()["method"].toString(); const auto params = m_bulkCommands.first()["params"].toObject();
+        if (params["id"].toString() == m_selected && (method == "mail_filing" || params.contains("starred"))) {
+            foldOutMoved(m_selected, method, params);
+            releasePin();
+        }
+    }
+    if (shown && publishConversations(m_conversations)) emit conversationsChanged();
     runMailSelection();
 }
 
@@ -2001,30 +2225,36 @@ void MailBackend::runMailSelection() {
         // Done needs no line: the rows move and Undo is offered.
         m_mailSelectionStatus = valid ? QString() : QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
             + " updated. Remaining actions stopped after the account or session changed.";
+        // The actions not sent leave their rows as stored.
+        for (qsizetype index = m_bulkIndex; index < m_bulkCommands.size(); ++index)
+            m_localMail.remove(m_bulkAccount + u'\n' + m_bulkCommands[index]["params"].toObject()["id"].toString());
         m_bulkCommands.clear(); finishMailMutation(); finishBulkDiscardUndo();
         if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
         m_bulkMailUndo.clear();
         if (m_shutdown) finishShutdown();
         else if (m_connected) {
-            if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
+            runAfterMailMutation();
             loadAccounts(); loadCategories();
             // A folding row's refresh follows its fold.
-            if (!std::exchange(m_bulkFolding, false)) loadConversations(false, true);
+            if (!m_leavingTimer.isActive()) loadConversations(false, true);
         }
-        m_bulkFolding = false;
         return;
     }
     const auto command = m_bulkCommands[m_bulkIndex];
     const auto params = command["params"].toObject();
     const auto account = m_bulkAccount;
     auto done = [this, account, params, command](const QJsonObject &result, bool ok) {
+        if (isMailAction(command["method"].toString())) confirmLocalMail(account, params["id"].toString(), ok);
         if (!ok) {
+            // The actions not sent leave their rows as stored.
+            for (qsizetype index = m_bulkIndex + 1; index < m_bulkCommands.size(); ++index)
+                m_localMail.remove(account + u'\n' + m_bulkCommands[index]["params"].toObject()["id"].toString());
             m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
                 + " updated. Stopped: " + result["message"].toString("selection changed or response was lost") + ". Refresh and inspect before selecting again.";
             m_bulkCommands.clear(); finishMailMutation(); finishBulkDiscardUndo();
         if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
         m_bulkMailUndo.clear(); cancelShutdown();
-            if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
+            runAfterMailMutation();
             if (m_connected) { loadAccounts(); loadCategories(); loadConversations(false, true); }
             return;
         }
@@ -2047,11 +2277,7 @@ void MailBackend::runMailSelection() {
                 if (key == qMakePair(m_account, m_selected)) emit mailDeliveryChanged();
             }
             if (currentLifecycle && account == m_account && id == m_selected) {
-                if (command["method"] == "mail_filing" || params.contains("starred")) {
-                    // Done or Delay on the open conversation alone folds its row, as the reader's buttons do.
-                    if (m_bulkCommands.size() == 1) m_bulkFolding = foldOutMoved(id, command["method"].toString(), params);
-                    releasePin();
-                }
+                if (command["method"] == "mail_filing" || params.contains("starred")) releasePin();
                 m_conversation = result.toVariantMap();
                 if (m_pinnedRow.value("id").toString() == id) {
                     m_pinnedRow["revision"] = result["revision"].toVariant();

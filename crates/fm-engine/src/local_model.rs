@@ -27,6 +27,9 @@ use tokio::sync::{watch, Notify, Semaphore};
 /// reads every message of a large mailbox must never hold their reply.
 const POLL_COUNT_WAIT: Duration = Duration::from_millis(250);
 const EXACT_COUNT_WAIT: Duration = Duration::from_secs(2);
+/// The first and the longest wait before the queue asks an unusable model again.
+const UNAVAILABLE_WAIT: Duration = Duration::from_secs(30);
+const UNAVAILABLE_WAIT_LIMIT: Duration = Duration::from_secs(300);
 /// An explicit request from `assist_start`, visible only to the session that
 /// started it.
 struct Job {
@@ -81,6 +84,11 @@ pub struct Runtime {
     /// Stops the reader's count in progress when the engine stops.
     progress_interrupt: Arc<Mutex<Option<ProgressInterrupt>>>,
     stopped: Arc<std::sync::atomic::AtomicBool>,
+}
+/// The wait after `wait` when the model still cannot be used: twice as long,
+/// up to the limit.
+fn longer_unavailable_wait(wait: Duration) -> Duration {
+    (wait * 2).min(UNAVAILABLE_WAIT_LIMIT)
 }
 /// Failures of the runner or its authority, not of one message: the queue
 /// waits and retries rather than marking every remaining message failed.
@@ -671,8 +679,16 @@ impl Runtime {
         // The store revision when the queue was last found empty. Until the
         // store changes or something wakes the worker, there is nothing new.
         let mut empty_at: Option<i64> = None;
+        // How long to wait after the model could not be used. It doubles
+        // while the model stays away, so a server that is not running is
+        // asked every few minutes, not twice a minute; a wake-up or a
+        // result starts again from the shortest wait.
+        let mut unavailable_wait = UNAVAILABLE_WAIT;
         while let Some(woken) = self.wait(delay).await {
             delay = Duration::ZERO;
+            if woken {
+                unavailable_wait = UNAVAILABLE_WAIT;
+            }
             let Ok((revision, row)) = self
                 .core
                 .call(|s| Ok((s.local_model_revision()?, s.local_model_newest_row()?)))
@@ -779,14 +795,18 @@ impl Runtime {
             token.cancel();
             self.worker.lock().unwrap().current = None;
             match result {
-                Ok(_) => self.worker.lock().unwrap().unavailable = None,
+                Ok(_) => {
+                    self.worker.lock().unwrap().unavailable = None;
+                    unavailable_wait = UNAVAILABLE_WAIT;
+                }
                 Err(e) if runner_failure(&e.code) => {
                     // The model cannot be used: keep every email queued and retry.
                     self.worker.lock().unwrap().unavailable =
                         Some(json!({"code":e.code,"message":e.message}));
                     batch.clear();
                     cursors.clear();
-                    delay = Duration::from_secs(30);
+                    delay = unavailable_wait;
+                    unavailable_wait = longer_unavailable_wait(unavailable_wait);
                 }
                 Err(e) if transient(&e.code) => {}
                 // Anything else is about this email: record it and move on.
@@ -1066,6 +1086,16 @@ mod thread_tests;
 #[cfg(test)]
 mod diagnostic_tests {
     use super::*;
+    #[test]
+    fn an_unusable_model_is_asked_less_often_up_to_five_minutes() {
+        let mut wait = UNAVAILABLE_WAIT;
+        let mut waits = vec![wait.as_secs()];
+        for _ in 0..5 {
+            wait = longer_unavailable_wait(wait);
+            waits.push(wait.as_secs());
+        }
+        assert_eq!(waits, [30, 60, 120, 240, 300, 300]);
+    }
     #[test]
     fn records_classification_and_unicode_summary_length_without_mail_text() {
         let output = json!({"summary":"Hi 🌍", "sender_kind":"human", "category_ids":["work"]});

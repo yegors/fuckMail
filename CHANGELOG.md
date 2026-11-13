@@ -2,6 +2,13 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-12
+
+- Mail read on opening, Done and Delay show at once, before the engine or Google answers. A conversation read from To review now leaves it for Done the moment the next one opens, with both counts right. In a large mailbox it used to stay until a list refresh finished, and reading on kept restarting that refresh, so several moved together later.
+- A list refresh asked for while one is running follows it; it no longer restarts it.
+- Refreshing a long list in a large mailbox is quicker: the engine keeps the order of the lists being shown.
+- When the local model's server isn't running, the queue asks again after 30 seconds, then less often, up to every 5 minutes. It used to log a failure twice a minute.
+
 ## 2026-11-11
 
 - Search: a slash between words finds mail with all of them, in any order, in the subject or text: `notion / invoice`. Words typed together still match side by side. The search dropdown lists it under **Narrow it down**.

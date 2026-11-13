@@ -165,6 +165,11 @@ pub(crate) type ConversationCache = RefCell<HashMap<String, ConversationProjecti
 /// Derived replies by `(account, name)`, each with the stamp it was built at.
 /// A lookup with a different stamp rebuilds.
 pub(crate) type ProjectionCache = RefCell<HashMap<(String, &'static str), (u64, Value)>>;
+/// The most rows of one ordered conversation list kept between pages; a
+/// longer list is ordered again for each page.
+const ORDERED_LIST_LIMIT: usize = 20_000;
+/// How many such lists one account keeps, newest first.
+const ORDERED_LISTS_PER_ACCOUNT: usize = 4;
 /// A synthetic-profile coverage reply plus the inventories it was built from,
 /// so appended messages and index rows can be applied as a delta.
 pub(crate) struct CoverageProjection {
@@ -1353,7 +1358,29 @@ impl Store {
             values.push(&label_id);
         }
         let mut rows = stmt.query(values.as_slice())?;
-        if simple {
+        // Ordered-list cache. A plain grouped list is matched, counted and
+        // ordered once per mail change; its other pages are slices of that
+        // order instead of another pass over every conversation. A few
+        // lists per account, so a prefetched view does not evict the one on
+        // screen; each is bounded in rows and stamped like the first page.
+        let ordered_key = (account.to_owned(), "ordered_conversation_lists");
+        let cache_order = simple && !recent;
+        let ordered = if cache_order {
+            self.projection_cache
+                .borrow()
+                .get(&ordered_key)
+                .filter(|(stamp, _)| *stamp == search_generation)
+                .and_then(|(_, lists)| {
+                    lists
+                        .as_array()?
+                        .iter()
+                        .find(|list| list["fingerprint"] == fingerprint)
+                        .cloned()
+                })
+        } else {
+            None
+        };
+        if simple && ordered.is_none() {
             page.extend(
                 states
                     .iter()
@@ -1476,7 +1503,7 @@ impl Store {
         }
         // Grouping and ordering. The filtered and per-group totals cover every
         // match, before collapsed groups or months and paging remove rows.
-        let filtered_count = page.len();
+        let mut filtered_count = page.len();
         let mut group_counts = [0usize; 3];
         for (_, state) in &page {
             group_counts[if state.unread {
@@ -1532,6 +1559,38 @@ impl Store {
             let mut folded = folded.into_iter();
             page.retain(|_| !folded.next().unwrap_or(false));
         }
+        if let Some(ordered) = &ordered {
+            // The cached list is already counted, folded and in order.
+            let stale = || err("storage_error", "Cached conversation list is invalid");
+            filtered_count = ordered["filtered"].as_u64().ok_or_else(stale)? as usize;
+            for (count, cached) in group_counts.iter_mut().zip(
+                ordered["groups"]
+                    .as_array()
+                    .filter(|groups| groups.len() == 3)
+                    .ok_or_else(stale)?,
+            ) {
+                *count = cached.as_u64().ok_or_else(stale)? as usize;
+            }
+            done_months = ordered["months"]
+                .as_object()
+                .ok_or_else(stale)?
+                .iter()
+                .map(|(month, count)| {
+                    Ok((month.clone(), count.as_u64().ok_or_else(stale)? as usize))
+                })
+                .collect::<Result<_>>()?;
+            page = ordered["ids"]
+                .as_array()
+                .ok_or_else(stale)?
+                .iter()
+                .map(|id| {
+                    id.as_str()
+                        .and_then(|id| states.get_key_value(id))
+                        .map(|(id, state)| (id.as_str(), state))
+                        .ok_or_else(stale)
+                })
+                .collect::<Result<_>>()?;
+        }
         let expanded_count = page.len();
         // Review group first when grouped, then subject matches within a
         // section, then newest first, then conversation ID so ties never
@@ -1572,6 +1631,19 @@ impl Store {
             )
             .then_with(|| aid.cmp(bid))
         };
+        if cache_order && ordered.is_none() && page.len() <= ORDERED_LIST_LIMIT {
+            page.sort_unstable_by(&compare);
+            let list = json!({"fingerprint":fingerprint,"filtered":filtered_count,"groups":group_counts,
+                "months":done_months,"ids":page.iter().map(|(id, _)| *id).collect::<Vec<_>>()});
+            let mut cache = self.projection_cache.borrow_mut();
+            let mut lists = match cache.remove(&ordered_key) {
+                Some((stamp, Value::Array(lists))) if stamp == search_generation => lists,
+                _ => Vec::new(),
+            };
+            lists.insert(0, list);
+            lists.truncate(ORDERED_LISTS_PER_ACCOUNT);
+            cache.insert(ordered_key, (search_generation, Value::Array(lists)));
+        }
         // Paging. A live-paging anchor replaces the offset: keep only rows that
         // sort after the last row the client saw, so rows inserted ahead of it
         // or removed (the anchor row included) neither repeat nor skip others.
@@ -2610,6 +2682,82 @@ mod projection_tests {
         let mut old_next = params.clone();
         old_next["cursor"] = first["next_cursor"].clone();
         assert_eq!(store.conversations("windscribe", &old_next).unwrap(), next);
+    }
+    #[test]
+    fn ordered_list_pages_match_uncached_pages_across_cursors_folds_and_flag_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        // Every page of `params`, read with whatever is cached and again with
+        // nothing cached: a cached order must answer exactly as a new scan.
+        fn pages(store: &Store, params: &Value, cached: bool) -> Vec<Value> {
+            let mut out = Vec::new();
+            let mut request = params.clone();
+            loop {
+                if !cached {
+                    store.projection_cache.borrow_mut().clear();
+                }
+                let mut page = store.conversations("windscribe", &request).unwrap();
+                let next = page["next_cursor"].clone();
+                // The cursor names the store revision, which a page does not depend on.
+                page.as_object_mut().unwrap().remove("next_cursor");
+                out.push(page);
+                if next.is_null() {
+                    return out;
+                }
+                request.as_object_mut().unwrap().remove("offset");
+                request["cursor"] = next;
+            }
+        }
+        let scans = |store: &Store, key: &'static str| {
+            store
+                .projection_cache
+                .borrow()
+                .get(&("windscribe".to_owned(), key))
+                .map(|(_, lists)| lists.as_array().map_or(0, Vec::len))
+        };
+        let views = [
+            json!({"folder":"inbox","grouped":true,"limit":3,"live_paging":true}),
+            json!({"folder":"inbox","grouped":true,"limit":3}),
+            json!({"folder":"all","grouped":true,"limit":4,"live_paging":true,"collapsed_groups":["held"]}),
+            json!({"folder":"inbox","grouped":true,"limit":2,"live_paging":true,"month_zone":"America/Toronto",
+                "done_week_start":"monday","today":"2026-05-06","open_months":[]}),
+        ];
+        for params in &views {
+            let fresh = pages(&store, params, false);
+            assert!(fresh.len() > 1, "{params} spans several pages");
+            store.projection_cache.borrow_mut().clear();
+            assert_eq!(pages(&store, params, true), fresh, "{params}");
+            // And again with the order already there from the first page on.
+            assert_eq!(pages(&store, params, true), fresh, "{params}");
+        }
+        // Lists read one after another are kept together, newest first and bounded.
+        for params in &views {
+            pages(&store, params, true);
+        }
+        assert_eq!(
+            scans(&store, "ordered_conversation_lists"),
+            Some(views.len().min(ORDERED_LISTS_PER_ACCOUNT))
+        );
+        // A flag change reorders the grouped list: the cached order is not reused.
+        let params = &views[0];
+        let before = pages(&store, params, true);
+        let target = before.last().unwrap()["conversations"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()
+            .clone();
+        store
+            .handle(
+                "flag",
+                Some("windscribe"),
+                json!({"id":target["id"],"message_ids":target["message_ids"],"expected_revision":target["revision"],
+                    "request_id":"ordered-list-flag","read":!target["unread"].as_bool().unwrap(),"starred":true}),
+            )
+            .unwrap();
+        let after = pages(&store, params, true);
+        assert_ne!(after, before);
+        assert_eq!(after, pages(&store, params, false));
     }
     #[test]
     fn first_page_cache_follows_flags_source_edits_rollback_filters_and_account_scope() {

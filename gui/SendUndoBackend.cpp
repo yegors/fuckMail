@@ -281,6 +281,10 @@ void MailBackend::runMailUndo() {
         row["unread"]=std::any_of(messages.cbegin(),messages.cend(),[](const auto &v){return v.toMap().value("unread").toBool();});
         row["starred"]=std::any_of(messages.cbegin(),messages.cend(),[](const auto &v){return v.toMap().value("starred").toBool();});
         m_restoredMailSelection.append(row);
+        // The rows show what was restored now, over a list read before the undo.
+        LocalMailChange restored; restored.read=restored.star=true; restored.unread=row.value("unread").toBool(); restored.starred=row.value("starred").toBool(); restored.confirmed=m_listReads;
+        m_localMail[account+u'\n'+id]=restored;
+        if (account==m_account && publishConversations(m_conversations)) emit conversationsChanged();
         if (account==m_account && id==m_selected) {m_conversation=row;m_pinnedRow.clear();m_pinnedIndex=-1;emit conversationChanged();}
         if (result["delivery"].isObject()) {m_mailDelivery[qMakePair(account,id)]=result["delivery"].toObject().toVariantMap();emit mailDeliveryChanged();}
         runMailUndo();

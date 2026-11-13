@@ -391,3 +391,16 @@ The GUI preserves existing mail/calendar/preference handling, handles draft deli
 Use the matching updated engine and GUI after closing the old session. During sync, open a long conversation, scroll it, type a reply and switch folders while progress changes. Account/progress-only, calendar-only and draft-only updates should no longer cause the full set of reader/labels/capture queries. In the developer console (`~`), `fm --json status` exposes `ui_generations`: stable `reader`/`drafts`/`captures` while `accounts` advances is a concrete example of work skipped by the GUI.
 
 This removes known background work rather than proving a latency percentile. Cold opens are unchanged. Generations are area-wide, so mail changes in another account/thread, ambiguous writes and legacy capture subjects can still cause broader refreshes. No running real session was restarted for this verification.
+
+## 2026-11-12 Inbox refresh pages and kept list order
+
+D227. The founder's GUI log from a mailbox of well over 100,000 conversations showed each `flag` answered in 12–64 ms, and each list refresh made of five to seven `conversations` pages of 200–300 ms. Timing the same requests through `fm call` showed the first page cached (a few ms on repeat) and every later page paying about 100 ms to read all conversation states again, plus about 0.65 ms a row to build its rows.
+
+The engine now keeps a plain grouped list's order between pages (Core108). `inbox_months_ten_years_60k` gained a refresh walk: the first page and five cursor pages of 100 rows, only the newest month open, read once with nothing kept (as after a mail change) and once more (as the next refresh).
+
+| Six-page refresh | Before | After |
+| --- | --- | --- |
+| After a mail change | 195 ms (37, 32, 33, 33, 30, 31) | 64 ms (29, 8, 8, 8, 8, 4) |
+| Nothing changed | 152 ms (1, 31, 31, 31, 30, 28) | 36 ms (1, 8, 8, 9, 8, 3) |
+
+Windows 11, release build, 60,000 generated conversations, one connection, warm OS cache, no concurrent writer; "before" is the same test on the previous commit. What remains in a later page is building its rows. Not measured: the founder's own mailbox on the new build, and a list longer than the 20,000 rows kept.

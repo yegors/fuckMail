@@ -1,5 +1,19 @@
 # Mail UI, reader and human composer
 
+## D227 — Read, Done and Delay shown at once; one list refresh at a time (Mail UI167)
+
+Changes when the mail list shows a read, Done, Delay or filing, and how it refreshes. What the list shows once the engine has answered is unchanged.
+
+- **Local changes.** `MailBackend` keeps the person's flag and filing changes per conversation from the moment they are taken: read on opening, Done, Delay, Mark unread, selection actions, Archive, Trash, Restore and their Undo. Every list it publishes carries them, whatever the engine's list says, until a list read that started after the engine confirmed the change has been shown. A refused change is dropped and the refresh shows what is stored.
+- **Sections.** In the Inbox a row the person changed (`local_flags`) is placed by its own state: unread in To review, starred in Delayed, otherwise Done by date. When that differs from where it was, it takes its place in the new section by date, newest first; when that section is folded, or its place is past the loaded rows, it is not shown. Other rows keep Core's `group`.
+- **Open conversation.** A conversation read on opening from To review is kept there (`pinned`) from the moment it shows read, with no list reply. When another opens, or after `review_leave_seconds`, it folds out (190 ms) and then takes its new place from what is known here; the refresh that follows reconciles with Core.
+- **Done, Delay and filing** fold the open row when the action is taken, not when the engine answers.
+- **Counts.** A section's count is Core's last count corrected for rows shown in a section other than the one Core counted them in (`counted_section`, `uncounted`), so both sections change with the row.
+- **Held read.** A conversation opened while another change is saving shows read at once. Its read is sent when that change is confirmed, also when another conversation is open by then; it used to be dropped.
+- **Refreshes.** One refresh of a list runs at a time. A refresh of the same list (account, folder, query, filters and fold state) asked for while one runs is remembered and runs once after it. A different list still replaces the one loading.
+
+Consumers: `MailBackend` (`publishConversations`, `listItems`, `loadConversations`, `mutateConversation`, `applyMailSelection`, mail Undo); Core108, Quality104.
+
 ## D226 — The slash in the search dropdown (Mail UI166)
 
 Adds to Mail UI165's search; nothing else changes.

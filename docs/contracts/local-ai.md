@@ -1,5 +1,11 @@
 # Local mail analysis
 
+## D227 — an unusable model is asked less often (Local assistance34)
+
+Changes D111's retry. While the model cannot be used (server not running, model missing or changed) the queue still holds every email with `model_error` in progress, and asks again after 30 seconds, then 60, 120, 240 and every 300 seconds. A settings save, a catch-up request, a window or CLI attaching to the queue, and any result start again from 30 seconds. Nothing else changes.
+
+Consumers: Quality104.
+
 ## D217 — encrypted mail (Local assistance33)
 
 The model reads stored message text, which never includes what was inside an encryption (Core104). An encrypted message is summarized and labeled only by what was outside it; its plaintext is never sent to the model.

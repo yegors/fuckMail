@@ -347,6 +347,90 @@ class MailSelectionTest {
         }
         qInfo()<<"Reviewed mail leaves To review after the set time while open; Off keeps it.";
     }
+    // Reading through To review never waits for the engine: before it has
+    // confirmed the read or returned any list, a conversation read on
+    // opening stays in To review while open, leaves it when the next opens
+    // and takes its place in Done, with both counts right. A list read
+    // before the change does not put it back, and a refresh asked for while
+    // one runs follows it instead of restarting it.
+    static void readMovesWithoutLists() {
+        Harness h;
+        const auto make=[](const QString &id,const QString &at,bool unread){
+            return QVariant(QVariantMap{{"id",id},{"subject","Triage "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",unread ? "review" : "done"},{"kind","people"},{"unread",unread},{"starred",false}}); };
+        // t1 is older than the Done mail already there; t2 is newer.
+        h.rows={make("t2","2026-10-14T12:00:00Z",true),make("t1","2026-10-14T08:00:00Z",true),make("t3","2026-10-14T07:00:00Z",true),make("d1","2026-10-14T10:00:00Z",false)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",3},{"held",0}}},{"done_months",QJsonArray{QJsonObject{{"month","today"},{"count",1}}}}};
+        h.backend.m_preferences["review_leave_seconds"]=0;
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==4;},"triage Inbox loads");
+        const auto row=[&](const QString &id){ for (const auto &value:h.backend.conversations()) if (value.toMap()["id"]==id) return value.toMap(); return QVariantMap{}; };
+        const auto ids=[&]{ QStringList all; for (const auto &value:h.backend.conversations()) all.append(value.toMap()["id"].toString()); return all.join(','); };
+        const auto count=[&](const QString &key){ for (const auto &value:h.backend.inboxSections()) if (value.toMap()["key"]==key) return value.toMap()["count"].toInt(); return -1; };
+        require(count("review")==3 && count("done:today")==1,"the sections start with Core's counts");
+        const int lists=int(h.methods.count("conversations"));
+        h.backend.openConversation("t1");
+        // The engine answers one request at a time: until this read is
+        // answered nothing else reaches it, as behind a slow list page.
+        auto read=h.take();
+        require(!row("t1")["unread"].toBool() && row("t1")["pinned"].toBool() && row("t1")["section"]=="review" && ids()=="t2,t1,t3,d1","read on opening shows at once and keeps the open conversation in To review");
+        require(count("review")==3 && count("done:today")==1,"a kept conversation still counts in To review");
+        h.backend.openConversation("t2");
+        await([&]{return row("t1")["leaving"].toBool();},"the read conversation folds out of To review as the next opens");
+        await([&]{return !row("t1")["leaving"].toBool() && row("t1")["section"]=="done:today";},"then takes its place in Done");
+        require(ids()=="t2,t3,d1,t1" && !row("t1")["pinned"].toBool(),"in Done by date, below newer Done mail");
+        require(count("review")==2 && count("done:today")==2,"both sections count it where it shows");
+        require(int(h.methods.count("conversations"))==lists && h.backend.m_mutatingConversation,"all of it before the engine confirmed the read or returned a list");
+        // The engine confirms the read; its list now has t1 in Done.
+        h.rows={make("t2","2026-10-14T12:00:00Z",true),make("t3","2026-10-14T07:00:00Z",true),make("d1","2026-10-14T10:00:00Z",false),make("t1","2026-10-14T08:00:00Z",false)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",2},{"held",0}}},{"done_months",QJsonArray{QJsonObject{{"month","today"},{"count",2}}}}};
+        h.finish(read);
+        auto second=h.take(); require(second.request["params"].toObject()["id"]=="t2" && second.request["params"].toObject()["read"]==true,"the open conversation is read next");
+        await([&]{return !h.backend.m_loading;},"the list after the first read lands");
+        require(ids()=="t2,t3,d1,t1" && !row("t2")["unread"].toBool() && row("t2")["pinned"].toBool() && row("t2")["section"]=="review","it shows read and is kept in To review");
+        require(count("review")==2 && count("done:today")==2,"with the counts unchanged");
+        // A refresh starts before that read is confirmed and is answered after
+        // it, with the mailbox as it was. Asked for again meanwhile, it is not restarted.
+        const int before=int(h.methods.count("conversations"));
+        h.holdLists=true;
+        h.backend.loadConversations(false,true); h.backend.loadConversations(false,true);
+        h.finish(second);
+        await([&]{return h.heldLists.size()==1 && !h.backend.m_mutatingConversation;},"the refresh waits");
+        h.backend.loadConversations(false,true);
+        { QElapsedTimer waited; waited.start(); while (waited.elapsed()<50) QCoreApplication::processEvents(QEventLoop::AllEvents,5); }
+        require(h.heldLists.size()==1 && int(h.methods.count("conversations"))==before+1,"one refresh runs however often it is asked for");
+        h.releaseLists();
+        await([&]{return h.heldLists.size()==1 && int(h.methods.count("conversations"))==before+2;},"and one more follows it");
+        require(ids()=="t2,t3,d1,t1" && !row("t2")["unread"].toBool() && row("t2")["pinned"].toBool() && row("t2")["section"]=="review","a list read before the change does not show the conversation unread again");
+        require(count("review")==2 && count("done:today")==2,"and the counts hold");
+        // The refresh started after the read carries it.
+        h.rows={make("t3","2026-10-14T07:00:00Z",true),make("t2","2026-10-14T12:00:00Z",false),make("d1","2026-10-14T10:00:00Z",false),make("t1","2026-10-14T08:00:00Z",false)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",1},{"held",0}}},{"done_months",QJsonArray{QJsonObject{{"month","today"},{"count",3}}}}};
+        h.holdLists=false; h.releaseLists();
+        await([&]{return !h.backend.m_loading && h.backend.m_localMail.isEmpty();},"Core's list confirms both and nothing is left to show over it");
+        require(ids()=="t2,t3,d1,t1" && row("t2")["pinned"].toBool() && row("t2")["section"]=="review" && row("t1")["section"]=="done:today","the list is as it was shown");
+        require(count("review")==2 && count("done:today")==2,"with the same counts");
+        // A conversation opened while another change is still saving shows
+        // read at once, and is marked read when that change is confirmed even
+        // though another conversation is open by then.
+        h.backend.m_mutatingConversation=true;
+        h.backend.openConversation("t3");
+        await([&]{return !row("t3")["unread"].toBool();},"read on opening shows while another change saves");
+        require(h.writes.isEmpty(),"and waits for that change");
+        h.backend.openConversation("d1");
+        h.backend.finishMailMutation(); h.backend.runAfterMailMutation();
+        const auto later=h.take(); require(later.request["params"].toObject()["id"]=="t3" && later.request["params"].toObject()["read"]==true,"it is marked read after the reader has moved on");
+        h.rows={make("t2","2026-10-14T12:00:00Z",false),make("d1","2026-10-14T10:00:00Z",false),make("t1","2026-10-14T08:00:00Z",false),make("t3","2026-10-14T07:00:00Z",false)};
+        h.summary={{"filtered_group_counts",QJsonObject{{"review",0},{"held",0}}},{"done_months",QJsonArray{QJsonObject{{"month","today"},{"count",4}}}}};
+        h.finish(later);
+        // The harness reports every thread unread, so the one now open is read too.
+        const auto last=h.take(); require(last.request["params"].toObject()["id"]=="d1","the open conversation follows");
+        h.finish(last);
+        await([&]{return !h.backend.m_loading && !h.backend.m_mutatingConversation && h.backend.m_localMail.isEmpty();},"Core's list confirms the held read");
+        require(!row("t3")["unread"].toBool() && row("t3")["section"]=="done:today" && count("review")==0,"and it is in Done");
+        qInfo()<<"Reading through To review moves each conversation at once, without a list reply.";
+    }
     // Opening unread mail shows it read at once, before the engine answers,
     // and Done pressed meanwhile is kept and sent next, not dropped. A user
     // write passes polling reads already queued.
@@ -3474,6 +3558,6 @@ public:
         require(boundary.of("2026-11-01T03:59:59Z")=="done:2026-10" && boundary.of("2026-11-01T04:00:00Z")=="done:today"
             && boundary.of("2026-11-02T04:59:59Z")=="done:today" && boundary.of("2026-11-02T05:00:00Z")=="done:week", "Today follows local midnight across the 25-hour daylight-saving day");
     }
-    static void run(){protectedMail();encryptedReply();keyFromMail();longThreadOpensAtUnread();reviewLeavesWhileOpen();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();refreshedInboxCards();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){protectedMail();encryptedReply();keyFromMail();longThreadOpensAtUnread();reviewLeavesWhileOpen();readMovesWithoutLists();explicitActionsFold();motionControls();scopedRefreshes();readerMemorySharing();photoFillsCircle();forwardLayout();pagingKeepsLength();refreshedRowMoves();refreshedInboxCards();headerCopies();replyAfterDiscard();replySources();actionsDuringRead();mutations();danglingViewReference();undoActions();remoteMail();controls();reviewTransitions();monthToggles();monthFoldFrames();listGeometry();longBodyPaints();searchReader();oneLineRows();searchOpensMonths();doneGroups();engineDrop();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));if(app.arguments().contains("--gpu")) { MailSelectionTest::photoFillsCircle(true); MailSelectionTest::folderSwitchSpeed(); MailSelectionTest::monthFoldFrames(); MailSelectionTest::listGeometry(); MailSelectionTest::longBodyPaints(); } else if(app.arguments().contains("--memory-check")) MailSelectionTest::memoryChecks(); else if(app.arguments().contains("--refresh-check")) MailSelectionTest::refreshChecks(); else MailSelectionTest::run();return 0;}
