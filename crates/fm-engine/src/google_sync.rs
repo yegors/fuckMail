@@ -1875,18 +1875,11 @@ async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
             Ok(mail::Step::Idle(delay)) => delay,
             Err(error) => {
                 progress_state(&progress, "labels", "paused", Some(&error.code));
-                // These errors won't clear on a quick retry; try again at the
-                // next regular refresh instead of stopping the worker.
-                let delay = retry_wait(&error, failures).or_else(|| {
-                    matches!(
-                        error.code.as_str(),
-                        "stale_revision" | "invalid_google_response" | "invalid_request"
-                    )
-                    .then_some(Duration::from_millis(labels::REFRESH_INTERVAL_MS))
-                });
-                let Some(delay) = delay else {
-                    return;
-                };
+                // An error a quick retry won't clear waits for Sync or the
+                // next regular refresh; ending the worker would leave labels
+                // stale until a restart.
+                let delay = retry_wait(&error, failures)
+                    .unwrap_or(Duration::from_millis(labels::REFRESH_INTERVAL_MS));
                 failures = failures.saturating_add(1).min(6);
                 delay
             }
@@ -1934,9 +1927,11 @@ async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Val
             }
             Err(error) => {
                 progress_state(&progress, "mail_mutations", "paused", Some(&error.code));
-                let Some(delay) = retry_wait(&error, failures) else {
-                    return;
-                };
+                // A lasting failure waits for Sync or a slow retry; ending the
+                // worker would hold Done and label changes back from Gmail
+                // until a restart. A rejected change is recorded by the store
+                // and never reaches here, so retrying never repeats a write.
+                let delay = retry_wait(&error, failures).unwrap_or(Duration::from_secs(300));
                 failures = failures.saturating_add(1).min(6);
                 delay
             }
@@ -2052,11 +2047,13 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
                     },
                     summary.first_failure.as_deref(),
                 );
+                // A store that can't be read now (say, during a dark wake) is
+                // retried at the slow poll rather than ending the worker.
                 let interval = match ctx.core_call(|store| store.google_sync_interval_ms()).await {
                     Ok(value) => Duration::from_millis(value),
                     Err(error) => {
                         progress_state(&progress, "calendar", "paused", Some(&error.code));
-                        return;
+                        Duration::from_secs(300)
                     }
                 };
                 if !wait_sync(
@@ -2081,9 +2078,9 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
                         .store(true, Ordering::Release);
                 }
                 progress_state(&progress, "calendar", "paused", Some(&error.code));
-                let Some(delay) = retry_wait(&error, failures) else {
-                    return;
-                };
+                // A lasting failure waits for Sync or a slow retry; ending the
+                // worker would leave the calendar stale until a restart.
+                let delay = retry_wait(&error, failures).unwrap_or(Duration::from_secs(300));
                 failures = failures.saturating_add(1).min(6);
                 if !wait_sync(&ctx, &mut refresh_signal, Some(delay)).await {
                     break;

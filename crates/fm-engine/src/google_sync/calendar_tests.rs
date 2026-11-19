@@ -433,6 +433,66 @@ async fn manual_refresh_fetches_calendar_delta_before_the_next_poll() {
 }
 
 #[tokio::test]
+async fn lasting_failure_pauses_calendar_until_sync_instead_of_ending_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let h = Harness::new(directory.path());
+    initial_inventory(&h).await;
+    // A reply that no quick retry fixes. The worker used to end here and the
+    // calendar stayed stale until the engine restarted.
+    h.http.push(
+        "syncToken=catalog-old",
+        200,
+        json!({"items":"not a list","nextSyncToken":"catalog-new"}),
+    );
+    let progress = Arc::new(Mutex::new(json!({})));
+    let worker = tokio::spawn(super::super::calendar_loop(
+        h.context.clone(),
+        progress.clone(),
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while progress.lock().unwrap()["calendar"] != "paused" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the failed pass must pause Calendar");
+    assert!(progress.lock().unwrap()["calendar_error"].is_string());
+    assert!(
+        !worker.is_finished(),
+        "a lasting failure must not end the worker"
+    );
+
+    h.http.push(
+        "syncToken=catalog-old",
+        200,
+        json!({"items":[],"nextSyncToken":"catalog-new"}),
+    );
+    h.http.push("calendarList/a", 200, entry("a", "owner"));
+    h.http.push(
+        "syncToken=events-old",
+        200,
+        events(
+            vec![event("remote-new", "Scheduled while paused")],
+            None,
+            Some("events-new"),
+        ),
+    );
+    h.context.refresh.send_modify(|n| *n += 1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        // The event is published before the pass reports itself done.
+        while h.view().await["total"] != 2 || progress.lock().unwrap()["calendar"] != "waiting" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Sync must resume a paused Calendar");
+    h.context.cancel.cancel();
+    worker.await.unwrap();
+    h.http.consumed();
+    h.close();
+}
+
+#[tokio::test]
 async fn readonly_grants_acquire_details_without_enabling_calendar_writes() {
     for granted in [
         vec!["https://www.googleapis.com/auth/calendar.readonly"],

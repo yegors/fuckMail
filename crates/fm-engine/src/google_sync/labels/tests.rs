@@ -26,6 +26,8 @@ struct Http {
     /// The send-as list Gmail answers, and how often it was read.
     send_as: Mutex<Value>,
     send_as_reads: AtomicUsize,
+    /// The status labels.list answers with; anything but 200 is a refusal.
+    list_status: Mutex<u16>,
 }
 impl HttpTransport for Http {
     fn execute<'a>(
@@ -78,6 +80,15 @@ impl HttpTransport for Http {
                 });
             }
             assert_eq!(request.method(), HttpMethod::Get);
+            let status = *self.list_status.lock().unwrap();
+            if status != 200 {
+                return Ok(HttpResponse {
+                    status,
+                    body: br#"{"error":{"errors":[{"reason":"forbidden"}]}}"#.to_vec(),
+                    retry_after_secs: None,
+                    etag: None,
+                });
+            }
             Ok(HttpResponse {
                 status: 200,
                 body: serde_json::to_vec(&*self.body.lock().unwrap()).unwrap(),
@@ -142,6 +153,7 @@ impl Harness {
                 json!({"sendAs":[{"sendAsEmail":"reader@example.test","displayName":"Reader Example","isPrimary":true}]}),
             ),
             send_as_reads: AtomicUsize::new(0),
+            list_status: Mutex::new(200),
         });
         let ctx = SyncContext::for_test(
             CoreBridge::new(sender, Arc::new(Semaphore::new(8))),
@@ -579,5 +591,38 @@ async fn name_sync_links_one_label_per_store_call_so_other_requests_are_answered
     assert!(categories
         .iter()
         .all(|row| row["provider_label_id"].is_string()));
+    h.close();
+}
+
+#[tokio::test]
+async fn lasting_failure_pauses_labels_until_sync_instead_of_ending_the_worker() {
+    let h = Harness::new();
+    *h.http.list_status.lock().unwrap() = 403;
+    let progress = Arc::new(Mutex::new(json!({})));
+    let worker = tokio::spawn(super::super::labels_loop(h.ctx.clone(), progress.clone()));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while progress.lock().unwrap()["labels"] != "paused" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a refused label read must pause the worker");
+    // The worker used to end here and labels stayed stale until a restart.
+    assert!(
+        !worker.is_finished(),
+        "a lasting failure must not end the worker"
+    );
+
+    *h.http.list_status.lock().unwrap() = 200;
+    h.ctx.refresh.send_modify(|n| *n += 1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.cached().await["available"] != true {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Sync must resume a paused label worker");
+    h.ctx.cancel.cancel();
+    worker.await.unwrap();
     h.close();
 }
