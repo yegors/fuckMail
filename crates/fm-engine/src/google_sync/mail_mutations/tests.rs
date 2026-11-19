@@ -26,6 +26,9 @@ struct State {
     history: u64,
     requests: Vec<(HttpMethod, String)>,
     post_result: PostResult,
+    /// The status the message-state read answers with; anything but 200 is
+    /// a refusal.
+    read_status: u16,
 }
 struct Http(Mutex<State>);
 impl HttpTransport for Http {
@@ -50,6 +53,14 @@ impl HttpTransport for Http {
             if request.method() == HttpMethod::Get {
                 assert!(suffix.contains("fields="));
                 assert!(!suffix.contains("format=raw"));
+                if state.read_status != 200 {
+                    return Ok(HttpResponse {
+                        status: state.read_status,
+                        body: br#"{"error":{"errors":[{"reason":"forbidden"}]}}"#.to_vec(),
+                        retry_after_secs: None,
+                        etag: None,
+                    });
+                }
                 return Ok(HttpResponse{status:200,body:serde_json::to_vec(&json!({"id":"first","threadId":"thread","historyId":state.history.to_string(),"labelIds":state.labels})).unwrap(),retry_after_secs:None,etag:None});
             }
             assert_eq!(request.method(), HttpMethod::Post);
@@ -177,6 +188,7 @@ impl Harness {
             history: 100,
             requests: vec![],
             post_result: outcome,
+            read_status: 200,
         })));
         let ctx = SyncContext::for_test(
             core.clone(),
@@ -449,5 +461,46 @@ async fn model_spam_label_moves_the_message_to_gmail_spam_and_drops_the_local_co
         .unwrap();
     assert_eq!(kept, 0, "confirmed Spam is not kept locally");
     drop(db);
+    h.close();
+}
+
+#[tokio::test]
+async fn lasting_failure_pauses_mail_actions_until_sync_instead_of_ending_the_worker() {
+    let h = Harness::new(PostResult::Success);
+    h.http.0.lock().unwrap().read_status = 403;
+    h.action("read", "flag", json!({"read":true})).await;
+    let progress = Arc::new(std::sync::Mutex::new(json!({})));
+    let worker = tokio::spawn(super::super::mail_mutation_loop(
+        h.ctx.clone(),
+        progress.clone(),
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while progress.lock().unwrap()["mail_mutations"] != "paused" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a refused readback must pause the worker");
+    // The worker used to end here, holding the change back from Gmail until
+    // a restart.
+    assert!(
+        !worker.is_finished(),
+        "a lasting failure must not end the worker"
+    );
+    assert_eq!(h.posts(), 0);
+
+    h.http.0.lock().unwrap().read_status = 200;
+    h.ctx.refresh.send_modify(|n| *n += 1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.posts() == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Sync must resume a paused mail-action worker");
+    h.ctx.cancel.cancel();
+    worker.await.unwrap();
+    assert_eq!(h.posts(), 1);
+    assert!(!h.http.0.lock().unwrap().labels.contains("UNREAD"));
     h.close();
 }

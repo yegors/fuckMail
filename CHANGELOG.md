@@ -2,6 +2,11 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-19
+
+- Calendar keeps syncing after an error it can't fix right away, such as the disk being briefly unavailable while the computer wakes. It used to stop for good until fuckMail restarted, so new events and invites never arrived. It now tries again on Sync or after five minutes, as mail does.
+- Labels and mail actions (Done, read, label changes) recover the same way. Labels try again on Sync or at their next ten-minute refresh, and mail actions on Sync or after five minutes, instead of stopping until fuckMail restarts.
+
 ## 2026-11-12
 
 - Mail read on opening, Done and Delay show at once, before the engine or Google answers. A conversation read from To review now leaves it for Done the moment the next one opens, with both counts right. In a large mailbox it used to stay until a list refresh finished, and reading on kept restarting that refresh, so several moved together later.
