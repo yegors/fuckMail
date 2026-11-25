@@ -1,5 +1,20 @@
 # Mail UI, reader and human composer
 
+## D228 — the reply floats over a long thread (Mail UI168)
+
+Replaces D177's rule that the reader shows the whole reply, and D150's and the composer note's rule that opening a reply scrolls until its footer shows.
+
+- **Opening.** Opening a reply or forward scrolls down only until the box's footer is 24 px inside the view, and never past the top of the message it answers (the draft's source, else the last message shown), less 16 px for its header. It still never scrolls up, and a new message doesn't scroll.
+- **Its place.** The reply keeps its whole height at the end of the thread, so the thread's length never changes as it folds.
+- **Folding.** When less of its place shows than its whole height, measured down to 24 px above the reader's bottom, the reply's foot stays 24 px above the bottom and its top follows the thread. Its title, From and Subject fold away first, from the top, fading as they go; then its body shortens, to half the reader's height for the whole form at least (four lines when that is less), never more than its whole height.
+- **Floating.** With less room than that, the folded reply lifts off its place and floats over the thread, its foot still 24 px above the bottom. Over its first 16 px it becomes a card: the reader's colour, opaque, 16 px wider each side, 14 px above and 12 below, 10 px corners, a hairline edge and a soft upward shadow. The card takes clicks and hover from the messages underneath; the wheel still scrolls the thread.
+- **Back in place.** Scrolling down, the card settles into its place and the reply unfolds, on the same frame as the scroll. Nothing animates on a timer.
+- **Following.** A folded or floating reply is not followed as it changes; the reader follows the reply's text only once it showed whole, as D177 describes.
+- New messages never fold or float.
+- **Body scroll bar.** Once the reply's body scrolls, its text and a forward's original keep 10 px clear of the scroll bar; they used to run under it.
+
+Consumers: `ReplyComposer` (`room`, `lift`, `folded`, `fullHeight`, `dockedHeight`), `MailView` (`replyRoom`, `replyDockY`, `answeredTop`, reply reveal and following); `gui-mail-selection`.
+
 ## D227 — Read, Done and Delay shown at once; one list refresh at a time (Mail UI167)
 
 Changes when the mail list shows a read, Done, Delay or filing, and how it refreshes. What the list shows once the engine has answered is unchanged.
