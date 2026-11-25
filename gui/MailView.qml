@@ -1259,13 +1259,13 @@ Item {
             lastHeight = height
             if (reply.visible && reply.height > 0) {
                 const bottom = Math.max(0, height - reader.height)
-                // Where the form settles, without its opening slide.
-                const top = reply.mapToItem(reader.contentItem,0,0).y - replyShift.y
                 // The thread scrolls down until the form's footer is in view
-                // with 24px to spare. A form already that far up stays put,
-                // and a new message does not scroll.
+                // with 24px to spare, but never past the start of the message
+                // being answered: the reply floats over the rest. A form
+                // already that far up stays put, and a new message does not
+                // scroll.
                 const target = reply.mode === "new" ? reader.contentY
-                    : Math.max(reader.contentY, Math.min(bottom, top + reply.height + 24 - reader.height))
+                    : Math.max(reader.contentY, Math.min(bottom, mail.replyTop + reply.fullHeight + 24 - reader.height, mail.answeredTop()))
                 if (revealScroll.running) {
                     if (Math.abs(revealScroll.to - target) > .5) { revealScroll.stop(); revealScroll.from = reader.contentY; revealScroll.to = target; revealScroll.start() }
                 } else if (Math.abs(reader.contentY - target) > .5) {
@@ -1279,6 +1279,31 @@ Item {
             }
             if (((stable >= 15 && mail.members.length > 0) || pass >= 190) && !revealScroll.running) stop()
         }
+        // Left floating over the message it answers, the reply isn't followed.
+        onRunningChanged: if (!running) mail.replyPinned = mail.replyWhollyShown()
+    }
+    // Where the reply sits at the end of the thread, in the reader's content.
+    readonly property real replyTop: readerColumn.y + replySlot.y
+    // A reply below a thread floats when its place is scrolled out of view.
+    readonly property bool replyFloats: replyOpen && reply.mode !== "new" && members.length > 0
+    // The height the reply has from its place down to 24px above the
+    // reader's bottom. Short of its whole height it folds; shorter than
+    // folded, it lifts off its place and floats there, over the thread.
+    readonly property real replyRoom: replyFloats ? reader.contentY + reader.height - 24 - replyTop : Infinity
+    // Folded, its foot stays exactly there; the layout rounds its height.
+    readonly property real replyDockY: replyFloats && reply.folded ? replyRoom - reply.height : 0
+    // The top of the message a reply answers, with room for its header:
+    // the draft's source, else the last message shown.
+    function answeredTop() {
+        const source = backend.draft.source_message_id || ""
+        let answered = null
+        for (let i = memberRepeater.count - 1; i >= 0; --i) {
+            const loader = memberRepeater.itemAt(i)
+            if (!loader || !loader.visible || !loader.item) continue
+            if (!answered) answered = loader
+            if (source && loader.rowData && loader.rowData.id === source) { answered = loader; break }
+        }
+        return answered ? readerColumn.y + answered.y - 16 : Infinity
     }
     // While the keyboard is in the reply, the form stays whole in view as it
     // grows with its text, as the reader changes size and as the thread above
@@ -1288,8 +1313,8 @@ Item {
     property bool replyPinned: false
     property bool replyAdjusting: false
     function replyBounds() {
-        const top = reply.mapToItem(reader.contentItem, 0, 0).y - replyShift.y - 12
-        return {top: top, bottom: top + 12 + reply.height + 24}
+        const top = replyTop - 12
+        return {top: top, bottom: top + 12 + replySlot.height + 24}
     }
     function replyWhollyShown() {
         if (!replyOpen || !reply.visible || reply.height <= 0) return false
@@ -1299,7 +1324,9 @@ Item {
     function keepReplyInView(writing) {
         if (!replyOpen || !reply.visible || reply.height <= 0 || replyReveal.running || revealScroll.running || reader.moving || !replyHasFocus()) return
         const box = replyBounds(), top = box.top, bottom = box.bottom
-        if (!(replyPinned || (writing && top < reader.contentY + reader.height && bottom > reader.contentY))) return
+        // A folded or floating reply is already in view; it is followed only
+        // once it was whole.
+        if (!(replyPinned || (writing && !reply.folded && top < reader.contentY + reader.height && bottom > reader.contentY))) return
         replyPinned = true
         let target = reader.contentY
         if (bottom > target + reader.height) target = bottom - reader.height
@@ -2814,31 +2841,42 @@ Item {
                                 }
                             }
                         }
-                        ReplyComposer {
-                            id: reply
-                            objectName: "replyPanel"
+                        // The reply's place at the end of the thread keeps its whole
+                        // height, so the thread's length never changes as it folds.
+                        Item {
+                            id: replySlot
                             Layout.fillWidth: true; Layout.topMargin: visible ? (mail.members.length ? 12 : 24) : 0
                             visible: mail.replyOpen
-                            // Opening, it fades in and settles 10px up over 200 ms.
-                            transform: Translate { id: replyShift }
-                            onVisibleChanged: if (visible) replyOpening.restart()
-                            ParallelAnimation {
-                                id: replyOpening
-                                NumberAnimation { target: reply; property: "opacity"; from: 0; to: 1; duration: Theme.ms(200); easing.type: Easing.OutCubic }
-                                NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic }
-                            }
-                            minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
-                            // The whole form fits in the reader, with its 12 px above and 24 below.
-                            availableHeight: reader.height - 36
+                            implicitHeight: reply.fullHeight
                             onHeightChanged: mail.keepReplyInView(true)
-                            onDismissed: mail.setReplyOpen(false)
-                            onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
-                            onAllMailWith: function(email) { if (email) backend.query = email }
-                            onContactHovered: function(email, name, anchor) { senderCard.hoverSender(email, name, anchor) }
-                            onContactLeft: function(anchor) { senderCard.leaveSender(anchor) }
-                            onContactShown: function(email, name, anchor) { senderCard.showSender(email, name, anchor) }
-                            forwardedView: Component {
-                                HtmlMessageBody { message: reply.forwardedMessage || ({}); account: backend.account; conversation: backend.selectedId; active: reply.visible }
+                            ReplyComposer {
+                                id: reply
+                                objectName: "replyPanel"
+                                width: parent.width; height: implicitHeight
+                                visible: mail.replyOpen
+                                room: mail.replyRoom
+                                lift: Math.min(1, -replyDock.y / 16)
+                                // Opening, it fades in and settles 10px up over 200 ms.
+                                // Scrolled away from its place, it floats over the thread.
+                                transform: [Translate { id: replyShift }, Translate { id: replyDock; y: mail.replyDockY }]
+                                onVisibleChanged: if (visible) replyOpening.restart()
+                                ParallelAnimation {
+                                    id: replyOpening
+                                    NumberAnimation { target: reply; property: "opacity"; from: 0; to: 1; duration: Theme.ms(200); easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: replyShift; property: "y"; from: 10; to: 0; duration: Theme.ms(200); easing.type: Easing.OutCubic }
+                                }
+                                minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
+                                // The whole form fits in the reader, with its 12 px above and 24 below.
+                                availableHeight: reader.height - 36
+                                onDismissed: mail.setReplyOpen(false)
+                                onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
+                                onAllMailWith: function(email) { if (email) backend.query = email }
+                                onContactHovered: function(email, name, anchor) { senderCard.hoverSender(email, name, anchor) }
+                                onContactLeft: function(anchor) { senderCard.leaveSender(anchor) }
+                                onContactShown: function(email, name, anchor) { senderCard.showSender(email, name, anchor) }
+                                forwardedView: Component {
+                                    HtmlMessageBody { message: reply.forwardedMessage || ({}); account: backend.account; conversation: backend.selectedId; active: reply.visible }
+                                }
                             }
                         }
                     }

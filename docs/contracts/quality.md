@@ -1,5 +1,11 @@
 # Quality, performance and release acceptance
 
+## D228 — floating reply checks (Quality105)
+
+Mail UI168; no engine, schema, fixture or protocol change.
+
+- `gui-mail-selection`: with a last message far longer than a 640 px window, Reply opened from the top of the thread keeps that message's top 0–40 px into the reader, with the reply floating whole. Scrolled from the top to the end in 7 px steps, the reply shows whole at every step; folded or floating, its foot is within 1 px of 24 px above the reader's bottom, and its height is within 1.5 px of the room it is given on the same step. At the end it rests unfolded in its place. The existing check that a reply under a short last message opens with its footer 24 px inside the view still passes.
+
 ## D227 — instant read, Done and Delay; list refresh and model retry checks (Quality104)
 
 Mail UI167, Core108, Local assistance34; no schema, fixture or protocol change.

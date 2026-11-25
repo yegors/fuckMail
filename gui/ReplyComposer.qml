@@ -3,11 +3,14 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtQuick.Shapes
+import QtQuick.Effects
 
 // The composer sits inline in the reading pane. A new message fills at least
 // max(420px, half the window) and its body grows; replies start smaller. The
 // footer holds Send, Attach, one status line and Discard. Drafts sync with
-// Gmail silently; only a real problem is shown.
+// Gmail silently; only a real problem is shown. Below a thread, MailView may
+// give a reply less room than it wants, to float it over the messages: it
+// then folds away its title, From and Subject and shortens its body.
 Item {
     id: root
     signal dismissed()
@@ -26,10 +29,33 @@ Item {
     // The height the form can show in; its body stops growing where the
     // whole form, footer included, would no longer fit. 0 sets no limit.
     property real availableHeight: 0
-    // Everything but the body: the title, fields and footer. Measured once a
-    // layout settles; reading it in the body's own size would loop the layout.
+    // Everything but the body and the rows that fold: the To field, format
+    // bar and footer. Measured once a layout settles; reading it in the
+    // body's own size would loop the layout.
     property real chromeHeight: 0
-    function measureChrome() { chromeHeight = contents.height - composerScroll.height }
+    function measureChrome() { chromeHeight = contents.height - composerScroll.height - headingFold.height - subjectFold.height }
+    // The height the reply has where it is shown. Short of its whole height
+    // it folds its title, From and Subject away, then shortens its body, to
+    // dockedHeight at least. Infinity: it never folds.
+    property real room: Infinity
+    // How far it is lifted off the thread, 0 to 1: its card and shadow.
+    property real lift: 0
+    readonly property real bodyMinimum: mode === "new" ? 96 : 140
+    // Floating, the form takes half the reader, its body never under four
+    // lines nor over its whole height.
+    readonly property real dockedBody: Math.min(fullBody, Math.max(Math.ceil(bodyEditor.topPadding + 8 + bodyMetrics.lineSpacing * 4),
+        Math.round(availableHeight * .5) - chromeHeight))
+    readonly property real foldingHeight: headingFold.implicitHeight + subjectFold.implicitHeight
+    readonly property real fullBody: Math.max(bodyMinimum, Math.min(Math.max(400, (minimumHeight || 560) - 200),
+        availableHeight > 0 ? availableHeight - chromeHeight - foldingHeight : Infinity, bodyEditor.implicitHeight))
+    readonly property real wholeHeight: Math.max(minimumHeight, chromeHeight + foldingHeight + fullBody) + (recent.visible ? recent.implicitHeight + 28 : 0)
+    readonly property bool folded: room < wholeHeight - .5
+    readonly property real fold: folded ? Math.min(1, (wholeHeight - room) / Math.max(1, foldingHeight)) : 0
+    readonly property real dockedHeight: chromeHeight + dockedBody
+    // The height it takes in the thread, folded or not. Where it can fold this
+    // is reckoned, never read back from its layout: unfolding, the layout
+    // catches up a frame later, and the thread must not shrink meanwhile.
+    readonly property real fullHeight: isFinite(room) ? wholeHeight : implicitHeight
     readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property bool readOnly: backend.draftReadOnly || backend.accountArchived || backend.unsavedAccountBuffer
@@ -184,6 +210,32 @@ Item {
         onImagePasted: image => backend.attachPastedImage(image, backend.account, backend.draft.draft_id || "")
         onFilesPasted: files => backend.attachPastedFiles(files, backend.account, backend.draft.draft_id || "")
     }
+    FontMetrics { id: bodyMetrics; font: bodyEditor.font }
+    // Lifted over the thread, the reply is a card: opaque, so the messages
+    // under it never show through, with an edge and a shadow that grow as it
+    // lifts. Inline it matches the reader and shows nothing.
+    Rectangle {
+        id: card
+        objectName: "replyCard"
+        visible: root.lift > 0
+        readonly property real inset: 16 * root.lift
+        x: -inset; y: -14 * root.lift; z: -1
+        width: root.width + inset * 2; height: root.height + 14 * root.lift + 12 * root.lift
+        radius: 10 * root.lift
+        color: Theme.reader
+        border.width: root.lift > 0 ? 1 : 0
+        border.color: Theme.withAlpha(Theme.controlBorder, Theme.controlBorder.a * root.lift)
+        layer.enabled: root.lift > 0 && GraphicsInfo.api !== GraphicsInfo.Software
+        layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.5); shadowOpacity: root.lift; shadowBlur: .7; shadowVerticalOffset: -4 }
+        // The card keeps the pointer from the messages underneath; the
+        // wheel still scrolls the thread.
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.lift > 0
+            acceptedButtons: Qt.AllButtons; hoverEnabled: true
+            onWheel: wheel => wheel.accepted = false
+        }
+    }
     Item {
         id: composer
         width: parent.width
@@ -231,75 +283,90 @@ Item {
             anchors { fill: parent; leftMargin: 18 }
             spacing: 0
             onHeightChanged: Qt.callLater(root.measureChrome)
-            // What is being written, above the form in every mode.
-            RowLayout {
-                objectName: "composerTitle"
-                Layout.fillWidth: true; Layout.bottomMargin: 14; spacing: 10
-                Rectangle {
-                    implicitWidth: 28; implicitHeight: 28; radius: 5; color: Theme.withAlpha(Theme.amber, .12)
-                    FmIcon { anchors.centerIn: parent; name: ({new: "edit", reply: "reply", reply_all: "replyAll", forward: "forward"})[root.mode] || "reply"; size: 14; color: Theme.amber }
-                }
-                Text {
-                    objectName: "composerTitleText"
-                    Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
-                    text: ({new: "Compose Email", reply: "Reply", reply_all: "Reply All", forward: "Forward"})[root.mode] || "Reply"
-                    color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium
-                    font.letterSpacing: 0; lineHeight: 1.1
-                }
-            }
-            Text {
-                objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
-                Layout.fillWidth: true; Layout.bottomMargin: 12; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                text: backend.unsavedAccountBuffer ? backend.draftStatus : "Saved account archive · selectable preview. Editing, sending and sync are off."
-                color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
-            }
-            RowLayout {
-                visible: !root.readOnly
-                Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-                Text { text: "From"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                Button {
-                    id: fromButton; objectName: "draftFromAccount"
-                    Layout.fillWidth: true; Layout.maximumWidth: contentItem.implicitWidth + 20
-                    implicitHeight: 30; leftPadding: 0; rightPadding: 4
-                    enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
-                    Accessible.name: "From account, " + (backend.draft.from || "")
-                    onClicked: fromMenu.open()
-                    background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 5; border.color: fromButton.visualFocus ? Theme.accent : "transparent" }
-                    contentItem: RowLayout {
-                        spacing: 6
-                        Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                        FmIcon { name: "chevronDown"; size: 10; color: Theme.inkAlpha(.4); visible: backend.accounts.length > 1 }
-                    }
-                    Menu {
-                        id: fromMenu; objectName: "draftFromMenu"; y: fromButton.height
-                        padding: 5
-                        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-                        width: Math.min(420, root.width - 30)
-                        Instantiator {
-                            model: backend.accounts
-                            delegate: MenuItem {
-                                id: fromOption
-                                required property var modelData
-                                implicitHeight: 36; leftPadding: 8; rightPadding: 8
-                                text: (modelData.name || modelData.email || "") + (modelData.email ? " · " + modelData.email : "")
-                                checkable: true; checked: modelData.id === backend.account
-                                indicator: null
-                                background: Rectangle { color: fromOption.highlighted || fromOption.hovered ? Theme.hover : "transparent"; radius: 5 }
-                                contentItem: RowLayout {
-                                    spacing: 8
-                                    FmIcon { name: "check"; size: 14; color: Theme.text; opacity: fromOption.checked ? 1 : 0 }
-                                    Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                                }
-                                onTriggered: backend.changeDraftAccount(modelData.id)
-                            }
-                            onObjectAdded: (index, object) => fromMenu.insertItem(index, object)
-                            onObjectRemoved: (index, object) => fromMenu.removeItem(object)
+            // The title and From fold away, from the top, while the reply floats.
+            Item {
+                id: headingFold
+                Layout.fillWidth: true
+                implicitHeight: heading.implicitHeight
+                Layout.preferredHeight: implicitHeight * (1 - root.fold)
+                clip: root.fold > 0
+                opacity: 1 - root.fold
+                onHeightChanged: Qt.callLater(root.measureChrome)
+                ColumnLayout {
+                    id: heading
+                    width: parent.width; y: parent.height - implicitHeight
+                    spacing: 0
+                    // What is being written, above the form in every mode.
+                    RowLayout {
+                        objectName: "composerTitle"
+                        Layout.fillWidth: true; Layout.bottomMargin: 14; spacing: 10
+                        Rectangle {
+                            implicitWidth: 28; implicitHeight: 28; radius: 5; color: Theme.withAlpha(Theme.amber, .12)
+                            FmIcon { anchors.centerIn: parent; name: ({new: "edit", reply: "reply", reply_all: "replyAll", forward: "forward"})[root.mode] || "reply"; size: 14; color: Theme.amber }
+                        }
+                        Text {
+                            objectName: "composerTitleText"
+                            Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                            text: ({new: "Compose Email", reply: "Reply", reply_all: "Reply All", forward: "Forward"})[root.mode] || "Reply"
+                            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(19); font.weight: Font.Medium
+                            font.letterSpacing: 0; lineHeight: 1.1
                         }
                     }
+                    Text {
+                        objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
+                        Layout.fillWidth: true; Layout.bottomMargin: 12; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        text: backend.unsavedAccountBuffer ? backend.draftStatus : "Saved account archive · selectable preview. Editing, sending and sync are off."
+                        color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                    }
+                    RowLayout {
+                        visible: !root.readOnly
+                        Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
+                        Text { text: "From"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                        Button {
+                            id: fromButton; objectName: "draftFromAccount"
+                            Layout.fillWidth: true; Layout.maximumWidth: contentItem.implicitWidth + 20
+                            implicitHeight: 30; leftPadding: 0; rightPadding: 4
+                            enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
+                            Accessible.name: "From account, " + (backend.draft.from || "")
+                            onClicked: fromMenu.open()
+                            background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 5; border.color: fromButton.visualFocus ? Theme.accent : "transparent" }
+                            contentItem: RowLayout {
+                                spacing: 6
+                                Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                                FmIcon { name: "chevronDown"; size: 10; color: Theme.inkAlpha(.4); visible: backend.accounts.length > 1 }
+                            }
+                            Menu {
+                                id: fromMenu; objectName: "draftFromMenu"; y: fromButton.height
+                                padding: 5
+                                background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+                                width: Math.min(420, root.width - 30)
+                                Instantiator {
+                                    model: backend.accounts
+                                    delegate: MenuItem {
+                                        id: fromOption
+                                        required property var modelData
+                                        implicitHeight: 36; leftPadding: 8; rightPadding: 8
+                                        text: (modelData.name || modelData.email || "") + (modelData.email ? " · " + modelData.email : "")
+                                        checkable: true; checked: modelData.id === backend.account
+                                        indicator: null
+                                        background: Rectangle { color: fromOption.highlighted || fromOption.hovered ? Theme.hover : "transparent"; radius: 5 }
+                                        contentItem: RowLayout {
+                                            spacing: 8
+                                            FmIcon { name: "check"; size: 14; color: Theme.text; opacity: fromOption.checked ? 1 : 0 }
+                                            Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                                        }
+                                        onTriggered: backend.changeDraftAccount(modelData.id)
+                                    }
+                                    onObjectAdded: (index, object) => fromMenu.insertItem(index, object)
+                                    onObjectRemoved: (index, object) => fromMenu.removeItem(object)
+                                }
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Item { visible: !root.readOnly; Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
                 }
-                Item { Layout.fillWidth: true }
             }
-            Item { visible: !root.readOnly; Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
                 visible: (backend.draftTransfer.status || "").length > 0
@@ -314,22 +381,33 @@ Item {
             RecipientField { id: toField; visible: !root.readOnly; Layout.fillWidth: true; label: "To"; fieldName: "to_recipients"; showLinks: true; onCcRequested: root.ccOpen=true; onBccRequested: root.bccOpen=true }
             RecipientField { id: ccField; Layout.fillWidth: true; label: "Cc"; fieldName: "cc_recipients"; visible: !root.readOnly && (root.ccOpen || (backend.draft.cc_recipients||[]).length>0 || (backend.recipientInputs.cc_recipients||"").length>0) }
             RecipientField { id: bccField; Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 || (backend.recipientInputs.bcc_recipients||"").length>0) }
-            RowLayout {
-                Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-                Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
-                TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; background: Item {} readOnly: root.readOnly || backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
+            // Subject folds away too.
+            Item {
+                id: subjectFold
+                Layout.fillWidth: true
+                implicitHeight: 38
+                Layout.preferredHeight: implicitHeight * (1 - root.fold)
+                clip: root.fold > 0
+                opacity: 1 - root.fold
+                onHeightChanged: Qt.callLater(root.measureChrome)
+                RowLayout {
+                    id: subjectRow
+                    width: parent.width; height: 38; y: parent.height - height; spacing: 10
+                    Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                    TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; background: Item {} readOnly: root.readOnly || backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
+                }
             }
             Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.bg6 } }
             ScrollView {
                 id: composerScroll
                 objectName: "replyBodyScroll"
                 onHeightChanged: Qt.callLater(root.measureChrome)
-                ScrollBar.vertical: FmScrollBar { policy: bodyEditor.implicitHeight > composerScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+                ScrollBar.vertical: FmScrollBar { id: bodyBar; policy: bodyEditor.implicitHeight > composerScroll.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                 Layout.fillWidth: true; Layout.fillHeight: true
                 // The body grows with its text; past the cap it scrolls inside.
-                Layout.minimumHeight: root.mode === "new" ? 96 : 140
-                Layout.preferredHeight: Math.max(Layout.minimumHeight, Math.min(Math.max(400, (root.minimumHeight || 560) - 200),
-                    root.availableHeight > 0 ? root.availableHeight - root.chromeHeight : Infinity, bodyEditor.implicitHeight))
+                // Folded, it takes the room left, down to four lines.
+                Layout.minimumHeight: root.folded ? root.dockedBody : root.bodyMinimum
+                Layout.preferredHeight: root.folded ? Math.max(root.dockedBody, Math.min(root.fullBody, root.room - root.chromeHeight - root.foldingHeight * (1 - root.fold))) : root.fullBody
                 contentWidth: availableWidth
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -352,7 +430,8 @@ Item {
                     selectedTextColor: Theme.selectedText
                     font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) }
                     background: null
-                    padding: 0; leftPadding: 0; rightPadding: 0; topPadding: 16; bottomPadding: forwarded.visible ? forwarded.height + 28 : 8
+                    // Text stays clear of the scroll bar once the body scrolls.
+                    padding: 0; leftPadding: 0; rightPadding: bodyBar.visible ? bodyBar.width + 10 : 0; topPadding: 16; bottomPadding: forwarded.visible ? forwarded.height + 28 : 8
                     Accessible.name: root.draftTitle+" body"
                     // ⌘B, ⌘I and ⌘U style the selection or what is typed next;
                     // ⌘⇧8 and ⌘⇧7 make bulleted and numbered lists.
@@ -404,7 +483,7 @@ Item {
                         id: forwarded
                         objectName: "forwardedOriginal"
                         visible: root.forwardsOriginal
-                        y: bodyEditor.topPadding + bodyEditor.contentHeight + 20; width: bodyEditor.width
+                        y: bodyEditor.topPadding + bodyEditor.contentHeight + 20; width: bodyEditor.width - bodyEditor.rightPadding
                         spacing: 12
                         Text {
                             objectName: "forwardedOriginalHeader"

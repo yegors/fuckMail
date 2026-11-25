@@ -1345,6 +1345,48 @@ class MailSelectionTest {
             find(window->contentItem(),"conversationList")->forceActiveFocus();
             layout.restart();while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         }
+        {
+            // A reply under a long message keeps that message's start in view
+            // and floats over the rest. Scrolled anywhere, it shows whole: as
+            // its place leaves view it folds, then floats 24px above the
+            // reader's bottom, laid out on every frame.
+            auto *reader=find(window->contentItem(),"reader"); require(reader,"reader");
+            auto settle=[&](int ms){layout.restart();while(layout.elapsed()<ms)QCoreApplication::processEvents(QEventLoop::AllEvents,5);};
+            const auto thread=h.backend.m_conversation;
+            const int windowHeight=window->height(); window->setHeight(640);
+            auto longer=thread; auto messages=longer["messages"].toList(); auto last=messages.last().toMap();
+            last["text"]=QString("A long message that runs well past the reader.\n").repeated(60); messages.last()=last; longer["messages"]=messages;
+            h.backend.m_conversation=longer; emit h.backend.conversationChanged(); settle(150);
+            reader->setProperty("contentY",0);
+            QMetaObject::invokeMethod(mail,"openReply");
+            auto *reveal=window->findChild<QObject*>("replyReveal"); require(reveal,"reply reveal");
+            settle(60); await([&]{return !reveal->property("running").toBool();},"the reply finishes coming into view");
+            auto *panel=find(window->contentItem(),"replyPanel"); require(panel && panel->isVisible() && panel->height()>0,"Reply opens the composer");
+            auto *answered=find(window->contentItem(),"messageMember_last"); require(answered,"the answered message");
+            const auto answeredTop=answered->mapToItem(reader,QPointF(0,0)).y();
+            if (answeredTop<0 || answeredTop>40) qWarning()<<"answered message at"<<answeredTop;
+            require(answeredTop>=0 && answeredTop<=40,"Reply keeps the start of the message it answers in view");
+            require(panel->property("lift").toDouble()>.99,"the reply floats over the long message");
+            const auto bottom=reader->property("contentHeight").toDouble()-reader->height();
+            require(bottom>400,"the thread runs well past the reader");
+            for (double y=0; y<=bottom+.5; y+=7) {
+                reader->setProperty("contentY",qMin(y,bottom)); settle(12);
+                const auto top=panel->mapToItem(reader,QPointF(0,0)).y(), end=panel->mapToItem(reader,QPointF(0,panel->height())).y();
+                const bool folded=panel->property("folded").toBool();
+                const auto room=panel->property("room").toDouble(), whole=panel->property("wholeHeight").toDouble(), docked=panel->property("dockedHeight").toDouble();
+                const auto expected=folded ? qMax(docked,room) : whole;
+                if (top<-1 || end>reader->height()+1 || (folded && qAbs(end-(reader->height()-24))>=1) || qAbs(panel->height()-expected)>=1.5)
+                    qWarning()<<"reply at contentY"<<reader->property("contentY")<<"spans"<<top<<end<<"height"<<panel->height()<<"expected"<<expected<<"folded"<<folded;
+                require(top>=-1 && end<=reader->height()+1,"the whole reply shows wherever the thread is scrolled");
+                require(!folded || qAbs(end-(reader->height()-24))<1,"a folded or floating reply sits 24px above the reader's bottom");
+                require(qAbs(panel->height()-expected)<1.5,"the reply is laid out for the room it has on the same frame");
+            }
+            require(!panel->property("folded").toBool() && panel->property("lift").toDouble()==0,"at the end of the thread the reply rests in its place");
+            QMetaObject::invokeMethod(mail,"setReplyOpen",Q_ARG(QVariant,false));
+            h.backend.m_conversation=thread; emit h.backend.conversationChanged(); window->setHeight(windowHeight);
+            find(window->contentItem(),"conversationList")->forceActiveFocus();
+            settle(100);
+        }
         auto popup=[&]()->QObject* {for(auto object:window->findChildren<QObject *>("senderCard"))if(object->property("opened").toBool())return object;return nullptr;};
         auto move=[&](const QPointF &p) {QMouseEvent event(QEvent::MouseMove,p,window->mapToGlobal(p.toPoint()),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);};
         require(!find(window->contentItem(),"participantAvatar_self"),"thread summary lists the other people, not the user");

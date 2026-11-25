@@ -2,6 +2,12 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-24
+
+- Opening a reply or forward under a long email no longer scrolls the email's start out of view. The thread stops at the top of the message being answered, and the reply floats over it as a card, pinned to the bottom of the reader.
+- Scrolling a thread with a reply open keeps the reply in view: as its place scrolls away it folds its title, From and Subject and shortens to half the reader, then floats over the thread. Scrolling back down settles it into place.
+- A long reply's text no longer runs under the box's scroll bar.
+
 ## 2026-11-19
 
 - Calendar keeps syncing after an error it can't fix right away, such as the disk being briefly unavailable while the computer wakes. It used to stop for good until fuckMail restarted, so new events and invites never arrived. It now tries again on Sync or after five minutes, as mail does.
