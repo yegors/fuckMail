@@ -2877,6 +2877,10 @@ Item {
                                 forwardedView: Component {
                                     HtmlMessageBody { message: reply.forwardedMessage || ({}); account: backend.account; conversation: backend.selectedId; active: reply.visible }
                                 }
+                                // A reply quotes the whole message, history and all.
+                                quotedView: Component {
+                                    HtmlMessageBody { message: reply.forwardedMessage || ({}); account: backend.account; conversation: backend.selectedId; active: reply.visible; quotes: true }
+                                }
                             }
                         }
                     }

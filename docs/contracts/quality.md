@@ -1,5 +1,12 @@
 # Quality, performance and release acceptance
 
+## D229 — reply quote checks (Quality106)
+
+Core109, Mail UI169, CLI69; no schema, fixture or protocol change.
+
+- `fm-core` `replies_quote_the_message_they_answer_unless_left_out`: a reply to an HTML message has an empty editable body; its sent MIME puts the author's words first, then the attribution and the original's HTML in a `gmail_quote` blockquote with its inline image, and the original's text quoted in the plain part, which `reply_contribution` still reduces to the author's words. A reply all to a plain message quotes its text in both parts. `quote_original: false` sends the author's words alone and holds across a later save until `true` removes it; a non-boolean is `invalid_request`. A reply to encrypted mail quotes nothing.
+- `gui-mail-selection` (`replySources`): a forward has no quote row; a reply's row names the sender, "···" unfolds the preview, **Leave out** saves `quote_original: false` and hides the quote, and **Quote it** removes it again.
+
 ## D228 — floating reply checks (Quality105)
 
 Mail UI168; no engine, schema, fixture or protocol change.

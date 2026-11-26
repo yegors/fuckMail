@@ -2,6 +2,12 @@
 
 Notable changes to fuckMail. There are no tagged releases yet; everything is unreleased.
 
+## 2026-11-26
+
+- Replies and reply alls quote the email they answer below your words, under "On …, … wrote:", as Gmail and Outlook do, so people whose mail app has no threads can see what you're answering. fuckMail's own thread view still shows only your words.
+- The composer shows the quote folded under "···" above the format bar; click to see it, or **Leave out** to send without it. Replies to encrypted mail never quote it.
+- `fm draft save --quote on|off` sets the same choice from the CLI.
+
 ## 2026-11-24
 
 - Opening a reply or forward under a long email no longer scrolls the email's start out of view. The thread stops at the top of the message being answered, and the reply floats over it as a card, pinned to the bottom of the reader.

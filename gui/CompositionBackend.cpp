@@ -382,6 +382,14 @@ void MailBackend::setDraftProtection(bool sign, bool encrypt) {
     emit draftChanged(); m_draftTimer.start();
 }
 
+void MailBackend::setDraftQuote(bool quote) {
+    if (draftLocked() || m_draft.isEmpty()) return;
+    if (m_draft.value("quote_original", true).toBool() == quote) return;
+    m_draft["quote_original"] = quote;
+    m_draftDirty = true; m_draftStatus = "Saving…";
+    emit draftChanged(); m_draftTimer.start();
+}
+
 bool MailBackend::draftHasContent() const {
     if (m_draft.isEmpty()) return false;
     for (const auto field : {"to_recipients", "cc_recipients", "bcc_recipients", "attachment_ids"})

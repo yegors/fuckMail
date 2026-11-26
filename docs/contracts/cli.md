@@ -1,5 +1,11 @@
 # CLI and external agent interface
 
+## D229 — reply quote (CLI69)
+
+- `fm draft save --quote on|off` passes `quote_original` (Core109): whether a reply quotes the message it answers when sent. Left out, the saved choice stays; a reply quotes by default.
+
+Consumers: Core109.
+
 ## D220 — From name (CLI68)
 
 - `fm account-update --from-name NAME` sets the name mail is sent under; `--from-name ""` follows the Gmail send-as name. Left out, the saved one stays.

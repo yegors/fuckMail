@@ -1,5 +1,14 @@
 # Core and storage
 
+## D229 — replies quote the message they answer (Core109)
+
+- `composition::compose_prepared`, which builds the MIME for sending, Gmail draft upload and capture, now quotes the answered message under a `reply` or `reply_all`: it reads the verified source (`source_hash`) again and adds, after the author's words, "On Fri, 11 Sep 2026 at 15:00, Name <address> wrote:" (the original's Date in its sender's own time) and the original. The HTML part gets a Gmail `gmail_quote` block with the original's HTML (`fm_mail::html_view::html_part`, at most 512 KiB; its text otherwise) in a `blockquote`, and the inline images it shows as `cid:` parts. The plain part gets the original's whole text with `> ` on every line, `>` on blank ones, at most 256 KiB. The author's text becomes HTML when they used no formatting, so such a reply is now multipart/alternative.
+- Nothing is quoted when the draft's routing holds `quote_original: false`, when it `replies_to_encrypted`, or when the source is encrypted, missing or unreadable; the reply then goes with the author's words alone rather than failing.
+- The quote is never in the draft's editable `body`. The stored reading copy and the reader still show only the author's words: `reply_contribution` and the HTML view drop the attribution and the quote.
+- `draft_save` takes an optional boolean `quote_original`; any other value is `invalid_request`. `false` stores `quote_original: false` in the routing JSON, `true` removes it, and leaving it out keeps the saved choice. A discard starts the draft over quoting. Changing it counts as an authored change for Gmail draft upload.
+
+Consumers: Mail UI169, CLI69, Gmail send and draft upload. No schema, fixture or protocol-version change.
+
 ## D227 — ordered conversation lists kept between pages (Core108)
 
 - `conversations` for a grouped list with no text, sender, date or attachment filter and no `recent` order keeps the list's order in memory once it has been matched, counted, folded and sorted: the conversation ids in order, `filtered_conversation_count`, the three group counts and the Done month counts. Other pages of the same list (any `offset` or `cursor`) are slices of that order; they no longer read every conversation's state again.

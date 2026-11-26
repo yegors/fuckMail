@@ -186,6 +186,23 @@ Item {
         return null
     }
     property Component forwardedView: null
+    // A reply quotes the message it answers when sent, under "On …, … wrote:",
+    // as mail clients without threads expect. It shows folded under the
+    // author's words; the author can leave it out. Never for encrypted mail.
+    readonly property bool quotesOriginal: (mode === "reply" || mode === "reply_all") && !!backend.draft.source_message_id && backend.draft.replies_to_encrypted !== true
+    readonly property bool quoteIncluded: backend.draft.quote_original !== false
+    property bool quoteShown: false
+    // Unfolded, the body scrolls to the quote's start.
+    function showQuote(shown) {
+        quoteShown = shown
+        if (shown) Qt.callLater(function() {
+            const view = composerScroll.contentItem
+            view.contentY = Math.max(0, Math.min(view.contentHeight - view.height, quoteBlock.y - 12))
+        })
+    }
+    readonly property string quotedName: forwardedMessage ? String(forwardedMessage.sender_name || forwardedMessage.sender_email || "") : ""
+    // The quoted message as HTML, from MailView; its text when it has none.
+    property Component quotedView: null
     implicitHeight: Math.max(minimumHeight, composer.implicitHeight) + (recent.visible ? recent.implicitHeight + 28 : 0)
     Accessible.name: draftTitle
     Component.onCompleted: {
@@ -431,7 +448,7 @@ Item {
                     font { family: Theme.fontFamily; pointSize: Theme.fontPoints(14) }
                     background: null
                     // Text stays clear of the scroll bar once the body scrolls.
-                    padding: 0; leftPadding: 0; rightPadding: bodyBar.visible ? bodyBar.width + 10 : 0; topPadding: 16; bottomPadding: forwarded.visible ? forwarded.height + 28 : 8
+                    padding: 0; leftPadding: 0; rightPadding: bodyBar.visible ? bodyBar.width + 10 : 0; topPadding: 16; bottomPadding: forwarded.visible ? forwarded.height + 28 : quoteBlock.visible ? quoteBlock.height + 24 : 8
                     Accessible.name: root.draftTitle+" body"
                     // ⌘B, ⌘I and ⌘U style the selection or what is typed next;
                     // ⌘⇧8 and ⌘⇧7 make bulleted and numbered lists.
@@ -499,6 +516,44 @@ Item {
                             width: parent.width
                             active: forwarded.visible && !!root.forwardedMessage && root.forwardedView !== null
                             sourceComponent: root.forwardedView
+                        }
+                    }
+                    // The quote, unfolded by "···" under the body: what goes out, read-only.
+                    Column {
+                        id: quoteBlock
+                        objectName: "replyQuote"
+                        visible: root.quotesOriginal && root.quoteIncluded && root.quoteShown
+                        // Under the last line of text; the editor's content height runs past it.
+                        y: { bodyEditor.contentHeight; bodyEditor.length; const end = bodyEditor.positionToRectangle(bodyEditor.length); return end.y + end.height + 20 } width: bodyEditor.width - bodyEditor.rightPadding
+                        spacing: 12
+                        // What goes out: the attribution, then the message with a bar beside it.
+                        Item {
+                            objectName: "replyQuotePreview"
+                            width: parent.width; height: visible ? quotePreview.implicitHeight : 0
+                            Rectangle { width: 2; height: parent.height; radius: 1; color: Theme.inkAlpha(.16) }
+                            Column {
+                                id: quotePreview
+                                x: 14; width: parent.width - 14; spacing: 10
+                                Text {
+                                    width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                                    text: root.forwardedMessage
+                                        ? "On " + Qt.formatDateTime(new Date(root.forwardedMessage.sent_at), "ddd, d MMM yyyy 'at' HH:mm") + ", " + root.quotedName + " wrote:"
+                                        : "It is sent as received. Open the conversation it came from to see it here."
+                                    color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                                }
+                                Loader {
+                                    id: quotedHtml
+                                    width: parent.width
+                                    active: quoteBlock.visible && root.quoteShown && !!root.forwardedMessage && root.quotedView !== null
+                                    sourceComponent: root.quotedView
+                                }
+                                Text {
+                                    visible: !!root.forwardedMessage && (!quotedHtml.item || quotedHtml.item.failed === true)
+                                    width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                                    text: root.forwardedMessage ? String(root.forwardedMessage.text || "") : ""
+                                    color: Theme.inkAlpha(.7); font: bodyEditor.font
+                                }
+                            }
                         }
                     }
                     // Pasting keeps the draft's own formatting: text comes in plain.
@@ -569,6 +624,57 @@ Item {
                             }
                         }
                     }
+                }
+            }
+            // A reply quotes what it answers: "···" unfolds it in the body,
+            // and a link leaves it out or brings it back.
+            Row {
+                objectName: "replyQuoteRow"
+                visible: root.quotesOriginal
+                Layout.fillWidth: true; Layout.topMargin: 2; Layout.bottomMargin: 8
+                spacing: 10
+                AbstractButton {
+                    id: quoteToggle
+                    objectName: "replyQuoteToggle"
+                    visible: root.quoteIncluded
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: 28; implicitHeight: 14; padding: 0; hoverEnabled: true
+                    Accessible.name: root.quoteShown ? "Hide the quoted message" : "Show the quoted message"
+                    onClicked: root.showQuote(!root.quoteShown)
+                    background: Rectangle {
+                        radius: 4
+                        color: quoteToggle.hovered || root.quoteShown ? Theme.inkAlpha(.14) : Theme.inkAlpha(.07)
+                        Behavior on color { ColorAnimation { duration: Theme.ms(120); easing.type: Theme.enterEasing } }
+                        border.width: quoteToggle.visualFocus ? 1 : 0; border.color: Theme.focusBorder
+                    }
+                    contentItem: Item { FmIcon { anchors.centerIn: parent; name: "more"; size: 14; color: quoteToggle.hovered ? Theme.text : Theme.inkAlpha(.55) } }
+                    FmToolTip { shown: quoteToggle.hovered; text: quoteToggle.Accessible.name }
+                }
+                Text {
+                    objectName: "replyQuoteNote"
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.quoteIncluded
+                        ? (root.quotedName ? "Quotes " + root.quotedName + "'s message below your reply" : "Quotes the message it answers below your reply")
+                        : "Sent without the message it answers"
+                    textFormat: Text.PlainText; elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.width - quoteToggle.width - quoteChoice.width - 20)
+                    color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5)
+                }
+                AbstractButton {
+                    id: quoteChoice
+                    objectName: "replyQuoteChoice"
+                    visible: !root.readOnly
+                    enabled: !backend.draftLocked
+                    anchors.verticalCenter: parent.verticalCenter
+                    padding: 0; hoverEnabled: true
+                    Accessible.name: root.quoteIncluded ? "Leave out the quoted message" : "Quote the message it answers"
+                    onClicked: { if (root.quoteIncluded) root.quoteShown = false; backend.setDraftQuote(!root.quoteIncluded) }
+                    contentItem: Text {
+                        text: root.quoteIncluded ? "Leave out" : "Quote it"
+                        color: quoteChoice.hovered ? Theme.text : Theme.inkAlpha(.62)
+                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.underline: quoteChoice.hovered || quoteChoice.visualFocus
+                    }
+                    background: null
                 }
             }
             // Always there while the draft can be edited, so nothing moves as text
