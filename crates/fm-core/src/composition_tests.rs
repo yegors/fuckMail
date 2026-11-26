@@ -882,6 +882,136 @@ fn html_forwards_send_the_original_as_received() {
 }
 
 #[test]
+fn replies_quote_the_message_they_answer_unless_left_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    call(
+        &mut store,
+        "account_update",
+        json!({"name":"Owner","signature_text":"","expected_revision":0,"request_id":"no-signature"}),
+    );
+    let build = |store: &Store, draft: &Value| {
+        let mut parts = Vec::new();
+        let (request, identity) = crate::composition::compose_prepared(
+            &store.google_blob_store(),
+            ACCOUNT,
+            draft,
+            "<quoted-reply@fixture.example>".into(),
+            1_791_241_000,
+            &mut parts,
+        )
+        .unwrap();
+        let built = fm_mail::build_mail(&request, &identity, &parts).unwrap();
+        (built.raw, parts.len())
+    };
+    // An HTML original: its HTML in a Gmail blockquote under the attribution,
+    // its text quoted in the plain part, its inline logo alongside.
+    let (cid, mid) = ingest(&mut store, "quoted-html", html_source("quoted-html"));
+    let reply = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"reply","conversation_id":cid,"source_message_id":mid,"request_id":"quoted-reply"}),
+    );
+    assert_eq!(reply["body"], "", "the quote is not in the editable body");
+    let saved = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":reply["draft_id"],"expected_revision":1,"request_id":"quoted-save","body":"Agreed, ship it."}),
+    );
+    let (raw, inline) = build(&store, &saved);
+    assert_eq!(inline, 1, "the quoted HTML's inline logo travels with it");
+    let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+    let attribution =
+        "On Fri, 11 Sep 2026 at 15:00, Original Author <author@fixture.example> wrote:";
+    let plain = parsed.body_text(0).unwrap();
+    assert!(
+        plain.starts_with(&format!(
+            "Agreed, ship it.\n\n{attribution}\n> Plain words of the original"
+        )),
+        "{plain}"
+    );
+    let html = parsed.body_html(0).unwrap();
+    let author = html.find("Agreed, ship it.").unwrap();
+    let quote = html.find("<blockquote class=\"gmail_quote\"").unwrap();
+    assert!(author < quote);
+    assert!(html.contains(&attribution.replace('<', "&lt;").replace('>', "&gt;")));
+    assert!(html.contains("<h1 class=\"brand\">Quarterly numbers</h1>"));
+    // The reader and the stored text still show only the author's words.
+    assert_eq!(fm_mail::reply_contribution(&plain), "Agreed, ship it.");
+
+    // A plain original is quoted as text in both parts, reply all alike.
+    let (plain_cid, plain_mid) = ingest(&mut store, "quoted-plain", source("quoted-plain", 7));
+    let all = call(
+        &mut store,
+        "draft_create",
+        json!({"mode":"reply_all","conversation_id":plain_cid,"source_message_id":plain_mid,"request_id":"quoted-all"}),
+    );
+    let saved = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":all["draft_id"],"expected_revision":1,"request_id":"quoted-all-save","body":"Thanks all."}),
+    );
+    let (raw, _) = build(&store, &saved);
+    let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+    assert!(parsed
+        .body_text(0)
+        .unwrap()
+        .contains("15:07, Original Author <author@fixture.example> wrote:\n> Original retained text quoted-plain.\n> Second line."));
+    assert!(parsed
+        .body_html(0)
+        .unwrap()
+        .contains("Original retained text quoted-plain.<br>Second line."));
+
+    // Left out, the reply sends only the author's words; the choice holds
+    // across later saves until it is changed back.
+    let left_out = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":all["draft_id"],"expected_revision":2,"request_id":"quote-off","body":"Thanks all.","quote_original":false}),
+    );
+    assert_eq!(left_out["quote_original"], false);
+    let kept = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":all["draft_id"],"expected_revision":3,"request_id":"quote-kept","body":"Thanks all, again."}),
+    );
+    assert_eq!(kept["quote_original"], false);
+    let (raw, _) = build(&store, &kept);
+    let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+    assert_eq!(
+        parsed.body_text(0).unwrap().trim_end(),
+        "Thanks all, again."
+    );
+    assert!(parsed
+        .body_html(0)
+        .is_none_or(|html| !html.contains("gmail_quote")));
+    let back = call(
+        &mut store,
+        "draft_save",
+        json!({"draft_id":all["draft_id"],"expected_revision":4,"request_id":"quote-on","body":"Thanks all, again.","quote_original":true}),
+    );
+    assert!(back["quote_original"].is_null());
+    assert_eq!(
+        store
+            .handle(
+                "draft_save",
+                Some(ACCOUNT),
+                json!({"draft_id":all["draft_id"],"expected_revision":5,"request_id":"quote-bad","body":"x","quote_original":"no"}),
+            )
+            .unwrap_err()
+            .code,
+        "invalid_request"
+    );
+
+    // A reply to encrypted mail never quotes it readable.
+    let mut encrypted = back.clone();
+    encrypted["replies_to_encrypted"] = json!(true);
+    let (raw, _) = build(&store, &encrypted);
+    let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+    assert!(!parsed.body_text(0).unwrap().contains("wrote:"));
+}
+
+#[test]
 fn from_name_is_the_chosen_one_then_gmail_then_a_display_name_that_is_not_the_address() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();

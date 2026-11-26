@@ -436,6 +436,8 @@ public:
     /// Whether the open draft is signed and encrypted with OpenPGP when sent.
     /// Saved like any other edit; an encrypted draft stays out of Gmail Drafts.
     Q_INVOKABLE void setDraftProtection(bool sign, bool encrypt);
+    // Whether a reply quotes the message it answers when sent.
+    Q_INVOKABLE void setDraftQuote(bool quote);
     Q_INVOKABLE void editFormattedDraft(const QString &body, const QString &html);
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
     Q_INVOKABLE void importDraftAttachment(const QUrl &file, const QString &account, const QString &draftId);

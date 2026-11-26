@@ -142,6 +142,14 @@ bool verifyMime(const QString &profile,const QJsonObject &draft,const QJsonObjec
     const auto decoded=QByteArray::fromBase64(encoded,QByteArray::AbortOnBase64DecodingErrors);
     auto expected=draft["body"].toString(); const auto signature=draft["signature_text"].toString();
     if (!signature.isEmpty()) expected+="\n\n"+signature;
+    // A reply quotes the message it answers after the author's exact words.
+    const auto mode=draft["mode"].toString();
+    if ((mode=="reply" || mode=="reply_all") && draft["quote_original"].toBool(true) && !draft["replies_to_encrypted"].toBool()) {
+        while (!expected.isEmpty() && expected.back().isSpace()) expected.chop(1);
+        const auto authored=expected.isEmpty() ? QByteArray() : expected.toUtf8()+"\n\n";
+        if (!decoded.startsWith(authored) || !decoded.mid(authored.size()).contains(" wrote:\n")) { error="Capture changed the exact authored body/signature bytes or left out the reply's quote."; return false; }
+        return true;
+    }
     if (decoded!=expected.toUtf8()) { error="Capture changed the exact authored body/signature bytes."; return false; }
     return true;
 }

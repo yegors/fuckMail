@@ -1007,7 +1007,13 @@ mod tests {
             .unwrap();
         let raw = std::fs::read(result["path"].as_str().unwrap()).unwrap();
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
-        assert_eq!(parsed.body_text(0).unwrap(), plain);
+        // The author's text, then the quote of the answered message.
+        let text = parsed.body_text(0).unwrap();
+        let quote = text.strip_prefix(plain.trim_end()).unwrap();
+        assert!(
+            quote.starts_with("\n\n") && quote.contains(" wrote:\n> "),
+            "{text}"
+        );
         let alternative = parsed.body_html(0).unwrap();
         assert!(alternative.contains("font-weight:700"));
         assert!(alternative.contains("font-style:italic"));
@@ -1301,7 +1307,13 @@ mod tests {
         assert_eq!(result["network_used"], false);
         let raw = std::fs::read(result["path"].as_str().unwrap()).unwrap();
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
-        assert_eq!(parsed.body_text(0).unwrap(), authored);
+        // The author's text exactly, then the quote of the answered message.
+        let text = parsed.body_text(0).unwrap();
+        let quote = text.strip_prefix(authored.trim_end()).unwrap();
+        assert!(
+            quote.starts_with("\n\n") && quote.contains(" wrote:\n> "),
+            "{text}"
+        );
         assert_eq!(
             parsed.from().unwrap().first().unwrap().address.as_deref(),
             Some("you@windscribe.example")

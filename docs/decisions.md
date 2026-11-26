@@ -2752,3 +2752,16 @@ The founder asked for a better reply and forward box in a thread. Opening it und
 - **Verification.** On macOS (arm64, debug build), the whole CTest suite ran on the final code: all 38 GUI tests passed, including `gui-mail-selection` with the new sweep, `gui-mail-gpu`, `gui-reply-stability` and `gui-integration`. `rust-workspace` failed only in `fm-engine`'s `sessions` tests, which time out starting an engine on this host also when run alone; no Rust code changed (Quality105).
 
 Mail UI168, Quality105.
+
+## D229 — Replies quote the message they answer (2026-11-26T20:38:45Z)
+
+The founder relayed that people receiving their replies could not tell what was being answered. Most use mail apps with weak threading, such as Outlook, and expect the answered email below the reply. fuckMail sent only the author's words, which suits its own threaded reader but not theirs. They asked for the expected reply behaviour.
+
+- **Change, sending.** A reply or reply all quotes the message it answers below the author's words, as Gmail does: "On <date>, <name> <address> wrote:" and the original in a `gmail_quote` blockquote in the HTML part, its text with `> ` in the plain part, its inline images included (Core109). It is added when the MIME is built for sending, Gmail Drafts and capture, never into the editable body, like an HTML forward's original (D216).
+- **Change, composer.** A row above the format bar says the reply quotes that sender's message; "···" unfolds it read-only under the author's words, and **Leave out** sends without it (Mail UI169). The CLI has `fm draft save --quote on|off` (CLI69).
+- **Unchanged.** fuckMail's reader and stored text still show only the author's words: the reply-history rules already drop the attribution and the quote (D088, D208).
+- **Not quoted.** Replies to encrypted mail, whose original must not go out readable, and replies whose source is missing or unreadable: those send without a quote rather than fail. Forwards keep their own formats.
+- **Considered and not done.** Putting the quote in the editable body, as text forwards do: it would clutter every reply, make the attachment-mention check and signature placement harder, and could be edited into something the original never said. Quoting only the latest contribution instead of the whole message: recipients' clients expect the whole chain.
+- **Verification.** On macOS (arm64, debug build) the whole CTest suite passed, 39 of 39, including `rust-workspace`, `gui-mail-selection` (the composer row, preview and choice) and `gui-integration`, whose capture check now expects the author's exact words followed by the quote; clippy with warnings denied is clean (Quality106).
+
+Core109, Mail UI169, CLI69, Quality106.

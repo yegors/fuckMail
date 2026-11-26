@@ -2365,6 +2365,8 @@ void MailBackend::saveDraft() {
     for (const auto &key : {"pgp_sign", "pgp_encrypt"}) {
         if (m_draft.contains(key)) { headers[key] = m_draft[key].toBool(); params[key] = m_draft[key].toBool(); }
     }
+    // Like them, the quote choice goes once set here; the engine keeps it otherwise.
+    if (m_draft.contains("quote_original")) { headers["quote_original"] = m_draft["quote_original"].toBool(); params["quote_original"] = m_draft["quote_original"].toBool(); }
     m_savingDraft = true;
     const auto account = m_account;
     const auto context = draftContext();

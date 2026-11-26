@@ -75,6 +75,9 @@ pub(crate) fn compose_request(
 /// after the author's (whose text becomes HTML when it has no formatting),
 /// its quoted text after theirs in the plain alternative, and the inline
 /// images it shows among `attachments`, as many as the 25 MiB total allows.
+/// A reply or reply all quotes the message it answers the same way, under an
+/// "On …, … wrote:" line, unless the author left it out (see
+/// [`quoted_original`]).
 pub(crate) fn compose_prepared(
     blobs: &crate::content::BlobStore,
     account: &str,
@@ -84,14 +87,19 @@ pub(crate) fn compose_prepared(
     attachments: &mut Vec<fm_mail::StagedAttachment>,
 ) -> Result<(fm_mail::ComposeRequest, fm_mail::AccountIdentity)> {
     let (mut request, identity) = compose_request(account, draft, message_id, timestamp_secs)?;
-    if let Some(forward) = forwarded_original(blobs, account, draft)? {
+    let original = match forwarded_original(blobs, account, draft)? {
+        Some(forward) => Some(forward),
+        None => quoted_original(blobs, account, draft),
+    };
+    if let Some(forward) = original {
         if request.body_html.is_none() {
             request.body_html = Some(escape_html(&request.body_text).replace('\n', "<br>"));
         }
         request.body_text = if request.body_text.trim().is_empty() {
             forward.text
         } else {
-            format!("{}\n\n{}", request.body_text, forward.text)
+            // One blank line before the original, whatever ends the author's text.
+            format!("{}\n\n{}", request.body_text.trim_end(), forward.text)
         };
         request.forwarded_html = Some(forward.html);
         let mut total: usize = attachments.iter().map(|part| part.bytes.len()).sum();
@@ -105,9 +113,10 @@ pub(crate) fn compose_prepared(
     Ok((request, identity))
 }
 
-/// What an HTML forward sends after the author's words.
+/// What an HTML forward or a quoting reply sends after the author's words.
 struct ForwardedOriginal {
-    /// The original's HTML under a forwarded-message header.
+    /// The original's HTML under a forwarded-message header or a reply's
+    /// attribution.
     html: String,
     /// The same header and the original's text quoted, for the plain part.
     text: String,
@@ -158,8 +167,17 @@ fn forwarded_original(
         }
         text.truncate(end);
     }
+    let inline = inline_parts(account, &parsed);
+    Ok(Some(ForwardedOriginal { html, text, inline }))
+}
+
+/// The parts of `parsed` its HTML shows through `cid:` links, once each.
+fn inline_parts(
+    account: &str,
+    parsed: &mail_parser::Message<'_>,
+) -> Vec<fm_mail::StagedAttachment> {
     // Content-IDs keep their own case: the HTML refers to them as written.
-    let shown = fm_mail::html_view::inline_content_ids(&parsed);
+    let shown = fm_mail::html_view::inline_content_ids(parsed);
     let mut seen = HashSet::new();
     let mut inline = Vec::new();
     for part in &parsed.parts {
@@ -194,7 +212,129 @@ fn forwarded_original(
             content_id: Some(id.into()),
         });
     }
-    Ok(Some(ForwardedOriginal { html, text, inline }))
+    inline
+}
+
+/// The quote a reply or reply all sends after the author's words: the
+/// answered message under "On <date>, <sender> wrote:", its HTML in a Gmail
+/// blockquote (its text when it has no HTML within [`MAX_HTML`]) and its
+/// whole text with `> ` in the plain part, so mail clients without threads
+/// show what is answered. `None` for other drafts, a draft whose author left
+/// the quote out (`quote_original: false`), a reply to encrypted mail, whose
+/// original must not go out readable, and a source that is missing or
+/// unreadable: the reply then goes without it rather than not at all.
+fn quoted_original(
+    blobs: &crate::content::BlobStore,
+    account: &str,
+    draft: &Value,
+) -> Option<ForwardedOriginal> {
+    if !matches!(draft["mode"].as_str(), Some("reply" | "reply_all"))
+        || draft["quote_original"] == false
+        || draft["replies_to_encrypted"] == true
+    {
+        return None;
+    }
+    let bytes = crate::local_content::read_source(blobs, draft["source_hash"].as_str()?).ok()?;
+    let parsed = mail_parser::MessageParser::default().parse(&bytes)?;
+    let text = parsed.body_text(0).unwrap_or_default();
+    use mail_parser::MimeHeaders;
+    if text.contains("-----BEGIN PGP MESSAGE-----")
+        || parsed.content_type().is_some_and(|t| {
+            t.ctype().eq_ignore_ascii_case("multipart")
+                && t.subtype()
+                    .is_some_and(|s| s.eq_ignore_ascii_case("encrypted"))
+        })
+    {
+        return None;
+    }
+    let attribution = attribution(&parsed);
+    let quoted_html =
+        match fm_mail::html_view::html_part(&parsed).filter(|html| html.len() <= MAX_HTML) {
+            Some(html) => document_body(html),
+            None => text
+                .lines()
+                .map(escape_html)
+                .collect::<Vec<_>>()
+                .join("<br>"),
+        };
+    let html = format!(
+        "<br><br><div class=\"gmail_quote\"><div dir=\"ltr\" class=\"gmail_attr\">{}<br></div><blockquote class=\"gmail_quote\" style=\"margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex\">{}</blockquote></div>",
+        escape_html(&attribution),
+        quoted_html
+    );
+    let quoted = text
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                ">".to_owned()
+            } else {
+                format!("> {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut text = format!("{attribution}\n{quoted}");
+    if text.len() > MAX_BODY {
+        let mut end = MAX_BODY;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    Some(ForwardedOriginal {
+        html,
+        text,
+        inline: inline_parts(account, &parsed),
+    })
+}
+
+/// "On Tue, 24 Nov 2026 at 14:03, Ann Example <ann@example.test> wrote:",
+/// with the date as the original's Date header gives it, in its sender's
+/// own time.
+fn attribution(parsed: &mail_parser::Message<'_>) -> String {
+    use chrono::Datelike;
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let sender = parsed
+        .from()
+        .and_then(|from| from.first())
+        .map(|address| {
+            let email = address.address().unwrap_or_default();
+            match address
+                .name()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            {
+                Some(name) if !email.is_empty() => format!("{name} <{email}>"),
+                Some(name) => name.to_owned(),
+                None => email.to_owned(),
+            }
+        })
+        .filter(|sender| !sender.chars().any(char::is_control))
+        .unwrap_or_default();
+    let date = parsed.date().and_then(|d| {
+        let day = chrono::NaiveDate::from_ymd_opt(
+            i32::from(d.year),
+            u32::from(d.month),
+            u32::from(d.day),
+        )?;
+        Some(format!(
+            "{}, {} {} {} at {:02}:{:02}",
+            day.weekday(),
+            d.day,
+            MONTHS[usize::from(d.month) - 1],
+            d.year,
+            d.hour,
+            d.minute
+        ))
+    });
+    match (date, sender.is_empty()) {
+        (Some(date), false) => format!("On {date}, {sender} wrote:"),
+        (Some(date), true) => format!("On {date}, someone wrote:"),
+        (None, false) => format!("{sender} wrote:"),
+        (None, true) => "Someone wrote:".to_owned(),
+    }
 }
 
 /// The original's sender addresses, RFC 3339 date and one-line subject, as a
@@ -1103,6 +1243,22 @@ impl Store {
         if draft["forward_html"] == true {
             routing["forward_html"] = json!(true);
         }
+        // A reply quotes what it answers unless the author leaves it out;
+        // that choice carries over unless this save changes it, and a
+        // discarded draft starts over quoting.
+        let quote_original = match p.get("quote_original") {
+            None => draft["quote_original"] != false,
+            Some(Value::Bool(on)) => *on,
+            Some(_) => {
+                return Err(err(
+                    "invalid_request",
+                    "quote_original must be true or false",
+                ))
+            }
+        };
+        if !quote_original && !discard {
+            routing["quote_original"] = json!(false);
+        }
         // OpenPGP choices carry over unless this save changes them.
         for key in ["pgp_sign", "pgp_encrypt"] {
             let on = match p.get(key) {
@@ -1146,7 +1302,8 @@ impl Store {
                 .is_none_or(|v| original_signature == *v)
             && ["pgp_sign", "pgp_encrypt"]
                 .iter()
-                .all(|key| (draft[*key] == true) == (routing[*key] == true));
+                .all(|key| (draft[*key] == true) == (routing[*key] == true))
+            && (draft["quote_original"] == false) == (routing["quote_original"] == false);
         let timestamp = now()?;
         let next = expected
             .checked_add(1)

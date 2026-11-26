@@ -1503,6 +1503,10 @@ enum Draft {
         /// Encrypt to every recipient when sent; the draft then stays out of Gmail Drafts.
         #[arg(long, value_parser = ["on", "off"])]
         encrypt: Option<String>,
+        /// Quote the answered message under a reply when sent (on by default);
+        /// omit to keep the saved choice.
+        #[arg(long, value_parser = ["on", "off"])]
+        quote: Option<String>,
         /// Draft revision you last read; defaults to the current one.
         #[arg(long)]
         expected_revision: Option<u64>,
@@ -3534,6 +3538,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 clear_attachments,
                 sign,
                 encrypt,
+                quote,
                 expected_revision,
                 request_id,
             } => {
@@ -3598,6 +3603,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
                 if let Some(encrypt) = encrypt {
                     params["pgp_encrypt"] = json!(encrypt == "on");
+                }
+                if let Some(quote) = quote {
+                    params["quote_original"] = json!(quote == "on");
                 }
                 client.call("draft_save", scope, params).await?
             }

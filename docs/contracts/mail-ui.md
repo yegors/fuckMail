@@ -1,5 +1,13 @@
 # Mail UI, reader and human composer
 
+## D229 — the reply's quote (Mail UI169)
+
+- A reply or reply all to mail that isn't encrypted shows a row above the format bar: a "···" button and "Quotes Sender's message below your reply" (or "Quotes the message it answers below your reply" away from its conversation), then a **Leave out** link. Left out, the row reads "Sent without the message it answers" with **Quote it**, and has no "···". The link is hidden on read-only drafts and disabled while the draft is locked. It saves through `MailBackend.setDraftQuote` (`quote_original`).
+- "···" unfolds the quote under the author's words in the message area, read-only, and scrolls the area to it: the "On …, Name wrote:" line in 60% ink, then the original beside a 2 px bar, through the `HtmlMessageBody` MailView supplies as `ReplyComposer.quotedView` with its quoted history shown, or the message's text when it has no HTML. It sits 20 px under the last line of text. Leaving the quote out folds it.
+- Forwards and new messages have no row.
+
+Consumers: `ReplyComposer` (`quotesOriginal`, `quoteIncluded`, `quoteShown`, `quotedView`), `MailView`, `MailBackend` (`setDraftQuote`, `quote_original` on save); `gui-mail-selection`.
+
 ## D228 — the reply floats over a long thread (Mail UI168)
 
 Replaces D177's rule that the reader shows the whole reply, and D150's and the composer note's rule that opening a reply scrolls until its footer shows.

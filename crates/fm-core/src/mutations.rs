@@ -55,6 +55,7 @@ impl Store {
                 "recipient_inputs",
                 "pgp_sign",
                 "pgp_encrypt",
+                "quote_original",
                 "expected_revision",
                 "request_id",
             ],

@@ -254,6 +254,7 @@ class MailSelectionTest {
                     else if (method == "draft_save" && drafts.contains(draftId)) {
                         const auto params = request["params"].toObject(); auto draft = drafts[draftId];
                         draft["body"] = params["body"]; draft["discarded"] = false; draft["revision"] = params["expected_revision"].toInteger()+1;
+                        if (params.contains("quote_original")) { if (params["quote_original"].toBool()) draft.remove("quote_original"); else draft["quote_original"] = false; }
                         if (params.contains("attachment_ids")) {
                             QJsonArray kept;
                             for (const auto &file : draft["attachments"].toArray()) if (params["attachment_ids"].toArray().contains(file.toObject()["id"])) kept.append(file);
@@ -2860,7 +2861,23 @@ public:
         await([&]{return h.backend.m_conversation.value("messages").toList().size()==2;},"the thread with its forward loads");
         // The forward is the newest message; the thread still answers Sender.
         press("forwardButton"); created(1,"forward","a-original","Forward forwards the message, not the forward");
+        require(!shown("replyQuoteRow"),"a forward has no reply quote");
         h.backend.beginDraft("reply"); created(2,"reply","a-original","Reply after a forward answers the message, not the forward's recipient");
+        {
+            // A reply quotes the message it answers; Leave out sends it without, and Quote it brings it back.
+            await([&]{return shown("replyQuoteRow") && shown("replyQuoteToggle");},"a reply says it quotes the message it answers");
+            auto *note=find(window->contentItem(),"replyQuoteNote"); require(note,"quote note");
+            require(note->property("text").toString()=="Quotes Sender's message below your reply","the quote names whose message it is");
+            press("replyQuoteToggle");
+            await([&]{return shown("replyQuotePreview");},"··· unfolds the quoted message");
+            const auto id=h.backend.m_draft.value("draft_id").toString();
+            press("replyQuoteChoice");
+            await([&]{return !h.backend.m_draftDirty && !h.backend.m_savingDraft && h.drafts[id].value("quote_original")==false;},"Leave out saves the choice");
+            require(note->property("text").toString()=="Sent without the message it answers" && !shown("replyQuoteToggle") && !shown("replyQuotePreview"),"left out, the reply says so and hides the quote");
+            press("replyQuoteChoice");
+            await([&]{return !h.backend.m_draftDirty && !h.backend.m_savingDraft && !h.drafts[id].contains("quote_original");},"Quote it saves the choice");
+            require(note->property("text").toString().startsWith("Quotes Sender"),"the quote is back");
+        }
         // Each message's own menu answers that message.
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QVariant("a-original")));
         await([&]{return shown("messageMore_a-original");},"the earlier message opens");
